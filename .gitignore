@@ -1,0 +1,24 @@
+# Bootstrapped environment and dependency stamp
+.venv/
+__pycache__/
+*.py[cod]
+
+# Build output
+build/
+dist/
+*.spec.bak
+
+# Runtime state
+acql-settings.json
+backups/
+
+# Weekly spreadsheets dropped in by users; the samples at the repo root stay.
+data/*.xls
+data/*.xlsx
+data/*.xlsm
+!data/README.md
+
+# OS noise
+.DS_Store
+Thumbs.db
+~$*
