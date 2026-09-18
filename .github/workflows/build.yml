@@ -44,6 +44,12 @@ jobs:
             libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-cursor0
 
+      - name: Install dependencies
+        run: python run.py --system --check
+
+      - name: Run the test suite
+        run: python tests/run_tests.py
+
       - name: Build
         run: python packaging/build.py
 

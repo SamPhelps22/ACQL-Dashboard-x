@@ -54,6 +54,10 @@ class PlayerWeek:
     regular_wins: int = 0
     total_wins: int = 0          # regular + big-loser
     big_loser_picks: list[str] = field(default_factory=list)
+    # The three big-loser cells exactly as the sheet holds them, slot by slot.
+    # A correct pick is stored as "1" in place of the team, so the raw values
+    # are what an editor must round-trip; big_loser_picks is the readable view.
+    big_loser_raw: list[str] = field(default_factory=lambda: ["", "", ""])
     big_loser_wins: int = 0
     suicide_pick: str = ""
     suicide_out: bool = False      # the sheet marked this player eliminated

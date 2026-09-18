@@ -108,16 +108,38 @@ rather than letting them silently vanish from the standings.
 
 ## Entering results (write-back)
 
-The **Data & Update** page writes results back into `ACQL Dashboard.xlsx`. Pick
-a week, set each game's winner, and save.
+The **Data & Update** page writes back into `ACQL Dashboard.xlsx`. It covers
+every cell the workbook actually treats as an input, across two tabs:
 
-This is deliberately narrow, because the workbook is almost entirely derived.
-Inspecting it shows the only literal cells are on the Week sheets — the
-matchups, the results, each player's picks, the big-loser picks and the suicide
-pick. **Every win total, rank, payout, the Season grid, the Winnings grid and
-the whole Dashboard sheet are Excel formulas fed by those cells.** So the app
-writes the inputs and lets Excel recompute the rest, which is both safer and
-more correct than writing computed values.
+| Tab | What you can edit |
+|---|---|
+| **Slate & results** | Each game's home and away team, and its winner. The winner list follows whatever the two team cells say, so fixing a team name updates it. Plus the week's game count on the Season sheet. |
+| **Picks** | One player at a time: their pick for each game, their three big-loser slots, and their suicide pick. |
+
+Edits from both tabs are collected and applied as one change set, so a week's
+entry is a single backup and a single save. Edits accumulate **across
+players** — change one coach's picks, move to the next, and the first one's
+edits are still pending (the counter says how many players they span, and
+returning to a player shows their pending values rather than the file's). A
+running count sits next to the buttons, **Preview changes** lists the exact
+cells and values before anything is written, and **Discard changes** reloads
+everything from the file.
+
+That is the whole input surface, because the workbook is almost entirely
+derived. **Every win total, rank, payout, the Season grid, the Winnings grid
+and the whole Dashboard sheet are Excel formulas fed by those cells.** So the
+app writes the inputs and lets Excel recompute the rest, which is both safer
+and more correct than writing computed values.
+
+Two details the editor preserves rather than flattens:
+
+- A big-loser slot holds either the team picked **or** a `1` once that pick
+  came in. All three slots are shown and written back by position, and a `1` is
+  stored as a number, because Excel's tallies do not count a text `"1"`.
+- The sheet is inconsistent about capitalisation — some home picks are stored
+  shouted (`CINCINNATI`), others are not. Existing spellings are kept exactly
+  as they are; only a pick you actually change is rewritten, using the spelling
+  shown on that game's row.
 
 Three guarantees on every save:
 
@@ -128,10 +150,11 @@ Three guarantees on every save:
    (the last 25 are kept).
 3. **The save is verified** by reopening the file and reading the values back.
 
-This has been verified end to end against the real workbook: 5,381 formulas,
-1,348 array formulas, 7 tables, 66 conditional-formatting rules, 33 validation
-rules and 27 merged ranges all survive a write unchanged. Excel recalculates
-cached values when it next opens the file.
+This has been verified end to end against the real workbook — including
+through the UI, not just the API: 5,381 formulas, 1,348 array formulas, 7
+tables, 66 conditional-formatting rules, 33 validation rules and 27 merged
+ranges all survive a write unchanged. Excel recalculates cached values when it
+next opens the file.
 
 Close the workbook in Excel before saving, then reopen it so Excel recalculates,
 save it there, and press **Refresh**.
@@ -187,9 +210,15 @@ acql/
     ├── theme.py        light and dark palettes
     ├── charts.py       matplotlib charts embedded in Qt
     ├── widgets.py      cards, stat tiles, sortable tables
+    ├── editor.py       the weekly input editor
     └── pages/          one module per page
-packaging/              PyInstaller spec and build script
-tests/                  parser, merge and write-back tests
+packaging/
+├── acql.spec           PyInstaller build definition
+├── entrypoint.py       frozen-build entry point
+├── build.py            one-command build
+├── acql.ico / .icns    Windows and macOS app icons
+└── icon.png            window icon, bundled with the build
+tests/                  parser, merge, editor and write-back tests
 ```
 
 ## Tests
@@ -198,6 +227,8 @@ tests/                  parser, merge and write-back tests
 python tests/run_tests.py
 ```
 
-Covers name matching, file identification, both parsers, the merge rules, the
-awards, and the write-back guards (including that a formula cell is refused and
-that the workbook's structure survives a save).
+39 tests covering name matching, file identification, both parsers, the merge
+rules, the awards, and the write-back guards — including that a formula cell is
+refused, that a change set containing an unsafe edit is abandoned whole, that
+big-loser win markers survive editing a neighbouring slot, and that the
+workbook's structure is unchanged by a save.

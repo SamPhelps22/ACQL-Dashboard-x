@@ -39,7 +39,9 @@ a = Analysis(
     [str(ROOT / "packaging" / "entrypoint.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[],
+    # The window icon is looked up at runtime as well as embedded in the
+    # executable, so the title bar and task switcher show it too.
+    datas=[(str(ROOT / "packaging" / "icon.png"), "packaging")],
     hiddenimports=[
         "acql",
         "acql.awards",

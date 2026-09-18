@@ -7,7 +7,7 @@ import sys
 import traceback
 
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import APP_NAME, __version__
-from ..config import DATA_DIR, Settings
+from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
 from ..names import AliasTable
 from ..repository import load_season
@@ -273,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setOrganizationName("ACQL")
+    if ICON_FILE.is_file():
+        app.setWindowIcon(QIcon(str(ICON_FILE)))
 
     window = MainWindow()
     window.show()
@@ -287,7 +289,13 @@ def main(argv: list[str] | None = None) -> int:
             for index in range(len(PAGE_CLASSES)):
                 window._select_page(index)
                 QApplication.processEvents()
-            print(f"Smoke test OK: {len(window.season.players)} player(s) loaded.")
+            # Report the icon too: a frozen build can lose bundled data files
+            # without the app failing, and CI should catch that.
+            icon = "found" if ICON_FILE.is_file() else f"MISSING at {ICON_FILE}"
+            print(
+                f"Smoke test OK: {len(window.season.players)} player(s) loaded, "
+                f"{len(PAGE_CLASSES)} pages rendered, icon {icon}."
+            )
             app.quit()
 
         QTimer.singleShot(4000, finish)

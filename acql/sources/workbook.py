@@ -157,8 +157,9 @@ def parse_workbook(
                 line.total_wins = total or 0
                 line.regular_wins = regular if regular is not None else line.total_wins
 
-                for col in (COL_LOSER_1, COL_LOSER_2, COL_LOSER_3):
+                for slot, col in enumerate((COL_LOSER_1, COL_LOSER_2, COL_LOSER_3)):
                     raw = at(r, col)
+                    line.big_loser_raw[slot] = _text(raw)
                     # A correct big-loser pick is overwritten with 1 in place
                     # of the team name.
                     if _num(raw) == 1 and not _text(raw).isalpha():
