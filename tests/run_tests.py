@@ -148,6 +148,17 @@ class TestSeasonLoad(unittest.TestCase):
             for game in week.games:
                 self.assertLessEqual(week.correct_count(game.index), len(week.lines))
 
+    def test_big_loser_slots_round_trip(self):
+        """The raw slots keep their position; the readable view drops markers."""
+        for week in self.season.weeks.values():
+            for line in week.lines.values():
+                self.assertEqual(len(line.big_loser_raw), 3)
+                markers = sum(1 for v in line.big_loser_raw if v == "1")
+                if markers:
+                    self.assertEqual(markers, line.big_loser_wins, line.player)
+                for pick in line.big_loser_picks:
+                    self.assertIn(pick, line.big_loser_raw)
+
     def test_suicide_markers_are_not_treated_as_picks(self):
         for p in self.season.players.values():
             for pick in p.suicide_picks.values():
@@ -306,12 +317,161 @@ class TestWriteBack(unittest.TestCase):
         self.assertTrue(result.backup.is_file())
         result.backup.unlink(missing_ok=True)
 
+    def test_big_loser_win_markers_survive_editing_a_neighbour(self):
+        """A slot reading 1 marks a win; editing slot 3 must not clear 1 and 2."""
+        import openpyxl
+
+        editor = WorkbookEditor(self.book)
+        editor.set_big_loser_picks(1, "cuetop", ["1", "1", "Denver"])
+        self.assertTrue(editor.apply(backup=False).ok)
+        wb = openpyxl.load_workbook(self.book, data_only=False)
+        try:
+            ws = wb["Week 1"]
+            row = next(
+                r for r in range(10, 45)
+                if str(ws.cell(r, 5).value).strip() == "cuetop"
+            )
+            self.assertEqual(
+                [ws.cell(row, c).value for c in (22, 23, 24)], [1, 1, "Denver"]
+            )
+        finally:
+            wb.close()
+
+    def test_a_numeric_entry_is_stored_as_a_number(self):
+        """Excel counts 1 but not "1", so a win marker must not become text."""
+        import openpyxl
+
+        editor = WorkbookEditor(self.book)
+        editor.set_big_loser_picks(1, "Phelpy", ["1", "Arizona", "Miami"])
+        editor.apply(backup=False)
+        wb = openpyxl.load_workbook(self.book, data_only=False)
+        try:
+            ws = wb["Week 1"]
+            row = next(
+                r for r in range(10, 45)
+                if str(ws.cell(r, 5).value).strip() == "Phelpy"
+            )
+            self.assertIsInstance(ws.cell(row, 22).value, int)
+            self.assertEqual(ws.cell(row, 22).value, 1)
+        finally:
+            wb.close()
+
+    def test_picks_and_suicide_write_to_the_right_columns(self):
+        import openpyxl
+
+        editor = WorkbookEditor(self.book)
+        editor.set_pick(1, "Phelpy", 2, "Los Angeles Rams")
+        editor.set_suicide_pick(1, "Phelpy", "Buffalo")
+        editor.set_game_count(1, 15)
+        self.assertTrue(editor.apply(backup=False).ok)
+        wb = openpyxl.load_workbook(self.book, data_only=False)
+        try:
+            ws = wb["Week 1"]
+            row = next(
+                r for r in range(10, 45)
+                if str(ws.cell(r, 5).value).strip() == "Phelpy"
+            )
+            self.assertEqual(ws.cell(row, 7).value, "Los Angeles Rams")   # game 2 -> G
+            self.assertEqual(ws.cell(row, 25).value, "Buffalo")           # suicide -> Y
+            self.assertEqual(wb["Season"]["B3"].value, 15)
+        finally:
+            wb.close()
+
+    def test_row_lookups_are_cached_within_a_session(self):
+        editor = WorkbookEditor(self.book)
+        editor.set_pick(1, "Phelpy", 1, "Seattle")
+        self.assertTrue(editor._row_cache)
+        editor.set_pick(1, "DPSOG", 1, "Seattle")
+        # A second player must not have reopened the workbook.
+        self.assertEqual(len(editor._row_cache), 1)
+
     def test_repeated_edits_to_one_cell_collapse(self):
         editor = WorkbookEditor(self.book)
         editor.set_result(1, 8, "Carolina")
         editor.set_result(1, 8, "Chicago")
         self.assertEqual(len(editor), 1)
         self.assertEqual(editor.edits[0].value, "Chicago")
+
+
+@needs_workbook
+class TestEditorState(unittest.TestCase):
+    """The editor widget's change tracking, driven headlessly."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _editor(self):
+        from acql.ui.editor import WeekEditor
+        from acql.ui.theme import DARK
+
+        editor = WeekEditor(DARK)
+        editor.set_season(load_season(Settings()))
+        return editor
+
+    def test_a_freshly_loaded_week_has_no_pending_changes(self):
+        editor = self._editor()
+        self.assertEqual(editor._collect(), [])
+
+    def test_edits_survive_switching_players_and_back(self):
+        editor = self._editor()
+        first = editor.player_picker.itemText(0)
+        second = editor.player_picker.itemText(1)
+
+        editor.player_picker.setCurrentIndex(0)
+        editor.suicide_field.setText("Buffalo")
+        self.assertEqual(len(editor._collect()), 1)
+
+        editor.player_picker.setCurrentIndex(1)
+        self.assertIn(first, editor._pending_players)
+        editor._loser_fields[2].setText("Denver")
+        changes = editor._collect()
+        self.assertEqual(len(changes), 2)
+        self.assertEqual({c[2] for c in changes}, {first, second})
+
+        # Returning shows the held edit rather than the workbook value.
+        editor.player_picker.setCurrentIndex(0)
+        self.assertEqual(editor.suicide_field.text(), "Buffalo")
+        self.assertEqual(len(editor._collect()), 2)
+
+    def test_discarding_clears_every_held_edit(self):
+        editor = self._editor()
+        editor.player_picker.setCurrentIndex(0)
+        editor.suicide_field.setText("Buffalo")
+        editor.player_picker.setCurrentIndex(1)
+        editor._loser_fields[0].setText("Denver")
+        self.assertTrue(editor._collect())
+        editor.load_week()
+        self.assertEqual(editor._collect(), [])
+        self.assertEqual(editor._pending_players, {})
+
+    def test_selecting_the_stored_pick_is_not_a_change(self):
+        """Picks stored shouted ("CINCINNATI") must not look edited."""
+        editor = self._editor()
+        for index in range(min(6, editor.player_picker.count())):
+            editor.player_picker.setCurrentIndex(index)
+            self.assertEqual(
+                [c for c in editor._collect() if c[0] == "pick"], [],
+                editor.player_picker.currentText(),
+            )
+
+    def test_retyping_a_team_keeps_a_pending_result(self):
+        editor = self._editor()
+        editor._winner_fields[0].setCurrentIndex(0)
+        before = [c for c in editor._collect() if c[0] == "result"]
+        self.assertTrue(before)
+        editor._home_fields[0].setText("Seattle Seahawks")
+        editor._refresh_winner_options(0)
+        after = editor._collect()
+        self.assertTrue([c for c in after if c[0] == "result"])
+        self.assertTrue([c for c in after if c[0] == "matchup"])
 
 
 def main() -> int:

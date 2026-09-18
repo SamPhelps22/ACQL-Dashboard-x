@@ -13,6 +13,18 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 
+def resource_root() -> Path:
+    """Where bundled read-only assets live.
+
+    PyInstaller unpacks datas into a temporary folder named by sys._MEIPASS;
+    from a source checkout the package directory's parent serves the same role.
+    """
+    bundled = getattr(sys, "_MEIPASS", None)
+    if bundled:
+        return Path(bundled)
+    return Path(__file__).resolve().parent.parent
+
+
 def app_root() -> Path:
     """The directory the app treats as its home.
 
@@ -29,6 +41,7 @@ ROOT = app_root()
 DATA_DIR = ROOT / "data"
 BACKUP_DIR = ROOT / "backups"
 SETTINGS_FILE = ROOT / "acql-settings.json"
+ICON_FILE = resource_root() / "packaging" / "icon.png"
 ALIASES_FILE = ROOT / "aliases.json"
 
 DEFAULT_BUY_IN = 40.0

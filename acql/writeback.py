@@ -141,6 +141,9 @@ class WorkbookEditor:
         self.path = Path(path)
         self.aliases = aliases or AliasTable.load()
         self._edits: list[Edit] = []
+        # Row lookups reopen the workbook, and an editor session can queue
+        # dozens of per-player edits, so each sheet's roster is read once.
+        self._row_cache: dict[tuple[str, int, int, int], dict[str, int]] = {}
 
     # ---- building up the change set ------------------------------------
     def __len__(self) -> int:
@@ -205,13 +208,19 @@ class WorkbookEditor:
         self._queue(sheet, row, COL_SUICIDE, team, f"{player} week {week} suicide pick")
 
     def set_big_loser_picks(self, week: int, player: str, picks: list[str]) -> None:
-        """Record a player's big-loser picks (up to three)."""
+        """Record a player's three big-loser slots.
+
+        A slot holds either the team picked or a 1 once that pick came in.
+        The 1 must be written as a number: Excel's counts treat a text "1" as
+        an unrelated label, so storing it as text would silently zero out the
+        player's big-loser wins.
+        """
         sheet = self._week_sheet(week)
         row = self._find_week_row(sheet, player)
         for i in range(BIG_LOSER_PICKS):
             value = picks[i] if i < len(picks) else ""
             self._queue(
-                sheet, row, COL_LOSER_1 + i, value,
+                sheet, row, COL_LOSER_1 + i, _as_number_if_numeric(value),
                 f"{player} week {week} loser pick {i + 1}",
             )
 
@@ -228,6 +237,11 @@ class WorkbookEditor:
     def _rows_for(self, sheet_name: str, first: int, last: int, col: int) -> dict[str, int]:
         import openpyxl
 
+        cache_key = (sheet_name, first, last, col)
+        cached = self._row_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         wb = openpyxl.load_workbook(self.path, data_only=True)
         try:
             if sheet_name not in wb.sheetnames:
@@ -238,6 +252,7 @@ class WorkbookEditor:
                 key = self.aliases.key(ws.cell(r, col).value)
                 if key:
                     found.setdefault(key, r)
+            self._row_cache[cache_key] = found
             return found
         finally:
             wb.close()
@@ -307,6 +322,7 @@ class WorkbookEditor:
 
         self._verify(result)
         self._edits.clear()
+        self._row_cache.clear()
         return result
 
     def _verify(self, result: WriteResult) -> None:
@@ -325,6 +341,25 @@ class WorkbookEditor:
                     )
         finally:
             wb.close()
+
+
+def _as_number_if_numeric(value: object) -> object:
+    """Store a purely numeric entry as a number rather than as text.
+
+    Excel distinguishes 1 from "1", and the workbook's big-loser tallies count
+    the numeric form. No NFL team name is numeric, so this cannot swallow a
+    legitimate pick.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return text
+    try:
+        number = float(text)
+    except ValueError:
+        return text
+    return int(number) if number.is_integer() else number
 
 
 def _differs(actual: object, expected: object) -> bool:
