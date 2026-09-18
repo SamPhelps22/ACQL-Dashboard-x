@@ -462,6 +462,26 @@ class TestEditorState(unittest.TestCase):
                 editor.player_picker.currentText(),
             )
 
+    def test_a_large_change_set_previews_without_flooding_the_dialog(self):
+        from acql.ui.editor import PREVIEW_LIMIT, _describe
+
+        editor = self._editor()
+        for index in range(min(6, editor.player_picker.count())):
+            editor.player_picker.setCurrentIndex(index)
+            for row in range(16):
+                combo = editor._pick_fields[row]
+                if combo.count() > 1:
+                    combo.setCurrentIndex(1)
+        workbook_editor, changes = editor._build_editor()
+        self.assertGreater(len(changes), PREVIEW_LIMIT)
+
+        summary, preview, detail = _describe(workbook_editor.apply(dry_run=True))
+        self.assertIn("would be written", summary)
+        # The shortened view is capped; the full listing stays complete.
+        self.assertLessEqual(len(preview.splitlines()), PREVIEW_LIMIT + 1)
+        self.assertIn("more cell(s)", preview)
+        self.assertGreater(len(detail.splitlines()), PREVIEW_LIMIT)
+
     def test_retyping_a_team_keeps_a_pending_result(self):
         editor = self._editor()
         editor._winner_fields[0].setCurrentIndex(0)

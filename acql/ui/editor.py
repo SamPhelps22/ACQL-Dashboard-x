@@ -68,6 +68,35 @@ def _select_team(combo: QComboBox, stored: str, options: list[str]) -> None:
 
 
 
+PREVIEW_LIMIT = 40
+
+
+def _describe(result) -> tuple[str, str, str]:
+    """Render a dry run as (summary, shortened preview, full listing).
+
+    A week of picks across several players runs to hundreds of cells, so the
+    dialog shows the first few and keeps the rest behind "Show details".
+    """
+    lines = [
+        f"{e.address}   {e.description}   \u2192   {e.value or '(cleared)'}"
+        for e in result.applied
+    ]
+    shown = lines[:PREVIEW_LIMIT]
+    if len(lines) > PREVIEW_LIMIT:
+        shown.append(f"\u2026 and {len(lines) - PREVIEW_LIMIT} more cell(s).")
+    for edit, reason in result.refused:
+        shown.append(f"REFUSED  {edit.address}: {reason}")
+
+    if result.refused:
+        summary = (
+            f"{len(result.refused)} change(s) cannot be written, "
+            "so nothing would be saved."
+        )
+    else:
+        summary = f"{len(result.applied)} cell(s) would be written."
+    return summary, "\n".join(shown), "\n".join(lines)
+
+
 class WeekEditor(QWidget):
     """Edits one week's input cells and writes them back to the workbook."""
 
