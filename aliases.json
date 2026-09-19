@@ -1,0 +1,4 @@
+{
+  "_comment": "Map an alternate spelling to the canonical player name. Both sides are matched case-, space- and punctuation-insensitively, so only genuine nickname differences need an entry here. Example: {\"Zach N\": \"Zachary Nelson\"}",
+  "aliases": {}
+}

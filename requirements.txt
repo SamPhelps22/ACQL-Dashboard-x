@@ -1,0 +1,8 @@
+# ACQL Dashboard runtime dependencies.
+# run.py reads this file and installs anything missing.
+PySide6>=6.5,<7
+matplotlib>=3.7
+pandas>=2.0
+numpy>=1.24
+openpyxl>=3.1
+xlrd>=2.0
