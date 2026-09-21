@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QEvent,
+    QModelIndex,
+    QSize,
+    QSortFilterProxyModel,
+    Qt,
+)
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QFrame,
@@ -18,6 +25,49 @@ from PySide6.QtWidgets import (
 from .theme import Palette
 
 
+class ElidedLabel(QLabel):
+    """A one-line label that ends in an ellipsis instead of widening its parent.
+
+    A plain QLabel refuses to shrink below its text, so a long player name in
+    a big headline tile pushes the whole row wider than the window. This one
+    shrinks and shows the full text as a tooltip when it has been cut.
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full = ""
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt naming)
+        self._full = text
+        self._elide()
+
+    def full_text(self) -> str:
+        return self._full
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._elide()
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        # The stylesheet sets the font after construction; re-measure with it.
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._elide()
+
+    def _elide(self) -> None:
+        shown = self.fontMetrics().elidedText(
+            self._full, Qt.TextElideMode.ElideRight, max(self.width(), 0)
+        )
+        if shown != self.text():
+            super().setText(shown)
+        self.setToolTip(self._full if shown != self._full else "")
+
+
 class Card(QFrame):
     """A titled surface. The title is a quiet label, not a heading."""
 
@@ -29,7 +79,7 @@ class Card(QFrame):
         self._layout.setSpacing(10)
         self.title_label: QLabel | None = None
         if title:
-            self.title_label = QLabel(title.upper())
+            self.title_label = QLabel(title)
             self.title_label.setObjectName("CardTitle")
             self._layout.addWidget(self.title_label)
 
@@ -42,7 +92,7 @@ class Card(QFrame):
 
     def set_title(self, title: str) -> None:
         if self.title_label is not None:
-            self.title_label.setText(title.upper())
+            self.title_label.setText(title)
 
 
 class StatTile(Card):
@@ -56,11 +106,14 @@ class StatTile(Card):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(title, parent)
-        self.value_label = QLabel(value)
+        # A different object name lets the theme lift tiles above the cards.
+        self.setObjectName("StatTile")
+        self.value_label = ElidedLabel(value)
         self.value_label.setObjectName("StatValue")
         self.value_label.setWordWrap(False)
         self.detail_label = QLabel(detail)
         self.detail_label.setObjectName("StatDetail")
+        self.detail_label.setProperty("tone", "")
         self.detail_label.setWordWrap(True)
         self._layout.addWidget(self.value_label)
         self._layout.addWidget(self.detail_label)
@@ -72,8 +125,9 @@ class StatTile(Card):
         self.value_label.setText(value)
         self.detail_label.setText(detail)
         # Tone rides on the detail line; the big number stays in primary ink so
-        # a colour never has to carry the meaning on its own.
-        self.detail_label.setObjectName({"good": "Good", "bad": "Bad"}.get(tone, "StatDetail"))
+        # a colour never has to carry the meaning on its own. It is a property
+        # rather than a new object name so the label keeps its size and font.
+        self.detail_label.setProperty("tone", tone if tone in ("good", "bad") else "")
         self.detail_label.style().unpolish(self.detail_label)
         self.detail_label.style().polish(self.detail_label)
 
@@ -138,6 +192,8 @@ class TableModel(QAbstractTableModel):
         self._cell_colors = cell_colors or {}
         self._tooltips = tooltips or {}
         self._bold = bold_columns or set()
+        self._bold_font = QFont()
+        self._bold_font.setBold(True)
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
         return 0 if parent.isValid() else len(self._rows)
@@ -179,9 +235,7 @@ class TableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole:
             return self._tooltips.get((row, col))
         if role == Qt.ItemDataRole.FontRole and col in self._bold:
-            font = QFont()
-            font.setBold(True)
-            return font
+            return self._bold_font
         if role == Qt.ItemDataRole.UserRole:
             # The sort key: explicit override, else the raw value.
             override = self._sort_values.get(col)
@@ -220,10 +274,10 @@ class SortProxy(QSortFilterProxyModel):
     def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:  # noqa: N802
         a = self.sourceModel().data(left, Qt.ItemDataRole.UserRole)
         b = self.sourceModel().data(right, Qt.ItemDataRole.UserRole)
-        if a is None:
-            return True
-        if b is None:
-            return False
+        # Blanks sort first. Two blanks are equal, not "each less than the
+        # other", which would give the sort an inconsistent order.
+        if a is None or b is None:
+            return a is None and b is not None
         try:
             return float(a) < float(b)
         except (TypeError, ValueError):

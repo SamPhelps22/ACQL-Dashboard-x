@@ -2,12 +2,73 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
 
 from ... import awards as awards_module
+from ...awards import Award
+from ...config import WEEKS_IN_SEASON
+from ...models import Player, Season
 from ..charts import BarChart, HistogramChart
-from ..widgets import Banner, Card, StatTile, section
+from ..widgets import Banner, Card, ElidedLabel, StatTile, section
 from .base import Page
+
+LEADERBOARD_SIZE = 12
+AWARD_COLUMNS = 4
+LEADERBOARD_TITLE = "Leaderboard - season wins"
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+class AwardTile(QFrame):
+    """One superlative: what it is, who holds it, and the number behind it.
+
+    The winner's name is the largest thing on the tile, because that is what
+    the pool reads. The number sits beside it in a chip tinted by tone, and
+    the tone is never the only signal: the icon and the wording carry it too.
+    """
+
+    def __init__(self, award: Award) -> None:
+        super().__init__()
+        # Same raised surface as the headline tiles (see StatTile).
+        self.setObjectName("AwardTile")
+        self.setProperty("tone", award.tone if award.tone in ("good", "bad") else "")
+        self.setMinimumHeight(104)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 11, 14, 12)
+        layout.setSpacing(5)
+
+        # Icon plus label: the award never relies on colour to be identified.
+        icon = QLabel(award.icon)
+        icon.setObjectName("AwardIcon")
+        title = QLabel(award.title)
+        title.setObjectName("CardTitle")
+        heading = QHBoxLayout()
+        heading.setSpacing(7)
+        heading.addWidget(icon)
+        heading.addWidget(title, 1)
+        layout.addLayout(heading)
+
+        winner = ElidedLabel(award.winner)
+        winner.setObjectName("AwardWinner")
+        value = QLabel(award.value)
+        value.setObjectName("AwardValue")
+        value.setProperty("tone", self.property("tone"))
+        headline = QHBoxLayout()
+        headline.setSpacing(8)
+        headline.addWidget(winner, 1)
+        headline.addWidget(value, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addLayout(headline)
+
+        detail = QLabel(award.detail)
+        detail.setObjectName("AwardDetail")
+        detail.setWordWrap(True)
+        layout.addWidget(detail)
+        layout.addStretch(1)
+        self.setToolTip(f"{award.title}\n{award.winner} - {award.value}\n{award.detail}")
 
 
 class OverviewPage(Page):
@@ -23,25 +84,27 @@ class OverviewPage(Page):
         self.layout_.addWidget(self.banner)
 
         # ---- headline tiles ----
+        # The leader is the one thing on this page worth extra room.
         tiles = QHBoxLayout()
         tiles.setSpacing(12)
         self.tile_leader = StatTile("Season Leader")
         self.tile_week = StatTile("Current Week")
-        self.tile_pot = StatTile("Pot")
+        self.tile_winnings = StatTile("Leader's Winnings")
         self.tile_players = StatTile("Players")
         self.tile_avg = StatTile("Pool Average")
-        for tile in (
-            self.tile_leader, self.tile_week, self.tile_pot,
+        self._tiles = (
+            self.tile_leader, self.tile_week, self.tile_winnings,
             self.tile_players, self.tile_avg,
-        ):
-            tiles.addWidget(tile)
+        )
+        for tile in self._tiles:
+            tiles.addWidget(tile, 2 if tile is self.tile_leader else 1)
         self.layout_.addLayout(tiles)
 
         # ---- leaderboard + distribution ----
         row = QHBoxLayout()
         row.setSpacing(12)
 
-        self.leader_card = Card("Top 12 - season wins")
+        self.leader_card = Card(LEADERBOARD_TITLE)
         self.leader_chart = BarChart(self.palette, height=3.9)
         self.leader_card.add(self.leader_chart, 1)
         row.addWidget(self.leader_card, 3)
@@ -53,72 +116,117 @@ class OverviewPage(Page):
         self.layout_.addLayout(row)
 
         # ---- awards ----
-        self.awards_card = Card("Season superlatives")
+        # Tiles sit straight on the page rather than inside another card, so
+        # the section doesn't become a card of cards.
+        heading_row = QHBoxLayout()
+        heading_row.setSpacing(8)
+        self.awards_heading = QLabel("Season superlatives")
+        self.awards_heading.setObjectName("CardTitle")
+        self.awards_count = QLabel("")
+        self.awards_count.setObjectName("Muted")
+        heading_row.addWidget(self.awards_heading)
+        heading_row.addWidget(self.awards_count)
+        heading_row.addStretch(1)
+        self.layout_.addLayout(heading_row)
+
         self.awards_grid = QGridLayout()
-        self.awards_grid.setSpacing(10)
-        self.awards_card.body().addLayout(self.awards_grid)
-        self.layout_.addWidget(self.awards_card)
+        self.awards_grid.setSpacing(12)
+        for column in range(AWARD_COLUMNS):
+            self.awards_grid.setColumnStretch(column, 1)
+        self.layout_.addLayout(self.awards_grid)
 
-        self.layout_.addStretch(1)
+    def restyle(self) -> None:
+        """Follow a theme change without the window rebuilding this page."""
+        for chart in (self.leader_chart, self.spread_chart):
+            chart.set_palette(self.palette)
+        # Tables bake the palette into their models, so a refresh rebuilds them.
+        self.refresh_now()
 
+    # ---- refresh -------------------------------------------------------
     def refresh(self) -> None:
-        s = self.season
-        if s is None:
-            return
-        self.banner.show_messages(s.warnings)
+        season = self.season
+        assert season is not None  # guaranteed by Page.refresh_now()
 
-        order = s.ordered_players()
+        self.banner.show_messages(season.warnings)
+
+        order = season.ordered_players()
         if not order:
-            for tile in (
-                self.tile_leader, self.tile_week, self.tile_pot,
-                self.tile_players, self.tile_avg,
-            ):
-                tile.update_values("-", "No data loaded")
-            self.leader_chart.empty("Drop this week's files into data/, then press Refresh")
-            self.spread_chart.empty()
-            self._fill_awards([])
+            self._show_empty()
             return
 
+        self._update_tiles(season, order)
+        self._update_charts(order)
+        self._fill_awards(awards_module.compute(season))
+
+    def _show_empty(self) -> None:
+        for tile in self._tiles:
+            tile.update_values(self.NO_VALUE, "No data loaded")
+        self.leader_card.set_title(LEADERBOARD_TITLE)
+        self.leader_chart.empty("Drop this week's files into data/, then press Refresh")
+        self.spread_chart.empty()
+        self._fill_awards([])
+
+    def _update_tiles(self, season: Season, order: list[Player]) -> None:
         leader = order[0]
         tied = [p for p in order if p.wins == leader.wins]
-        self.tile_leader.update_values(
-            leader.display,
-            f"{leader.wins}-{leader.losses}   {leader.pct:.3f}"
-            + (f"   (tied with {len(tied) - 1} more)" if len(tied) > 1 else ""),
-        )
+        record = f"{leader.wins}-{leader.losses}   {leader.pct:.3f}"
+        if len(tied) > 1:
+            note = f"tied with {_plural(len(tied) - 1, 'other')}"
+        elif len(order) > 1 and leader.wins > order[1].wins:
+            gap = leader.wins - order[1].wins
+            note = f"{_plural(gap, 'win')} clear of {order[1].display}"
+        else:
+            note = ""
+        self.tile_leader.update_values(leader.display, record + (f"\n{note}" if note else ""))
 
-        weeks = s.final_weeks()
-        provisional = f" - week {s.provisional_weeks[0]} in progress" if s.provisional_weeks else ""
+        finished = len(season.final_weeks())
+        detail = f"{finished} of {WEEKS_IN_SEASON} weeks final"
+        if season.provisional_weeks:
+            detail += f" - week {season.provisional_weeks[0]} in progress"
         self.tile_week.update_values(
-            f"Week {s.current_week}" if s.current_week else "-",
-            f"{len(weeks)} week(s) final{provisional}",
+            f"Week {season.current_week}" if season.current_week else self.NO_VALUE,
+            detail,
         )
 
-        pot = s.pot_total()
-        paid_out = sum(p.total_winnings for p in s.players.values())
-        self.tile_pot.update_values(
-            self.money(pot),
-            f"{self.money(paid_out)} paid out so far",
+        # The leader's own money, not the pool's: what they have won so far
+        # and how that stands against their buy-in.
+        net = leader.net(season.buy_in)
+        cashed = sum(1 for v in leader.weekly_winnings.values() if v and v > 0)
+        self.tile_winnings.update_values(
+            self.money(leader.total_winnings),
+            f"{self.money(net, signed=True)} net after the {self.money(season.buy_in)} buy-in"
+            f"\ncashed in {_plural(cashed, 'week')}",
+            "good" if net > 0 else ("bad" if net < 0 else ""),
         )
 
-        alive = sum(1 for p in s.players.values() if p.suicide_alive)
+        alive = sum(1 for p in season.players.values() if p.suicide_alive)
         self.tile_players.update_values(
-            str(len(s.players)),
+            str(len(season.players)),
             f"{alive} still alive in the suicide pool",
         )
 
         totals = [p.wins for p in order]
-        average = sum(totals) / len(totals) if totals else 0
+        average = sum(totals) / len(totals)
         above = sum(1 for t in totals if t > average)
+        below = sum(1 for t in totals if t < average)
+        level = len(totals) - above - below
         self.tile_avg.update_values(
             f"{average:.1f}",
-            f"{above} above the line, {len(totals) - above} below",
+            f"{above} above the line, {below} below"
+            + (f", {level} on it" if level else ""),
         )
 
-        # Leaderboard: the leader takes the accent, the rest a single quiet
-        # hue - colour here marks position, not identity.
-        top = order[:12]
-        best = top[0].wins if top else 0
+    def _update_charts(self, order: list[Player]) -> None:
+        top = order[:LEADERBOARD_SIZE]
+        self.leader_card.set_title(
+            f"Top {len(top)} - season wins"
+            if len(order) > LEADERBOARD_SIZE
+            else f"All {_plural(len(top), 'player')} - season wins"
+        )
+
+        # The leader takes the accent, the rest a single quiet hue - colour
+        # here marks position, not identity.
+        best = top[0].wins
         colors = [
             self.palette.series[0] if p.wins == best else self.palette.series[2]
             for p in top
@@ -134,35 +242,15 @@ class OverviewPage(Page):
                 for p in top
             ],
         )
-        self.spread_chart.plot(totals, xlabel="Season wins")
-        self._fill_awards(awards_module.compute(s))
+        self.spread_chart.plot([p.wins for p in order], xlabel="Season wins")
 
-    def _fill_awards(self, awards: list) -> None:
-        while self.awards_grid.count():
-            item = self.awards_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+    def _fill_awards(self, awards: list[Award]) -> None:
+        self.clear_layout(self.awards_grid)
+        self.awards_count.setText(str(len(awards)) if awards else "")
         if not awards:
             note = QLabel("Awards appear once a few weeks have been scored.")
             note.setObjectName("Muted")
-            self.awards_grid.addWidget(note, 0, 0)
+            self.awards_grid.addWidget(note, 0, 0, 1, AWARD_COLUMNS)
             return
         for i, award in enumerate(awards):
-            self.awards_grid.addWidget(self._award_widget(award), i // 4, i % 4)
-
-    def _award_widget(self, award) -> QWidget:
-        box = QWidget()
-        layout = QVBoxLayout(box)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(1)
-        # Icon plus label: the award never relies on colour to be identified.
-        heading = QLabel(f"{award.icon}  {award.title}")
-        heading.setObjectName("CardTitle")
-        winner = QLabel(award.winner)
-        winner.setStyleSheet("font-size: 15px; font-weight: 700;")
-        value = QLabel(f"{award.value} - {award.detail}")
-        value.setObjectName("StatDetail")
-        value.setWordWrap(True)
-        for w in (heading, winner, value):
-            layout.addWidget(w)
-        return box
+            self.awards_grid.addWidget(AwardTile(award), i // AWARD_COLUMNS, i % AWARD_COLUMNS)

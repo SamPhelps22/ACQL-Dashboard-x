@@ -6,24 +6,68 @@ House rules applied throughout:
   * thin marks, recessive grid, no number printed on every point;
   * a legend whenever two or more series share an axes, with direct labels on
     small series counts so identity never rests on colour alone;
-  * a hover tooltip on every plotted form.
+  * a hover tooltip on every plotted form, and a crosshair on the time series.
+
+Two structural rules make the rest of the file work:
+
+`plot()` and `empty()` record the call, so `set_palette()` can redraw the same
+chart in the other theme without the page being rebuilt around it. Subclasses
+therefore implement `_draw()`, not `plot()`.
+
+Hover is resolved through `_hover_at()` rather than one handler per chart.
+Every canvas connects exactly one motion handler, in `Chart.__init__`; a
+subclass that needs different hit-testing overrides `_hover_at`. Connecting a
+second handler inside `plot()` would add another on every redraw, and the two
+would then fight over the same annotation.
 """
 
 from __future__ import annotations
+
+import statistics
 
 import matplotlib
 
 matplotlib.use("QtAgg")
 
+import matplotlib.patches as mpatches
+import matplotlib.transforms as mtransforms
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator, PercentFormatter
 from PySide6.QtWidgets import QSizePolicy
 
-from .theme import Palette, ramp_color
+from .theme import Palette, mix, ramp_color, ramp_direction
 
 GRID_KW = dict(linewidth=0.7, alpha=0.9, zorder=0)
 LINE_WIDTH = 2.0
-MARKER_SIZE = 5.5
+MARKER_SIZE = 6.0        # ~8px at 100 dpi, the floor for a hit target
+BAR_HEIGHT = 0.68
+LABEL_SIZE = 9
+TICK_SIZE = 9
+MAX_X_TICKS = 14         # past this, thin the ticks rather than overprint them
+
+
+def money(value: float) -> str:
+    """Currency with the sign ahead of the symbol: -$40, not $-40."""
+    return f"{'-' if value < 0 else ''}${abs(value):,.0f}"
+
+
+def _ink_on(fill: str) -> str:
+    """Black or white, whichever the given fill can actually carry.
+
+    Text inside a heatmap cell sits on a ramp step, not on the page, so the
+    theme cannot decide its colour: on either surface the ramp runs from very
+    pale to very dark, and the right answer flips partway along it. This
+    measures the step itself (WCAG relative luminance) and picks the side with
+    more contrast.
+    """
+    hexed = fill.lstrip("#")
+    channels = [int(hexed[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    return "#111111" if luminance > 0.36 else "#ffffff"
 
 
 class Chart(FigureCanvasQTAgg):
@@ -39,7 +83,37 @@ class Chart(FigureCanvasQTAgg):
         self.figure.patch.set_facecolor(palette.surface)
         self._annotation = None
         self._hover_targets: list[tuple] = []
+        self._replay: tuple[str, tuple, dict] | None = None
         self.mpl_connect("motion_notify_event", self._on_hover)
+        self.mpl_connect("figure_leave_event", lambda _event: self._hide_hover())
+
+    # ---- public surface --------------------------------------------------
+    def plot(self, *args, **kwargs) -> None:
+        """Draw, remembering the call so the chart can be re-themed in place."""
+        self._replay = ("_draw", args, kwargs)
+        self._draw(*args, **kwargs)
+
+    def empty(self, message: str = "No data yet") -> None:
+        self._replay = ("_draw_empty", (message,), {})
+        self._draw_empty(message)
+
+    def set_palette(self, palette: Palette) -> None:
+        """Re-theme in place by replaying the last draw against new colours.
+
+        Colours are baked in at draw time, so a palette change has to redraw.
+        Replaying is cheaper than rebuilding the page around the canvas, and
+        it keeps whatever the chart was showing.
+        """
+        if palette is self.palette:
+            return
+        self.palette = palette
+        self.figure.patch.set_facecolor(palette.surface)
+        name, args, kwargs = self._replay or ("_draw_empty", (), {})
+        getattr(self, name)(*args, **kwargs)
+
+    def _draw(self, *args, **kwargs) -> None:
+        """Subclasses draw here. `plot()` is the entry point."""
+        raise NotImplementedError
 
     # ---- shared styling --------------------------------------------------
     def new_axes(self):
@@ -58,7 +132,7 @@ class Chart(FigureCanvasQTAgg):
         for side in ("left", "bottom"):
             ax.spines[side].set_color(p.baseline)
             ax.spines[side].set_linewidth(0.8)
-        ax.tick_params(colors=p.ink_muted, labelsize=9, length=0)
+        ax.tick_params(colors=p.ink_muted, labelsize=TICK_SIZE, length=0)
         ax.xaxis.label.set_color(p.ink_secondary)
         ax.yaxis.label.set_color(p.ink_secondary)
         ax.set_axisbelow(True)
@@ -72,11 +146,14 @@ class Chart(FigureCanvasQTAgg):
         if len(labels) < 2:
             return
         options = dict(
-            loc="upper left",
-            bbox_to_anchor=(0, 1.02),
+            # Anchored by its lower edge just above the plot, so it sits in
+            # the margin instead of hanging down over the top of the data -
+            # which is exactly where a leader's line or a peak tends to be.
+            loc="lower left",
+            bbox_to_anchor=(0, 1.01),
             ncols=min(4, len(labels)),
             frameon=False,
-            fontsize=9,
+            fontsize=LABEL_SIZE,
             labelcolor=self.palette.ink_secondary,
             handlelength=1.4,
             columnspacing=1.2,
@@ -84,7 +161,7 @@ class Chart(FigureCanvasQTAgg):
         options.update(kwargs)
         ax.legend(**options)
 
-    def empty(self, message: str = "No data yet") -> None:
+    def _draw_empty(self, message: str = "No data yet") -> None:
         ax = self.new_axes()
         ax.axis("off")
         ax.text(
@@ -97,8 +174,21 @@ class Chart(FigureCanvasQTAgg):
 
     # ---- hover -----------------------------------------------------------
     def register_hover(self, artist, labels: list[str]) -> None:
-        """Attach per-element tooltip text to a plotted artist."""
-        self._hover_targets.append((artist, labels))
+        """Attach per-element tooltip text to a plotted artist.
+
+        A bar or histogram hands back a BarContainer, which is a tuple of
+        patches and not an artist, so it has no `contains` of its own and
+        would never report a hit. Containers and plain sequences are unpacked
+        into their individual patches here, each carrying its own label.
+        """
+        items = getattr(artist, "patches", None)
+        if items is None and isinstance(artist, (list, tuple)):
+            items = artist
+        if items is None:
+            self._hover_targets.append((artist, list(labels)))
+            return
+        for item, label in zip(items, labels):
+            self._hover_targets.append((item, [label]))
 
     def _ensure_annotation(self, ax):
         if self._annotation is None:
@@ -108,7 +198,7 @@ class Chart(FigureCanvasQTAgg):
                 xy=(0, 0),
                 xytext=(12, 14),
                 textcoords="offset points",
-                fontsize=9,
+                fontsize=LABEL_SIZE,
                 color=p.ink,
                 bbox=dict(boxstyle="round,pad=0.45", fc=p.raised, ec=p.grid, lw=0.8),
                 zorder=100,
@@ -117,13 +207,8 @@ class Chart(FigureCanvasQTAgg):
             self._annotation.set_visible(False)
         return self._annotation
 
-    def _on_hover(self, event) -> None:
-        if event.inaxes is None or not self._hover_targets:
-            if self._annotation is not None and self._annotation.get_visible():
-                self._annotation.set_visible(False)
-                self.draw_idle()
-            return
-        note = self._ensure_annotation(event.inaxes)
+    def _hover_at(self, event) -> tuple[str, tuple[float, float]] | None:
+        """Text and anchor for the point under the cursor, or None."""
         for artist, labels in self._hover_targets:
             try:
                 hit, info = artist.contains(event)
@@ -131,27 +216,57 @@ class Chart(FigureCanvasQTAgg):
                 continue
             if not hit:
                 continue
-            index = None
-            if "ind" in info and len(info["ind"]):
+            index = 0
+            if isinstance(info, dict) and len(info.get("ind", ())):
                 index = int(info["ind"][0])
-            elif hasattr(artist, "get_x"):
-                index = 0
-            if index is None or index >= len(labels):
+            if index >= len(labels):
                 continue
-            note.xy = (event.xdata, event.ydata)
-            note.set_text(labels[index])
-            note.set_visible(True)
+            return labels[index], (event.xdata, event.ydata)
+        return None
+
+    def _hide_extras(self) -> None:
+        """Hook for anything a subclass shows alongside the tooltip."""
+
+    def _hide_hover(self) -> None:
+        changed = False
+        if self._annotation is not None and self._annotation.get_visible():
+            self._annotation.set_visible(False)
+            changed = True
+        self._hide_extras()
+        if changed:
             self.draw_idle()
+
+    def _place(self, note, ax, x: float, y: float) -> None:
+        """Offset the tooltip away from whichever edge it is nearest."""
+        left, right = sorted(ax.get_xlim())
+        low, high = sorted(ax.get_ylim())
+        dx = 12 if (x - left) < (right - x) else -12
+        dy = 14 if (y - low) < (high - y) else -14
+        note.set_ha("left" if dx > 0 else "right")
+        note.set_va("bottom" if dy > 0 else "top")
+        note.set_position((dx, dy))
+
+    def _on_hover(self, event) -> None:
+        if event.inaxes is None or event.xdata is None:
+            self._hide_hover()
             return
-        if note.get_visible():
-            note.set_visible(False)
-            self.draw_idle()
+        found = self._hover_at(event)
+        if found is None:
+            self._hide_hover()
+            return
+        text, (x, y) = found
+        note = self._ensure_annotation(event.inaxes)
+        note.xy = (x, y)
+        self._place(note, event.inaxes, x, y)
+        note.set_text(text)
+        note.set_visible(True)
+        self.draw_idle()
 
 
 class BarChart(Chart):
     """Horizontal bars for ranked magnitude - the default for a leaderboard."""
 
-    def plot(
+    def _draw(
         self,
         labels: list[str],
         values: list[float],
@@ -164,58 +279,64 @@ class BarChart(Chart):
         highlight: int | None = None,
     ) -> None:
         if not labels:
-            self.empty()
+            self._draw_empty()
             return
         p = self.palette
         ax = self.new_axes()
-        positions = range(len(labels))
+        positions = list(range(len(labels)))
         # Rank order reads top-to-bottom, so the axis is inverted rather than
         # the data reversed.
-        bar_colors = colors or [color or p.accent] * len(labels)
+        bar_colors = list(colors or [color or p.accent] * len(labels))
         if highlight is not None:
             bar_colors = [
                 c if i == highlight else p.ink_muted for i, c in enumerate(bar_colors)
             ]
         bars = ax.barh(
-            list(positions), values,
-            color=bar_colors, height=0.68, zorder=2,
+            positions, values,
+            color=bar_colors, height=BAR_HEIGHT, zorder=2,
             # A 2px surface gap keeps adjacent fills from touching.
             linewidth=1.0, edgecolor=p.surface,
         )
-        ax.set_yticks(list(positions))
+        ax.set_yticks(positions)
         ax.set_yticklabels(labels, fontsize=9.5)
         ax.invert_yaxis()
         if xlabel:
-            ax.set_xlabel(xlabel, fontsize=9)
+            ax.set_xlabel(xlabel, fontsize=LABEL_SIZE)
         self.grid(ax, "x")
 
-        # Direct-label the ends; a leaderboard is read for its numbers.
-        span = max(values) - min(0, min(values)) if values else 1
-        offset = span * 0.015 if span else 0.1
+        # Direct-label the ends; a leaderboard is read for its numbers, and on
+        # the light palette some slots sit under 3:1 against the surface, so a
+        # readable label is what carries the value rather than the fill.
+        span = (max(values) - min(0, min(values))) or 1
+        offset = span * 0.015
         for bar, value in zip(bars, values):
+            negative = value < 0
             ax.text(
-                bar.get_width() + offset,
+                bar.get_width() + (-offset if negative else offset),
                 bar.get_y() + bar.get_height() / 2,
                 value_format.format(value),
-                va="center", ha="left",
-                fontsize=9, color=p.ink_secondary,
+                va="center", ha="right" if negative else "left",
+                fontsize=LABEL_SIZE, color=p.ink_secondary,
             )
-        ax.margins(x=0.13)
+        ax.margins(x=0.16 if any(v < 0 for v in values) else 0.13)
+        # Labels formatted as a percentage mean the axis must be too, or the
+        # bar reads "19.7%" against a scale that says 0.2.
+        if "%" in value_format:
+            ax.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
         self.register_hover(
-            bars, tooltips or [f"{l}: {value_format.format(v)}" for l, v in zip(labels, values)]
+            bars,
+            tooltips or [
+                f"{label}: {value_format.format(v)}"
+                for label, v in zip(labels, values)
+            ],
         )
         self.draw_idle()
-
-
-def money(value: float) -> str:
-    """Currency with the sign ahead of the symbol: -$40, not $-40."""
-    return f"{'-' if value < 0 else ''}${abs(value):,.0f}"
 
 
 class DivergingBarChart(Chart):
     """Bars around zero, for a signed quantity such as money up or down."""
 
-    def plot(
+    def _draw(
         self,
         labels: list[str],
         values: list[float],
@@ -225,15 +346,15 @@ class DivergingBarChart(Chart):
         tooltips: list[str] | None = None,
     ) -> None:
         if not labels:
-            self.empty()
+            self._draw_empty()
             return
         p = self.palette
         ax = self.new_axes()
         positions = list(range(len(labels)))
         # Two poles with a neutral zero line: up is the cool pole, down warm.
-        colors = [p.series[0] if v >= 0 else p.series[7] for v in values]
+        colors = [p.series_color(0) if v >= 0 else p.series_color(7) for v in values]
         bars = ax.barh(
-            positions, values, color=colors, height=0.68, zorder=2,
+            positions, values, color=colors, height=BAR_HEIGHT, zorder=2,
             linewidth=1.0, edgecolor=p.surface,
         )
         ax.axvline(0, color=p.baseline, linewidth=1.0, zorder=1)
@@ -241,31 +362,42 @@ class DivergingBarChart(Chart):
         ax.set_yticklabels(labels, fontsize=9.5)
         ax.invert_yaxis()
         if xlabel:
-            ax.set_xlabel(xlabel, fontsize=9)
+            ax.set_xlabel(xlabel, fontsize=LABEL_SIZE)
         self.grid(ax, "x")
 
         fmt = value_format if callable(value_format) else value_format.format
         span = (max(values) - min(values)) or 1
+        inset = span * 0.015
         for bar, value in zip(bars, values):
-            inset = span * 0.015
             ax.text(
                 bar.get_width() + (inset if value >= 0 else -inset),
                 bar.get_y() + bar.get_height() / 2,
                 fmt(value),
                 va="center", ha="left" if value >= 0 else "right",
-                fontsize=9, color=p.ink_secondary,
+                fontsize=LABEL_SIZE, color=p.ink_secondary,
             )
         ax.margins(x=0.18)
         self.register_hover(
-            bars, tooltips or [f"{l}: {fmt(v)}" for l, v in zip(labels, values)]
+            bars,
+            tooltips or [f"{label}: {fmt(v)}" for label, v in zip(labels, values)],
         )
         self.draw_idle()
 
 
 class LineChart(Chart):
-    """Change over time. One axis; series identity by fixed colour slot."""
+    """Change over time. One axis; series identity by fixed colour slot.
 
-    def plot(
+    Hovering snaps to the nearest week and reads every series at once, with a
+    guide line down the plot, because comparing players at one week is the
+    question this chart exists to answer.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._columns: dict[float, list[tuple[str, float]]] = {}
+        self._guide = None
+
+    def _draw(
         self,
         x: list[int],
         series: list[tuple[str, list[float | None]]],
@@ -275,12 +407,15 @@ class LineChart(Chart):
         direct_label: bool | None = None,
         reference: tuple[str, list[float]] | None = None,
         integer_x: bool = True,
+        zero_baseline: bool = False,
     ) -> None:
         if not x or not series:
-            self.empty()
+            self._draw_empty()
             return
         p = self.palette
         ax = self.new_axes()
+        self._columns = {}
+        self._guide = None
 
         if reference is not None:
             name, values = reference
@@ -289,56 +424,170 @@ class LineChart(Chart):
                 color=p.ink_muted, linewidth=1.4, linestyle=(0, (4, 3)),
                 zorder=2, label=name,
             )
+            for xi, v in zip(x, values):
+                if v is not None:
+                    self._columns.setdefault(xi, []).append((name, v))
 
         # Direct labels are the default at small series counts; past four the
         # legend carries identity on its own.
         if direct_label is None:
             direct_label = len(series) <= 4
 
+        ends: list[tuple[str, float, float, str]] = []   # name, x, y, colour
         for slot, (name, values) in enumerate(series):
             color = p.series_color(slot)
             points = [(xi, v) for xi, v in zip(x, values) if v is not None]
             if not points:
                 continue
-            xs, ys = zip(*points)
-            line, = ax.plot(
+            # Missing weeks stay in the sequence as NaN so the line breaks
+            # there. Dropping them would draw a straight segment across the
+            # gap, which reads as data the player does not have.
+            xs = list(x)
+            ys = [float("nan") if v is None else v for v in values]
+            ax.plot(
                 xs, ys,
                 color=color, linewidth=LINE_WIDTH,
                 marker="o", markersize=MARKER_SIZE,
+                # A 2px surface ring keeps overlapping markers readable.
                 markeredgecolor=p.surface, markeredgewidth=1.2,
                 label=name, zorder=3 + slot,
             )
-            self.register_hover(line, [f"{name}\nWeek {xi}: {v:g}" for xi, v in points])
-            if direct_label:
-                ax.annotate(
-                    name,
-                    xy=(xs[-1], ys[-1]),
-                    xytext=(7, 0), textcoords="offset points",
-                    color=color, fontsize=9, va="center", fontweight="600",
-                )
+            for xi, v in points:
+                self._columns.setdefault(xi, []).append((name, v))
+            # Anchored to the last week the player actually has, not to the
+            # end of the axis, which may be a gap for them.
+            ends.append((name, points[-1][0], points[-1][1], color))
 
-        ax.set_xlabel(xlabel, fontsize=9)
+        # The guide is created once per draw and simply moved on hover.
+        self._guide = ax.axvline(
+            x[0], color=p.baseline, linewidth=1.0, zorder=1, visible=False,
+        )
+
+        ax.set_xlabel(xlabel, fontsize=LABEL_SIZE)
         if ylabel:
-            ax.set_ylabel(ylabel, fontsize=9)
+            ax.set_ylabel(ylabel, fontsize=LABEL_SIZE)
         if integer_x:
-            ax.set_xticks(x)
+            ax.set_xticks(self._thin(x))
+        # Wins, ranks and counts are whole numbers; a -2.5 tick on them
+        # describes a value no one can have.
+        plotted = [v for _, values in series for v in values if v is not None]
+        if reference is not None:
+            plotted += [v for v in reference[1] if v is not None]
+        if plotted and all(float(v).is_integer() for v in plotted):
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
+        # For a count of something (players left, say), an axis that starts
+        # partway up makes a small number look like none at all.
+        if zero_baseline and plotted and min(plotted) >= 0:
+            ax.set_ylim(bottom=0)
         self.grid(ax, "y")
         if direct_label:
             ax.margins(x=0.13)
+            # A reference line (a pool average, a buy-in) is usually the one
+            # the chart is read against, so it is named at its end too.
+            if reference is not None:
+                ref_points = [(xi, v) for xi, v in zip(x, reference[1]) if v is not None]
+                if ref_points:
+                    ends.append((reference[0], *ref_points[-1], p.ink_muted))
+            self._label_ends(ax, ends)
         self.legend(ax)
         self.draw_idle()
+
+    def _label_ends(self, ax, ends: list[tuple[str, float, float, str]]) -> None:
+        """Name each line at its end, nudging labels apart where they'd collide.
+
+        Lines in a close race finish at nearly the same value, and labels
+        placed exactly at each end then print on top of one another. Labels
+        are pushed apart to a minimum spacing and joined back to their line by
+        a short connector in the line's colour.
+
+        The text itself is ink, not the series colour: on the light palette
+        several slots sit under 3:1 against the surface, too faint to read as
+        text. The connector and the line end carry identity instead.
+        """
+        if not ends:
+            return
+        ax.relim()
+        ax.autoscale_view()
+        low, high = sorted(ax.get_ylim())
+        gap = (high - low) * 0.075 or 1.0
+
+        # Top to bottom, each label at least `gap` below the one above it.
+        ordered = sorted(ends, key=lambda e: -e[2])
+        placed: list[float] = []
+        for _, _, y, _ in ordered:
+            placed.append(y if not placed else min(y, placed[-1] - gap))
+        # If the stack ran off the bottom, lift it back inside the axes.
+        deficit = (low + gap * 0.5) - placed[-1]
+        if deficit > 0:
+            placed = [min(y + deficit, high) for y in placed]
+
+        text_space = mtransforms.offset_copy(
+            ax.transData, fig=self.figure, x=9, units="points"
+        )
+        for (name, x, y, color), label_y in zip(ordered, placed):
+            # A label level with its line gets a short dash; a nudged one gets
+            # a slanted connector back to where its line actually ends.
+            ax.annotate(
+                name,
+                xy=(x, y),
+                xytext=(x, label_y),
+                textcoords=text_space,
+                color=self.palette.ink_secondary,
+                fontsize=LABEL_SIZE, va="center", fontweight="semibold",
+                arrowprops=dict(
+                    arrowstyle="-", color=color, linewidth=1.2,
+                    shrinkA=3, shrinkB=2,
+                ),
+                annotation_clip=False,
+            )
+
+    @staticmethod
+    def _thin(values: list[int]) -> list[int]:
+        """Every week if they fit, otherwise every nth, always keeping the last."""
+        if len(values) <= MAX_X_TICKS:
+            return list(values)
+        step = -(-len(values) // MAX_X_TICKS)   # ceiling division
+        kept = values[::step]
+        if values[-1] not in kept:
+            kept.append(values[-1])
+        return kept
+
+    # ---- hover -----------------------------------------------------------
+    def _hover_at(self, event):
+        # `_on_hover` screens these out, but `_hover_at` is also a hook a
+        # subclass or a test may call directly.
+        if not self._columns or event.xdata is None or event.ydata is None:
+            return None
+        nearest = min(self._columns, key=lambda xi: abs(xi - event.xdata))
+        # Snap only within half a step, so the tooltip is not sticky off the end.
+        keys = sorted(self._columns)
+        step = min((b - a for a, b in zip(keys, keys[1:])), default=1.0) or 1.0
+        if abs(nearest - event.xdata) > step * 0.5:
+            return None
+        rows = self._columns[nearest]
+        text = "\n".join(
+            [f"Week {nearest:g}"] + [f"{name}: {value:g}" for name, value in rows]
+        )
+        closest = min(rows, key=lambda row: abs(row[1] - event.ydata))[1]
+        if self._guide is not None:
+            self._guide.set_xdata([nearest, nearest])
+            self._guide.set_visible(True)
+        return text, (nearest, closest)
+
+    def _hide_extras(self) -> None:
+        if self._guide is not None and self._guide.get_visible():
+            self._guide.set_visible(False)
+            self.draw_idle()
 
 
 class RankChart(LineChart):
     """A line chart with rank 1 at the top and whole-number positions."""
 
-    def plot(self, *args, **kwargs) -> None:  # type: ignore[override]
-        super().plot(*args, **kwargs)
+    def _draw(self, *args, **kwargs) -> None:
+        super()._draw(*args, **kwargs)
         ax = self.figure.axes[0] if self.figure.axes else None
         if ax is None or not ax.has_data():
             return
-        from matplotlib.ticker import MaxNLocator
-
         ax.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
         lo, hi = ax.get_ylim()
         # An unchanged position collapses the axis onto one value; give it room.
@@ -352,7 +601,7 @@ class RankChart(LineChart):
 class HistogramChart(Chart):
     """Distribution of a single measure across the pool."""
 
-    def plot(
+    def _draw(
         self,
         values: list[float],
         *,
@@ -362,7 +611,7 @@ class HistogramChart(Chart):
         mean_line: bool = True,
     ) -> None:
         if not values:
-            self.empty()
+            self._draw_empty()
             return
         p = self.palette
         ax = self.new_axes()
@@ -372,7 +621,8 @@ class HistogramChart(Chart):
             values, bins=edges, color=p.accent, zorder=2,
             linewidth=1.0, edgecolor=p.surface,
         )
-        if mean_line and values:
+        tallest = max(counts) if len(counts) else 1
+        if mean_line:
             mean = sum(values) / len(values)
             ax.axvline(
                 mean, color=p.ink_muted, linewidth=1.4,
@@ -380,26 +630,66 @@ class HistogramChart(Chart):
             )
             ax.annotate(
                 f"avg {mean:.1f}",
-                xy=(mean, max(counts) if len(counts) else 1),
+                xy=(mean, tallest),
                 xytext=(6, -4), textcoords="offset points",
-                color=p.ink_secondary, fontsize=9,
+                color=p.ink_secondary, fontsize=LABEL_SIZE,
             )
-        ax.set_xlabel(xlabel, fontsize=9)
-        ax.set_ylabel(ylabel, fontsize=9)
-        ax.set_xticks(range(lo, hi + 1))
+        ax.set_xlabel(xlabel, fontsize=LABEL_SIZE)
+        ax.set_ylabel(ylabel, fontsize=LABEL_SIZE)
+        ticks = list(range(lo, hi + 1))
+        # A wide spread would otherwise print a tick per unit and overlap them.
+        if len(ticks) > MAX_X_TICKS:
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=MAX_X_TICKS))
+        else:
+            ax.set_xticks(ticks)
+        # Whole players, so never a half-player tick on the count axis.
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=5))
         self.grid(ax, "y")
         centers = [(edges_out[i] + edges_out[i + 1]) / 2 for i in range(len(counts))]
         self.register_hover(
             patches,
-            [f"{int(c)} player(s) on {center:g}" for c, center in zip(counts, centers)],
+            [
+                f"{int(c)} player{'' if c == 1 else 's'} on {center:g}"
+                for c, center in zip(counts, centers)
+            ],
         )
         self.draw_idle()
 
 
-class HeatmapChart(Chart):
-    """A sequential grid - one hue, light to dark, for magnitude."""
+def _neutral(p: Palette) -> str:
+    """The grey at the middle of a diverging scale: visible, but claiming nothing."""
+    return mix(p.ink, p.surface, 0.14)
 
-    def plot(
+
+def _diverging_color(p: Palette, value: float, low: float, center: float, high: float) -> str:
+    """Two poles around a neutral grey - blue above the centre, red below.
+
+    The same pair the diverging bar chart uses, so "above" and "below" read
+    the same way everywhere in the app.
+    """
+    if value >= center:
+        span, pole = (high - center) or 1, p.series_color(0)
+        fraction = (value - center) / span
+    else:
+        span, pole = (center - low) or 1, p.series_color(7)
+        fraction = (center - value) / span
+    return mix(pole, _neutral(p), max(0.0, min(1.0, fraction)))
+
+
+class HeatmapChart(Chart):
+    """A grid of values - sequential for magnitude, diverging around a centre.
+
+    Pass `center` when the value has a meaningful middle (a 50% head-to-head
+    record, zero net) and the grid switches to two hues around a neutral
+    grey: then "above" and "below" read at a glance, which one ramp from pale
+    to dark cannot show.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._heatmap: tuple | None = None
+
+    def _draw(
         self,
         row_labels: list[str],
         col_labels: list[str],
@@ -408,70 +698,216 @@ class HeatmapChart(Chart):
         vmax: float | None = None,
         tooltip_fn=None,
         cell_text: bool = False,
+        key_label: str = "",
+        center: float | None = None,
+        vmin: float | None = None,
+        cell_format: str = "{:g}",
+        tick_rotation: float = 0,
     ) -> None:
         if not row_labels or not col_labels:
-            self.empty()
+            self._draw_empty()
             return
         p = self.palette
         ax = self.new_axes()
-        top = vmax or max(
-            (v for row in values for v in row if v is not None), default=1
-        ) or 1
+        present = [v for row in values for v in row if v is not None]
+        top = vmax or max(present, default=1) or 1
+        bottom = vmin if vmin is not None else min(present, default=0)
 
         for r, row in enumerate(values):
             for c, value in enumerate(row):
                 if value is None:
-                    color = p.raised
+                    # On a diverging grid a gap is usually structural (a player
+                    # against themselves), so it drops back to the surface.
+                    color = p.surface if center is not None else p.raised
+                elif center is not None:
+                    color = _diverging_color(p, value, bottom, center, top)
                 else:
                     color = ramp_color(p, value / top if top else 0)
                 # A 2px surface gap keeps neighbouring cells legible.
                 ax.add_patch(
-                    matplotlib.patches.Rectangle(
+                    mpatches.Rectangle(
                         (c + 0.02, r + 0.02), 0.96, 0.96,
                         facecolor=color, edgecolor=p.surface, linewidth=1.2,
                     )
                 )
                 if cell_text and value is not None:
-                    fraction = value / top if top else 0
-                    ink = "#ffffff" if (p.name == "light") == (fraction > 0.55) else p.ink
                     ax.text(
-                        c + 0.5, r + 0.5, f"{value:g}",
-                        ha="center", va="center", fontsize=8.5, color=ink,
+                        c + 0.5, r + 0.5, cell_format.format(value),
+                        ha="center", va="center", fontsize=8.5,
+                        color=_ink_on(color),
                     )
 
         ax.set_xlim(0, len(col_labels))
         ax.set_ylim(0, len(row_labels))
         ax.invert_yaxis()
         ax.set_xticks([i + 0.5 for i in range(len(col_labels))])
-        ax.set_xticklabels(col_labels, fontsize=9)
+        ax.set_xticklabels(
+            col_labels, fontsize=LABEL_SIZE, rotation=tick_rotation,
+            ha="left" if tick_rotation else "center",
+            rotation_mode="anchor" if tick_rotation else "default",
+        )
         ax.set_yticks([i + 0.5 for i in range(len(row_labels))])
-        ax.set_yticklabels(row_labels, fontsize=9)
+        ax.set_yticklabels(row_labels, fontsize=LABEL_SIZE)
         ax.xaxis.set_ticks_position("top")
         for side in ("left", "bottom"):
             ax.spines[side].set_visible(False)
-        ax.tick_params(colors=p.ink_muted, labelsize=9, length=0)
+        ax.tick_params(colors=p.ink_muted, labelsize=LABEL_SIZE, length=0)
 
-        self._heatmap = (row_labels, col_labels, values, tooltip_fn)
-        self.mpl_connect("motion_notify_event", self._heat_hover)
-        self.draw_idle()
-
-    def _heat_hover(self, event) -> None:
-        data = getattr(self, "_heatmap", None)
-        if data is None or event.inaxes is None or event.xdata is None:
-            return
-        rows, cols, values, tooltip_fn = data
-        c, r = int(event.xdata), int(event.ydata)
-        note = self._ensure_annotation(event.inaxes)
-        if 0 <= r < len(rows) and 0 <= c < len(cols):
-            value = values[r][c]
-            text = (
-                tooltip_fn(rows[r], cols[c], value)
-                if tooltip_fn
-                else f"{rows[r]} - {cols[c]}: {'-' if value is None else f'{value:g}'}"
-            )
-            note.xy = (event.xdata, event.ydata)
-            note.set_text(text)
-            note.set_visible(True)
+        if center is not None:
+            self._colour_key(ax, top, key_label, low=bottom, center=center)
         else:
-            note.set_visible(False)
+            self._colour_key(ax, top, key_label)
+        self._heatmap = (row_labels, col_labels, values, tooltip_fn)
         self.draw_idle()
+
+    def _colour_key(
+        self, ax, top: float, key_label: str,
+        *, low: float = 0.0, center: float | None = None,
+    ) -> None:
+        """A shaded strip saying which end of the scale means more.
+
+        Without it the grid asks the reader to guess whether the pale cells or
+        the strong ones are the high scores, and the answer flips with theme.
+        """
+        p = self.palette
+        if center is not None:
+            # Three steps either side of the neutral middle.
+            below = [
+                _diverging_color(p, center - (center - low) * f, low, center, top)
+                for f in (1.0, 2 / 3, 1 / 3)
+            ]
+            above = [
+                _diverging_color(p, center + (top - center) * f, low, center, top)
+                for f in (1 / 3, 2 / 3, 1.0)
+            ]
+            steps = below + [_neutral(p)] + above
+            bounds = [low + i * (top - low) / len(steps) for i in range(len(steps) + 1)]
+            ticks = [low, center, top]
+        else:
+            steps = list(p.sequential) or [p.accent]
+            bounds = [i * top / len(steps) for i in range(len(steps) + 1)]
+            ticks = [0, top]
+        mappable = ScalarMappable(
+            norm=BoundaryNorm(bounds, len(steps)), cmap=ListedColormap(steps)
+        )
+        bar = self.figure.colorbar(
+            mappable, ax=ax, orientation="horizontal",
+            fraction=0.05, pad=0.04, aspect=40,
+        )
+        bar.outline.set_visible(False)
+        bar.ax.tick_params(colors=p.ink_muted, labelsize=8.5, length=0)
+        bar.set_ticks(ticks)
+        bar.ax.set_xlabel(
+            key_label or f"{ramp_direction(p)} is more",
+            fontsize=8.5, color=p.ink_muted,
+        )
+
+    def _hover_at(self, event):
+        if self._heatmap is None or event.xdata is None or event.ydata is None:
+            return None
+        rows, cols, values, tooltip_fn = self._heatmap
+        c, r = int(event.xdata), int(event.ydata)
+        if not (0 <= r < len(rows) and 0 <= c < len(cols)):
+            return None
+        value = values[r][c]
+        text = (
+            tooltip_fn(rows[r], cols[c], value)
+            if tooltip_fn
+            else f"{rows[r]} - {cols[c]}: {'-' if value is None else f'{value:g}'}"
+        )
+        return text, (event.xdata, event.ydata)
+
+
+class ScatterChart(Chart):
+    """Two measures per entity, one dot each, optionally split into quadrants.
+
+    Every dot is the same colour: position carries the meaning, and a colour
+    per player would repeat the names in a code nobody can hold in their head
+    across twenty dots. Identity comes from direct labels on the dots worth
+    naming (the ones furthest from the pack) and from hover on every dot.
+    """
+
+    def _draw(
+        self,
+        points: list[tuple[str, float, float]],
+        *,
+        xlabel: str = "",
+        ylabel: str = "",
+        quadrants: tuple[float, float] | None = None,
+        quadrant_labels: tuple[str, str, str, str] | None = None,
+        label_count: int = 6,
+        highlight: str | None = None,
+        tooltips: list[str] | None = None,
+    ) -> None:
+        """`quadrant_labels` run top-left, top-right, bottom-left, bottom-right."""
+        if not points:
+            self._draw_empty()
+            return
+        p = self.palette
+        ax = self.new_axes()
+        names = [name for name, _, _ in points]
+        xs = [x for _, x, _ in points]
+        ys = [y for _, _, y in points]
+
+        colors = [
+            p.series_color(1) if highlight and name == highlight else p.accent
+            for name in names
+        ]
+        dots = ax.scatter(
+            xs, ys, s=64, c=colors, zorder=3,
+            # A 2px surface ring keeps overlapping dots apart.
+            edgecolors=p.surface, linewidths=1.2,
+        )
+        if xlabel:
+            ax.set_xlabel(xlabel, fontsize=LABEL_SIZE)
+        if ylabel:
+            ax.set_ylabel(ylabel, fontsize=LABEL_SIZE)
+        self.grid(ax, "both")
+        ax.margins(0.12)
+
+        if quadrants is not None:
+            qx, qy = quadrants
+            divider = dict(color=p.baseline, linewidth=1.0, linestyle=(0, (4, 3)), zorder=1)
+            ax.axvline(qx, **divider)
+            ax.axhline(qy, **divider)
+            if quadrant_labels:
+                corners = ((0.02, 0.98, "left", "top"), (0.98, 0.98, "right", "top"),
+                           (0.02, 0.02, "left", "bottom"), (0.98, 0.02, "right", "bottom"))
+                for text, (cx, cy, ha, va) in zip(quadrant_labels, corners):
+                    ax.text(cx, cy, text, transform=ax.transAxes, ha=ha, va=va,
+                            fontsize=8.5, color=p.ink_muted, style="italic")
+
+        self._label_outliers(ax, points, label_count, highlight)
+        self.register_hover(
+            dots,
+            tooltips or [f"{n}\n{xlabel}: {x:.2f}\n{ylabel}: {y:.2f}" for n, x, y in points],
+        )
+        self.draw_idle()
+
+    def _label_outliers(self, ax, points, count: int, highlight: str | None) -> None:
+        """Name the dots furthest from the middle of the pack.
+
+        Distance is measured in units of each axis's own spread, so a measure
+        that runs to 12 does not drown out one that runs to 3.
+        """
+        if count <= 0 or len(points) < 2:
+            return
+        xs = [x for _, x, _ in points]
+        ys = [y for _, _, y in points]
+        mx, my = statistics.fmean(xs), statistics.fmean(ys)
+        sx = statistics.pstdev(xs) or 1.0
+        sy = statistics.pstdev(ys) or 1.0
+        ranked = sorted(
+            points,
+            key=lambda pt: -(((pt[1] - mx) / sx) ** 2 + ((pt[2] - my) / sy) ** 2),
+        )
+        chosen = {name for name, _, _ in ranked[:count]}
+        if highlight:
+            chosen.add(highlight)
+        for name, x, y in points:
+            if name in chosen:
+                ax.annotate(
+                    name, xy=(x, y), xytext=(6, 5), textcoords="offset points",
+                    fontsize=8.5, color=self.palette.ink_secondary,
+                    fontweight="semibold" if name == highlight else "normal",
+                )
