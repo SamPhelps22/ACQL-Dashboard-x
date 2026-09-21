@@ -13,6 +13,17 @@ from pathlib import Path
 from .config import BIG_LOSER_PICKS
 
 
+def same_team(a: object, b: object) -> bool:
+    """Team names as the sheet writes them: stray spaces, any capitalisation.
+
+    Picks are stored as typed - " LOS ANGELES RAMS", " tampa bay" - with the
+    case following home or away, while results are stored cleanly. Two names
+    are the same team when they match after collapsing spaces and case.
+    """
+    norm = lambda s: " ".join(str(s or "").split()).casefold()
+    return bool(norm(a)) and norm(a) == norm(b)
+
+
 @dataclass
 class Game:
     """One matchup on a week's slate."""
@@ -100,8 +111,22 @@ class Week:
         return sorted(k for k, l in self.lines.items() if l.total_wins == top)
 
     def correct_count(self, game_index: int) -> int:
-        """How many players got this game right - the 'trap game' signal."""
-        return sum(1 for l in self.lines.values() if l.correct_picks.get(game_index))
+        """How many players got this game right - the 'trap game' signal.
+
+        A line's `correct_picks` only holds correct picks once the week has
+        been graded (wrong picks are deleted from the sheet). Before that -
+        and for any game still to be played - it holds every pick, right or
+        wrong. Counting non-empty picks therefore reported the whole pool as
+        right on ungraded games. Comparing each pick with the result gives
+        the true count at every stage, graded or not.
+        """
+        game = next((g for g in self.games if g.index == game_index), None)
+        if game is None or not game.played:
+            return 0
+        return sum(
+            1 for line in self.lines.values()
+            if same_team(line.correct_picks.get(game_index), game.winner)
+        )
 
 
 @dataclass

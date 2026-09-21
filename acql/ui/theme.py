@@ -90,6 +90,24 @@ PALETTES = {"dark": DARK, "light": LIGHT}
 FONT_STACK = '"Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif'
 
 
+def mix(fg: str, bg: str, amount: float) -> str:
+    """Blend `fg` over `bg` (both #rrggbb); `amount` is how much of `fg` shows.
+
+    Solid blended colours are used for hover and active states instead of
+    translucent ones: Qt stylesheets read alpha inconsistently, and a solid
+    colour renders the same everywhere.
+    """
+    def channels(colour: str) -> tuple[int, ...]:
+        h = colour.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    blended = (
+        round(b + (f - b) * amount)
+        for f, b in zip(channels(fg), channels(bg))
+    )
+    return "#{:02x}{:02x}{:02x}".format(*blended)
+
+
 def ramp_color(palette: Palette, fraction: float) -> str:
     """Pick a sequential step for a 0..1 magnitude.
 
@@ -113,6 +131,8 @@ def ramp_direction(palette: Palette) -> str:
 
 def stylesheet(p: Palette) -> str:
     """Qt stylesheet for the whole application."""
+    hover = mix(p.ink, p.surface, 0.07)       # neutral hover wash
+    active = mix(p.accent, p.surface, 0.18)   # the current page in the sidebar
     return f"""
     * {{ font-family: {FONT_STACK}; }}
 
@@ -121,6 +141,8 @@ def stylesheet(p: Palette) -> str:
         color: {p.ink};
         font-size: 13px;
     }}
+    /* Text sits on whatever surface is behind it, not on a plane-coloured box. */
+    QLabel, QCheckBox, QRadioButton {{ background: transparent; }}
 
     QMainWindow, QDialog {{ background: {p.plane}; }}
 
@@ -131,34 +153,51 @@ def stylesheet(p: Palette) -> str:
     }}
     #SidebarTitle {{
         color: {p.ink};
-        font-size: 17px;
+        font-size: 18px;
         font-weight: 700;
-        padding: 18px 16px 2px 16px;
+        padding: 22px 24px 2px 24px;
     }}
     #SidebarSubtitle {{
         color: {p.ink_muted};
         font-size: 12px;
-        padding: 0 16px 14px 16px;
+        padding: 0 24px 16px 24px;
     }}
-    QPushButton#NavButton {{
+    #Sidebar QPushButton#NavButton {{
         background: transparent;
         border: none;
-        border-left: 3px solid transparent;
+        border-radius: 8px;
         color: {p.ink_secondary};
         text-align: left;
-        padding: 11px 16px;
+        padding: 10px 14px;
+        margin: 1px 10px;
         font-size: 13.5px;
     }}
-    QPushButton#NavButton:hover {{
-        background: {p.raised};
+    #Sidebar QPushButton#NavButton:hover,
+    #Sidebar QPushButton#NavButton:focus {{
+        background: {hover};
         color: {p.ink};
     }}
-    QPushButton#NavButton:checked {{
-        background: {p.raised};
-        border-left: 3px solid {p.accent};
+    #Sidebar QPushButton#NavButton:checked {{
+        background: {active};
         color: {p.ink};
         font-weight: 600;
     }}
+
+    /* Refresh / theme / jump: quiet outlines, so the nav stays the loudest thing. */
+    #Sidebar QPushButton {{
+        background: transparent;
+        border: 1px solid {p.grid};
+        border-radius: 8px;
+        color: {p.ink_secondary};
+        text-align: left;
+        padding: 7px 12px;
+    }}
+    #Sidebar QPushButton:hover {{
+        background: {hover};
+        border-color: {p.baseline};
+        color: {p.ink};
+    }}
+    #Sidebar QPushButton:disabled {{ color: {p.ink_muted}; }}
 
     /* ---- cards & headings ---- */
     #Card {{
@@ -166,16 +205,55 @@ def stylesheet(p: Palette) -> str:
         border: 1px solid {p.grid};
         border-radius: 10px;
     }}
-    #PageTitle {{ font-size: 21px; font-weight: 700; color: {p.ink}; }}
+    /* Headline numbers sit one step above the content cards. */
+    #StatTile {{
+        background: {p.raised};
+        border: 1px solid {p.grid};
+        border-radius: 12px;
+    }}
+    /* An award tile is a stat tile with a hairline down its left edge tinted
+       by tone, so a good or bad award reads at a glance without the text
+       itself having to be coloured. */
+    #AwardTile {{
+        background: {p.raised};
+        border: 1px solid {p.grid};
+        border-left: 3px solid {p.baseline};
+        border-radius: 10px;
+    }}
+    #AwardTile[tone="good"] {{ border-left-color: {p.good}; }}
+    #AwardTile[tone="bad"] {{ border-left-color: {p.critical}; }}
+    #AwardIcon {{ font-size: 15px; }}
+    #AwardWinner {{ font-size: 16px; font-weight: 700; color: {p.ink}; }}
+    #AwardDetail {{ font-size: 11.5px; color: {p.ink_muted}; }}
+    /* The number reads as a chip so it never competes with the name. */
+    #AwardValue {{
+        background: {mix(p.ink, p.raised, 0.08)};
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: {p.ink_secondary};
+    }}
+    #AwardValue[tone="good"] {{
+        background: {mix(p.good, p.raised, 0.16)};
+        color: {p.good};
+    }}
+    #AwardValue[tone="bad"] {{
+        background: {mix(p.critical, p.raised, 0.16)};
+        color: {p.critical};
+    }}
+
+    #PageTitle {{ font-size: 24px; font-weight: 700; color: {p.ink}; }}
     #PageSubtitle {{ font-size: 13px; color: {p.ink_muted}; }}
     #CardTitle {{
-        font-size: 11px;
-        font-weight: 700;
-        color: {p.ink_muted};
-        letter-spacing: 0.9px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: {p.ink_secondary};
     }}
-    #StatValue {{ font-size: 30px; font-weight: 700; color: {p.ink}; }}
+    #StatValue {{ font-size: 32px; font-weight: 700; color: {p.ink}; }}
     #StatDetail {{ font-size: 12px; color: {p.ink_secondary}; }}
+    #StatDetail[tone="good"] {{ color: {p.good}; font-weight: 600; }}
+    #StatDetail[tone="bad"] {{ color: {p.critical}; font-weight: 600; }}
     #Good {{ color: {p.good}; font-weight: 600; }}
     #Bad {{ color: {p.critical}; font-weight: 600; }}
     #Muted {{ color: {p.ink_muted}; }}
@@ -186,7 +264,7 @@ def stylesheet(p: Palette) -> str:
         alternate-background-color: {p.raised};
         gridline-color: {p.grid};
         border: 1px solid {p.grid};
-        border-radius: 8px;
+        border-radius: 10px;
         selection-background-color: {p.selection};
         selection-color: {p.ink};
         font-size: 13px;
@@ -195,12 +273,11 @@ def stylesheet(p: Palette) -> str:
     QHeaderView::section {{
         background: {p.raised};
         color: {p.ink_muted};
-        padding: 8px;
+        padding: 9px 10px;
         border: none;
         border-bottom: 1px solid {p.grid};
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.5px;
+        font-size: 12px;
+        font-weight: 600;
     }}
     QHeaderView::section:hover {{ color: {p.ink}; }}
     QTableCornerButton::section {{ background: {p.raised}; border: none; }}
@@ -214,7 +291,7 @@ def stylesheet(p: Palette) -> str:
         padding: 7px 15px;
         font-size: 13px;
     }}
-    QPushButton:hover {{ border-color: {p.accent}; }}
+    QPushButton:hover, QPushButton:focus {{ border-color: {p.accent}; }}
     QPushButton:disabled {{ color: {p.ink_muted}; border-color: {p.grid}; }}
     QPushButton#Primary {{
         background: {p.accent};
@@ -233,6 +310,8 @@ def stylesheet(p: Palette) -> str:
         border-radius: 7px;
         padding: 6px 10px;
         min-height: 18px;
+        selection-background-color: {p.selection};
+        selection-color: {p.ink};
     }}
     QComboBox:focus, QLineEdit:focus, QSpinBox:focus {{ border-color: {p.accent}; }}
     QComboBox::drop-down {{ border: none; width: 22px; }}
@@ -244,6 +323,16 @@ def stylesheet(p: Palette) -> str:
         outline: none;
     }}
 
+    QListWidget {{
+        background: {p.surface};
+        border: 1px solid {p.grid};
+        border-radius: 8px;
+        outline: none;
+    }}
+    QListWidget::item {{ padding: 8px 12px; border-radius: 6px; }}
+    QListWidget::item:hover {{ background: {hover}; }}
+    QListWidget::item:selected {{ background: {p.selection}; color: {p.ink}; }}
+
     QTabWidget::pane {{ border: 1px solid {p.grid}; border-radius: 8px; top: -1px; }}
     QTabBar::tab {{
         background: transparent;
@@ -252,6 +341,7 @@ def stylesheet(p: Palette) -> str:
         border: none;
         border-bottom: 2px solid transparent;
     }}
+    QTabBar::tab:hover {{ color: {p.ink}; }}
     QTabBar::tab:selected {{ color: {p.ink}; border-bottom: 2px solid {p.accent}; }}
 
     QScrollArea {{ border: none; background: {p.plane}; }}
@@ -260,8 +350,12 @@ def stylesheet(p: Palette) -> str:
     QScrollBar::handle:vertical:hover {{ background: {p.ink_muted}; }}
     QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
     QScrollBar::handle:horizontal {{ background: {p.baseline}; border-radius: 5px; min-width: 30px; }}
+    QScrollBar::handle:horizontal:hover {{ background: {p.ink_muted}; }}
     QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
     QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+
+    QProgressBar {{ background: {p.grid}; border: none; border-radius: 4px; }}
+    QProgressBar::chunk {{ background: {p.accent}; border-radius: 4px; }}
 
     QToolTip {{
         background: {p.raised};
@@ -276,7 +370,29 @@ def stylesheet(p: Palette) -> str:
         border-radius: 8px;
         padding: 2px;
     }}
+
+    /* ---- quick switcher (Ctrl+K) ---- */
+    QDialog#CommandPalette {{
+        background: {p.surface};
+        border: 1px solid {p.baseline};
+    }}
+    QDialog#CommandPalette QLineEdit {{ font-size: 15px; padding: 10px 12px; }}
+    QDialog#CommandPalette QListWidget {{ background: transparent; border: none; }}
+    QDialog#CommandPalette QListWidget::item {{ color: {p.ink_secondary}; }}
+    QDialog#CommandPalette QListWidget::item:selected {{ color: {p.ink}; }}
+
+    /* ---- status bar ---- */
     QStatusBar {{ background: {p.surface}; color: {p.ink_muted}; border-top: 1px solid {p.grid}; }}
+    QStatusBar::item {{ border: none; }}
+    QStatusBar QPushButton {{
+        background: transparent;
+        border: none;
+        color: {p.accent};
+        font-weight: 600;
+        padding: 0 10px;
+    }}
+    QStatusBar QPushButton:hover {{ color: {p.ink}; text-decoration: underline; }}
+
     QSplitter::handle {{ background: {p.grid}; }}
     QCheckBox {{ spacing: 7px; }}
     """
