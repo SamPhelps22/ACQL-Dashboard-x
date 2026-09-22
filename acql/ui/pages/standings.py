@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
+from ... import analytics
 from ...models import Player, Season
 from ..charts import HeatmapChart, LineChart
 from ..widgets import Card, TableModel, make_table, section
@@ -12,9 +13,10 @@ from .base import Page
 
 HEADERS = [
     "#", "Player", "W", "L", "PCT", "GB", "Won", "Net $",
-    "This Wk", "Last 3", "Move", "Best", "Avg", "Weeks",
+    "This Wk", "Last 3", "Move", "Best", "Avg", "Lines", "Lines %", "Weeks",
 ]
-NUMERIC = {0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+NUMERIC = {0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+LINES_COLUMN, LINES_PCT_COLUMN = 13, 14
 NAME_COLUMN = 1
 GRID_ROWS = 24
 # Contenders in the race chart. Four is the most the lines can be labelled
@@ -134,7 +136,7 @@ class StandingsPage(Page):
         if not order:
             self._show_empty()
             return
-        self._update_table(order)
+        self._update_table(order, analytics.line_records(season))
         self._update_race(season, order)
         self._update_grid(season, order)
 
@@ -171,9 +173,12 @@ class StandingsPage(Page):
             return None
         return value
 
-    def _update_table(self, order: list[Player]) -> None:
+    def _update_table(self, order: list[Player], records: dict[str, analytics.LineRecord]) -> None:
+        pool_rate = analytics.pool_line_rate(records)
+        none = analytics.LineRecord(0, 0, 0)
         rows, tones, tooltips = [], {}, {}
         for r, player in enumerate(order):
+            lined = records.get(player.key, none)
             played = bool(player.weeks_played)
             move_text, move_tone, _ = self._movement(player)
             net = player.net_points
@@ -192,8 +197,16 @@ class StandingsPage(Page):
                 move_text,
                 self._blank(player.best_week if played else None),
                 f"{player.average_wins:.1f}" if played else self.NO_VALUE,
+                f"{lined.correct}/{lined.decided}" if lined.decided else self.NO_VALUE,
+                self.pct(lined.rate, 0) if lined.decided else self.NO_VALUE,
                 len(player.weeks_played),
             ])
+            if lined.decided:
+                # Measured against the pool, not against 50%: the pool as a
+                # whole may be well under half on lined games.
+                tones[(r, LINES_PCT_COLUMN)] = (
+                    "good" if lined.rate > pool_rate else "bad" if lined.rate < pool_rate else "muted"
+                )
             tones[(r, 7)] = "good" if net > 0 else ("bad" if net < 0 else "muted")
             if move_tone:
                 tones[(r, 10)] = move_tone
@@ -207,6 +220,12 @@ class StandingsPage(Page):
                 f"Suicide pool: {'alive' if player.suicide_alive else 'eliminated'}\n"
                 "Double-click to open this player"
             )
+            if lined.decided:
+                tooltips[(r, LINES_COLUMN)] = tooltips[(r, LINES_PCT_COLUMN)] = (
+                    f"{player.display}: {lined.correct} of {lined.decided} lined games right "
+                    f"({self.pct(lined.rate, 0)}), {lined.per_week:.1f} a week\n"
+                    f"Pool average {self.pct(pool_rate, 0)}"
+                )
 
         sort_values = {
             # The displayed position, not the row number: after a re-sort the
@@ -221,6 +240,11 @@ class StandingsPage(Page):
             10: [self._movement(p)[2] for p in order],
             11: [p.best_week for p in order],
             12: [p.average_wins for p in order],
+            LINES_COLUMN: [records.get(p.key, none).correct for p in order],
+            LINES_PCT_COLUMN: [
+                records.get(p.key, none).rate if records.get(p.key, none).decided else None
+                for p in order
+            ],
         }
 
         model = TableModel(
