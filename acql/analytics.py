@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 
@@ -349,3 +350,252 @@ def form_profile(season: Season, minimum_weeks: int = 3) -> list[FormPoint]:
                 player, sum(own) / len(own), statistics.pstdev(own), len(own),
             ))
     return out
+
+
+# ======================================================================
+# Against the line
+# ======================================================================
+# How often an NFL regular-season game is decided by exactly this margin, as
+# a percentage of games: 6,752 regular-season games, 2000-2026. Football
+# scores in 3s and 7s, so margins pile up on certain numbers - which is
+# exactly where the pool puts its lines.
+MARGIN_FREQUENCY = {
+    1: 4.15, 2: 4.10, 3: 14.96, 4: 4.93, 5: 3.60, 6: 6.01, 7: 9.09, 8: 3.79,
+    9: 1.60, 10: 5.52, 11: 2.33, 12: 1.66, 13: 2.77, 14: 4.81, 15: 1.53,
+    16: 2.07, 17: 3.42,
+}
+# Margins with no scoring reason to bunch up. A smooth curve through these
+# gives "how common would a margin this size be without key numbers", and
+# every margin's excess over that curve is its key-number weight.
+DEAD_MARGINS = (1, 2, 5, 8, 9, 11, 12, 15, 16)
+
+# Spread of results around the betting line. Fitted so straight-up win
+# chances match the market's own moneylines: at 11.4 the model says 60% for a
+# 3-point favourite against a market 60%, 74% at 7 against 74%, 82% at 10
+# against 82%.
+SPREAD_SD = 11.4
+MARGIN_RANGE = range(-60, 61)
+
+
+def _key_weights() -> dict[int, float]:
+    xs = list(DEAD_MARGINS)
+    ys = [math.log(MARGIN_FREQUENCY[m]) for m in xs]
+    mx, my = statistics.fmean(xs), statistics.fmean(ys)
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+    intercept = my - slope * mx
+    return {m: f / math.exp(intercept + slope * m) for m, f in MARGIN_FREQUENCY.items()}
+
+
+KEY_WEIGHT = _key_weights()     # 3 is ~4x, 7 ~3.2x, 14 ~2.7x, 10 ~2.4x, 6 ~2x
+
+
+def _shape(center: float, sd: float) -> dict[int, float]:
+    weights = {
+        d: math.exp(-((d - center) / sd) ** 2 / 2) * KEY_WEIGHT.get(abs(d), 1.0)
+        for d in MARGIN_RANGE
+    }
+    total = sum(weights.values())
+    return {d: w / total for d, w in weights.items()}
+
+
+@lru_cache(maxsize=512)
+def margin_distribution(spread: float, sd: float = SPREAD_SD) -> tuple[tuple[int, float], ...]:
+    """Chance of each final margin, for a team favoured by `spread`.
+
+    A bell curve on its own says a 7-point favourite wins by 7 about as often
+    as by 8, which is not how football scores. Each margin is weighted by how
+    common it really is, then the curve is shifted so its average margin is
+    still the spread - without that shift the key numbers, which cluster near
+    zero, drag the average down and every favourite looks weaker than the
+    market prices them.
+    """
+    low, high = spread - 6, spread + 6
+    for _ in range(40):                      # bisection on the centre
+        mid = (low + high) / 2
+        if sum(d * p for d, p in _shape(mid, sd).items()) < spread:
+            low = mid
+        else:
+            high = mid
+    return tuple(_shape((low + high) / 2, sd).items())
+
+
+def cover_chance(spread: float, need: int, sd: float = SPREAD_SD) -> float:
+    """Chance a team favoured by `spread` wins by at least `need` points."""
+    return sum(p for margin, p in margin_distribution(round(spread, 1), sd) if margin >= need)
+
+
+def win_chance(spread: float) -> float:
+    """Chance a team favoured by `spread` simply wins."""
+    return cover_chance(spread, 1)
+
+
+def line_threshold(spread: float, most: int = 30) -> int:
+    """The biggest whole-number pool line the favourite is still worth taking at.
+
+    Useful before the commissioner posts a line: "take them at 6 or less".
+    """
+    best = 0
+    for line in range(most + 1):
+        if cover_chance(spread, line + 1) > 0.5:
+            best = line
+    return best
+
+
+def _same(a: object, b: object) -> bool:
+    return " ".join(str(a or "").split()).casefold() == " ".join(str(b or "").split()).casefold() != ""
+
+
+@dataclass(frozen=True)
+class LineRecord:
+    """A player's picks on games that carried a pool line."""
+
+    correct: int
+    decided: int      # lined games with a result, in weeks the player played
+    weeks: int        # weeks in which they had at least one decided lined game
+
+    @property
+    def rate(self) -> float:
+        return self.correct / self.decided if self.decided else 0.0
+
+    @property
+    def per_week(self) -> float:
+        return self.correct / self.weeks if self.weeks else 0.0
+
+
+def lined_games(season: Season) -> list[tuple[int, "Game"]]:
+    """(week, game) for every game with a pool line, in slate order."""
+    return [
+        (number, game)
+        for number in sorted(season.weeks)
+        for game in season.weeks[number].games
+        # getattr: an out-of-date models.py has no line fields at all, and a
+        # season with no lines is better than three pages that fail to draw.
+        if getattr(game, "line", None) is not None
+    ]
+
+
+def line_records(season: Season) -> dict[str, LineRecord]:
+    """Each player's record on lined games that have a result.
+
+    A pick counts when it matches the recorded result, which already has the
+    line applied. That holds whether or not the wrong picks have been deleted
+    yet, so graded and ungraded weeks score the same way.
+    """
+    tallies: dict[str, list[int]] = {}
+    weeks_seen: dict[str, set[int]] = {}
+    for number, game in lined_games(season):
+        if not game.played:
+            continue
+        for key, line in season.weeks[number].lines.items():
+            t = tallies.setdefault(key, [0, 0])
+            t[1] += 1
+            t[0] += _same(line.correct_picks.get(game.index), game.winner)
+            weeks_seen.setdefault(key, set()).add(number)
+    return {
+        key: LineRecord(c, d, len(weeks_seen.get(key, ())))
+        for key, (c, d) in tallies.items()
+    }
+
+
+def pool_line_rate(records: dict[str, LineRecord]) -> float:
+    """The whole pool's hit rate on lined games: all correct over all decided."""
+    decided = sum(r.decided for r in records.values())
+    return sum(r.correct for r in records.values()) / decided if decided else 0.0
+
+
+def underdog_record(season: Season) -> tuple[int, int]:
+    """(underdog got the point, lined games decided) so far this season."""
+    dog = decided = 0
+    for _, game in lined_games(season):
+        if game.played:
+            decided += 1
+            dog += not _same(game.winner, game.line_favourite)
+    return dog, decided
+
+
+@dataclass(frozen=True)
+class Prediction:
+    pick: str
+    chance: float        # probability the pick is right, 0.5..1
+    against_line: bool
+    reason: str
+
+    @property
+    def coin_flip(self) -> bool:
+        return self.chance < 0.52
+
+
+def predict(game: "Game", vegas_favourite: str | None, points: float | None) -> Prediction | None:
+    """The pick for one game, from the Vegas spread and the pool's rule.
+
+    `vegas_favourite` is "home" or "away"; `points` is the Vegas spread. With
+    no spread entered there is nothing to predict from, so the answer is None.
+
+    Straight-up games take the Vegas favourite. On a lined game the favourite
+    must win by more than the line - by at least floor(line) + 1 - so a win
+    by exactly a whole-number line goes to the underdog. The chance is that
+    of the expected margin (the Vegas spread) clearing that bar, with results
+    spread SPREAD_SD points either side of the spread.
+    """
+    if vegas_favourite not in ("home", "away") or points is None:
+        return None
+    home_margin = points if vegas_favourite == "home" else -points
+
+    line = getattr(game, "line", None)
+    if line is None:
+        if points == 0:
+            return Prediction(game.home, 0.5, False, "pick'em - no favourite")
+        pick = game.home if home_margin > 0 else game.away
+        return Prediction(pick, win_chance(abs(home_margin)), False,
+                          f"Vegas favourite by {points:g}")
+
+    favourite = getattr(game, "line_favourite", "")
+    fav_is_home = _same(favourite, game.home)
+    underdog = getattr(game, "line_underdog", "") or (game.away if fav_is_home else game.home)
+    fav_margin = home_margin if fav_is_home else -home_margin
+    need = math.floor(line) + 1
+    p_fav = cover_chance(fav_margin, need)
+    vegas_says = f"Vegas has {favourite} by {fav_margin:g}" if fav_margin >= 0 \
+        else f"Vegas has {favourite} as the underdog"
+    if p_fav > 0.5:
+        return Prediction(favourite, p_fav, True, f"needs to win by {need}+; {vegas_says}")
+    return Prediction(underdog, 1 - p_fav, True, f"{favourite} needs {need}+; {vegas_says}")
+
+
+def upcoming_week(season: Season) -> int:
+    """The week to predict.
+
+    The week after the last one that is mostly decided - more than half its
+    games have a result. So on Sunday night, with only the late games left,
+    it looks ahead to next week; on Thursday, with one game in, it stays on
+    the week being played.
+
+    The answer may be a week whose sheet is still blank. The parser leaves
+    such weeks out of the Season entirely, so this cannot simply pick from
+    `season.weeks`; the page says the slate hasn't been entered instead.
+    """
+    mostly_done = [
+        number for number, week in season.weeks.items()
+        if week.games and sum(g.played for g in week.games) * 2 > len(week.games)
+    ]
+    after = max(mostly_done, default=0)
+    return min(after + 1, WEEKS_IN_SEASON)
+
+
+@dataclass(frozen=True)
+class SlateOutlook:
+    expected: float      # picks expected to come in, across the games priced
+    priced: int          # games with a spread entered
+    strong: int          # picks at 60% or better
+    coin_flips: int      # picks too close to call
+
+
+def slate_outlook(guesses: list[Prediction | None]) -> SlateOutlook:
+    """What a week's picks add up to."""
+    priced = [g for g in guesses if g is not None]
+    return SlateOutlook(
+        expected=sum(g.chance for g in priced),
+        priced=len(priced),
+        strong=sum(1 for g in priced if g.chance >= 0.60),
+        coin_flips=sum(1 for g in priced if g.coin_flip),
+    )

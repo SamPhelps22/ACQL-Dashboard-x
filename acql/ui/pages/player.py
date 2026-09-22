@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ... import analytics
 from ...models import Player, Season
 from ..charts import BarChart, LineChart, RankChart
 from ..widgets import Card, StatTile, TableModel, make_table, section
@@ -48,6 +49,8 @@ class PlayerPage(Page):
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
         self._pool: dict[int, _PoolWeek] = {}
+        self._line_records: dict[str, analytics.LineRecord] = {}
+        self._line_pool_rate = 0.0
         self._steadiness: list[float] = []   # sorted consistency of the pool
         self._wanted: str | None = None      # player requested via select()
         self.table: QWidget | None = None
@@ -92,16 +95,14 @@ class PlayerPage(Page):
         self.tile_form = StatTile("Recent Form")
         self.tile_money = StatTile("Net")
         self.tile_swing = StatTile("Consistency")
-        for tile in (
-            self.tile_rank, self.tile_record, self.tile_form,
-            self.tile_money, self.tile_swing,
-        ):
-            tiles.addWidget(tile)
-        self.layout_.addLayout(tiles)
+        self.tile_lines = StatTile("Against the Line")
         self._tiles = (
             self.tile_rank, self.tile_record, self.tile_form,
-            self.tile_money, self.tile_swing,
+            self.tile_money, self.tile_swing, self.tile_lines,
         )
+        for tile in self._tiles:
+            tiles.addWidget(tile)
+        self.layout_.addLayout(tiles)
 
         row = QHBoxLayout()
         row.setSpacing(12)
@@ -151,6 +152,9 @@ class PlayerPage(Page):
         assert season is not None  # guaranteed by Page.refresh_now()
 
         self._build_pool(season)
+        # Once per data change, like the pool figures - not on every player switch.
+        self._line_records = analytics.line_records(season)
+        self._line_pool_rate = analytics.pool_line_rate(self._line_records)
 
         names = [p.display for p in season.ordered_players()]
         keep = self._wanted or self.picker.currentText()
@@ -300,6 +304,18 @@ class PlayerPage(Page):
             share = steadier_than / (len(self._steadiness) - 1)
             swing += f"\nsteadier than {self.pct(share, 0)} of the pool"
         self.tile_swing.update_values(f"\u00b1{player.consistency:.2f}", swing)
+
+        lined = self._line_records.get(player.key)
+        if lined is None or not lined.decided:
+            self.tile_lines.update_values(self.NO_VALUE, "no lined games decided yet")
+        else:
+            pool = self._line_pool_rate
+            self.tile_lines.update_values(
+                f"{lined.correct}/{lined.decided}",
+                f"{self.pct(lined.rate, 0)} right, {lined.per_week:.1f} a week\n"
+                f"pool average {self.pct(pool, 0)}",
+                "good" if lined.rate > pool else ("bad" if lined.rate < pool else ""),
+            )
 
     def _update_status(self, player: Player, rival: Player | None, weeks: list[int]) -> None:
         alive = "alive" if player.suicide_alive else "eliminated"

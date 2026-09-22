@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import APP_NAME, __version__
+from .. import APP_NAME, __version__, lines
 from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
 from ..names import AliasTable
@@ -38,6 +38,7 @@ from .pages.base import Page
 from .pages.data import DataPage
 from .pages.overview import OverviewPage
 from .pages.insights import InsightsPage
+from .pages.nextweek import NextWeekPage
 from .pages.player import PlayerPage
 from .pages.pools import PoolsPage
 from .pages.projections import ProjectionsPage
@@ -50,6 +51,7 @@ PAGE_CLASSES = (
     OverviewPage,
     StandingsPage,
     WeeklyPage,
+    NextWeekPage,
     PlayerPage,
     WinningsPage,
     PoolsPage,
@@ -58,6 +60,12 @@ PAGE_CLASSES = (
     DataPage,
 )
 DATA_INDEX = PAGE_CLASSES.index(DataPage)
+
+
+def page_shortcut(index: int) -> str:
+    """Ctrl+1 to Ctrl+9 for the first nine pages; the rest are reached from
+    the sidebar or the Ctrl+K switcher. There is no Ctrl+10 to give them."""
+    return f"Ctrl+{index + 1}" if index < 9 else ""
 
 
 def _plural(count: int, word: str) -> str:
@@ -79,8 +87,14 @@ class Loader(QThread):
             season = load_season(self.settings, AliasTable.load())
         except Exception:  # noqa: BLE001 - reported in the UI, never swallowed
             self.failed.emit(traceback.format_exc())
-        else:
-            self.finished_ok.emit(season)
+            return
+        # Pool lines live in notes the parser doesn't read; add them here, off
+        # the UI thread. A problem with a note is a warning, not a failed load.
+        try:
+            season.warnings.extend(lines.attach_from_workbook(season))
+        except Exception as exc:  # noqa: BLE001
+            season.warnings.append(f"Couldn't read the pool lines: {exc}")
+        self.finished_ok.emit(season)
 
 
 @dataclass(frozen=True)
@@ -198,7 +212,8 @@ class MainWindow(QMainWindow):
             button.setObjectName("NavButton")
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setToolTip(f"{cls.subtitle}  (Ctrl+{index + 1})" if cls.subtitle else f"Ctrl+{index + 1}")
+            keys = page_shortcut(index)
+            button.setToolTip(" ".join(filter(None, [cls.subtitle, f"({keys})" if keys else ""])))
             button.clicked.connect(lambda _, i=index: self._show_page(i))
             self.nav_group.addButton(button, index)
             self.nav_layout.addWidget(button)
@@ -305,7 +320,8 @@ class MainWindow(QMainWindow):
         add("Jump to\u2026", "Ctrl+K", self.open_palette)
         add("Quit", QKeySequence.StandardKey.Quit, self.close)
         for i in range(len(PAGE_CLASSES)):
-            add(f"Page {i + 1}", f"Ctrl+{i + 1}", lambda _=False, idx=i: self._select_page(idx))
+            if page_shortcut(i):
+                add(f"Page {i + 1}", page_shortcut(i), lambda _=False, idx=i: self._select_page(idx))
 
     def _restore_state(self) -> None:
         start = 0
@@ -332,7 +348,7 @@ class MainWindow(QMainWindow):
 
     def open_palette(self) -> None:
         commands = [
-            Command(cls.title, f"Ctrl+{i + 1}", lambda i=i: self._select_page(i))
+            Command(cls.title, page_shortcut(i), lambda i=i: self._select_page(i))
             for i, cls in enumerate(PAGE_CLASSES)
         ]
         other_theme = "light" if self.palette_.name == "dark" else "dark"

@@ -33,6 +33,17 @@ class Game:
     away: str = ""
     winner: str = ""                # blank until the result is entered
     is_big_loser: bool = False
+    # The pool's line, from the "(phi by 8)" note under the game: the
+    # favourite must win by MORE than this, so a win by exactly the line
+    # goes to the underdog. None for a straight-up game.
+    line: float | None = None
+    line_favourite: str = ""        # the favourite's name as the slate spells it
+
+    @property
+    def line_underdog(self) -> str:
+        if self.line is None:
+            return ""
+        return self.away if same_team(self.line_favourite, self.home) else self.home
 
     @property
     def label(self) -> str:

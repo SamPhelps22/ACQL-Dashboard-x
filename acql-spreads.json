@@ -1,0 +1,84 @@
+{
+  "3": {
+    "1": {
+      "match": "atlanta@green bay",
+      "favourite": "home",
+      "points": 6.5
+    },
+    "2": {
+      "match": "los angeles chargers@buffalo",
+      "favourite": "home",
+      "points": 7.5
+    },
+    "3": {
+      "match": "carolina@cleveland",
+      "favourite": "away",
+      "points": 3.5
+    },
+    "4": {
+      "match": "new york jets@detroit",
+      "favourite": "home",
+      "points": 6.5
+    },
+    "5": {
+      "match": "houston@indianapolis",
+      "favourite": "away",
+      "points": 3.5
+    },
+    "6": {
+      "match": "kansas city@miami",
+      "favourite": "away",
+      "points": 11.5
+    },
+    "10": {
+      "match": "new england@jacksonville",
+      "favourite": "home",
+      "points": 3.5
+    },
+    "7": {
+      "match": "tennessee@new york giants",
+      "favourite": "home",
+      "points": 3.5
+    },
+    "8": {
+      "match": "cincinnati@pittsburgh",
+      "favourite": "away",
+      "points": 3.5
+    },
+    "9": {
+      "match": "seattle@washington",
+      "favourite": "away",
+      "points": 7.5
+    },
+    "11": {
+      "match": "arizona@san francisco",
+      "favourite": "home",
+      "points": 8.5
+    },
+    "12": {
+      "match": "minnesota@tampa bay",
+      "favourite": "away",
+      "points": 1.5
+    },
+    "13": {
+      "match": "baltimore@dallas",
+      "favourite": "home",
+      "points": 3.5
+    },
+    "14": {
+      "match": "las vegas@new orleans",
+      "favourite": "home",
+      "points": 3.5
+    },
+    "15": {
+      "match": "los angeles rams@denver",
+      "favourite": "away",
+      "points": 2.5
+    },
+    "16": {
+      "match": "philadelphia@chicago",
+      "favourite": "away",
+      "points": 3.5
+    }
+  }
+}
