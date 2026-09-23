@@ -51,6 +51,21 @@ TEAMS: dict[str, tuple[str, ...]] = {
     "was": ("washington", "commanders"), "wsh": ("washington", "commanders"),
 }
 
+# Names a file or a sheet might still use for a team that has moved or been
+# renamed. Ratings files in particular are decades old and some of them never
+# updated; without these a team silently fails to match and its game is
+# quietly dropped.
+FORMER_NAMES = {
+    "was": ("redskins", "washington redskins", "washington football team"),
+    "lv": ("oakland", "oakland raiders"),
+    "lac": ("san diego", "san diego chargers"),
+    "lar": ("st louis", "st. louis", "st louis rams"),
+    "ten": ("houston oilers", "oilers"),
+    "ind": ("baltimore colts",),
+}
+for _code, _names in FORMER_NAMES.items():
+    TEAMS[_code] = TEAMS[_code] + _names
+
 
 def _norm(text: object) -> str:
     return " ".join(str(text or "").split()).casefold()

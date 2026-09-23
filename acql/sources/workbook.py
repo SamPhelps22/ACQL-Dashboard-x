@@ -25,6 +25,7 @@ import re
 from ..config import GAMES_PER_WEEK, WEEKS_IN_SEASON
 from ..models import Game, Player, PlayerWeek, SourceFile, Week
 from ..names import AliasTable
+from ..predictions import team_code
 
 WEEK_SHEET = re.compile(r"^week\s*(\d{1,2})$", re.IGNORECASE)
 # The suicide column doubles as an elimination marker once a player is out.
@@ -100,6 +101,21 @@ def parse_workbook(
         def player_for(raw: object) -> Player | None:
             display = _text(raw)
             if not display or display.lower() in {"player", "coach", "rank"}:
+                return None
+            # A coach is never a number, and never a spelled-out football team.
+            # Both land in the player column when a raw pick sheet is pasted a
+            # row or two out of place - the sheet's own team rows and its
+            # picked-home percentages come down into the player block - and
+            # each one becomes a phantom player that then matches nothing in
+            # stats.xls. Short codes are deliberately left alone: "tb" is a
+            # coach in this pool as well as a football team.
+            if _num(display) is not None or (len(display) > 3 and team_code(display)):
+                result["warnings"].append(
+                    f"{source.path.name}: ignored \"{display}\" in the player "
+                    f"column - that is a team or a number, not a coach. Check "
+                    f"that the week sheet has coach names in E10:E44 and "
+                    f"nothing else."
+                )
                 return None
             key = aliases.key(display)
             if not key:

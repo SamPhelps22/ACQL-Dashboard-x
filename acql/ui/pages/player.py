@@ -17,13 +17,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import analytics
+from ... import analytics, picks
 from ...models import Player, Season
 from ..charts import BarChart, LineChart, RankChart
 from ..widgets import Card, StatTile, TableModel, make_table, section
 from .base import Page
 
-HEADERS = ["Week", "Wins", "Regular", "Big Loser", "Rank", "Suicide pick", "vs pool avg"]
+HEADERS = ["Week", "Wins", "Regular", "Big Loser", "Rank", "Suicide pick",
+           "vs pool avg", "With pool"]
 FORM_TITLE = "Wins by week, against the pool average"
 RECENT_WEEKS = 3
 NO_COMPARISON = "No comparison"
@@ -51,6 +52,9 @@ class PlayerPage(Page):
         self._pool: dict[int, _PoolWeek] = {}
         self._line_records: dict[str, analytics.LineRecord] = {}
         self._line_pool_rate = 0.0
+        # Per week, how much each coach went with the crowd. Empty until a
+        # pick sheet has been loaded; the column simply stays blank.
+        self._chalk: dict[int, dict[str, float]] = {}
         self._steadiness: list[float] = []   # sorted consistency of the pool
         self._wanted: str | None = None      # player requested via select()
         self.table: QWidget | None = None
@@ -155,6 +159,9 @@ class PlayerPage(Page):
         # Once per data change, like the pool figures - not on every player switch.
         self._line_records = analytics.line_records(season)
         self._line_pool_rate = analytics.pool_line_rate(self._line_records)
+        self._chalk = {
+            number: picks.chalk(sheet) for number, sheet in picks.load_all().items()
+        }
 
         names = [p.display for p in season.ordered_players()]
         keep = self._wanted or self.picker.currentText()
@@ -213,6 +220,25 @@ class PlayerPage(Page):
 
     def _pool_week(self, week: int) -> _PoolWeek:
         return self._pool.get(week, _PoolWeek(0.0, 0.0))
+
+    @staticmethod
+    def _same_name(a: str, b: str) -> bool:
+        return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+    def _chalk_for(self, player: Player, week: int) -> float | None:
+        """How much of the pool this coach agreed with, that week."""
+        for coach, value in self._chalk.get(week, {}).items():
+            if self._same_name(coach, player.display):
+                return value
+        return None
+
+    def _chalk_season(self, player: Player) -> tuple[float, float] | None:
+        """(this coach's average, the pool's average) across every loaded week."""
+        mine = [v for week in self._chalk if (v := self._chalk_for(player, week)) is not None]
+        everyone = [v for week in self._chalk.values() for v in week.values()]
+        if not mine or not everyone:
+            return None
+        return sum(mine) / len(mine), sum(everyone) / len(everyone)
 
     # ---- navigation ----------------------------------------------------
     def _step(self, delta: int) -> None:
@@ -324,6 +350,13 @@ class PlayerPage(Page):
             f"suicide pool {alive}",
             f"seen in {_plural(len(player.sources), 'file')}",
         ]
+        crowd = self._chalk_season(player)
+        if crowd is not None:
+            mine, pool = crowd
+            parts.append(
+                f"with the pool on {self.pct(mine, 0)} of picks, against "
+                f"{self.pct(pool, 0)} for the field"
+            )
         if rival is not None:
             parts.append(self._head_to_head(player, rival, weeks))
         self.status.setText(" \u00b7 ".join(parts))
@@ -431,7 +464,7 @@ class PlayerPage(Page):
         worst = min(final_wins, default=None)
 
         rows, tones = [], {}
-        sort = {col: [] for col in (0, 1, 2, 3, 4, 6)}
+        sort = {col: [] for col in (0, 1, 2, 3, 4, 6, 7)}
         for r, (week, wins) in enumerate(entries):
             provisional = week in season.provisional_weeks
             delta = wins - self._pool_week(week).average
@@ -441,6 +474,7 @@ class PlayerPage(Page):
             big_loser = player.weekly_big_loser.get(week)
             rank = player.weekly_rank.get(week)
 
+            crowd = self._chalk_for(player, week)
             rows.append([
                 f"Week {week}" + (" *" if provisional else ""),
                 wins,
@@ -449,9 +483,11 @@ class PlayerPage(Page):
                 self.NO_VALUE if rank is None else rank,
                 (line.suicide_pick if line else "") or self.NO_VALUE,
                 f"{delta:+.1f}",
+                self.NO_VALUE if crowd is None else self.pct(crowd, 0),
             ])
             # Sort keys stay aligned with the rows actually shown.
-            for col, value in zip((0, 1, 2, 3, 4, 6), (week, wins, regular, big_loser, rank, delta)):
+            for col, value in zip((0, 1, 2, 3, 4, 6, 7),
+                                  (week, wins, regular, big_loser, rank, delta, crowd)):
                 sort[col].append(value)
 
             tones[(r, 6)] = "good" if delta > 0 else ("bad" if delta < 0 else "muted")
@@ -462,7 +498,7 @@ class PlayerPage(Page):
             HEADERS,
             rows,
             palette=self.palette,
-            numeric_columns={1, 2, 3, 4, 6},
+            numeric_columns={1, 2, 3, 4, 6, 7},
             sort_values=sort,
             tones=tones,
         )
