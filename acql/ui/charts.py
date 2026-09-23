@@ -47,6 +47,17 @@ BAR_HEIGHT = 0.68
 LABEL_SIZE = 9
 TICK_SIZE = 9
 MAX_X_TICKS = 14         # past this, thin the ticks rather than overprint them
+# What a chart shrinks to when it has nothing to draw: enough for the line
+# that says why, and no more.
+EMPTY_HEIGHT = 96
+# Fewest columns a heatmap reserves room for, however few it has to show.
+MIN_GRID_COLUMNS = 8
+# Past this many columns, label every second one instead.
+MAX_GRID_LABELS = 12
+# Qt's own "no maximum". Spelled out rather than imported, because which
+# module exports QWIDGETSIZE_MAX has moved between Qt bindings and a wrong
+# guess is an ImportError at startup rather than a chart that looks odd.
+NO_MAX_HEIGHT = 16_777_215
 
 
 def money(value: float) -> str:
@@ -79,11 +90,18 @@ class Chart(FigureCanvasQTAgg):
         super().__init__(self.figure)
         self.setParent(parent)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setMinimumHeight(int(height * 100))
+        self._full_height = int(height * 100)
+        self.setMinimumHeight(self._full_height)
         self.figure.patch.set_facecolor(palette.surface)
         self._annotation = None
         self._hover_targets: list[tuple] = []
         self._replay: tuple[str, tuple, dict] | None = None
+        # What the tooltip is currently saying, and where. Moving a mouse
+        # across a chart fires a motion event every few pixels, and redrawing
+        # the figure for each one - a heatmap is several hundred patches -
+        # made the whole window feel heavy whenever the pointer crossed a
+        # chart. A redraw now happens when the tooltip actually changes.
+        self._shown: tuple | None = None
         self.mpl_connect("motion_notify_event", self._on_hover)
         self.mpl_connect("figure_leave_event", lambda _event: self._hide_hover())
 
@@ -91,10 +109,20 @@ class Chart(FigureCanvasQTAgg):
     def plot(self, *args, **kwargs) -> None:
         """Draw, remembering the call so the chart can be re-themed in place."""
         self._replay = ("_draw", args, kwargs)
+        self._shown = None
+        self.setMaximumHeight(NO_MAX_HEIGHT)
+        self.setMinimumHeight(self._full_height)
         self._draw(*args, **kwargs)
 
     def empty(self, message: str = "No data yet") -> None:
         self._replay = ("_draw_empty", (message,), {})
+        self._shown = None
+        # A chart with nothing in it does not need the room a chart needs. Held
+        # at full height it leaves a hand-span of empty card with one line of
+        # grey text adrift in the middle of it, which reads as something
+        # broken rather than something not ready yet.
+        self.setMinimumHeight(EMPTY_HEIGHT)
+        self.setMaximumHeight(EMPTY_HEIGHT)
         self._draw_empty(message)
 
     def set_palette(self, palette: Palette) -> None:
@@ -228,6 +256,7 @@ class Chart(FigureCanvasQTAgg):
         """Hook for anything a subclass shows alongside the tooltip."""
 
     def _hide_hover(self) -> None:
+        self._shown = None
         changed = False
         if self._annotation is not None and self._annotation.get_visible():
             self._annotation.set_visible(False)
@@ -256,6 +285,10 @@ class Chart(FigureCanvasQTAgg):
             return
         text, (x, y) = found
         note = self._ensure_annotation(event.inaxes)
+        # Same tooltip, same place, already on screen: nothing to redraw.
+        if self._shown == (text, x, y) and note.get_visible():
+            return
+        self._shown = (text, x, y)
         note.xy = (x, y)
         self._place(note, event.inaxes, x, y)
         note.set_text(text)
@@ -279,7 +312,7 @@ class BarChart(Chart):
         highlight: int | None = None,
     ) -> None:
         if not labels:
-            self._draw_empty()
+            self.empty()
             return
         p = self.palette
         ax = self.new_axes()
@@ -346,7 +379,7 @@ class DivergingBarChart(Chart):
         tooltips: list[str] | None = None,
     ) -> None:
         if not labels:
-            self._draw_empty()
+            self.empty()
             return
         p = self.palette
         ax = self.new_axes()
@@ -410,7 +443,7 @@ class LineChart(Chart):
         zero_baseline: bool = False,
     ) -> None:
         if not x or not series:
-            self._draw_empty()
+            self.empty()
             return
         p = self.palette
         ax = self.new_axes()
@@ -611,7 +644,7 @@ class HistogramChart(Chart):
         mean_line: bool = True,
     ) -> None:
         if not values:
-            self._draw_empty()
+            self.empty()
             return
         p = self.palette
         ax = self.new_axes()
@@ -705,13 +738,20 @@ class HeatmapChart(Chart):
         tick_rotation: float = 0,
     ) -> None:
         if not row_labels or not col_labels:
-            self._draw_empty()
+            self.empty()
             return
         p = self.palette
         ax = self.new_axes()
         present = [v for row in values for v in row if v is not None]
         top = vmax or max(present, default=1) or 1
         bottom = vmin if vmin is not None else min(present, default=0)
+        # What the key should say: the real lowest value, not the shading floor.
+        key_low = bottom
+        if center is None and vmin is None and top > bottom:
+            # Shade from a hair below the floor, so the lowest score still
+            # takes a step of colour rather than coming out as bare surface.
+            bottom -= (top - bottom) * 0.15
+        span = (top - bottom) or 1
 
         for r, row in enumerate(values):
             for c, value in enumerate(row):
@@ -722,7 +762,13 @@ class HeatmapChart(Chart):
                 elif center is not None:
                     color = _diverging_color(p, value, bottom, center, top)
                 else:
-                    color = ramp_color(p, value / top if top else 0)
+                    # Measured from the lowest value present, not from zero.
+                    # Nobody in this pool scores under seven of sixteen, so a
+                    # ramp anchored at zero spends its whole bottom half on
+                    # scores that cannot happen and paints every real one the
+                    # same pale blue. Anchored at the floor, seven is dark,
+                    # fourteen is pale, and the grid says something.
+                    color = ramp_color(p, (value - bottom) / span)
                 # A 2px surface gap keeps neighbouring cells legible.
                 ax.add_patch(
                     mpatches.Rectangle(
@@ -737,12 +783,21 @@ class HeatmapChart(Chart):
                         color=_ink_on(color),
                     )
 
-        ax.set_xlim(0, len(col_labels))
+        # The axis always holds room for at least this many columns, so two
+        # weeks against twenty-four coaches gives cells a sane width instead of
+        # one a hand across - at which point the grid stops reading as a grid.
+        # The empty space to the right is the rest of the season, which is
+        # honest: it is where the next sixteen weeks will go. A full season
+        # fills it and nothing is padded at all.
+        ax.set_xlim(0, max(len(col_labels), MIN_GRID_COLUMNS))
         ax.set_ylim(0, len(row_labels))
         ax.invert_yaxis()
-        ax.set_xticks([i + 0.5 for i in range(len(col_labels))])
+        # A full season's worth of week labels overprint each other on a
+        # narrow card; every second one still says which column is which.
+        step = 1 if len(col_labels) <= MAX_GRID_LABELS else 2
+        ax.set_xticks([i + 0.5 for i in range(0, len(col_labels), step)])
         ax.set_xticklabels(
-            col_labels, fontsize=LABEL_SIZE, rotation=tick_rotation,
+            col_labels[::step], fontsize=LABEL_SIZE, rotation=tick_rotation,
             ha="left" if tick_rotation else "center",
             rotation_mode="anchor" if tick_rotation else "default",
         )
@@ -753,16 +808,14 @@ class HeatmapChart(Chart):
             ax.spines[side].set_visible(False)
         ax.tick_params(colors=p.ink_muted, labelsize=LABEL_SIZE, length=0)
 
-        if center is not None:
-            self._colour_key(ax, top, key_label, low=bottom, center=center)
-        else:
-            self._colour_key(ax, top, key_label)
+        self._colour_key(ax, top, key_label, low=bottom, center=center, label_low=key_low)
         self._heatmap = (row_labels, col_labels, values, tooltip_fn)
         self.draw_idle()
 
     def _colour_key(
         self, ax, top: float, key_label: str,
         *, low: float = 0.0, center: float | None = None,
+        label_low: float | None = None,
     ) -> None:
         """A shaded strip saying which end of the scale means more.
 
@@ -785,8 +838,8 @@ class HeatmapChart(Chart):
             ticks = [low, center, top]
         else:
             steps = list(p.sequential) or [p.accent]
-            bounds = [i * top / len(steps) for i in range(len(steps) + 1)]
-            ticks = [0, top]
+            bounds = [low + i * (top - low) / len(steps) for i in range(len(steps) + 1)]
+            ticks = [low if label_low is None else label_low, top]
         mappable = ScalarMappable(
             norm=BoundaryNorm(bounds, len(steps)), cmap=ListedColormap(steps)
         )
@@ -797,6 +850,10 @@ class HeatmapChart(Chart):
         bar.outline.set_visible(False)
         bar.ax.tick_params(colors=p.ink_muted, labelsize=8.5, length=0)
         bar.set_ticks(ticks)
+        # "9" rather than "9.00": these scales count games, money and weeks,
+        # and a trailing .00 on a key is noise pretending to be precision.
+        bar.set_ticklabels([f"{v:,.0f}" if float(v).is_integer() else f"{v:,.2f}"
+                            for v in ticks])
         bar.ax.set_xlabel(
             key_label or f"{ramp_direction(p)} is more",
             fontsize=8.5, color=p.ink_muted,
@@ -815,7 +872,10 @@ class HeatmapChart(Chart):
             if tooltip_fn
             else f"{rows[r]} - {cols[c]}: {'-' if value is None else f'{value:g}'}"
         )
-        return text, (event.xdata, event.ydata)
+        # Anchored to the cell, not the cursor: within one cell the tooltip is
+        # then unchanged, and the chart is left alone until the pointer
+        # crosses into the next one.
+        return text, (c + 0.5, r + 0.5)
 
 
 class ScatterChart(Chart):
@@ -841,7 +901,7 @@ class ScatterChart(Chart):
     ) -> None:
         """`quadrant_labels` run top-left, top-right, bottom-left, bottom-right."""
         if not points:
-            self._draw_empty()
+            self.empty()
             return
         p = self.palette
         ax = self.new_axes()

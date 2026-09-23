@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import APP_NAME, __version__, lines
+from .. import APP_NAME, __version__, lines, picks
 from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
 from ..names import AliasTable
@@ -94,6 +94,20 @@ class Loader(QThread):
             season.warnings.extend(lines.attach_from_workbook(season))
         except Exception as exc:  # noqa: BLE001
             season.warnings.append(f"Couldn't read the pool lines: {exc}")
+        # The pool's raw pick sheets, if any have been downloaded. They fill
+        # in weeks the workbook hasn't been given yet and check the ones it
+        # has; they never overwrite a week the workbook owns.
+        try:
+            picks.refresh_from_disk(getattr(season, "workbook_path", None))
+            graded = picks.attach(season)
+            if graded.built:
+                season.warnings.append(
+                    "Built from the pool's pick sheet, not the workbook: "
+                    + ", ".join(f"week {n}" for n in graded.built)
+                )
+            season.warnings.extend(graded.disagreements)
+        except Exception as exc:  # noqa: BLE001
+            season.warnings.append(f"Couldn't read the pool's pick sheets: {exc}")
         self.finished_ok.emit(season)
 
 

@@ -9,12 +9,22 @@ It checks for the packages listed in requirements.txt, installs any that are
 missing into a local .venv, and then starts the dashboard. Nothing is installed
 system-wide, so it is safe to run on a shared machine.
 
+Most of the people who run this will never have opened a terminal before, and
+this window is the only thing they see if something goes wrong. So it says
+what it is doing in plain words, keeps pip's output to itself unless it fails
+(at which point that output is the whole story), and every failure names the
+thing to do next rather than the thing that broke.
+
 Flags:
     --system      install into the current interpreter instead of a .venv
     --reinstall   force dependency reinstallation
     --rebuild     delete the .venv and build a fresh one
     --no-install  never install; fail if something is missing
     --check       report dependency status and exit without starting the UI
+    --diagnose    print what the dashboard can see - every file it found,
+                  every coach, every week - and exit. This is what to send
+                  when a number looks wrong.
+    --verbose     show the commands being run and pip's own output
 """
 
 from __future__ import annotations
@@ -38,7 +48,40 @@ IMPORT_NAMES = {"PySide6": "PySide6", "xlrd": "xlrd", "openpyxl": "openpyxl"}
 # Marker records which requirements set the venv was last provisioned against,
 # so a normal launch costs one file read rather than a pip round-trip.
 STAMP = VENV_DIR / ".acql-deps-stamp"
-LAUNCHER_FLAGS = {"--system", "--reinstall", "--rebuild", "--no-install", "--check"}
+LAUNCHER_FLAGS = {
+    "--system", "--reinstall", "--rebuild", "--no-install", "--check",
+    "--diagnose", "--verbose",
+}
+
+# Set from the command line; controls whether the plumbing is shown.
+VERBOSE = False
+
+
+def say(message: str = "") -> None:
+    """A line for whoever is watching. Flushed, because output is progress."""
+    print(f"  {message}" if message else "", flush=True)
+
+
+def detail(message: str) -> None:
+    """A line for whoever is debugging. Only with --verbose."""
+    if VERBOSE:
+        print(f"    {message}", flush=True)
+
+
+def wait_for_reader() -> None:
+    """Hold a double-clicked window open long enough to read it.
+
+    Started from Explorer rather than a terminal, the console closes the
+    instant this process ends, taking the error with it. The launcher .bat
+    pauses for exactly this reason; someone running run.py directly has no
+    such help.
+    """
+    if os.name != "nt" or not sys.stdin.isatty():
+        return
+    try:
+        input("  Press Enter to close this window. ")
+    except (EOFError, KeyboardInterrupt):
+        pass
 
 
 def fail(message: str, *hint: str) -> NoReturn:
@@ -46,6 +89,7 @@ def fail(message: str, *hint: str) -> NoReturn:
     for line in hint:
         print(f"    {line}", file=sys.stderr)
     print(file=sys.stderr)
+    wait_for_reader()
     raise SystemExit(1)
 
 
@@ -186,13 +230,35 @@ def missing_packages(python: str, requirements: list[tuple[str, str]]) -> list[s
 
 
 def pip_install(python: str, args: list[str]) -> bool:
+    """Install, quietly. pip's output is kept back until it is worth reading.
+
+    On a good run it is several hundred lines of wheels and hashes that mean
+    nothing to the person waiting. On a bad one it is the only thing that
+    says why - a company firewall, no network, a wheel that will not build -
+    so it is printed in full at exactly that point.
+    """
     cmd = [python, "-m", "pip", "install", "--disable-pip-version-check", *args]
-    print(f"  $ {Path(python).name} {' '.join(cmd[1:])}")
-    return subprocess.run(cmd).returncode == 0
+    detail(f"$ {Path(python).name} {' '.join(cmd[1:])}")
+    if VERBOSE:
+        return subprocess.run(cmd).returncode == 0
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True)
+    except (OSError, subprocess.SubprocessError) as problem:
+        say(f"Could not run pip: {problem}")
+        return False
+    if done.returncode != 0:
+        say()
+        say("pip could not install everything. Its own account of it:")
+        say()
+        for stream in (done.stdout, done.stderr):
+            for line in (stream or "").strip().splitlines()[-25:]:
+                print(f"      {line}", flush=True)
+    return done.returncode == 0
 
 
 def create_venv() -> bool:
-    print(f"  Creating a virtual environment in {VENV_DIR.name}/ ...")
+    say(f"Making a private workspace for the dashboard's packages "
+        f"({VENV_DIR.name}/), so nothing else on this computer is touched.")
     import importlib.util
 
     # Some slim distributions ship Python without the venv module.
@@ -206,7 +272,7 @@ def create_venv() -> bool:
 
 
 def remove_venv(reason: str) -> None:
-    print(f"  {reason} Rebuilding {VENV_DIR.name}/ ...")
+    say(f"{reason} Building it again.")
     shutil.rmtree(VENV_DIR, ignore_errors=True)
 
 
@@ -273,7 +339,21 @@ def ensure_dependencies(argv: list[str]) -> str:
                 "missing packages: " + ", ".join(sorted(needed)),
                 "Run  python run.py  (without --no-install or --check) to install them.",
             )
-        print(f"  Installing {len(needed)} package(s): {', '.join(sorted(needed))}")
+        first = not STAMP.is_file()
+        say()
+        say(f"Setting up {len(needed)} package{'' if len(needed) == 1 else 's'}: "
+            f"{', '.join(sorted(needed))}")
+        # Qt and matplotlib are the heavy ones; everything else is quick, and
+        # promising a long wait for a small download is its own kind of wrong.
+        heavy = any(
+            d.lower().startswith(("pyside", "matplotlib", "numpy")) for d in needed
+        )
+        if first and heavy:
+            say("This is the one-time setup. It downloads a few hundred megabytes")
+            say("and can take several minutes. Nothing to do but wait.")
+        elif first:
+            say("This happens once. It should only take a moment.")
+        say()
         wanted = [line for line, dist in requirements if reinstall or dist in needed]
         extra = ["--user"] if use_system and not running_inside_venv() else []
         ok = pip_install(target, wanted + extra)
@@ -281,14 +361,22 @@ def ensure_dependencies(argv: list[str]) -> str:
             ok = pip_install(target, wanted)
         if not ok:
             fail(
-                "dependency installation failed.",
-                "Check your network connection, then try:",
-                f"    {target} -m pip install -r requirements.txt",
+                "the packages the dashboard needs could not be downloaded.",
+                "Nearly always one of three things:",
+                "  * this computer is offline - check the network and try again;",
+                "  * a work or school network is blocking the download - try it",
+                "    on a home connection;",
+                "  * the download was interrupted - simply running it again",
+                "    usually finishes the job, because what arrived is kept.",
             )
         still = missing_packages(target, requirements)
         if still:
-            fail("these packages are still unavailable: " + ", ".join(sorted(still)))
-        print("  All dependencies are ready.")
+            fail(
+                "these packages installed but still cannot be loaded: "
+                + ", ".join(sorted(still)) + ".",
+                "Try:  python run.py --rebuild",
+            )
+        say("Setup finished.")
 
     if not use_system:
         try:
@@ -296,6 +384,74 @@ def ensure_dependencies(argv: list[str]) -> str:
         except OSError:
             pass
     return target
+
+
+def blamed_file(exc: BaseException) -> tuple[Path, int, str] | None:
+    """The project file an import actually failed in, and the line that failed.
+
+    Python reports a bad relative import without naming the file, which is the
+    one thing you need to fix it. The traceback knows, so this walks it and
+    keeps the last frame that belongs to this project.
+    """
+    found: tuple[Path, int] | None = None
+    here = Path(__file__).resolve()
+    tb = exc.__traceback__
+    while tb is not None:
+        name = Path(tb.tb_frame.f_code.co_filename)
+        try:
+            full = name.resolve()
+            inside = full == ROOT or ROOT in full.parents
+        except (OSError, ValueError):
+            full, inside = name, False
+        if inside and full != here:
+            found = (full, tb.tb_lineno)
+        tb = tb.tb_next
+    if found is None:
+        return None
+    path, line = found
+    try:
+        source = path.read_text(encoding="utf-8").splitlines()[line - 1].strip()
+    except (OSError, IndexError, UnicodeDecodeError):
+        source = ""
+    return path, line, source
+
+
+def explain_relative_import(exc: ImportError) -> tuple[str, str] | None:
+    """A file sitting too high up the folder tree, named and placed.
+
+    `from ...models import` only works from a file three folders below the
+    project root. Put that file one folder too high and Python says the import
+    went "beyond top-level package", which tells you nothing about which file
+    or where it belongs. Both are worked out here instead.
+    """
+    blame = blamed_file(exc)
+    if blame is None:
+        return None
+    path, line, source = blame
+    match = re.match(r"from\s+(\.+)", source)
+    if match is None:
+        return None
+    # One dot means "my own folder", each extra dot climbs one more, so a file
+    # needs as many folders under the project root as the import has dots.
+    needed = len(match.group(1))
+    try:
+        rel = path.relative_to(ROOT)
+    except ValueError:
+        return None
+    depth = len(rel.parts) - 1                # folders it currently sits in
+    if needed <= depth:
+        return None
+    short = " ".join(source.split()[:3])
+    gap = needed - depth
+    deeper = "one folder deeper" if gap == 1 else f"{gap} folders deeper"
+    return (
+        f"the project file {rel} is in the wrong folder.",
+        f"Line {line} reads  {short} ...  which only works from a file "
+        f"{needed} folder{'s' if needed != 1 else ''} below {ROOT.name}, "
+        f"and this one is {depth}. Move {path.name} {deeper} "
+        f"(pages belong in {Path('acql', 'ui', 'pages')}, widgets and theme "
+        f"in {Path('acql', 'ui')}, everything else in acql).",
+    )
 
 
 def explain_import_error(exc: ImportError) -> tuple[str, str]:
@@ -306,6 +462,13 @@ def explain_import_error(exc: ImportError) -> tuple[str, str]:
     .py file is simply not where the code expects it sends them nowhere.
     """
     text = str(exc)
+    # "attempted relative import beyond top-level package" - a project file
+    # saved one folder too high. Nothing about it is a dependency problem, so
+    # it has to be caught before the reinstall advice at the bottom.
+    if "relative import" in text:
+        placed = explain_relative_import(exc)
+        if placed is not None:
+            return placed
     # "cannot import name 'analytics' from 'acql' (...)" - a module the
     # project imports from one of its own packages is not in that folder.
     match = re.search(r"cannot import name '(\w+)' from '([\w.]+)'", text)
@@ -343,20 +506,72 @@ def report(target: str) -> None:
     print("  Dependency check passed.")
 
 
+SPREADSHEETS = ("*.xls", "*.xlsx", "*.xlsm")
+
+
+def data_folders() -> list[Path]:
+    """Where the dashboard looks for spreadsheets, without importing the app.
+
+    The app settles this itself once it is running. The launcher only wants
+    to know whether there is anything to read at all, and asking that question
+    must not depend on the packages it may still be installing.
+    """
+    found = [ROOT, ROOT / "data"]
+    return [folder for folder in found if folder.is_dir()]
+
+
+def warn_if_no_data() -> None:
+    """Say so before the dashboard opens empty.
+
+    A new copy of the folder is often shared without the spreadsheets in it.
+    The app comes up perfectly, shows nothing, and looks broken - when all it
+    needs is the files.
+    """
+    for folder in data_folders():
+        for pattern in SPREADSHEETS:
+            for path in folder.glob(pattern):
+                if not path.name.startswith("~$"):      # Excel's lock files
+                    return
+    say()
+    say("No spreadsheets found, so the dashboard will open empty.")
+    say(f"Put stats.xls and ACQL Dashboard.xlsx in:  {ROOT}")
+    say("then press Refresh in the app - it will pick them up.")
+    say()
+
+
+def diagnose(target: str) -> int:
+    """Print what the dashboard can see. The thing to send when a figure is wrong."""
+    script = ROOT / "diag.py"
+    if script.is_file():
+        return subprocess.run([target, str(script)], cwd=str(ROOT)).returncode
+    say("diag.py is not in this folder, so there is nothing to report with.")
+    return 1
+
+
 def main() -> int:
+    global VERBOSE
     argv = sys.argv[1:]
+    VERBOSE = "--verbose" in argv
     if sys.version_info < MIN_PYTHON:
         fail(
-            f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ is required, "
-            f"but this is {sys.version.split()[0]}."
+            f"this needs Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer, "
+            f"and this computer has {sys.version.split()[0]}.",
+            "Install a current Python from python.org and try again.",
+            "On the first screen of the installer, tick "
+            '"Add python.exe to PATH".',
         )
 
-    print(f"  ACQL Dashboard  ({ROOT})")
+    say(f"ACQL Dashboard  ({ROOT})")
     target = ensure_dependencies(argv)
 
     if "--check" in argv:
         report(target)
         return 0
+
+    if "--diagnose" in argv:
+        return diagnose(target)
+
+    warn_if_no_data()
 
     forward = [a for a in argv if a not in LAUNCHER_FLAGS]
     launch = ["-m", "acql.ui.app", *forward]
@@ -364,6 +579,7 @@ def main() -> int:
     # Already in the right interpreter: import directly so Ctrl-C and the exit
     # code behave normally. Otherwise hand off to the venv interpreter.
     if is_current_interpreter(target):
+        say("Starting the dashboard. The window opens in a few seconds.")
         sys.path.insert(0, str(ROOT))
         try:
             from acql.ui.app import main as app_main
@@ -371,12 +587,19 @@ def main() -> int:
             fail(*explain_import_error(exc))
         return app_main(forward)
 
+    say("Starting the dashboard. The window opens in a few seconds.")
     try:
-        return subprocess.run([target, *launch], cwd=str(ROOT)).returncode
+        code = subprocess.run([target, *launch], cwd=str(ROOT)).returncode
     except KeyboardInterrupt:
         # The child has the same Ctrl-C and shuts itself down; the launcher
         # just needs to leave quietly rather than print a traceback over it.
         return 130
+    if code:
+        say()
+        say("The dashboard stopped unexpectedly. Whatever is printed above is")
+        say("the reason - send Sam a photo of this window.")
+        wait_for_reader()
+    return code
 
 
 if __name__ == "__main__":

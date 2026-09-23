@@ -5,12 +5,12 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
 
-from ... import awards as awards_module
+from ... import analytics, awards as awards_module
 from ...awards import Award
 from ...config import WEEKS_IN_SEASON
 from ...models import Player, Season
 from ..charts import BarChart, HistogramChart
-from ..widgets import Banner, Card, ElidedLabel, StatTile, section
+from ..widgets import Banner, Card, ElidedLabel, StatTile, section, tile_grid
 from .base import Page
 
 LEADERBOARD_SIZE = 12
@@ -85,20 +85,19 @@ class OverviewPage(Page):
 
         # ---- headline tiles ----
         # The leader is the one thing on this page worth extra room.
-        tiles = QHBoxLayout()
-        tiles.setSpacing(12)
         self.tile_leader = StatTile("Season Leader")
         self.tile_week = StatTile("Current Week")
         self.tile_winnings = StatTile("Leader's Winnings")
         self.tile_players = StatTile("Players")
         self.tile_avg = StatTile("Pool Average")
+        self.tile_lines = StatTile("Against the Line")
         self._tiles = (
             self.tile_leader, self.tile_week, self.tile_winnings,
-            self.tile_players, self.tile_avg,
+            self.tile_players, self.tile_avg, self.tile_lines,
         )
-        for tile in self._tiles:
-            tiles.addWidget(tile, 2 if tile is self.tile_leader else 1)
-        self.layout_.addLayout(tiles)
+        # Three to a row rather than six across: at six, every tile is too
+        # narrow to hold its own number on a laptop screen.
+        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=3))
 
         # ---- leaderboard + distribution ----
         row = QHBoxLayout()
@@ -167,6 +166,7 @@ class OverviewPage(Page):
         self._fill_awards([])
 
     def _update_tiles(self, season: Season, order: list[Player]) -> None:
+        self._update_line_tile(season)
         leader = order[0]
         tied = [p for p in order if p.wins == leader.wins]
         record = f"{leader.wins}-{leader.losses}   {leader.pct:.3f}"
@@ -215,6 +215,28 @@ class OverviewPage(Page):
             f"{above} above the line, {below} below"
             + (f", {level} on it" if level else ""),
         )
+
+    def _update_line_tile(self, season: Season) -> None:
+        """The pool's record on the games the commissioner puts a line on.
+
+        The single most decisive number in this pool: the favourite has to
+        win by MORE than the line, and the pool takes the favourite anyway.
+        """
+        dogs, decided = analytics.underdog_record(season)
+        if not decided:
+            self.tile_lines.update_values(self.NO_VALUE, "no lined games decided yet")
+            self.tile_lines.hide_bar()
+            return
+        records = analytics.line_records(season)
+        rate = analytics.pool_line_rate(records)
+        self.tile_lines.update_values(
+            f"{dogs}/{decided}",
+            f"lined games the underdog took\nthe pool hits {self.pct(rate, 0)} on them",
+            "good" if dogs * 2 > decided else "",
+        )
+        # Against a half-way marker, because the pool's own average is the
+        # thing being beaten, not fifty per cent.
+        self.tile_lines.show_bar(rate, 0.5, "bad" if rate < 0.5 else "good", self.palette)
 
     def _update_charts(self, order: list[Player]) -> None:
         top = order[:LEADERBOARD_SIZE]

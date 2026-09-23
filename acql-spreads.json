@@ -69,6 +69,11 @@
       "match": "philadelphia@chicago",
       "favourite": "away",
       "points": 3.5
+    },
+    "1": {
+      "match": "atlanta@green bay",
+      "favourite": "home",
+      "points": 6.5
     }
   },
   "1": {

@@ -23,7 +23,7 @@ from functools import lru_cache
 import numpy as np
 
 from .config import WEEKS_IN_SEASON
-from .models import Game, Player, Season
+from .models import Game, Player, Season, Week
 
 SIMULATIONS = 10_000
 # How many weeks of their own a player needs before their history outweighs
@@ -811,3 +811,79 @@ def slate_outlook(guesses: list[Prediction | None]) -> SlateOutlook:
         strong=sum(1 for g in priced if g.chance >= 0.60),
         coin_flips=sum(1 for g in priced if g.coin_flip),
     )
+
+
+# ---- the money ---------------------------------------------------------
+# The pool's payout rule, taken from the workbook's own formulas rather than
+# from a description of them. On each Week sheet:
+#
+#     AD10  = MAX(B$10:B$44) - B10      how many games behind the best card
+#     AD45  = COUNTIF(AD10:AD44, 0)     how many coaches tied for best
+#     AD46  = SUM(AD10:AD44) / AD45     the week's pot, split between them
+#     A10   = IF(AD10 = 0, $AD$46, " ") and only a winner collects
+#
+# Which is the rule as the pool states it: a dollar a game for every coach
+# your record differs from, collected only by the best card of the week, and
+# shared when that card is tied.
+#
+# It is worked out here because the workbook holds these as formulas and
+# saves no cached results, so every cell of it reads as blank from outside
+# Excel. The scores are known, and the scores are all this needs.
+
+def week_owed(week: Week) -> dict[str, float]:
+    """What each coach's card costs them this week: a dollar a game behind."""
+    scores = {
+        key: line.total_wins for key, line in week.lines.items()
+        if line.total_wins is not None
+    }
+    if not scores:
+        return {}
+    best = max(scores.values())
+    return {key: float(best - wins) for key, wins in scores.items()}
+
+
+def week_payouts(week: Week) -> dict[str, float]:
+    """What each coach is paid for one week. Only the best card collects."""
+    owed = week_owed(week)
+    pot = sum(owed.values())
+    winners = [key for key, behind in owed.items() if behind == 0]
+    if not winners or pot <= 0:
+        # Nothing changes hands in a week nobody has played, or one where
+        # every coach has the same record and so differs from no one.
+        return {}
+    share = round(pot / len(winners), 2)
+    return {key: share for key in winners}
+
+
+def fill_winnings(season: Season) -> list[int]:
+    """Work out the money for any week the files don't already give.
+
+    A week the workbook or stats.xls has already priced is left alone: those
+    are what the pool settled on, and a computed figure that disagrees with
+    the cheque someone was handed is worse than no figure. Returns the weeks
+    it filled in, so a page can say which numbers it worked out for itself.
+    """
+    computed: list[int] = []
+    for number, week in sorted(season.weeks.items()):
+        if any(p.weekly_winnings.get(number) for p in season.players.values()):
+            continue
+        paid = week_payouts(week)
+        if not paid:
+            continue
+        for key, amount in paid.items():
+            person = season.players.get(key)
+            if person is not None:
+                person.weekly_winnings[number] = amount
+        computed.append(number)
+
+    # The season totals stats.xls would carry, for a pool running without it.
+    if computed and not any(
+        p.points_won or p.points_paid or p.net_points for p in season.players.values()
+    ):
+        for key, person in season.players.items():
+            person.points_won = round(sum(person.weekly_winnings.values()), 2)
+            person.points_paid = round(
+                sum(week_owed(week).get(key, 0.0) for week in season.weeks.values()), 2
+            )
+            person.net_points = round(person.points_won - person.points_paid, 2)
+    return computed

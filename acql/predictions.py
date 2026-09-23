@@ -31,6 +31,7 @@ import re
 import statistics
 import time
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from .config import ROOT
@@ -80,6 +81,51 @@ def _words(text: object) -> str:
     return " ".join(re.sub(r"[^0-9a-z]+", " ", str(text or "").casefold()).split())
 
 
+@lru_cache(maxsize=1)
+def _team_lookup() -> tuple[dict[str, str], dict[str, set[str]], dict[str, set[str]]]:
+    """Alias -> code, nickname -> codes, city -> codes. Built once.
+
+    This used to be rebuilt inside `team_code`, which meant walking all
+    thirty-two teams and every spelling of each on every call. `team_code` is
+    the innermost thing in the app - one week of pick sheets asks for it about
+    sixty thousand times - so that walk was most of what the dashboard did.
+    """
+    exact: dict[str, str] = {}
+    by_nickname: dict[str, set[str]] = {}
+    by_city: dict[str, set[str]] = {}
+    for abbr, aliases in TEAMS.items():
+        abbr = _CANON.get(abbr, abbr)
+        for alias in aliases:
+            spelling = _words(alias)
+            if not spelling:
+                continue
+            exact.setdefault(spelling, abbr)
+            # Every alias contributes its last word as a nickname, so adding
+            # "san diego chargers" to the list cannot cost "chargers" its
+            # meaning - which is exactly what happens if only the last alias
+            # is treated as the nickname.
+            by_nickname.setdefault(spelling.split()[-1], set()).add(abbr)
+            by_city.setdefault(spelling, set()).add(abbr)
+    return exact, by_nickname, by_city
+
+
+@lru_cache(maxsize=4096)
+def _code_for(text: str) -> str:
+    """The lookup itself, over already-normalised text, remembered per spelling."""
+    code = _CANON.get(text, text)
+    if code in DISPLAY:
+        return code
+    exact, by_nickname, by_city = _team_lookup()
+    named = exact.get(text)
+    if named:
+        return named
+    for table, key in ((by_nickname, text.split()[-1]), (by_city, text)):
+        owners = table.get(key)
+        if owners and len(owners) == 1:
+            return next(iter(owners))
+    return ""
+
+
 def team_code(name: object) -> str:
     """The three-letter code for a team, however the file spells it.
 
@@ -90,31 +136,13 @@ def team_code(name: object) -> str:
     rather than guessing between two.
     """
     text = _words(name)
-    if not text:
-        return ""
-    code = _CANON.get(text, text)
-    if code in DISPLAY:
-        return code
-    by_nickname: dict[str, list[str]] = {}
-    by_city: dict[str, list[str]] = {}
-    for abbr, aliases in TEAMS.items():
-        abbr = _CANON.get(abbr, abbr)
-        for alias in aliases:
-            spelling = _words(alias)
-            if spelling == text:
-                return abbr
-            # Every alias contributes its last word as a nickname, so adding
-            # "san diego chargers" to the list cannot cost "chargers" its
-            # meaning - which is exactly what happens if only the last alias
-            # is treated as the nickname.
-            by_nickname.setdefault(spelling.split()[-1], []).append(abbr)
-            by_city.setdefault(spelling, []).append(abbr)
-    last = text.split()[-1]
-    for table, key in ((by_nickname, last), (by_city, text)):
-        owners = {c for c in table.get(key, ())}
-        if len(owners) == 1:
-            return owners.pop()
-    return ""
+    return _code_for(text) if text else ""
+
+
+def forget_teams() -> None:
+    """Drop both caches, for a test that edits the team tables."""
+    _team_lookup.cache_clear()
+    _code_for.cache_clear()
 
 
 def _number(value: object) -> float | None:

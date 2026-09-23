@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ...models import Player, Season
 from ..charts import BarChart, LineChart
-from ..widgets import Card, StatTile, TableModel, make_table, section
+from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
 BL_HEADERS = ["#", "Player", "Points", "Wins", "Weeks", "Avg / week"]
@@ -54,8 +54,6 @@ class PoolsPage(Page):
 
         self.layout_.addWidget(section(self.title, self.subtitle))
 
-        tiles = QHBoxLayout()
-        tiles.setSpacing(12)
         self.tile_bl_leader = StatTile("Big Loser Leader")
         self.tile_alive = StatTile("Suicide Survivors")
         self.tile_out = StatTile("Eliminated")
@@ -63,9 +61,9 @@ class PoolsPage(Page):
         self._tiles = (
             self.tile_bl_leader, self.tile_alive, self.tile_out, self.tile_bl_max,
         )
-        for tile in self._tiles:
-            tiles.addWidget(tile, 2 if tile is self.tile_bl_leader else 1)
-        self.layout_.addLayout(tiles)
+        # Wrapped rather than squeezed: 4 to a row keeps every tile
+        # wide enough for its own number on a laptop screen.
+        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=4))
 
         self.teams_card = Card("Big Loser teams by week")
         self.teams_label = QLabel("")
@@ -128,6 +126,7 @@ class PoolsPage(Page):
     def _show_empty(self) -> None:
         for tile in self._tiles:
             tile.update_values(self.NO_VALUE, "No data")
+            tile.hide_bar()
         self.teams_card.hide()
         self.survival_card.set_title(SURVIVAL_TITLE)
         self.survival_chart.empty("No suicide entries yet")
@@ -165,6 +164,12 @@ class PoolsPage(Page):
             f"of {_plural(len(players), 'entrant')} still in",
             "good" if alive else "bad",
         )
+        # A suicide pool is read by how much of it is left, not by the count.
+        if players:
+            self.tile_alive.show_bar(len(alive) / len(players), None,
+                                     "good" if alive else "bad", self.palette)
+        else:
+            self.tile_alive.hide_bar()
         self.tile_out.update_values(
             str(len(out)),
             (", ".join(out[:4]) + ("…" if len(out) > 4 else ""))

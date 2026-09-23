@@ -979,6 +979,7 @@ class NextWeekPage(Page):
             self.paste_note.show()
             return
         picks.save(sheet)
+        scored = self._apply_picks(sheet)
         if sheet.week != self._week_number:
             self._user_chose_week = True
             self._set_week(sheet.week)
@@ -986,9 +987,41 @@ class NextWeekPage(Page):
         self.paste_note.setText(
             f"Week {sheet.week} pick sheet loaded: {picks.summary(sheet)}. "
             f"Every \"Vs pool\" figure on this week is now counted rather than "
-            f"estimated."
+            f"estimated." + scored
         )
         self.paste_note.show()
+
+    def _apply_picks(self, sheet: "picks.WeekPicks") -> str:
+        """Put the sheet into the season, and tell the rest of the app.
+
+        Saving the file only fed this page. Everything the sheet scores -
+        the standings, each coach's week, the crowd chart - lives on other
+        pages reading the same season, and until this runs they carry on
+        showing what was there before, as though the file had not been
+        loaded at all. Which is exactly how it looked.
+        """
+        if self.season is None:
+            return ""
+        try:
+            graded = picks.attach(self.season, {sheet.week: sheet})
+        except Exception as problem:             # noqa: BLE001 - never lose the file
+            return f" The week could not be scored from it ({problem})."
+
+        # Every page holds the same Season object, so they need telling that
+        # what is inside it has changed; each one refreshes when next shown.
+        for page in getattr(self.window(), "pages", ()):
+            if page is not self:
+                page.invalidate()
+
+        if sheet.week in graded.checked:
+            return (
+                " The workbook already scores this week, so it was checked "
+                "against the sheet rather than rescored."
+            )
+        if sheet.week in graded.built or sheet.week in graded.filled:
+            counted = len(self.season.weeks[sheet.week].lines)
+            return f" Week {sheet.week} is now scored from it for all {counted} coaches."
+        return ""
 
     def _paste_odds(self) -> None:
         if not self._games:
