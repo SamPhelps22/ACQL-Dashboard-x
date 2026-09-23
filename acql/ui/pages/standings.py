@@ -21,7 +21,7 @@ NAME_COLUMN = 1
 GRID_ROWS = 24
 # Contenders in the race chart. Four is the most the lines can be labelled
 # directly at their ends; past that, identity would rest on the legend alone.
-RACE_PLAYERS = 4
+RACE_PLAYERS = 10
 RACE_TITLE = "The race - wins behind the leader, week by week"
 UP, DOWN = "▲", "▼"
 

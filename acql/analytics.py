@@ -23,7 +23,7 @@ from functools import lru_cache
 import numpy as np
 
 from .config import WEEKS_IN_SEASON
-from .models import Player, Season
+from .models import Game, Player, Season
 
 SIMULATIONS = 10_000
 # How many weeks of their own a player needs before their history outweighs
@@ -429,16 +429,59 @@ def win_chance(spread: float) -> float:
     return cover_chance(spread, 1)
 
 
-def line_threshold(spread: float, most: int = 30) -> int:
+def line_threshold(spread: float, most: int = 30, sd: float = SPREAD_SD) -> int:
     """The biggest whole-number pool line the favourite is still worth taking at.
 
     Useful before the commissioner posts a line: "take them at 6 or less".
     """
     best = 0
     for line in range(most + 1):
-        if cover_chance(spread, line + 1) > 0.5:
+        if cover_chance(spread, line + 1, sd) > 0.5:
             best = line
     return best
+
+
+# ======================================================================
+# The Big Loser mini pool
+# ======================================================================
+# A big loser is a team that loses by MORE than 14, so 15 is the bar. The
+# pool's lines have no effect here - it is the raw result that counts.
+BIG_LOSER_MARGIN = 14
+
+
+@dataclass(frozen=True)
+class BigLoser:
+    """A candidate for the Big Loser pool: a team, and how likely a hiding is."""
+
+    team: str
+    opponent: str
+    margin: float        # their expected margin, negative when they are the dog
+    chance: float        # chance they lose by MORE than BIG_LOSER_MARGIN
+
+
+def big_loser_chance(margin: float, sd: float = SPREAD_SD) -> float:
+    """Chance a team with this expected margin loses by more than 14.
+
+    `margin` is from the team's own side, so -10 means they are ten-point
+    underdogs. Losing by 15 or more means the other side clearing 15, which
+    is what cover_chance answers.
+    """
+    return cover_chance(-margin, BIG_LOSER_MARGIN + 1, sd)
+
+
+def big_losers(games: list[tuple[str, str, float]], sd: float = SPREAD_SD) -> list[BigLoser]:
+    """Both teams in every game, worst beating first.
+
+    Each entry is (home, away, expected home margin). Every team is a
+    candidate - a favourite can be blown out too, it is just rarer - and the
+    list comes back in the order you would pick from it.
+    """
+    out: list[BigLoser] = []
+    for home, away, margin in games:
+        out.append(BigLoser(away, home, -margin, big_loser_chance(-margin, sd)))
+        out.append(BigLoser(home, away, margin, big_loser_chance(margin, sd)))
+    out.sort(key=lambda b: -b.chance)
+    return out
 
 
 def _same(a: object, b: object) -> bool:
@@ -462,7 +505,7 @@ class LineRecord:
         return self.correct / self.weeks if self.weeks else 0.0
 
 
-def lined_games(season: Season) -> list[tuple[int, "Game"]]:
+def lined_games(season: Season) -> list[tuple[int, Game]]:
     """(week, game) for every game with a pool line, in slate order."""
     return [
         (number, game)
@@ -518,48 +561,90 @@ class Prediction:
     pick: str
     chance: float        # probability the pick is right, 0.5..1
     against_line: bool
-    reason: str
+    reason: str          # short enough for a table cell
+    detail: str = ""     # the long version, for a tooltip
 
     @property
     def coin_flip(self) -> bool:
         return self.chance < 0.52
 
 
-def predict(game: "Game", vegas_favourite: str | None, points: float | None) -> Prediction | None:
+PICK_EM = 0.25       # a margin this small either way is a coin flip, not a side
+
+
+def _points(value: float) -> str:
+    """7, 6.5, 10.4 - a margin written the way a spread is written."""
+    return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def predict(game: Game, vegas_favourite: str | None, points: float | None) -> Prediction | None:
     """The pick for one game, from the Vegas spread and the pool's rule.
 
     `vegas_favourite` is "home" or "away"; `points` is the Vegas spread. With
     no spread entered there is nothing to predict from, so the answer is None.
-
-    Straight-up games take the Vegas favourite. On a lined game the favourite
-    must win by more than the line - by at least floor(line) + 1 - so a win
-    by exactly a whole-number line goes to the underdog. The chance is that
-    of the expected margin (the Vegas spread) clearing that bar, with results
-    spread SPREAD_SD points either side of the spread.
     """
     if vegas_favourite not in ("home", "away") or points is None:
         return None
-    home_margin = points if vegas_favourite == "home" else -points
+    return predict_margin(game, points if vegas_favourite == "home" else -points)
+
+
+def predict_margin(
+    game: Game,
+    home_margin: float | None,
+    *,
+    sd: float = SPREAD_SD,
+    source: str = "Vegas",
+) -> Prediction | None:
+    """The pick for one game from an expected margin, positive for the home team.
+
+    Straight-up games take whoever is favoured. On a lined game the pool's
+    favourite must win by more than the line - by at least floor(line) + 1 -
+    so a win by exactly a whole-number line goes to the underdog. The chance
+    is that of the expected margin clearing that bar, with results spread
+    `sd` points either side of it.
+
+    `sd` is a way in for a game nobody agrees about: widen it and every
+    chance moves toward a coin flip, which is what disagreement means.
+    `source` only names where the margin came from, for the reason text.
+    """
+    if home_margin is None:
+        return None
+    sd = round(max(sd, 1.0), 1)
 
     line = getattr(game, "line", None)
     if line is None:
-        if points == 0:
-            return Prediction(game.home, 0.5, False, "pick'em - no favourite")
+        if abs(home_margin) < PICK_EM:
+            return Prediction(game.home, 0.5, False, "pick 'em", "No favourite.")
         pick = game.home if home_margin > 0 else game.away
-        return Prediction(pick, win_chance(abs(home_margin)), False,
-                          f"Vegas favourite by {points:g}")
+        return Prediction(
+            pick, cover_chance(abs(home_margin), 1, sd), False,
+            f"{pick} by {_points(abs(home_margin))}",
+            f"Straight-up game. {source.capitalize()} makes it {pick} by "
+            f"{_points(abs(home_margin))}.",
+        )
 
     favourite = getattr(game, "line_favourite", "")
     fav_is_home = _same(favourite, game.home)
     underdog = getattr(game, "line_underdog", "") or (game.away if fav_is_home else game.home)
     fav_margin = home_margin if fav_is_home else -home_margin
     need = math.floor(line) + 1
-    p_fav = cover_chance(fav_margin, need)
-    vegas_says = f"Vegas has {favourite} by {fav_margin:g}" if fav_margin >= 0 \
-        else f"Vegas has {favourite} as the underdog"
+    p_fav = cover_chance(fav_margin, need, sd)
+    says = f"{source.capitalize()} makes it {favourite} by {_points(fav_margin)}" \
+        if fav_margin >= PICK_EM else f"{source.capitalize()} doesn't even have {favourite} favoured"
+    detail = (
+        f"{favourite} have to win by {need} or more to take this one, because a "
+        f"win by exactly {_points(line)} goes to {underdog}. {says}, which clears {need} "
+        f"about {p_fav:.0%} of the time."
+    )
+    if fav_margin < PICK_EM:
+        short = f"{favourite} need {need}+ and aren't even favoured"
+    elif p_fav > 0.5:
+        short = f"{favourite} need {need}+ and are favoured by {_points(fav_margin)}"
+    else:
+        short = f"{favourite} need {need}+ but are favoured by only {_points(fav_margin)}"
     if p_fav > 0.5:
-        return Prediction(favourite, p_fav, True, f"needs to win by {need}+; {vegas_says}")
-    return Prediction(underdog, 1 - p_fav, True, f"{favourite} needs {need}+; {vegas_says}")
+        return Prediction(favourite, p_fav, True, short, detail)
+    return Prediction(underdog, 1 - p_fav, True, short, detail)
 
 
 def upcoming_week(season: Season) -> int:
@@ -580,6 +665,133 @@ def upcoming_week(season: Season) -> int:
     ]
     after = max(mostly_done, default=0)
     return min(after + 1, WEEKS_IN_SEASON)
+
+
+# ======================================================================
+# The rest of the pool
+# ======================================================================
+# A pick'em pool takes the favourite more often than the favourite wins, and
+# more so the bigger the number. Published pools sit around 0.19 on this
+# curve; measured over 22 unlined games of this pool's own raw pick sheets it
+# came out at 0.49 - they are far chalkier than a public pool, with 89% on
+# every favourite of three points or more. This is the measurement shrunk
+# toward the published figure, because 22 games is not a season: it puts a
+# 3-point favourite on 77% of cards against a 60% chance of winning, and a
+# 7-point one on 94%. The practical meaning is that an unlined game has no
+# leverage in it at all.
+CROWD_SLOPE = 0.40
+# On a game with a pool line the crowd mostly ignores the line and takes the
+# better team anyway - measured at 72.6% over ten lined games, with a range
+# of 40% to 83%. This is where that starts before a pool's own habit is
+# measured, and how many lined games it takes for the measurement to lead.
+CHALK_PRIOR = 0.73
+CHALK_WEIGHT = 8
+
+
+def crowd_on_favourite(spread: float) -> float:
+    """The share of a pick'em pool expected to take a favourite this big."""
+    return 1 / (1 + math.exp(-CROWD_SLOPE * abs(spread)))
+
+
+def pool_chalk(season: Season) -> tuple[float, int]:
+    """(share of this pool that takes the favourite on a lined game, games seen).
+
+    Worked backwards out of the sheets: on a decided game the players still
+    holding a pick are the ones who were right, so the share who took the
+    pool's favourite is either that share or its complement, depending on
+    which way the game went. Shrunk toward CHALK_PRIOR, because a handful of
+    lined games is not a habit yet.
+    """
+    shares = []
+    for number, game in lined_games(season):
+        if not game.played:
+            continue
+        players = list(season.weeks[number].lines.values())
+        if not players:
+            continue
+        right = sum(
+            1 for entry in players
+            if _same(entry.correct_picks.get(game.index), game.winner)
+        )
+        share = right / len(players)
+        shares.append(share if _same(game.winner, game.line_favourite) else 1 - share)
+    if not shares:
+        return CHALK_PRIOR, 0
+    seen = len(shares)
+    measured = statistics.fmean(shares)
+    return (seen * measured + CHALK_WEIGHT * CHALK_PRIOR) / (seen + CHALK_WEIGHT), seen
+
+
+def leverage(chance: float, share: float) -> float:
+    """Games gained on the average card by making this pick.
+
+    Being right when everyone else is right wins nothing; the whole of the
+    gain on the field is the chance of being right minus the share of the
+    pool already on that side. It is why a 55% pick that 20% of the pool
+    holds is worth more than an 80% pick that 85% of them hold.
+    """
+    return chance - share
+
+
+@dataclass(frozen=True)
+class Scorecard:
+    """How the picks have actually done, against how they said they would."""
+
+    hits: int
+    picks: int
+    expected: float      # the chances added up: how many it thought it would get
+    weeks: int
+    lined_hits: int = 0  # of those, the ones played under the pool's line rule
+    lined_picks: int = 0
+
+    @property
+    def straight_hits(self) -> int:
+        """Games picked the ordinary way - who wins, full stop."""
+        return self.hits - self.lined_hits
+
+    @property
+    def straight_picks(self) -> int:
+        return self.picks - self.lined_picks
+
+    @property
+    def rate(self) -> float:
+        return self.hits / self.picks if self.picks else 0.0
+
+    @property
+    def expected_rate(self) -> float:
+        return self.expected / self.picks if self.picks else 0.0
+
+    @property
+    def surprise(self) -> float:
+        """Hits above (or below) what it expected. Near zero is the goal.
+
+        Below zero means the chances are too bold, above means too shy;
+        either way, a dozen games is noise, so this needs most of a season
+        before it means anything.
+        """
+        return self.hits - self.expected
+
+
+def grade(entries: list[tuple[int, Prediction, str]]) -> Scorecard:
+    """Score (week, prediction, who actually got the game) against the results.
+
+    The two kinds of pick are counted apart, because they answer different
+    questions. A straight game asks who wins and is directly comparable with
+    anybody else's record; a lined game asks whether the favourite wins by
+    more than the pool's number, which nothing outside this pool is even
+    trying to answer. Adding them together and quoting one percentage
+    flatters the total.
+    """
+    hits = sum(1 for _, guess, winner in entries if _same(guess.pick, winner))
+    lined = [e for e in entries if e[1].against_line]
+    return Scorecard(
+        hits=hits,
+        picks=len(entries),
+        expected=sum(guess.chance for _, guess, _ in entries),
+        weeks=len({week for week, _, _ in entries}),
+        lined_hits=sum(1 for _, guess, winner in lined if _same(guess.pick, winner)),
+        lined_picks=len(lined),
+    )
 
 
 @dataclass(frozen=True)
