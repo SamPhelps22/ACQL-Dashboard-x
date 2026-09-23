@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from ... import analytics
 from ...config import WEEKS_IN_SEASON
 from ..charts import BarChart
-from ..widgets import Card, StatTile, TableModel, make_table, section
+from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
 HEADERS = ["#", "Player", "Wins", "Pace / wk", "Projected", "Best case",
@@ -44,16 +44,14 @@ class ProjectionsPage(Page):
 
         self.layout_.addWidget(section(self.title, self.subtitle))
 
-        tiles = QHBoxLayout()
-        tiles.setSpacing(12)
         self.tile_favourite = StatTile("Title Favourite")
         self.tile_left = StatTile("Weeks Left")
         self.tile_alive = StatTile("Still In It")
         self.tile_magic = StatTile("Magic Number")
         self._tiles = (self.tile_favourite, self.tile_left, self.tile_alive, self.tile_magic)
-        for tile in self._tiles:
-            tiles.addWidget(tile, 2 if tile is self.tile_favourite else 1)
-        self.layout_.addLayout(tiles)
+        # Wrapped rather than squeezed: 4 to a row keeps every tile
+        # wide enough for its own number on a laptop screen.
+        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=4))
 
         row = QHBoxLayout()
         row.setSpacing(12)
@@ -101,6 +99,7 @@ class ProjectionsPage(Page):
     def _show_empty(self) -> None:
         for tile in self._tiles:
             tile.update_values(self.NO_VALUE, "No data")
+            tile.hide_bar()
         self.title_chart.empty("Projections appear once a week is scored")
         self.top3_chart.empty("Projections appear once a week is scored")
         self.clear_layout(self.table_box)
@@ -132,6 +131,7 @@ class ProjectionsPage(Page):
         if summary.remaining == 0:
             self.tile_left.update_values("0", f"all {WEEKS_IN_SEASON} weeks final - season complete")
             self.tile_alive.update_values(self.NO_VALUE, "the title is decided")
+            self.tile_alive.hide_bar()
         else:
             self.tile_left.update_values(
                 str(summary.remaining),
@@ -143,6 +143,14 @@ class ProjectionsPage(Page):
                 f"of {_plural(total, 'player')} can still finish first",
                 "good" if summary.in_contention > 1 else "",
             )
+            # How open the title still is, as a share of the pool - the bar
+            # shrinking week by week is the shape of a season closing.
+            if total:
+                self.tile_alive.show_bar(
+                    summary.in_contention / total, None,
+                    "good" if summary.in_contention > 1 else "warning",
+                    self.palette,
+                )
 
         leader, chaser = summary.leader, summary.chaser
         if summary.magic_number is None:

@@ -13,12 +13,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ... import picks
 from ...models import Season, Week
 from ..charts import BarChart, HistogramChart
-from ..widgets import Card, StatTile, TableModel, make_table, section
+from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
-SLATE_HEADERS = ["#", "Matchup", "Result", "Got it right", "Hit rate"]
+SLATE_HEADERS = [
+    "#", "Matchup", "Pool line", "Result", "Pool took", "Got it right", "Hit rate",
+]
+SLATE_LINE, SLATE_RESULT, SLATE_TOOK, SLATE_RIGHT, SLATE_RATE = 2, 3, 4, 5, 6
 BOARD_HEADERS = ["#", "Player", "Total", "Regular", "Big Loser", "Suicide pick"]
 TRAP_COUNT = 10
 EASY_RATE = 0.75      # most of the pool got it - not a trap
@@ -64,16 +68,14 @@ class WeeklyPage(Page):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.activated.connect(lambda d=delta: self._step(d))
 
-        tiles = QHBoxLayout()
-        tiles.setSpacing(12)
         self.tile_winner = StatTile("Week Winner")
         self.tile_high = StatTile("High Score")
         self.tile_avg = StatTile("Week Average")
         self.tile_low = StatTile("Low Score")
         self._tiles = (self.tile_winner, self.tile_high, self.tile_avg, self.tile_low)
-        for tile in self._tiles:
-            tiles.addWidget(tile, 2 if tile is self.tile_winner else 1)
-        self.layout_.addLayout(tiles)
+        # Wrapped rather than squeezed: 4 to a row keeps every tile
+        # wide enough for its own number on a laptop screen.
+        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=4))
 
         row = QHBoxLayout()
         row.setSpacing(12)
@@ -246,34 +248,48 @@ class WeeklyPage(Page):
     # ---- the slate ------------------------------------------------------
     def _render_slate(self, week: Week) -> None:
         entrants = len(week.lines) or 1
-        rows, tones, rates = [], {}, []
+        # Who the pool actually backed, when their pick sheet has been loaded.
+        # Unlike the hit rate, this is known before the game is played.
+        sheet = picks.load(week.number)
+        rows, tones, rates, shares = [], {}, [], []
         for r, game in enumerate(week.games):
             correct = week.correct_count(game.index)
             rate = correct / entrants
             rates.append(rate)
+            line = getattr(game, "line", None)
+            took, share = self._pool_took(sheet, game)
+            shares.append(share)
             rows.append([
                 game.index,
                 game.label,
+                f"{game.line_favourite} by {line:g}" if line is not None else self.NO_VALUE,
                 game.winner or self.NO_VALUE,
+                took,
                 correct,
                 self.pct(rate) if game.played or correct else self.NO_VALUE,
             ])
             if not (game.played or correct):
-                tones[(r, 4)] = "muted"
+                tones[(r, SLATE_RATE)] = "muted"
             elif rate >= EASY_RATE:
-                tones[(r, 4)] = "good"
+                tones[(r, SLATE_RATE)] = "good"
             elif rate <= TRAP_RATE:
-                tones[(r, 4)] = "bad"
+                tones[(r, SLATE_RATE)] = "bad"
             else:
-                tones[(r, 4)] = "muted"
+                tones[(r, SLATE_RATE)] = "muted"
             if not game.played:
-                tones[(r, 2)] = "muted"
+                tones[(r, SLATE_RESULT)] = "muted"
+            if line is None:
+                tones[(r, SLATE_LINE)] = "muted"
+            # A pool piled onto one side is where a week is won or lost, so
+            # it is marked whichever way the game went.
+            if share is not None and share >= 0.75:
+                tones[(r, SLATE_TOOK)] = "warning"
 
         model = TableModel(
             SLATE_HEADERS, rows,
             palette=self.palette,
-            numeric_columns={0, 3, 4},
-            sort_values={4: rates},
+            numeric_columns={0, SLATE_RIGHT, SLATE_RATE},
+            sort_values={SLATE_RATE: rates, SLATE_TOOK: shares},
             tones=tones,
             bold_columns={1},
         )
@@ -282,6 +298,26 @@ class WeeklyPage(Page):
         self.clear_layout(self.slate_box)
         self.slate_table = view
         self.slate_box.addWidget(view)
+
+    def _pool_took(self, sheet, game) -> tuple[str, float | None]:
+        """(the side most of the pool backed and its share, that share).
+
+        Straight from their own pick sheet, so it says what the pool did
+        rather than what a curve says pools usually do.
+        """
+        if sheet is None:
+            return self.NO_VALUE, None
+        found = sheet.game_for(game.away, game.home)
+        if found is None or not found.counted:
+            return self.NO_VALUE, None
+        best, share = "", 0.0
+        for team in (game.home, game.away):
+            value = found.share_on(team)
+            if value is not None and value > share:
+                best, share = team, value
+        if not best:
+            return self.NO_VALUE, None
+        return f"{best} {self.pct(share, 0)}", share
 
     def _render_traps(self, week: Week) -> None:
         entrants = len(week.lines) or 1

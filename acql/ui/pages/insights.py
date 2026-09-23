@@ -6,13 +6,20 @@ import statistics
 
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
-from ... import analytics
+from ... import analytics, picks, predictions
 from ..charts import HeatmapChart, LineChart, ScatterChart
-from ..widgets import Card, StatTile, section
+from ..widgets import Card, StatTile, section, tile_grid
 from .base import Page
 
 H2H_PLAYERS = 12
 FORM_TITLE = "Form against consistency"
+CROWD_TITLE = "Following the crowd, against what it scores"
+# Top-left, top-right, bottom-left, bottom-right - x is how chalky, y is the
+# average score, so the left-hand side is where a week can be won outright.
+CROWD_QUADRANTS = (
+    "Contrarian and winning", "Chalky and winning",
+    "Contrarian and losing", "Chalky and losing",
+)
 QUADRANTS = ("Strong and steady", "Strong but streaky", "Steady, but short", "Feast or famine")
 
 
@@ -29,16 +36,17 @@ class InsightsPage(Page):
     def build(self) -> None:
         self.layout_.addWidget(section(self.title, self.subtitle))
 
-        tiles = QHBoxLayout()
-        tiles.setSpacing(12)
         self.tile_home = StatTile("Home Teams")
         self.tile_momentum = StatTile("Momentum")
         self.tile_hard = StatTile("Hardest Week")
         self.tile_easy = StatTile("Easiest Week")
-        self._tiles = (self.tile_home, self.tile_momentum, self.tile_hard, self.tile_easy)
-        for tile in self._tiles:
-            tiles.addWidget(tile, 2 if tile is self.tile_momentum else 1)
-        self.layout_.addLayout(tiles)
+        self.tile_commish = StatTile("The Commissioner's Lines")
+        self.tile_chalk = StatTile("Going With the Crowd")
+        self._tiles = (
+            self.tile_home, self.tile_momentum, self.tile_hard,
+            self.tile_easy, self.tile_commish, self.tile_chalk,
+        )
+        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=3))
 
         row = QHBoxLayout()
         row.setSpacing(12)
@@ -60,6 +68,11 @@ class InsightsPage(Page):
         row.addWidget(self.weeks_card, 1)
         self.layout_.addLayout(row)
 
+        self.crowd_card = Card(CROWD_TITLE)
+        self.crowd_chart = ScatterChart(self.palette, height=3.6)
+        self.crowd_card.add(self.crowd_chart, 1)
+        self.layout_.addWidget(self.crowd_card, 1)
+
         self.h2h_card = Card("Head to head")
         self.h2h_chart = HeatmapChart(self.palette, height=6.0)
         self.h2h_card.add(self.h2h_chart, 1)
@@ -74,7 +87,7 @@ class InsightsPage(Page):
         self.layout_.addWidget(self.h2h_card, 2)
 
     def restyle(self) -> None:
-        for chart in (self.form_chart, self.weeks_chart, self.h2h_chart):
+        for chart in (self.form_chart, self.weeks_chart, self.crowd_chart, self.h2h_chart):
             chart.set_palette(self.palette)
         self.refresh_now()
 
@@ -88,8 +101,122 @@ class InsightsPage(Page):
         profiles = analytics.week_profiles(season)
         self._update_week_tiles(profiles)
         self._update_weeks_chart(profiles)
+        self._update_commish(season)
+        self._update_chalk(season)
         self._update_form(season)
         self._update_h2h(season)
+        self._update_crowd_chart(season)
+
+    # ---- the pool's own habits ------------------------------------------
+    def _update_commish(self, season) -> None:
+        """How far above the betting line the commissioner sets his numbers.
+
+        It decides almost every lined game: because the favourite has to win
+        by MORE than the line, a number set at or above the market's makes
+        the underdog the better side before a ball is thrown.
+        """
+        gaps = []
+        for number, sheet in predictions.stored_weeks().items():
+            week = season.weeks.get(number)
+            if week is None:
+                continue
+            found = predictions.match_games(
+                sorted(week.games, key=lambda g: g.index), sheet
+            ).by_game
+            for game in week.games:
+                line = getattr(game, "line", None)
+                forecast = found.get(game.index)
+                if line is None or forecast is None or forecast.market is None:
+                    continue
+                margin = predictions.home_margin(game, forecast, forecast.market)
+                if margin is not None:
+                    gaps.append(line - abs(margin))
+        if not gaps:
+            self.tile_commish.update_values(
+                self.NO_VALUE, "needs a predictions file for a week with pool lines"
+            )
+            return
+        middle = statistics.median(gaps)
+        self.tile_commish.update_values(
+            f"{middle:+.1f}",
+            f"points above the betting line, over {_plural(len(gaps), 'lined game')}\n"
+            f"at or above it, the underdog is the better side",
+            "bad" if middle >= 0 else "good",
+        )
+
+    def _update_chalk(self, season) -> None:
+        """How much this pool follows the crowd, and who doesn't."""
+        sheets = picks.load_all()
+        everyone: dict[str, list[float]] = {}
+        for sheet in sheets.values():
+            for coach, value in picks.chalk(sheet).items():
+                everyone.setdefault(coach, []).append(value)
+        if not everyone:
+            self.tile_chalk.update_values(
+                self.NO_VALUE, "load a pick sheet to measure it"
+            )
+            self.tile_chalk.hide_bar()
+            return
+        averages = {c: sum(v) / len(v) for c, v in everyone.items()}
+        pool = sum(averages.values()) / len(averages)
+        odd_one = min(averages, key=averages.get)
+        self.tile_chalk.update_values(
+            self.pct(pool, 0),
+            f"of the pool's picks are on the popular side\n"
+            f"most contrarian: {odd_one} at {self.pct(averages[odd_one], 0)}",
+        )
+        self.tile_chalk.show_bar(pool, averages[odd_one], "warning", self.palette)
+
+    def _update_crowd_chart(self, season) -> None:
+        """Each coach's agreement with the pool, against what they score.
+
+        The question the whole app circles: does following the crowd help?
+        It helps you be right - and it is also why most of the pool finishes
+        within a game of the average, where no money is.
+        """
+        sheets = picks.load_all()
+        if not sheets:
+            self.crowd_card.set_title(CROWD_TITLE)
+            self.crowd_chart.empty("Load a pick sheet and this appears")
+            return
+        totals: dict[str, list[float]] = {}
+        for sheet in sheets.values():
+            for coach, value in picks.chalk(sheet).items():
+                totals.setdefault(" ".join(coach.split()).casefold(), []).append(value)
+        points = []
+        for player in season.players.values():
+            key = " ".join(player.display.split()).casefold()
+            history = [v for v in player.weekly_wins.values() if v is not None]
+            if key in totals and history:
+                points.append((
+                    player.display,
+                    sum(totals[key]) / len(totals[key]),
+                    sum(history) / len(history),
+                ))
+        if len(points) < 4:
+            self.crowd_card.set_title(CROWD_TITLE)
+            self.crowd_chart.empty("Not enough coaches with both a sheet and a score")
+            return
+        mid_x = statistics.median(x for _, x, _ in points)
+        mid_y = statistics.median(y for _, _, y in points)
+        leader = season.leader()
+        self.crowd_card.set_title(
+            f"{CROWD_TITLE} - {len(points)} coaches, the pool agrees "
+            f"{self.pct(mid_x, 0)} of the time"
+        )
+        self.crowd_chart.plot(
+            points,
+            xlabel="Share of picks on the popular side",
+            ylabel="Average wins a week",
+            quadrants=(mid_x, mid_y),
+            quadrant_labels=CROWD_QUADRANTS,
+            highlight=leader.display if leader else None,
+            tooltips=[
+                f"{name}\nwith the crowd on {self.pct(x, 0)} of picks\n"
+                f"averages {y:.1f} wins a week"
+                for name, x, y in points
+            ],
+        )
 
     # ---- tiles -----------------------------------------------------------
     def _update_home(self, season) -> None:

@@ -98,6 +98,13 @@ def parse_workbook(
 
     wb = openpyxl.load_workbook(source.path, data_only=True)
     try:
+        # Stray entries are gathered per sheet and reported once at the end.
+        # A pick sheet pasted two rows out of place puts a whole team row and
+        # a whole row of percentages into the player column, and seventeen
+        # warnings about one sheet bury the one line that says which sheet.
+        stray: dict[str, list[str]] = {}
+        sheet_label = ""
+
         def player_for(raw: object) -> Player | None:
             display = _text(raw)
             if not display or display.lower() in {"player", "coach", "rank"}:
@@ -110,12 +117,9 @@ def parse_workbook(
             # stats.xls. Short codes are deliberately left alone: "tb" is a
             # coach in this pool as well as a football team.
             if _num(display) is not None or (len(display) > 3 and team_code(display)):
-                result["warnings"].append(
-                    f"{source.path.name}: ignored \"{display}\" in the player "
-                    f"column - that is a team or a number, not a coach. Check "
-                    f"that the week sheet has coach names in E10:E44 and "
-                    f"nothing else."
-                )
+                seen = stray.setdefault(sheet_label, [])
+                if display not in seen:
+                    seen.append(display)
                 return None
             key = aliases.key(display)
             if not key:
@@ -136,6 +140,7 @@ def parse_workbook(
             if not 1 <= number <= WEEKS_IN_SEASON:
                 continue
             ws = wb[name]
+            sheet_label = name
             grid = {
                 (c.row, c.column): c.value
                 for row in ws.iter_rows(
@@ -170,8 +175,6 @@ def parse_workbook(
 
                 total = _int(at(r, COL_TOTAL_WINS))
                 regular = _int(at(r, COL_REGULAR_WINS))
-                line.total_wins = total or 0
-                line.regular_wins = regular if regular is not None else line.total_wins
 
                 for slot, col in enumerate((COL_LOSER_1, COL_LOSER_2, COL_LOSER_3)):
                     raw = at(r, col)
@@ -182,6 +185,22 @@ def parse_workbook(
                         line.big_loser_wins += 1
                     elif _text(raw):
                         line.big_loser_picks.append(_text(raw))
+
+                # B and C are formulas, and the workbook saves no results for
+                # them, so from outside Excel they read as blank - which put
+                # every coach in the pool on nought. They are worked out here
+                # from what the sheet does hold, by the sheet's own formulas:
+                #
+                #     C = COUNTA(F:U)        the picks left standing
+                #     B = SUM(V:X) + C       plus each big loser that came in
+                #
+                # A cell that does have a value is believed over either.
+                if regular is None:
+                    regular = len(line.correct_picks)
+                if total is None:
+                    total = regular + line.big_loser_wins
+                line.regular_wins = regular
+                line.total_wins = total
 
                 suicide = _text(at(r, COL_SUICIDE))
                 if suicide.casefold() in SUICIDE_OUT_MARKERS:
@@ -205,6 +224,8 @@ def parse_workbook(
         # ---- Season sheet -------------------------------------------------
         if "Season" in wb.sheetnames:
             ws = wb["Season"]
+            sheet_label = "Season"
+
             games_per_week: dict[int, int] = {}
             for w in range(1, WEEKS_IN_SEASON + 1):
                 n = _int(ws.cell(SEASON_GAMES_ROW, SEASON_FIRST_WEEK_COL + w - 1).value)
@@ -224,6 +245,7 @@ def parse_workbook(
         # ---- Winnings sheet ------------------------------------------------
         if "Winnings" in wb.sheetnames:
             ws = wb["Winnings"]
+            sheet_label = "Winnings"
             buy_in = None
             for r in range(1, 6):
                 for c in range(1, 6):
@@ -255,6 +277,36 @@ def parse_workbook(
                 result["current_week"] = int(m.group(1))
     finally:
         wb.close()
+
+    for where, found in stray.items():
+        # A percentage cell reads back as 0.08571428571428572, which says
+        # nothing at that length; as 9% it is recognisably the sheet's own
+        # picked-home row, which is the thing to go and look for.
+        def shorten(text: str) -> str:
+            value = _num(text)
+            if value is None or len(text) <= 6:
+                return text
+            return f"{value:.0%}" if 0.0 <= value <= 1.0 else f"{value:,.2f}".rstrip("0").rstrip(".")
+
+        def order(text: str) -> tuple:
+            value = _num(text)
+            return (1, value, "") if value is not None else (0, 0.0, text.casefold())
+
+        listed = sorted(found, key=order)
+        shown = ", ".join(f'"{shorten(s)}"' for s in listed[:4])
+        rest = f" and {len(listed) - 4} more" if len(listed) > 4 else ""
+        one = len(listed) == 1
+        result["warnings"].append(
+            f"{source.path.name} {where or 'sheet'}: ignored "
+            f"{len(listed)} entr{'y' if one else 'ies'} in the player column "
+            f"that {'is a team or a number' if one else 'are teams or numbers'} "
+            f"rather than {'a coach' if one else 'coaches'} "
+            f"({shown}{rest}). That happens when a raw pick sheet is pasted a "
+            f"row or two out of place, bringing its team row and its "
+            f"percentages down into the coach block - worth checking, because "
+            f"the coach rows below will have shifted with it. The coach names "
+            f"belong in E10:E44 with nothing else."
+        )
 
     if not people:
         result["warnings"].append(

@@ -88,6 +88,26 @@ LIGHT = Palette(
 PALETTES = {"dark": DARK, "light": LIGHT}
 
 FONT_STACK = '"Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif'
+# Numbers read better when they line up in a column, which the UI font's
+# proportional digits refuse to do. Every figure in a tile or a table is set
+# in this instead, so a column of them is scannable.
+NUMERIC_STACK = '"SF Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace'
+
+# One scale, used everywhere. Sizes were ad hoc before - 13, 13.5, 12.5, 12,
+# 11.5 all appeared - which is invisible on one page and incoherent across
+# twelve. Each step is about 1.15x the one below it, and the names say what
+# the step is for rather than how big it is.
+TYPE = {
+    "display": 30,     # the one number a tile exists to show
+    "title": 22,       # page titles
+    "heading": 16,     # a name inside a card
+    "body": 13,        # everything you read
+    "label": 12,       # column headings, card titles
+    "caption": 11.5,   # footnotes, units, the small print
+}
+# Spacing steps, so margins and gaps come from a ladder rather than taste.
+SPACE = {"hair": 2, "tight": 4, "snug": 8, "step": 12, "room": 18, "gap": 24}
+RADIUS = {"chip": 6, "control": 7, "card": 10, "tile": 12}
 
 
 def mix(fg: str, bg: str, amount: float) -> str:
@@ -129,17 +149,46 @@ def ramp_direction(palette: Palette) -> str:
     return "brighter" if palette.name == "dark" else "darker"
 
 
+def tone_color(p: Palette, tone: str) -> str:
+    """The colour a named tone paints in, for widgets that draw themselves."""
+    return {
+        "good": p.good,
+        "warning": p.warning,
+        "serious": p.serious,
+        "bad": p.critical,
+        "muted": p.ink_muted,
+    }.get(tone, p.ink_secondary)
+
+
 def stylesheet(p: Palette) -> str:
     """Qt stylesheet for the whole application."""
     hover = mix(p.ink, p.surface, 0.07)       # neutral hover wash
     active = mix(p.accent, p.surface, 0.18)   # the current page in the sidebar
+    t = TYPE
+    s = SPACE
+    r = RADIUS
+    # A tinted chip for each tone, mixed over the tile surface so it stays
+    # solid - Qt reads alpha inconsistently between platforms.
+    chips = "".join(
+        f"""
+    #Pill[tone="{name}"] {{
+        background: {mix(colour, p.raised, 0.16)};
+        color: {colour};
+    }}
+    #StatDetail[tone="{name}"] {{ color: {colour}; font-weight: 600; }}
+    #MetricValue[tone="{name}"] {{ color: {colour}; }}"""
+        for name, colour in (
+            ("good", p.good), ("warning", p.warning),
+            ("serious", p.serious), ("bad", p.critical),
+        )
+    )
     return f"""
     * {{ font-family: {FONT_STACK}; }}
 
     QWidget {{
         background: {p.plane};
         color: {p.ink};
-        font-size: 13px;
+        font-size: {t["body"]}px;
     }}
     /* Text sits on whatever surface is behind it, not on a plane-coloured box. */
     QLabel, QCheckBox, QRadioButton {{ background: transparent; }}
@@ -153,13 +202,13 @@ def stylesheet(p: Palette) -> str:
     }}
     #SidebarTitle {{
         color: {p.ink};
-        font-size: 18px;
+        font-size: {t["heading"]}px;
         font-weight: 700;
         padding: 22px 24px 2px 24px;
     }}
     #SidebarSubtitle {{
         color: {p.ink_muted};
-        font-size: 12px;
+        font-size: {t["label"]}px;
         padding: 0 24px 16px 24px;
     }}
     #Sidebar QPushButton#NavButton {{
@@ -170,7 +219,7 @@ def stylesheet(p: Palette) -> str:
         text-align: left;
         padding: 10px 14px;
         margin: 1px 10px;
-        font-size: 13.5px;
+        font-size: {t["body"]}px;
     }}
     #Sidebar QPushButton#NavButton:hover,
     #Sidebar QPushButton#NavButton:focus {{
@@ -222,15 +271,16 @@ def stylesheet(p: Palette) -> str:
     }}
     #AwardTile[tone="good"] {{ border-left-color: {p.good}; }}
     #AwardTile[tone="bad"] {{ border-left-color: {p.critical}; }}
-    #AwardIcon {{ font-size: 15px; }}
-    #AwardWinner {{ font-size: 16px; font-weight: 700; color: {p.ink}; }}
-    #AwardDetail {{ font-size: 11.5px; color: {p.ink_muted}; }}
+    #AwardIcon {{ font-size: {t["heading"]}px; }}
+    #AwardWinner {{ font-size: {t["heading"]}px; font-weight: 700; color: {p.ink}; }}
+    #AwardDetail {{ font-size: {t["caption"]}px; color: {p.ink_muted}; }}
     /* The number reads as a chip so it never competes with the name. */
     #AwardValue {{
         background: {mix(p.ink, p.raised, 0.08)};
         border-radius: 6px;
         padding: 2px 8px;
-        font-size: 12.5px;
+        font-family: {NUMERIC_STACK};
+        font-size: {t["label"]}px;
         font-weight: 700;
         color: {p.ink_secondary};
     }}
@@ -243,17 +293,50 @@ def stylesheet(p: Palette) -> str:
         color: {p.critical};
     }}
 
-    #PageTitle {{ font-size: 24px; font-weight: 700; color: {p.ink}; }}
-    #PageSubtitle {{ font-size: 13px; color: {p.ink_muted}; }}
+    #PageTitle {{ font-size: {t["title"]}px; font-weight: 700; color: {p.ink}; }}
+    #PageSubtitle {{ font-size: {t["body"]}px; color: {p.ink_muted}; }}
     #CardTitle {{
-        font-size: 12.5px;
+        font-size: {t["label"]}px;
         font-weight: 600;
         color: {p.ink_secondary};
     }}
-    #StatValue {{ font-size: 32px; font-weight: 700; color: {p.ink}; }}
-    #StatDetail {{ font-size: 12px; color: {p.ink_secondary}; }}
+    #StatValue {{
+        font-family: {NUMERIC_STACK};
+        font-size: {t["display"]}px;
+        font-weight: 700;
+        color: {p.ink};
+    }}
+    /* A tile whose headline is a name rather than a number needs the room
+       more than it needs the size, so it steps down instead of eliding. */
+    #StatValue[length="long"] {{ font-size: {t["title"]}px; }}
+    #StatValue[length="verylong"] {{ font-size: {t["heading"]}px; }}
+    /* And a headline with no digit in it is a phrase, not a figure. */
+    #StatValue[kind="text"] {{ font-family: {FONT_STACK}; letter-spacing: -0.2px; }}
+    #StatDetail {{ font-size: {t["caption"]}px; color: {p.ink_secondary}; }}
     #StatDetail[tone="good"] {{ color: {p.good}; font-weight: 600; }}
     #StatDetail[tone="bad"] {{ color: {p.critical}; font-weight: 600; }}
+    /* ---- small shared pieces ---- */
+    /* A chip: one number with a tone behind it, for a figure that has to be
+       read next to words without shouting over them. */
+    #Pill {{
+        background: {mix(p.ink, p.raised, 0.08)};
+        border-radius: {r["chip"]}px;
+        padding: 2px 8px;
+        font-family: {NUMERIC_STACK};
+        font-size: {t["caption"]}px;
+        font-weight: 700;
+        color: {p.ink_secondary};
+    }}{chips}
+    /* A label/value pair, for dense lists of figures inside a card. */
+    #MetricLabel {{ color: {p.ink_muted}; font-size: {t["caption"]}px; }}
+    #MetricValue {{
+        font-family: {NUMERIC_STACK};
+        font-size: {t["body"]}px;
+        font-weight: 600;
+        color: {p.ink};
+    }}
+    #MetricNote {{ color: {p.ink_muted}; font-size: {t["caption"]}px; }}
+
     #Good {{ color: {p.good}; font-weight: 600; }}
     #Bad {{ color: {p.critical}; font-weight: 600; }}
     #Muted {{ color: {p.ink_muted}; }}
@@ -270,6 +353,11 @@ def stylesheet(p: Palette) -> str:
         font-size: 13px;
     }}
     QTableView::item {{ padding: 5px 8px; border: none; }}
+    /* There was a hover rule here that lifted the row under the cursor. It
+       reads well and costs too much: a `::item` state rule makes Qt style and
+       repaint cells one at a time as the mouse moves across a table, and with
+       thirty-five coaches against seventeen columns that was enough to make
+       the whole window feel slow. Alternating rows carry the eye instead. */
     QHeaderView::section {{
         background: {p.raised};
         color: {p.ink_muted};
@@ -280,6 +368,9 @@ def stylesheet(p: Palette) -> str:
         font-weight: 600;
     }}
     QHeaderView::section:hover {{ color: {p.ink}; }}
+    /* The sorted column keeps a hairline under it, which is quieter than Qt's
+       default arrow and survives a narrow column. */
+    QHeaderView::section:checked {{ color: {p.ink}; border-bottom: 2px solid {p.accent}; }}
     QTableCornerButton::section {{ background: {p.raised}; border: none; }}
 
     /* ---- controls ---- */
@@ -357,12 +448,15 @@ def stylesheet(p: Palette) -> str:
     QProgressBar {{ background: {p.grid}; border: none; border-radius: 4px; }}
     QProgressBar::chunk {{ background: {p.accent}; border-radius: 4px; }}
 
+    /* Tooltips carry a lot of the explanation in this app, so they are set
+       for reading rather than for glancing. */
     QToolTip {{
         background: {p.raised};
         color: {p.ink};
-        border: 1px solid {p.grid};
-        border-radius: 6px;
-        padding: 6px 9px;
+        border: 1px solid {p.baseline};
+        border-radius: {r["chip"]}px;
+        padding: {s["snug"]}px {s["step"]}px;
+        font-size: {t["body"]}px;
     }}
     #Banner {{
         background: {p.raised};
@@ -376,7 +470,10 @@ def stylesheet(p: Palette) -> str:
         background: {p.surface};
         border: 1px solid {p.baseline};
     }}
-    QDialog#CommandPalette QLineEdit {{ font-size: 15px; padding: 10px 12px; }}
+    QDialog#CommandPalette QLineEdit {{
+        font-size: {t["heading"]}px;
+        padding: {s["snug"]}px {s["step"]}px;
+    }}
     QDialog#CommandPalette QListWidget {{ background: transparent; border: none; }}
     QDialog#CommandPalette QListWidget::item {{ color: {p.ink_secondary}; }}
     QDialog#CommandPalette QListWidget::item:selected {{ color: {p.ink}; }}

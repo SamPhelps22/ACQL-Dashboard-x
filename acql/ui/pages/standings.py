@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from ... import analytics
+from ... import analytics, picks
 from ...models import Player, Season
 from ..charts import HeatmapChart, LineChart
 from ..widgets import Card, TableModel, make_table, section
@@ -13,15 +13,16 @@ from .base import Page
 
 HEADERS = [
     "#", "Player", "W", "L", "PCT", "GB", "Won", "Net $",
-    "This Wk", "Last 3", "Move", "Best", "Avg", "Lines", "Lines %", "Weeks",
+    "This Wk", "Last 3", "Move", "Best", "Avg", "Lines", "Lines %",
+    "With pool", "Weeks",
 ]
-NUMERIC = {0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
-LINES_COLUMN, LINES_PCT_COLUMN = 13, 14
+NUMERIC = {0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+LINES_COLUMN, LINES_PCT_COLUMN, CHALK_COLUMN = 13, 14, 15
 NAME_COLUMN = 1
 GRID_ROWS = 24
 # Contenders in the race chart. Four is the most the lines can be labelled
 # directly at their ends; past that, identity would rest on the legend alone.
-RACE_PLAYERS = 10
+RACE_PLAYERS = 4
 RACE_TITLE = "The race - wins behind the leader, week by week"
 UP, DOWN = "▲", "▼"
 
@@ -68,6 +69,8 @@ class StandingsPage(Page):
 
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
+        self._chalk: dict[str, float] = {}
+        self._pool_chalk: float | None = None
         self.table: QWidget | None = None
         self.proxy = None
 
@@ -136,6 +139,20 @@ class StandingsPage(Page):
         if not order:
             self._show_empty()
             return
+        # Averaged across every pick sheet that has been loaded; empty until
+        # one is, and the column simply stays blank.
+        weeks = picks.load_all()
+        chalk: dict[str, list[float]] = {}
+        for sheet in weeks.values():
+            for coach, value in picks.chalk(sheet).items():
+                chalk.setdefault(" ".join(coach.split()).casefold(), []).append(value)
+        self._chalk = {
+            name: sum(values) / len(values) for name, values in chalk.items() if values
+        }
+        self._pool_chalk = (
+            sum(v for vs in chalk.values() for v in vs)
+            / sum(len(vs) for vs in chalk.values())
+        ) if chalk else None
         self._update_table(order, analytics.line_records(season))
         self._update_race(season, order)
         self._update_grid(season, order)
@@ -173,12 +190,16 @@ class StandingsPage(Page):
             return None
         return value
 
+    def _chalk_for(self, player: Player) -> float | None:
+        return self._chalk.get(" ".join(player.display.split()).casefold())
+
     def _update_table(self, order: list[Player], records: dict[str, analytics.LineRecord]) -> None:
         pool_rate = analytics.pool_line_rate(records)
         none = analytics.LineRecord(0, 0, 0)
         rows, tones, tooltips = [], {}, {}
         for r, player in enumerate(order):
             lined = records.get(player.key, none)
+            crowd = self._chalk_for(player)
             played = bool(player.weeks_played)
             move_text, move_tone, _ = self._movement(player)
             net = player.net_points
@@ -199,6 +220,7 @@ class StandingsPage(Page):
                 f"{player.average_wins:.1f}" if played else self.NO_VALUE,
                 f"{lined.correct}/{lined.decided}" if lined.decided else self.NO_VALUE,
                 self.pct(lined.rate, 0) if lined.decided else self.NO_VALUE,
+                self.pct(crowd, 0) if crowd is not None else self.NO_VALUE,
                 len(player.weeks_played),
             ])
             if lined.decided:
@@ -220,6 +242,15 @@ class StandingsPage(Page):
                 f"Suicide pool: {'alive' if player.suicide_alive else 'eliminated'}\n"
                 "Double-click to open this player"
             )
+            if crowd is not None:
+                tooltips[(r, CHALK_COLUMN)] = (
+                    f"{player.display} took the same side as {self.pct(crowd, 0)} of "
+                    f"the pool, averaged over every game on every sheet loaded"
+                    + (f"\nThe pool averages {self.pct(self._pool_chalk, 0)}"
+                       if self._pool_chalk is not None else "")
+                    + "\nGoing with the crowd wins games; going against it is the "
+                      "only way to finish clear of them. Neither is better on its own."
+                )
             if lined.decided:
                 tooltips[(r, LINES_COLUMN)] = tooltips[(r, LINES_PCT_COLUMN)] = (
                     f"{player.display}: {lined.correct} of {lined.decided} lined games right "
@@ -245,6 +276,7 @@ class StandingsPage(Page):
                 records.get(p.key, none).rate if records.get(p.key, none).decided else None
                 for p in order
             ],
+            CHALK_COLUMN: [self._chalk_for(p) for p in order],
         }
 
         model = TableModel(

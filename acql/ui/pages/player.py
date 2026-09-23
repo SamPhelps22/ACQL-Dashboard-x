@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from ... import analytics, picks
 from ...models import Player, Season
 from ..charts import BarChart, LineChart, RankChart
-from ..widgets import Card, StatTile, TableModel, make_table, section
+from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
 HEADERS = ["Week", "Wins", "Regular", "Big Loser", "Rank", "Suicide pick",
@@ -92,8 +92,6 @@ class PlayerPage(Page):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.activated.connect(lambda d=delta: self._step(d))
 
-        tiles = QHBoxLayout()
-        tiles.setSpacing(12)
         self.tile_rank = StatTile("Position")
         self.tile_record = StatTile("Record")
         self.tile_form = StatTile("Recent Form")
@@ -104,9 +102,9 @@ class PlayerPage(Page):
             self.tile_rank, self.tile_record, self.tile_form,
             self.tile_money, self.tile_swing, self.tile_lines,
         )
-        for tile in self._tiles:
-            tiles.addWidget(tile)
-        self.layout_.addLayout(tiles)
+        # Wrapped rather than squeezed: 3 to a row keeps every tile
+        # wide enough for its own number on a laptop screen.
+        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=3))
 
         row = QHBoxLayout()
         row.setSpacing(12)
