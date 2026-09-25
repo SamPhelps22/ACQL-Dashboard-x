@@ -190,18 +190,85 @@ def chalk(week: WeekPicks) -> dict[str, float]:
     }
 
 
-def load_all() -> dict[int, WeekPicks]:
-    """Every stored week, reading the file once."""
+def load_all(*, every_season: bool = False) -> dict[int, WeekPicks]:
+    """Every stored week, reading the file once.
+
+    Sheets found to belong to another season are left out unless
+    `every_season` is set - only the Data page, which lists them so they can
+    be cleared, has any use for them.
+    """
     out: dict[int, WeekPicks] = {}
     for key in _read_store():
         try:
             number = int(key)
         except (TypeError, ValueError):
             continue
-        sheet = load(number)
+        sheet = load(number, every_season=every_season)
         if sheet is not None:
             out[number] = sheet
     return out
+
+
+# ---- which season a stored sheet belongs to ------------------------------
+# A pick sheet says "week 3" and nothing about the year. The store keeps
+# every sheet it has been given, so last season's week 3 sits under the same
+# key as this season's - and it was being read as this one: its crowd was
+# quoted as this week's crowd, its coaches ranked among this pool's, and
+# weeks 4, 8, 10, 11 and 13 were built in September out of last autumn.
+#
+# The sheet's own games are the tell. Where the workbook has that week's
+# slate, a sheet from this season shares nearly all of its matchups and one
+# from another season shares almost none. Where the workbook has no slate
+# yet, only the week coming up can have picks already; a sheet further ahead
+# than that is from a season already played.
+
+#: Share of a sheet's matchups that must be on this season's slate that week.
+SAME_SEASON = 0.6
+_OTHER_SEASON: set[int] = set()
+
+
+def _pairs(games) -> set[frozenset]:
+    out = set()
+    for game in games:
+        pair = frozenset((team_code(game.home), team_code(game.away)))
+        if len(pair) == 2 and "" not in pair:
+            out.add(pair)
+    return out
+
+
+def from_other_season(season: Season, number: int, sheet: WeekPicks) -> bool:
+    """Whether a stored sheet is another season's week `number`."""
+    owned = {
+        n: w for n, w in season.weeks.items()
+        if getattr(w, "source", None) is not None and w.games
+    }
+    if not owned:
+        return False            # nothing of this season's to compare with yet
+    theirs = _pairs(sheet.games)
+    week = owned.get(number)
+    if week is not None:
+        ours = _pairs(week.games)
+        if not theirs or not ours:
+            return False
+        return len(theirs & ours) < SAME_SEASON * len(theirs)
+    return number > max(owned) + 1
+
+
+def other_season_weeks() -> set[int]:
+    """Weeks whose stored sheet was last found to be from another season."""
+    return set(_OTHER_SEASON)
+
+
+def forget_weeks(numbers) -> None:
+    """Remove stored sheets for good - used to clear out another season's."""
+    store = dict(_read_store())
+    changed = False
+    for number in numbers:
+        if store.pop(str(number), None) is not None:
+            changed = True
+    if changed:
+        _write_store(store)
+    _OTHER_SEASON.difference_update(numbers)
 
 
 def read_file(path: str | Path) -> WeekPicks:
@@ -293,6 +360,8 @@ class Graded:
     """What attaching the pick sheets did to a season."""
 
     built: list[int] = field(default_factory=list)       # weeks created from a sheet
+    strangers: list[int] = field(default_factory=list)   # sheets from another pool
+    other_season: list[int] = field(default_factory=list)  # sheets from another year
     filled: list[int] = field(default_factory=list)      # weeks whose picks were filled in
     checked: list[int] = field(default_factory=list)     # weeks compared against the sheet
     disagreements: list[str] = field(default_factory=list)
@@ -401,6 +470,44 @@ def _rank_players(season: Season, ours: set[str]) -> None:
         person.pos = place
 
 
+#: How much of a sheet has to be this pool before the sheet is treated as
+#: this pool's. A week of the pool's own sheet matches nearly every name; a
+#: different pool's matches almost none, so anything in between is safely
+#: called ours - a few coaches sitting a week out must not disown the file.
+POOL_SHARE = 0.4
+
+#: A roster smaller than this cannot tell one pool from another, so it does
+#: not get a vote. Disowning a real sheet is far more costly than taking a
+#: stray one: a stranger shows up as a name to ignore, while a wrongly
+#: rejected sheet takes a whole week of picks with it, silently.
+MIN_ROSTER = 5
+
+
+def belongs_here(season: Season, sheet: WeekPicks) -> bool:
+    """Whether this sheet is about this pool's coaches.
+
+    Two ways a sheet counts as ours: most of the names on it are coaches here,
+    or it carries a good share of the roster. The second matters when the
+    workbook has only been half read - a handful of known coaches against a
+    full 35-name sheet would otherwise look like a stranger's file.
+
+    With no roster yet, or barely one, there is nothing to compare against and
+    the sheet is taken at its word - that is the first-run case, where the
+    sheets are all the app has.
+    """
+    roster = {_plain(person.display) for person in season.players.values()}
+    if len(roster) < MIN_ROSTER:
+        return True
+    names = [_plain(name) for name in sheet.coaches]
+    if not names:
+        return False
+    known = sum(1 for name in names if name in roster)
+    return (
+        known >= max(2, POOL_SHARE * len(names))
+        or known >= POOL_SHARE * len(roster)
+    )
+
+
 def _plain(name: str) -> str:
     """A coach's name reduced to what cannot vary between files.
 
@@ -474,12 +581,38 @@ def attach(
       rather than corrected, because the workbook is what the pool settles
       on and a difference is worth looking at by eye.
 
+    A sheet that is not this pool's is left alone entirely. Pick sheets are
+    downloaded one file at a time into the same folder, and they are not all
+    from the same pool; one whose names are strangers is another pool's week
+    and has no business creating a week here.
+
     Big-loser points are not computed: a big loser has to lose by more than
     14 and the workbook records who won, not by how much.
     """
     out = Graded()
     key_of = _coach_key(season, key_for)
-    for number, sheet in sorted((sheets or load_all()).items()):
+    everything = sheets or load_all(every_season=True)
+    if sheets is None:
+        _OTHER_SEASON.clear()
+    for number, sheet in sorted(everything.items()):
+        if from_other_season(season, number, sheet):
+            out.other_season.append(number)
+            if sheets is None:
+                _OTHER_SEASON.add(number)
+            out.notes.append(
+                f"week {number}: {Path(sheet.source).name or 'the stored sheet'} "
+                f"is from another season - its games are not this season's "
+                f"week {number} - so it was left out"
+            )
+            continue
+        if not belongs_here(season, sheet):
+            out.notes.append(
+                f"week {number}: {Path(sheet.source).name or 'that sheet'} is "
+                f"another pool's - hardly any of its names are in this one, so "
+                f"it was left out"
+            )
+            out.strangers.append(number)
+            continue
         week = season.weeks.get(number)
         fresh = week is None
         if fresh:
@@ -603,18 +736,10 @@ def forget_store() -> None:
     _STORE = _STORE_STAMP = None
 
 
-def save(week: WeekPicks) -> None:
-    # The cached copy is mutated and then written, so the two agree without
+def _write_store(store: dict) -> None:
+    # The cached copy is replaced and then written, so the two agree without
     # depending on the file's timestamp moving - which on a fast save, and on
     # a filesystem with coarse timestamps, it may not.
-    store = dict(_read_store())
-    store[str(week.week)] = {
-        "source": week.source,
-        "imported": time.time(),
-        "games": [asdict(game) for game in week.games],
-        "losers": week.losers,
-        "suicide": week.suicide,
-    }
     global _STORE, _STORE_STAMP
     try:
         PICKS_FILE.write_text(json.dumps(store, indent=1), encoding="utf-8")
@@ -623,7 +748,23 @@ def save(week: WeekPicks) -> None:
     _STORE, _STORE_STAMP = store, _store_stamp()
 
 
-def load(week: int) -> WeekPicks | None:
+def save(week: WeekPicks) -> None:
+    store = dict(_read_store())
+    store[str(week.week)] = {
+        "source": week.source,
+        "imported": time.time(),
+        "games": [asdict(game) for game in week.games],
+        "losers": week.losers,
+        "suicide": week.suicide,
+    }
+    _write_store(store)
+    # A sheet saved now is this season's until the next load says otherwise.
+    _OTHER_SEASON.discard(week.week)
+
+
+def load(week: int, *, every_season: bool = False) -> WeekPicks | None:
+    if week in _OTHER_SEASON and not every_season:
+        return None
     entry = _read_store().get(str(week))
     if not isinstance(entry, dict):
         return None

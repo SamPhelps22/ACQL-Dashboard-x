@@ -1,0 +1,87 @@
+{
+ "key": "dpapi:AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAYEj6Xs0shE6WBldcQoqgdQAAAAACAAAAAAAQZgAAAAEAACAAAAAyhlouCeqx3NMrVQEiUIXWPYu+XwMPRNAx6T3V4/n9SAAAAAAOgAAAAAIAACAAAACjhrRWT0251qyNWS40r/5aA+UYhhl1Ck8a+DPgm7nXEjAAAABK4sFOu59wgNWdlAMbPyrkFepr9cOCIhd9EfO1nm1JnlpflweKn5m2BZz2HZRCNcxAAAAADRZeZA6qfmvGR/mgnrdzVdS4HlgFm3N6c4zfimQoBYnqtNHB6MuV5ofI3qUCXt4oBs4Gj73gdCl3F+8mu+k8Yg==",
+ "weeks": {
+  "3": {
+   "opening": {
+    "atl@gb": -17.5,
+    "lac@buf": 7.0,
+    "car@cle": -2.5,
+    "cin@pit": -3.5,
+    "nyj@det": 6.5,
+    "hou@ind": -1.5,
+    "ne@jax": 3.0,
+    "kc@mia": -11.0,
+    "ten@nyg": 2.5,
+    "sea@was": -7.5,
+    "ari@sf": 8.5,
+    "min@tb": -1.5,
+    "bal@dal": -3.5,
+    "lv@no": 3.0,
+    "lar@den": -2.5,
+    "phi@chi": -4.5
+   },
+   "latest": {
+    "atl@gb": -17.5,
+    "lac@buf": 7.0,
+    "car@cle": -2.5,
+    "cin@pit": -3.5,
+    "nyj@det": 6.5,
+    "hou@ind": -1.5,
+    "ne@jax": 3.0,
+    "kc@mia": -11.0,
+    "ten@nyg": 2.5,
+    "sea@was": -7.5,
+    "ari@sf": 8.5,
+    "min@tb": -1.5,
+    "bal@dal": -3.5,
+    "lv@no": 3.0,
+    "lar@den": -2.5,
+    "phi@chi": -4.5
+   },
+   "history": [
+    {
+     "at": 1790306396.2313297,
+     "lines": {
+      "atl@gb": -17.5,
+      "lac@buf": 7.0,
+      "car@cle": -2.5,
+      "cin@pit": -3.5,
+      "nyj@det": 6.5,
+      "hou@ind": -1.5,
+      "ne@jax": 3.0,
+      "kc@mia": -11.0,
+      "ten@nyg": 2.5,
+      "sea@was": -7.5,
+      "ari@sf": 8.5,
+      "min@tb": -1.5,
+      "bal@dal": -3.5,
+      "lv@no": 3.0,
+      "lar@den": -2.5,
+      "phi@chi": -4.5
+     }
+    }
+   ],
+   "at": 1790306396.2313297,
+   "kickoff": {
+    "atl@gb": "2026-09-25T00:15:29Z",
+    "lac@buf": "2026-09-27T17:00:00Z",
+    "car@cle": "2026-09-27T17:00:00Z",
+    "cin@pit": "2026-09-27T17:00:00Z",
+    "nyj@det": "2026-09-27T17:00:00Z",
+    "hou@ind": "2026-09-27T17:00:00Z",
+    "ne@jax": "2026-09-27T17:00:00Z",
+    "kc@mia": "2026-09-27T17:00:00Z",
+    "ten@nyg": "2026-09-27T17:00:00Z",
+    "sea@was": "2026-09-27T17:00:00Z",
+    "ari@sf": "2026-09-27T20:05:00Z",
+    "min@tb": "2026-09-27T20:05:00Z",
+    "bal@dal": "2026-09-27T20:25:00Z",
+    "lv@no": "2026-09-27T20:25:00Z",
+    "lar@den": "2026-09-28T00:20:00Z",
+    "phi@chi": "2026-09-29T00:15:00Z"
+   }
+  }
+ },
+ "remaining": 499,
+ "checked": 1790306396.2313297
+}

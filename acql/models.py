@@ -47,9 +47,16 @@ class Game:
 
     @property
     def label(self) -> str:
+        """"Minnesota @ Chicago" - team names as the pages show them.
+
+        The workbook writes the away side in lower case and the home side in
+        capitals; that convention stays in the workbook.
+        """
+        from .predictions import display_matchup, display_team  # lazy: no cycle
+
         if self.home and self.away:
-            return f"{self.away} @ {self.home}"
-        return self.home or self.away or f"Game {self.index}"
+            return display_matchup(self.away, self.home)
+        return display_team(self.home or self.away) or f"Game {self.index}"
 
     @property
     def played(self) -> bool:

@@ -15,6 +15,9 @@ Merge policy, per the pool's own conventions:
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from .config import Settings
 from .models import Conflict, Player, Season, SourceFile
 from . import analytics
@@ -37,6 +40,16 @@ def load_season(settings: Settings, aliases: AliasTable | None = None) -> Season
     readable = [s for s in sources if not s.error]
     for bad in (s for s in sources if s.error):
         season.warnings.append(f"{bad.path.name}: {bad.error}")
+
+    # A raw pick sheet is not a standings export, whatever the file name made
+    # the discovery step think. Read as one it yields a column of team names
+    # and percentages where the coaches should be - which is where the pool
+    # briefly acquired two dozen players called "Atlanta" and "0.857".
+    # They are not worth a warning: the loader reads pick sheets from the
+    # same folders on its own, and the Data page lists each file and what it
+    # was used for. Saying so on every load only buried the notes that matter.
+    misread = [s for s in readable if s.kind == "stats" and _looks_like_picks(s.path)]
+    readable = [s for s in readable if s not in misread]
 
     stats_files = sorted(
         (s for s in readable if s.kind == "stats"),
@@ -118,6 +131,17 @@ def load_season(settings: Settings, aliases: AliasTable | None = None) -> Season
     _split_provisional(season)
     _resolve_suicide_pool(season)
     return season
+
+
+#: A file whose name begins like this is the commissioner's raw pick sheet.
+#: Deliberately anchored at the start: "stats" and "ACQL Dashboard" never
+#: begin with it, and a coach's own file called "my picks notes" is not in
+#: the data folder.
+PICKS_NAME = re.compile(r"^\s*picks\b", re.IGNORECASE)
+
+
+def _looks_like_picks(path: Path) -> bool:
+    return bool(PICKS_NAME.match(Path(path).stem))
 
 
 def _same_person(display: str) -> str:

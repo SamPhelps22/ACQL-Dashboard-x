@@ -258,7 +258,6 @@ class ProjectionsPage(Page):
             model, stretch_column=1, sort_column=sort_column,
             ascending=ascending, row_height=28,
         )
-        view.setMinimumHeight(320)
         self.clear_layout(self.table_box)
         self.table = view
         self.table_box.addWidget(view)

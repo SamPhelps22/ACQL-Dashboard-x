@@ -106,12 +106,12 @@ class OverviewPage(Page):
         self.leader_card = Card(LEADERBOARD_TITLE)
         self.leader_chart = BarChart(self.palette, height=3.9)
         self.leader_card.add(self.leader_chart, 1)
-        row.addWidget(self.leader_card, 3)
+        row.addWidget(self.leader_card, 3, Qt.AlignmentFlag.AlignTop)
 
         self.spread_card = Card("How the pool is bunched")
         self.spread_chart = HistogramChart(self.palette, height=3.9)
         self.spread_card.add(self.spread_chart, 1)
-        row.addWidget(self.spread_card, 2)
+        row.addWidget(self.spread_card, 2, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(row)
 
         # ---- awards ----

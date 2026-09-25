@@ -115,12 +115,12 @@ class PlayerPage(Page):
         self.form_stack.addWidget(self.form_chart)
         self.form_stack.addWidget(self.form_bars)
         self.form_card.add(self.form_stack, 1)
-        row.addWidget(self.form_card, 1)
+        row.addWidget(self.form_card, 1, Qt.AlignmentFlag.AlignTop)
 
         self.rank_card = Card("Position through the season")
         self.rank_chart = RankChart(self.palette, height=3.4)
         self.rank_card.add(self.rank_chart, 1)
-        row.addWidget(self.rank_card, 1)
+        row.addWidget(self.rank_card, 1, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(row)
 
         self.table_card = Card("Week by week")
@@ -507,7 +507,6 @@ class PlayerPage(Page):
             model, stretch_column=5, sort_column=sort_column,
             ascending=ascending, row_height=28,
         )
-        view.setMinimumHeight(200)
 
         self.clear_layout(self.table_box)
         self.table = view

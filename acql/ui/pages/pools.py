@@ -89,12 +89,12 @@ class PoolsPage(Page):
         self.bl_card.add(self.bl_chart, 1)
         self.bl_box = QVBoxLayout()
         self.bl_card.body().addLayout(self.bl_box)
-        row.addWidget(self.bl_card, 1)
+        row.addWidget(self.bl_card, 1, Qt.AlignmentFlag.AlignTop)
 
         self.suicide_card = Card("Suicide pool")
         self.suicide_box = QVBoxLayout()
         self.suicide_card.body().addLayout(self.suicide_box)
-        row.addWidget(self.suicide_card, 1)
+        row.addWidget(self.suicide_card, 1, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(row)
 
     def restyle(self) -> None:
@@ -192,17 +192,15 @@ class PoolsPage(Page):
 
     def _update_survival(self, season: Season, players: list[Player]) -> None:
         weeks = season.played_weeks()
-        if not any(p.suicide_out_week for p in players):
-            self.survival_card.set_title(SURVIVAL_TITLE)
-            self.survival_chart.empty(
-                "Nobody is out yet" if all(p.suicide_alive for p in players)
-                else "No elimination weeks recorded"
-            )
+        # With no week recorded for anyone's exit - the files say who is out,
+        # not when - or fewer than two weeks played, there is no line to draw.
+        # The card used to stay, a half-screen box reading "No elimination
+        # weeks recorded" beneath a tile counting eighteen eliminations; it
+        # now steps aside and the table beside it tells the story.
+        if not any(p.suicide_out_week for p in players) or len(weeks) < 2:
+            self.survival_card.hide()
             return
-        if len(weeks) < 2:
-            self.survival_card.set_title(SURVIVAL_TITLE)
-            self.survival_chart.empty("Appears once a second week is played")
-            return
+        self.survival_card.show()
 
         counts, unplaced = survivors_by_week(players, weeks)
         # Everyone on the timeline entered, including anyone out in week one,
@@ -293,7 +291,6 @@ class PoolsPage(Page):
             model, stretch_column=1, sort_column=sort_column,
             ascending=ascending, row_height=27,
         )
-        view.setMinimumHeight(260)
         self.clear_layout(self.bl_box)
         self.bl_table = view
         self.bl_box.addWidget(view)
@@ -334,7 +331,6 @@ class PoolsPage(Page):
             model, stretch_column=0, sort_column=sort_column,
             ascending=ascending, row_height=27,
         )
-        view.setMinimumHeight(420)
         self.clear_layout(self.suicide_box)
         self.suicide_table = view
         self.suicide_box.addWidget(view)

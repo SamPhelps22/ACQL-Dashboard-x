@@ -164,6 +164,13 @@ def stylesheet(p: Palette) -> str:
     """Qt stylesheet for the whole application."""
     hover = mix(p.ink, p.surface, 0.07)       # neutral hover wash
     active = mix(p.accent, p.surface, 0.18)   # the current page in the sidebar
+    pressed = mix(p.ink, p.raised, 0.12)      # a button while it is held down
+    # The primary button's hover used to borrow the selection colour, which
+    # in the light theme is a pale blue: white text on it measured 1.3:1 and
+    # all but vanished. It now deepens the accent itself, which raises the
+    # label's contrast in both themes (light 4.4 -> 5.7, dark 3.6 -> 4.7).
+    primary_hover = mix(p.accent, "#000000", 0.86)
+    primary_pressed = mix(p.accent, "#000000", 0.74)
     t = TYPE
     s = SPACE
     r = RADIUS
@@ -367,7 +374,17 @@ def stylesheet(p: Palette) -> str:
         font-size: 12px;
         font-weight: 600;
     }}
-    QHeaderView::section:hover {{ color: {p.ink}; }}
+    QHeaderView::section:hover {{ color: {p.ink}; background: {mix(p.ink, p.raised, 0.05)}; }}
+    /* The sort arrow sits at the right of its heading. Left to the Windows 11
+       style it was drawn centred ABOVE the heading text, where it read as a
+       stray mark floating over every table. */
+    QHeaderView::up-arrow, QHeaderView::down-arrow {{
+        subcontrol-origin: padding;
+        subcontrol-position: center right;
+        width: 9px;
+        height: 9px;
+        right: 2px;
+    }}
     /* The sorted column keeps a hairline under it, which is quieter than Qt's
        default arrow and survives a narrow column. */
     QHeaderView::section:checked {{ color: {p.ink}; border-bottom: 2px solid {p.accent}; }}
@@ -383,6 +400,7 @@ def stylesheet(p: Palette) -> str:
         font-size: 13px;
     }}
     QPushButton:hover, QPushButton:focus {{ border-color: {p.accent}; }}
+    QPushButton:pressed {{ background: {pressed}; }}
     QPushButton:disabled {{ color: {p.ink_muted}; border-color: {p.grid}; }}
     QPushButton#Primary {{
         background: {p.accent};
@@ -390,11 +408,15 @@ def stylesheet(p: Palette) -> str:
         color: #ffffff;
         font-weight: 600;
     }}
-    QPushButton#Primary:hover {{ background: {p.selection}; }}
-    QPushButton#Primary:disabled {{ background: {p.raised}; color: {p.ink_muted}; }}
+    QPushButton#Primary:hover {{ background: {primary_hover}; border-color: {primary_hover}; }}
+    QPushButton#Primary:pressed {{ background: {primary_pressed}; border-color: {primary_pressed}; }}
+    QPushButton#Primary:disabled {{ background: {p.raised}; border-color: {p.grid}; color: {p.ink_muted}; }}
     QPushButton#Danger {{ border-color: {p.critical}; color: {p.critical}; }}
 
-    QComboBox, QLineEdit, QSpinBox {{
+    /* QAbstractSpinBox rather than QSpinBox: the decimal boxes on Next Week
+       are QDoubleSpinBox, a sibling class the old selector never reached,
+       so they drew unstyled next to every other input. */
+    QComboBox, QLineEdit, QAbstractSpinBox {{
         background: {p.raised};
         color: {p.ink};
         border: 1px solid {p.grid};
@@ -404,7 +426,36 @@ def stylesheet(p: Palette) -> str:
         selection-background-color: {p.selection};
         selection-color: {p.ink};
     }}
-    QComboBox:focus, QLineEdit:focus, QSpinBox:focus {{ border-color: {p.accent}; }}
+    QComboBox:hover, QLineEdit:hover, QAbstractSpinBox:hover {{ border-color: {p.baseline}; }}
+    QComboBox:focus, QLineEdit:focus, QAbstractSpinBox:focus {{ border-color: {p.accent}; }}
+    QComboBox:disabled, QLineEdit:disabled, QAbstractSpinBox:disabled {{ color: {p.ink_muted}; }}
+    QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
+        border: none;
+        background: transparent;
+        width: 16px;
+    }}
+    QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{ background: {hover}; }}
+    /* Inputs living inside a table row: inset so they sit in the middle of
+       the row with a little air, instead of filling it edge to edge. */
+    QTableView QComboBox, QTableView QAbstractSpinBox {{
+        margin: 4px 6px;
+        padding: 2px 8px;
+        min-height: 0px;
+        border-radius: 6px;
+    }}
+
+    /* Multi-line text (the predictions paste box, error details) sat on the
+       bare page colour with no edge; it now matches the other inputs. */
+    QPlainTextEdit, QTextEdit {{
+        background: {p.raised};
+        color: {p.ink};
+        border: 1px solid {p.grid};
+        border-radius: 8px;
+        padding: 6px;
+        selection-background-color: {p.selection};
+        selection-color: {p.ink};
+    }}
+    QPlainTextEdit:focus, QTextEdit:focus {{ border-color: {p.accent}; }}
     QComboBox::drop-down {{ border: none; width: 22px; }}
     QComboBox QAbstractItemView {{
         background: {p.raised};
@@ -459,10 +510,38 @@ def stylesheet(p: Palette) -> str:
         font-size: {t["body"]}px;
     }}
     #Banner {{
-        background: {p.raised};
-        border: 1px solid {p.warning};
+        background: {mix(p.warning, p.raised, 0.07)};
+        border: 1px solid {mix(p.warning, p.raised, 0.55)};
         border-radius: 8px;
         padding: 2px;
+    }}
+    #Banner[tone="info"] {{
+        background: {mix(p.accent, p.raised, 0.07)};
+        border-color: {mix(p.accent, p.raised, 0.55)};
+    }}
+    #BannerIcon {{ color: {p.warning}; }}
+    #Banner[tone="info"] #BannerIcon {{ color: {p.accent}; }}
+    #Banner QPushButton#BannerToggle {{
+        background: transparent;
+        border: none;
+        color: {p.accent};
+        font-weight: 600;
+        padding: 0 6px;
+    }}
+    #Banner QPushButton#BannerToggle:hover {{ color: {p.ink}; text-decoration: underline; }}
+
+    /* ---- page states: loading, no data, a page that failed ---- */
+    #StatePanel, #StateColumn {{ background: {p.plane}; }}
+    #StateIcon {{ font-size: 40px; color: {p.ink_muted}; }}
+    #StateIcon[tone="bad"] {{ color: {p.critical}; }}
+    #StateTitle {{ font-size: {t["title"]}px; font-weight: 700; color: {p.ink}; }}
+    #StateMessage {{ font-size: {t["body"]}px; color: {p.ink_secondary}; }}
+    #StateProgress {{ background: {p.grid}; border-radius: 3px; }}
+    #StateProgress::chunk {{ background: {p.accent}; border-radius: 3px; }}
+    #StateDetails {{
+        font-family: {NUMERIC_STACK};
+        font-size: {t["caption"]}px;
+        color: {p.ink_secondary};
     }}
 
     /* ---- quick switcher (Ctrl+K) ---- */

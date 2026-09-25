@@ -49,6 +49,8 @@ TICK_SIZE = 9
 MAX_X_TICKS = 14         # past this, thin the ticks rather than overprint them
 # What a chart shrinks to when it has nothing to draw: enough for the line
 # that says why, and no more.
+#: A chart may grow to this multiple of its designed height, and no further.
+CHART_GROWTH = 1.5
 EMPTY_HEIGHT = 96
 # Fewest columns a heatmap reserves room for, however few it has to show.
 MIN_GRID_COLUMNS = 8
@@ -92,6 +94,7 @@ class Chart(FigureCanvasQTAgg):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._full_height = int(height * 100)
         self.setMinimumHeight(self._full_height)
+        self.setMaximumHeight(int(self._full_height * CHART_GROWTH))
         self.figure.patch.set_facecolor(palette.surface)
         self._annotation = None
         self._hover_targets: list[tuple] = []
@@ -110,7 +113,10 @@ class Chart(FigureCanvasQTAgg):
         """Draw, remembering the call so the chart can be re-themed in place."""
         self._replay = ("_draw", args, kwargs)
         self._shown = None
-        self.setMaximumHeight(NO_MAX_HEIGHT)
+        # Room to breathe, but not without limit: set beside a 35-row table
+        # a chart used to be handed the whole table's height and drew a
+        # histogram 1,100 pixels tall.
+        self.setMaximumHeight(int(self._full_height * CHART_GROWTH))
         self.setMinimumHeight(self._full_height)
         self._draw(*args, **kwargs)
 
@@ -310,6 +316,8 @@ class BarChart(Chart):
         value_format: str = "{:.0f}",
         tooltips: list[str] | None = None,
         highlight: int | None = None,
+        markers: list[float | None] | None = None,
+        marker_label: str = "",
     ) -> None:
         if not labels:
             self.empty()
@@ -336,6 +344,23 @@ class BarChart(Chart):
         if xlabel:
             ax.set_xlabel(xlabel, fontsize=LABEL_SIZE)
         self.grid(ax, "x")
+        # A tick across a bar marks what the bar is being measured against -
+        # "it said 55%" on a bar of "it happened 73%" - so the gap is read
+        # off the chart rather than guessed from a colour.
+        if markers:
+            reach = BAR_HEIGHT / 2 + 0.12
+            drawn = False
+            for position, mark in zip(positions, markers):
+                if mark is None:
+                    continue
+                ax.plot(
+                    [mark, mark], [position - reach, position + reach],
+                    color=p.ink, linewidth=2.2, solid_capstyle="butt", zorder=4,
+                    label=marker_label if (marker_label and not drawn) else None,
+                )
+                drawn = True
+            if drawn and marker_label:
+                self.legend(ax, loc="lower right")
 
         # Direct-label the ends; a leaderboard is read for its numbers, and on
         # the light palette some slots sit under 3:1 against the surface, so a
@@ -661,11 +686,17 @@ class HistogramChart(Chart):
                 mean, color=p.ink_muted, linewidth=1.4,
                 linestyle=(0, (4, 3)), zorder=3,
             )
+            # Headroom above the tallest bar for the label, and a backing
+            # the colour of the chart, so "avg 20.4" never sits on top of a
+            # bar where it could not be read.
+            top = tallest * 1.22
+            ax.set_ylim(0, top)
             ax.annotate(
                 f"avg {mean:.1f}",
-                xy=(mean, tallest),
-                xytext=(6, -4), textcoords="offset points",
-                color=p.ink_secondary, fontsize=LABEL_SIZE,
+                xy=(mean, top),
+                xytext=(5, -3), textcoords="offset points", va="top",
+                color=p.ink_secondary, fontsize=LABEL_SIZE, zorder=5,
+                bbox=dict(boxstyle="round,pad=0.25", fc=p.surface, ec="none", alpha=0.92),
             )
         ax.set_xlabel(xlabel, fontsize=LABEL_SIZE)
         ax.set_ylabel(ylabel, fontsize=LABEL_SIZE)
@@ -726,7 +757,7 @@ class HeatmapChart(Chart):
         self,
         row_labels: list[str],
         col_labels: list[str],
-        values: list[list[float | None]],
+        values: list[list[float | None]] | None = None,
         *,
         vmax: float | None = None,
         tooltip_fn=None,
@@ -737,7 +768,10 @@ class HeatmapChart(Chart):
         cell_format: str = "{:g}",
         tick_rotation: float = 0,
     ) -> None:
-        if not row_labels or not col_labels:
+        # A grid with no rows, no columns or no numbers in it is an empty
+        # grid, not a crash: early in a season a page can reach here with
+        # nothing to show yet, and it should say so.
+        if not row_labels or not col_labels or not values:
             self.empty()
             return
         p = self.palette
