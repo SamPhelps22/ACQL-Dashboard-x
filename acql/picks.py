@@ -23,7 +23,6 @@ because the files are numbered by something other than the week.
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from collections import Counter
@@ -34,6 +33,7 @@ from .config import ROOT
 from .models import Game, Player, PlayerWeek, Season, Week
 from .predictions import DISPLAY, team_code
 
+#: Where older versions kept the pick sheets; read in once by store.py.
 PICKS_FILE = ROOT / "acql-picks.json"
 # Marks a player as known only from a raw pick sheet, so a later workbook
 # load can be told apart from this one and left in charge of the standings.
@@ -698,66 +698,44 @@ def attach(
 
 
 # ---- keeping them between runs ---------------------------------------------
-# The parsed store, kept between calls. Pages ask for the pick sheets on
-# every refresh - the standings table reads them for its chalk column, the
-# insights page for two of its cards - and each of those calls was re-reading
-# and re-parsing the whole file, once for the index and once more per week.
-# The file only changes when this module writes it, so it is read when its
-# timestamp moves and not otherwise.
-_STORE: dict | None = None
-_STORE_STAMP: tuple[float, int] | None = None
+# Kept in the app's database (store.py), which caches what it has read until
+# something is written - pages ask for the pick sheets on every refresh, and
+# re-parsing them each time was measurable.
 
-
-def _store_stamp() -> tuple[float, int] | None:
-    try:
-        info = PICKS_FILE.stat()
-    except OSError:
-        return None
-    return (info.st_mtime, info.st_size)
+def _store_stamp() -> tuple:
+    from . import store
+    return store.stamp("picks")
 
 
 def _read_store() -> dict:
-    global _STORE, _STORE_STAMP
-    stamp = _store_stamp()
-    if _STORE is not None and stamp == _STORE_STAMP:
-        return _STORE
-    try:
-        raw = json.loads(PICKS_FILE.read_text(encoding="utf-8"))
-        _STORE = raw if isinstance(raw, dict) else {}
-    except (OSError, ValueError):
-        _STORE = {}
-    _STORE_STAMP = stamp
-    return _STORE
+    from . import store
+    return store.items("picks")
 
 
 def forget_store() -> None:
-    """Drop the cache, for a test that points PICKS_FILE somewhere else."""
-    global _STORE, _STORE_STAMP
-    _STORE = _STORE_STAMP = None
+    """Kept for older tests; the store's own cache follows every write."""
 
 
-def _write_store(store: dict) -> None:
-    # The cached copy is replaced and then written, so the two agree without
-    # depending on the file's timestamp moving - which on a fast save, and on
-    # a filesystem with coarse timestamps, it may not.
-    global _STORE, _STORE_STAMP
+def _write_store(mapping: dict) -> None:
+    from . import store
     try:
-        PICKS_FILE.write_text(json.dumps(store, indent=1), encoding="utf-8")
-    except OSError:
+        store.replace("picks", mapping)
+    except store.StoreError:
         pass
-    _STORE, _STORE_STAMP = store, _store_stamp()
 
 
 def save(week: WeekPicks) -> None:
-    store = dict(_read_store())
-    store[str(week.week)] = {
-        "source": week.source,
-        "imported": time.time(),
-        "games": [asdict(game) for game in week.games],
-        "losers": week.losers,
-        "suicide": week.suicide,
-    }
-    _write_store(store)
+    from . import store
+    try:
+        store.put("picks", str(week.week), {
+            "source": week.source,
+            "imported": time.time(),
+            "games": [asdict(game) for game in week.games],
+            "losers": week.losers,
+            "suicide": week.suicide,
+        })
+    except store.StoreError:
+        pass
     # A sheet saved now is this season's until the next load says otherwise.
     _OTHER_SEASON.discard(week.week)
 

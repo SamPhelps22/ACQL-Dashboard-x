@@ -16,10 +16,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import picks, predictions
+from ... import picks, predictions, store, updater
 from ..editor import WeekEditor
 from ..widgets import Banner, Card, TableModel, make_table, section
-from .base import Page
+from .base import INSTALL_UPDATE, SELF_CHECK, UNDO_UPDATE, Page
 
 FILE_HEADERS = ["File", "Type", "Week", "Updated", "What it gave", "Folder", "Status"]
 CONFLICT_HEADERS = ["Player", "Field", "stats.xls (used)", "Workbook", "Note"]
@@ -56,7 +56,7 @@ class DataPage(Page):
     """
 
     title = "Data & Update"
-    subtitle = "What is loaded, what disagrees, and how to enter this week's results"
+    subtitle = "What is loaded, what disagrees, entering results, and updating the app"
     icon = "\N{CARD INDEX DIVIDERS}"
     #: This is where folders get added, so it must work before any data does.
     needs_data = False
@@ -68,6 +68,42 @@ class DataPage(Page):
 
         self.banner = Banner()
         self.layout_.addWidget(self.banner)
+
+        # ---- the app itself: its version, its memory, updates ----
+        self.app_card = Card("The app")
+        self.app_label = QLabel("")
+        self.app_label.setWordWrap(True)
+        self.app_label.setTextFormat(Qt.TextFormat.RichText)
+        self.app_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.app_card.add(self.app_label)
+        app_buttons = QHBoxLayout()
+        self.update_btn = QPushButton("Install update\u2026")
+        self.update_btn.setObjectName("Primary")
+        self.update_btn.setToolTip(
+            "Install an update zip - it finds one in Downloads by itself. The "
+            "current code is backed up first and put back if anything goes wrong."
+        )
+        self.update_btn.clicked.connect(lambda: self.action_requested.emit(INSTALL_UPDATE))
+        self.undo_btn = QPushButton("Undo last update")
+        self.undo_btn.setToolTip("Put back the code from before the last update")
+        self.undo_btn.clicked.connect(lambda: self.action_requested.emit(UNDO_UPDATE))
+        self.check_btn = QPushButton("Run self-check")
+        self.check_btn.setToolTip(
+            "Open every page, photograph it whole and note anything that looks "
+            "wrong - one zip to send when something needs fixing"
+        )
+        self.check_btn.clicked.connect(lambda: self.action_requested.emit(SELF_CHECK))
+        self.backup_btn = QPushButton("Back up now")
+        self.backup_btn.setToolTip("Save a copy of everything the app remembers, beside the daily ones")
+        self.backup_btn.clicked.connect(self._backup_now)
+        self.backups_btn = QPushButton("Open backups")
+        self.backups_btn.clicked.connect(self._open_backups)
+        for button in (self.update_btn, self.undo_btn, self.check_btn,
+                       self.backup_btn, self.backups_btn):
+            app_buttons.addWidget(button)
+        app_buttons.addStretch(1)
+        self.app_card.body().addLayout(app_buttons)
+        self.layout_.addWidget(self.app_card)
 
         # ---- editor ----
         self.editor_card = Card("Enter this week's results")
@@ -183,10 +219,67 @@ class DataPage(Page):
         box.addWidget(new)
         return new
 
+    # ---- the app ---------------------------------------------------------
+    def _refresh_app(self) -> None:
+        try:
+            from ...version import VERSION, RELEASED
+        except Exception:  # noqa: BLE001
+            VERSION, RELEASED = "?", ""
+        try:
+            counts = store.kinds()
+            path = store.db_path()
+        except store.StoreError as exc:
+            self.app_label.setText(f"<b>ACQL Dashboard {VERSION}</b> \u00b7 {exc}")
+            return
+        words = {
+            "forecasts": "weeks of predictions", "picks": "pick sheets",
+            "spreads": "weeks of typed spreads", "cards": "saved cards",
+            "odds": "fetched-lines records", "settings": "settings",
+        }
+        held = ", ".join(
+            f"{counts[k]} {words[k]}" for k in words if counts.get(k)
+        ) or "nothing yet"
+        backups = sorted(store.backup_folder().glob("acql-????-??-??.db"))
+        latest = backups[-1].stem.replace("acql-", "") if backups else "none yet"
+        record = updater.last_install(store.project_root())
+        self.undo_btn.setEnabled(bool(record))
+        installed = (
+            f" \u00b7 updated from {record.get('from')} on "
+            f"{time.strftime('%a %d %b', time.localtime(record.get('at', 0)))}"
+            if record else ""
+        )
+        self.app_label.setText(
+            f"<b>ACQL Dashboard {VERSION}</b> ({RELEASED}){installed}<br>"
+            f"Everything the app remembers is in <b>{path.name}</b> in the data folder: "
+            f"{held}. A copy is kept every day in {store.BACKUP_FOLDER}\\ "
+            f"(latest {latest}); the last {store.KEEP_BACKUPS} are kept."
+        )
+
+    def _backup_now(self) -> None:
+        target = store.backup_folder() / f"acql-manual-{time.strftime('%Y%m%d-%H%M%S')}.db"
+        try:
+            store.backup_now(target)
+        except (OSError, store.StoreError) as exc:
+            self.app_label.setText(self.app_label.text() + f"<br>Back-up failed: {exc}")
+            return
+        self._refresh_app()
+        self.app_label.setText(self.app_label.text() + f"<br>Saved {target.name}.")
+
+    def _open_backups(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        folder = store.backup_folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
     # ---- inventory -------------------------------------------------------
     def refresh(self) -> None:
         settings = self._load_settings()
         self._refresh_folders(settings)
+        try:
+            self._refresh_app()
+        except Exception as exc:  # noqa: BLE001 - the rest of the page still matters
+            self.app_label.setText(f"Couldn't read the app's details: {exc}")
 
         s = self.season
         if s is None:

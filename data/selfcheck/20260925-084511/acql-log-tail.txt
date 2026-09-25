@@ -1,0 +1,42 @@
+[2026-09-24 06:25:31] slow: This Week took 252 ms to refresh
+[2026-09-24 06:37:35] slow: This Week took 512 ms to refresh
+[2026-09-24 06:37:54] slow: Next Week took 268 ms to refresh
+[2026-09-24 16:44:18] slow: Next Week took 903 ms to refresh
+[2026-09-24 16:47:54] slow: Standings took 421 ms to refresh
+[2026-09-24 16:53:34] slow: Standings took 346 ms to refresh
+[2026-09-24 16:53:36] slow: This Week took 582 ms to refresh
+[2026-09-24 16:54:27] slow: Next Week took 334 ms to refresh
+[2026-09-24 16:55:32] slow: Projections took 254 ms to refresh
+[2026-09-24 16:58:21] slow: Next Week took 605 ms to refresh
+[2026-09-24 16:58:26] slow: Next Week took 252 ms to refresh
+[2026-09-24 16:59:41] slow: Next Week took 863 ms to refresh
+[2026-09-24 17:14:45] slow: Next Week took 557 ms to refresh
+[2026-09-24 17:21:24] slow: Projections took 270 ms to refresh
+[2026-09-24 17:46:23] slow: This Week took 705 ms to refresh
+[2026-09-24 17:46:44] slow: Next Week took 627 ms to refresh
+[2026-09-24 18:12:46] slow: Insights took 302 ms to refresh
+[2026-09-24 18:14:24] slow: This Week took 488 ms to refresh
+[2026-09-24 18:24:00] slow: This Week took 524 ms to refresh
+[2026-09-24 22:01:31] slow: This Week took 598 ms to refresh
+[2026-09-24 22:02:17] slow: Next Week took 576 ms to refresh
+[2026-09-24 22:02:31] slow: Insights took 750 ms to refresh
+[2026-09-24 22:05:26] slow: Overview took 327 ms to refresh
+[2026-09-24 22:06:01] slow: This Week took 577 ms to refresh
+[2026-09-24 22:10:48] slow: Next Week took 558 ms to refresh
+[2026-09-24 22:17:12] slow: This Week took 267 ms to refresh
+[2026-09-24 22:19:56] slow: This Week took 365 ms to refresh
+[2026-09-24 22:19:57] slow: This Week took 284 ms to refresh
+[2026-09-24 22:20:08] slow: Next Week took 492 ms to refresh
+[2026-09-24 22:22:27] slow: Insights took 278 ms to refresh
+[2026-09-25 07:42:27] slow: This Week took 939 ms to refresh
+[2026-09-25 07:42:49] slow: Projections took 300 ms to refresh
+[2026-09-25 07:42:57] slow: Every Game took 656 ms to refresh
+[2026-09-25 07:43:09] slow: This Week took 539 ms to refresh
+[2026-09-25 07:43:26] slow: This Week took 258 ms to refresh
+[2026-09-25 07:44:55] slow: The Pool took 326 ms to refresh
+[2026-09-25 07:45:19] slow: Projections took 429 ms to refresh
+[2026-09-25 08:30:25] slow: This Week took 1281 ms to refresh
+[2026-09-25 08:37:25] slow: This Week took 768 ms to refresh
+[2026-09-25 08:37:36] slow: Every Game took 482 ms to refresh
+[2026-09-25 08:45:15] slow: This Week took 814 ms to refresh
+[2026-09-25 08:45:16] slow: Every Game took 456 ms to refresh

@@ -36,12 +36,18 @@ from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
 from ..names import AliasTable
 from ..repository import load_season
-from .pages.base import GO_TO_DATA, OPEN_FOLDER, RELOAD, Page, write_log
+from .groups import GroupSpec, PageGroup
+from .pages.base import (
+    GO_TO_DATA, INSTALL_UPDATE, OPEN_FOLDER, POOL_PAGE, RELOAD, SELF_CHECK, UNDO_UPDATE, Page,
+    write_log,
+)
 from .watch import FolderWatcher, describe
 from .pages.thisweek import BriefingPage
+from .pages.charts import ChartsPage
 from .pages.data import DataPage
 from .pages.overview import OverviewPage
 from .pages.insights import InsightsPage
+from .pages.model import ModelPage
 from .pages.nextweek import NextWeekPage
 from .pages.player import PlayerPage
 from .pages.pools import PoolsPage
@@ -51,27 +57,44 @@ from .pages.weekly import WeeklyPage
 from .pages.winnings import WinningsPage
 from .theme import PALETTES, stylesheet
 
-PAGE_CLASSES = (
-    OverviewPage,
+#: The sidebar: seven places, the pages inside each shown as tabs (groups.py).
+NAV = (
+    GroupSpec("Season", "\N{TROPHY}", "Where the season stands: the table, the money, the odds",
+              (("Overview", OverviewPage), ("Standings", StandingsPage),
+               ("Winnings", WinningsPage), ("Projections", ProjectionsPage),
+               ("Charts", ChartsPage))),
     # Second, and on Ctrl+2: the question most visits are here to answer is
     # "what do I play this week", and it should not be four clicks away.
-    BriefingPage,
-    StandingsPage,
-    WeeklyPage,
-    NextWeekPage,
-    PlayerPage,
-    WinningsPage,
-    PoolsPage,
-    ProjectionsPage,
-    InsightsPage,
-    DataPage,
+    GroupSpec("This Week", "\N{MEMO}", "The card to hand in, and every game on the slate",
+              (("Your card", BriefingPage), ("Every game", NextWeekPage))),
+    GroupSpec("Results", "\N{SPIRAL CALENDAR PAD}", "One week at a time, and the recap to send round",
+              (("Results", WeeklyPage),)),
+    GroupSpec("Side Pools", "\N{DIRECT HIT}", "Big Loser and the suicide pool",
+              (("Side pools", PoolsPage),)),
+    GroupSpec("Player", "\N{BUST IN SILHOUETTE}", "One coach's season in detail",
+              (("Player", PlayerPage),)),
+    GroupSpec("Insights", "\N{LEFT-POINTING MAGNIFYING GLASS}", "The pool's habits and luck, and the model's record",
+              (("The pool", InsightsPage), ("The model", ModelPage))),
+    GroupSpec("Data & Update", "\N{CARD INDEX DIVIDERS}", "What is loaded, entering results, and updating the app",
+              (("Data", DataPage),)),
 )
-DATA_INDEX = PAGE_CLASSES.index(DataPage)
+#: Every page, in sidebar order - one instance of each.
+PAGE_CLASSES = tuple(cls for spec in NAV for cls in spec.classes)
+
+
+def group_of(cls: type) -> tuple[int, int]:
+    """(sidebar place, tab) for a page class."""
+    for g, spec in enumerate(NAV):
+        if cls in spec.classes:
+            return g, spec.classes.index(cls)
+    raise KeyError(cls.__name__)
+
+
+DATA_INDEX = group_of(DataPage)[0]
 
 
 def page_shortcut(index: int) -> str:
-    """Ctrl+1 to Ctrl+9 for the first nine pages; the rest are reached from
-    the sidebar or the Ctrl+K switcher. There is no Ctrl+10 to give them."""
+    """Ctrl+1 to Ctrl+9 for the sidebar's places."""
     return f"Ctrl+{index + 1}" if index < 9 else ""
 
 
@@ -281,18 +304,26 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.stack, 1)
         self.setCentralWidget(root)
 
+        # One instance of every page, grouped into the sidebar's places.
         self.pages: list[Page] = []
-        for index, cls in enumerate(PAGE_CLASSES):
-            page = self._make_page(index)
-            self.pages.append(page)
-            self.stack.addWidget(page)
+        self.groups: list[PageGroup] = []
+        for index, spec in enumerate(NAV):
+            members = []
+            for cls in spec.classes:
+                page = self._make_page(cls)
+                self.pages.append(page)
+                members.append(page)
+            group = PageGroup(spec, members)
+            group.tab_changed.connect(lambda _tab, g=index: self._sync_page_theme(g))
+            self.groups.append(group)
+            self.stack.addWidget(group)
             # "&" in a button label is a Qt mnemonic; double it to show it.
-            button = QPushButton(f"  {cls.icon}   {cls.title}".replace("&", "&&"))
+            button = QPushButton(f"  {spec.icon}   {spec.title}".replace("&", "&&"))
             button.setObjectName("NavButton")
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             keys = page_shortcut(index)
-            button.setToolTip(" ".join(filter(None, [cls.subtitle, f"({keys})" if keys else ""])))
+            button.setToolTip(" ".join(filter(None, [spec.subtitle, f"({keys})" if keys else ""])))
             button.clicked.connect(lambda _, i=index: self._show_page(i))
             self.nav_group.addButton(button, index)
             self.nav_layout.addWidget(button)
@@ -316,8 +347,8 @@ class MainWindow(QMainWindow):
         self.reload()
 
     # ---- chrome ----------------------------------------------------------
-    def _make_page(self, index: int) -> Page:
-        page = PAGE_CLASSES[index](self.palette_)
+    def _make_page(self, cls: type) -> Page:
+        page = cls(self.palette_)
         # Buttons on a page's loading / no-data / error panel.
         page.action_requested.connect(self._page_action)
         # The Data page after a write, This Week after fetching new lines.
@@ -335,6 +366,67 @@ class MainWindow(QMainWindow):
             self.open_data_folder()
         elif what == RELOAD:
             self.refresh_by_hand()
+        elif what == SELF_CHECK:
+            self.run_self_check()
+        elif what == INSTALL_UPDATE:
+            self.install_update()
+        elif what == UNDO_UPDATE:
+            from . import updating
+            updating.undo(self)
+        elif what == POOL_PAGE:
+            self.export_pool_page()
+
+    # ---- the self-check and updates -----------------------------------------
+    def run_self_check(self, *, quiet: bool = False) -> Path | None:
+        """Photograph every page and write the report (selfcheck.py)."""
+        from . import selfcheck
+        self.statusBar().showMessage("Self-check: opening every page\u2026")
+        try:
+            archive = selfcheck.run(
+                self, say=lambda text: self.statusBar().showMessage(f"Self-check: {text}")
+            )
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            write_log(f"self-check failed: {exc!r}\n{traceback.format_exc()}")
+            if not quiet:
+                QMessageBox.warning(self, "Self-check", f"The self-check stopped: {exc}")
+            return None
+        pages, problems = selfcheck.summary(archive)
+        self.statusBar().showMessage(
+            f"Self-check done: {pages} pages, {problems} thing(s) to look at \u2013 {archive.name}"
+        )
+        if not quiet:
+            box = QMessageBox(self)
+            box.setWindowTitle("Self-check done")
+            box.setText(
+                f"{pages} pages photographed, {problems} thing"
+                f"{'' if problems == 1 else 's'} to look at."
+            )
+            box.setInformativeText(
+                f"Everything is in {archive.name}, in the data folder's selfcheck "
+                f"folder - send that one file to Claude and the next changes can "
+                f"be checked against how the pages really look on this computer."
+            )
+            show = box.addButton("Show the file", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(QMessageBox.StandardButton.Close)
+            box.exec()
+            if box.clickedButton() is show:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(archive.parent)))
+        return archive
+
+    def export_pool_page(self):
+        """Put this week on the pool's website (webpage.py) - or save the Claude page's file."""
+        from . import webpage
+        return webpage.publish(self, self.season)
+
+    def pool_page_settings(self) -> None:
+        from . import webpage
+        webpage.edit_settings(self)
+
+    def install_update(self) -> None:
+        from . import updating
+        if not hasattr(self, "_update_flow"):
+            self._update_flow = updating.UpdateFlow(self)
+        self._update_flow.start()
 
     def _watch_folders(self) -> list[Path]:
         """Every folder the loader reads from: the watched ones, the app's
@@ -354,10 +446,10 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def show_player(self, display: str) -> None:
-        index = PAGE_CLASSES.index(PlayerPage)
-        self._select_page(index)
+        group, tab = group_of(PlayerPage)
+        self._select_page(group, tab)
         # _select_page may have re-themed the page, so look it up afterwards.
-        self.pages[index].select(display)
+        self.groups[group].pages[tab].select(display)
 
     def _build_sidebar(self) -> QWidget:
         self.sidebar = QWidget()
@@ -399,7 +491,11 @@ class MainWindow(QMainWindow):
         footer.addWidget(self.refresh_btn)
         footer.addWidget(self.theme_btn)
 
-        version = QLabel(f"v{__version__}")
+        try:
+            from ..version import VERSION as shown_version
+        except Exception:  # noqa: BLE001 - a copy from before 2.0
+            shown_version = __version__
+        version = QLabel(f"v{shown_version}")
         version.setObjectName("SidebarSubtitle")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         footer.addWidget(version)
@@ -438,7 +534,7 @@ class MainWindow(QMainWindow):
         add("Toggle theme", "Ctrl+T", self.toggle_theme)
         add("Jump to\u2026", "Ctrl+K", self.open_palette)
         add("Quit", QKeySequence.StandardKey.Quit, self.close)
-        for i in range(len(PAGE_CLASSES)):
+        for i in range(len(NAV)):
             if page_shortcut(i):
                 add(f"Page {i + 1}", page_shortcut(i), lambda _=False, idx=i: self._select_page(idx))
 
@@ -449,32 +545,54 @@ class MainWindow(QMainWindow):
             if geometry is not None:
                 self.restoreGeometry(geometry)
             try:
-                start = int(self._state.value("window/page", 0))
+                start = int(self._state.value("window/group", 0))
             except (TypeError, ValueError):
                 start = 0
-        self._select_page(start if 0 <= start < len(PAGE_CLASSES) else 0)
+            for g, group in enumerate(self.groups):
+                try:
+                    tab = int(self._state.value(f"window/tab/{g}", 0))
+                except (TypeError, ValueError):
+                    tab = 0
+                if 0 < tab < len(group.pages):
+                    group.select(tab)
+        self._select_page(start if 0 <= start < len(NAV) else 0)
 
     # ---- navigation ------------------------------------------------------
     def _show_page(self, index: int) -> None:
         self._sync_page_theme(index)
         self.stack.setCurrentIndex(index)
 
-    def _select_page(self, index: int) -> None:
+    def _select_page(self, index: int, tab: int | None = None) -> None:
         button = self.nav_group.button(index)
         if button:
             button.setChecked(True)
+            if tab is not None:
+                self.groups[index].select(tab)
             self._show_page(index)
 
+    def current_page(self) -> Page:
+        return self.groups[self.stack.currentIndex()].current_page()
+
     def open_palette(self) -> None:
-        commands = [
-            Command(cls.title, page_shortcut(i), lambda i=i: self._select_page(i))
-            for i, cls in enumerate(PAGE_CLASSES)
-        ]
+        commands = []
+        for i, spec in enumerate(NAV):
+            commands.append(Command(spec.title, page_shortcut(i), lambda i=i: self._select_page(i)))
+            if len(spec.tabs) > 1:
+                for t, (label, _) in enumerate(spec.tabs):
+                    commands.append(Command(
+                        f"{spec.title} \u203a {label}", "",
+                        lambda i=i, t=t: self._select_page(i, t),
+                    ))
         other_theme = "light" if self.palette_.name == "dark" else "dark"
         commands += [
             Command("Refresh data", "F5", self.refresh_by_hand),
             Command(f"Switch to {other_theme} theme", "Ctrl+T", self.toggle_theme),
             Command("Open data folder", "", self.open_data_folder),
+            Command("Publish the pool page", "", self.export_pool_page),
+            Command("Pool page website settings\u2026", "", self.pool_page_settings),
+            Command("Run self-check (photograph every page)", "", self.run_self_check),
+            Command("Install update\u2026", "", self.install_update),
+            Command("Undo last update", "", lambda: self._page_action(UNDO_UPDATE)),
         ]
         dialog = CommandPalette(commands, self)
         dialog.move(self.mapToGlobal(QPoint((self.width() - dialog.width()) // 2, 80)))
@@ -502,14 +620,16 @@ class MainWindow(QMainWindow):
             self.setUpdatesEnabled(True)
 
     def _sync_page_theme(self, index: int) -> None:
-        """Bring one page up to the current palette.
+        """Bring the page showing in one sidebar place up to the current palette.
 
         Charts bake their colours in at draw time, so a palette change has to
-        reach them. They now redraw themselves through `set_palette`, which is
-        why this no longer destroys and rebuilds the page: a page keeps its
-        state across a theme switch.
+        reach them. They redraw themselves through `set_palette`, which is
+        why this never destroys and rebuilds the page: a page keeps its state
+        across a theme switch. Tabs not yet opened catch up when they are.
         """
-        page = self.pages[index]
+        if not 0 <= index < len(self.groups):
+            return
+        page = self.groups[index].current_page()
         if page.palette is not self.palette_:
             page.set_palette(self.palette_)
 
@@ -601,7 +721,7 @@ class MainWindow(QMainWindow):
         self.conflict_btn.setVisible(conflicts > 0)
         if conflicts:
             self.conflict_btn.setText(f"\u26a0  {_plural(conflicts, 'disagreement')}")
-            self.conflict_btn.setToolTip(f"Open {PAGE_CLASSES[DATA_INDEX].title} to review")
+            self.conflict_btn.setToolTip(f"Open {NAV[DATA_INDEX].title} to review")
 
         if season.is_empty:
             self.statusBar().showMessage(
@@ -664,7 +784,9 @@ class MainWindow(QMainWindow):
         self._clock.stop()
         if self._state is not None:
             self._state.setValue("window/geometry", self.saveGeometry())
-            self._state.setValue("window/page", self.stack.currentIndex())
+            self._state.setValue("window/group", self.stack.currentIndex())
+            for g, group in enumerate(self.groups):
+                self._state.setValue(f"window/tab/{g}", group.current_index())
         # Quitting mid-load would destroy a running QThread and crash.
         loader = self._loader
         if loader is not None and loader.isRunning():
@@ -683,6 +805,10 @@ def main(argv: list[str] | None = None) -> int:
     if smoke_test:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         argv = [a for a in argv if a != "--smoke-test"]
+    # Open, load, photograph every page, and close: the self-check from the
+    # command line (ACQL Dashboard.bat --selfcheck).
+    self_check = "--selfcheck" in argv or "--self-check" in argv
+    argv = [a for a in argv if a not in ("--selfcheck", "--self-check")]
 
     app = QApplication(sys.argv[:1] + list(argv))
     app.setApplicationName(APP_NAME)
@@ -694,15 +820,30 @@ def main(argv: list[str] | None = None) -> int:
     window = MainWindow(remember_state=not smoke_test)
     window.show()
 
+    if self_check:
+
+        def when_loaded() -> None:
+            # Go ahead once the first load has finished, whether it worked or
+            # not - a self-check is most wanted exactly when it didn't.
+            if window._loader is not None:
+                QTimer.singleShot(500, when_loaded)
+                return
+            archive = window.run_self_check(quiet=True)
+            print(f"Self-check written to {archive}" if archive else "Self-check failed - see acql-log.txt")
+            app.quit()
+
+        QTimer.singleShot(1500, when_loaded)
+
     if smoke_test:
 
         def finish() -> None:
             loader = window._loader
             if loader is not None and loader.isRunning():
                 loader.wait(20_000)
-            for index in range(len(PAGE_CLASSES)):
-                window._select_page(index)
-                QApplication.processEvents()
+            for index, group in enumerate(window.groups):
+                for tab in range(len(group.pages)):
+                    window._select_page(index, tab)
+                    QApplication.processEvents()
             # Report the icon too: a frozen build can lose bundled data files
             # without the app failing, and CI should catch that.
             icon = "found" if ICON_FILE.is_file() else f"MISSING at {ICON_FILE}"

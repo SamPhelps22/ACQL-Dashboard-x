@@ -4,29 +4,20 @@ from __future__ import annotations
 
 import statistics
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QLabel
 
-from ... import analytics, cards, crowd, luck, picks, predictions
-import math
+from ... import analytics, crowd, luck, picks, predictions
 
-from ..charts import BarChart, DivergingBarChart, HeatmapChart, LineChart, ScatterChart
-from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ..charts import DivergingBarChart, HeatmapChart, LineChart, ScatterChart
+from ..widgets import Card, StatTile, section, tile_grid
 from .base import Page
 
 H2H_PLAYERS = 12
 FORM_TITLE = "Form against consistency"
-MODEL_TITLE = "How the dashboard's own picks are doing"
-CALIBRATION_TITLE = "Are its chances honest?"
-TRACK_TITLE = "Following the model - its card against yours"
-TRACK_KEY = "insights/me"
-TRACK_HEADERS = ["Week", "Model's card", "Likeliest side", "You", "Week's best",
-                 "Model would have been"]
 LUCK_TITLE = "Luck meter - wins against what the picks deserved"
 #: With more coaches than this, the chart shows the luckiest and unluckiest.
 LUCK_EACH_END = 8
-#: A band needs this many picks before its colour says anything about it.
-CALIBRATION_MIN_PICKS = 20
 CROWD_TITLE = "Following the crowd, against what it scores"
 # Top-left, top-right, bottom-left, bottom-right - x is how chalky, y is the
 # average score, so the left-hand side is where a week can be won outright.
@@ -41,14 +32,9 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
-def _ordinal(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
-
-
 class InsightsPage(Page):
-    title = "Insights"
-    subtitle = "What the season's numbers say about the pool"
+    title = "The Pool"
+    subtitle = "What the season's numbers say about the pool - and about luck"
     icon = "\N{LEFT-POINTING MAGNIFYING GLASS}"
 
     # ---- build ---------------------------------------------------------
@@ -86,58 +72,6 @@ class InsightsPage(Page):
         self.weeks_card.add(self.weeks_chart, 1)
         row.addWidget(self.weeks_card, 1, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(row)
-
-        # How the app's own picks have done, which is the one thing on this
-        # page that is about the app rather than the pool.
-        self.model_card = Card(MODEL_TITLE)
-        self.model_chart = LineChart(self.palette, height=3.4)
-        self.model_card.add(self.model_chart, 1)
-        self.model_note = QLabel("")
-        self.model_note.setObjectName("Muted")
-        self.model_note.setWordWrap(True)
-        self.model_card.add(self.model_note)
-        self.layout_.addWidget(self.model_card, 1)
-
-        # The model's whole card each week, kept before kickoff, against the
-        # card you really played - the "should I follow it?" question.
-        self.track_card = Card(TRACK_TITLE)
-        chooser = QHBoxLayout()
-        chooser.addWidget(QLabel("You are"))
-        self.me_picker = QComboBox()
-        self.me_picker.setMinimumWidth(200)
-        self.me_picker.currentIndexChanged.connect(lambda _: self._render_track())
-        chooser.addWidget(self.me_picker)
-        chooser.addStretch(1)
-        self.track_card.body().addLayout(chooser)
-        self.track_summary = QLabel("")
-        self.track_summary.setWordWrap(True)
-        self.track_card.add(self.track_summary)
-        self.track_box = QVBoxLayout()
-        self.track_card.body().addLayout(self.track_box)
-        self.track_note = QLabel(
-            "The model's card is kept as it stood before the week's first "
-            "kickoff - the card This Week showed you - and scored on the 16 "
-            "regular games once results are in. \u201cRebuilt\u201d weeks came "
-            "before this was kept, and were re-made from the stored lines."
-        )
-        self.track_note.setObjectName("Muted")
-        self.track_note.setWordWrap(True)
-        self.track_card.add(self.track_note)
-        self.layout_.addWidget(self.track_card)
-
-        self.calibration_card = Card(CALIBRATION_TITLE)
-        self.calibration_chart = BarChart(self.palette, height=3.0)
-        self.calibration_card.add(self.calibration_chart, 1)
-        self.calibration_note = QLabel(
-            "A pick that says 70% should come in about seven times in ten. "
-            "Landing above what it claims is not a bonus - it means the "
-            "chances are understated, and every \"worth it against the field\" "
-            "call is made on a wrong number."
-        )
-        self.calibration_note.setObjectName("Muted")
-        self.calibration_note.setWordWrap(True)
-        self.calibration_card.add(self.calibration_note)
-        self.layout_.addWidget(self.calibration_card, 1)
 
         self.crowd_card = Card(CROWD_TITLE)
         self.crowd_chart = ScatterChart(self.palette, height=3.6)
@@ -181,8 +115,8 @@ class InsightsPage(Page):
         self.layout_.addWidget(self.h2h_card, 2)
 
     def restyle(self) -> None:
-        for chart in (self.form_chart, self.weeks_chart, self.model_chart,
-                      self.calibration_chart, self.crowd_chart, self.h2h_chart):
+        for chart in (self.form_chart, self.weeks_chart, self.crowd_chart,
+                      self.h2h_chart, self.luck_chart):
             chart.set_palette(self.palette)
         self.refresh_now()
 
@@ -203,61 +137,6 @@ class InsightsPage(Page):
         self._update_crowd_chart(season)
         self._update_habits(season)
         self._update_luck(season)
-        self._update_model(season)
-        self._update_track(season)
-
-    # ---- following the model -------------------------------------------
-    def _update_track(self, season) -> None:
-        wanted = self.me_picker.currentData() or QSettings().value(TRACK_KEY, "") \
-            or QSettings().value("thisweek/suicide_coach", "")
-        players = sorted(season.players.values(), key=lambda p: p.display.casefold())
-        self.me_picker.blockSignals(True)
-        self.me_picker.clear()
-        for p in players:
-            self.me_picker.addItem(p.display, p.key)
-        found = self.me_picker.findData(wanted) if wanted else -1
-        self.me_picker.setCurrentIndex(max(found, 0))
-        self.me_picker.blockSignals(False)
-        self._render_track()
-
-    def _render_track(self) -> None:
-        season = self.season
-        self.clear_layout(self.track_box)
-        if season is None:
-            return
-        key = self.me_picker.currentData()
-        if key:
-            QSettings().setValue(TRACK_KEY, key)
-        name = self.me_picker.currentText() or "you"
-        scores = cards.history(season, key)
-        if not scores:
-            self.track_summary.setText(
-                "Nothing to score yet. The model's card is kept each week from "
-                "This Week, and graded here once the results are in."
-            )
-            return
-        self.track_summary.setText(cards.record(scores).sentence(name))
-        rows, tones = [], {}
-        for r, sc in enumerate(scores):
-            rows.append([
-                f"{sc.week}" + ("  (rebuilt)" if sc.rebuilt else ""),
-                f"{sc.model} of {sc.games}",
-                sc.plain,
-                sc.mine if sc.mine is not None else self.NO_VALUE,
-                sc.best,
-                ("tied " if sc.model_tied else "")
-                + ("first" if sc.model_place == 1 else _ordinal(sc.model_place))
-                + f" of {sc.entrants + 1}",
-            ])
-            if sc.mine is not None:
-                tones[(r, 1)] = "good" if sc.model > sc.mine else "bad" if sc.model < sc.mine else ""
-            tones[(r, 5)] = "good" if sc.model_place == 1 else ""
-        model = TableModel(
-            TRACK_HEADERS, rows, palette=self.palette,
-            numeric_columns={1, 2, 3, 4}, tones=tones, bold_columns={1},
-        )
-        view, _ = make_table(model, stretch_column=5, row_height=28)
-        self.track_box.addWidget(view)
 
     def _update_luck(self, season) -> None:
         lines = luck.season_luck(season)
@@ -464,121 +343,6 @@ class InsightsPage(Page):
                 f"{name}\nwith the crowd on {self.pct(x, 0)} of picks\n"
                 f"averages {y:.1f} wins a week"
                 for name, x, y in points
-            ],
-        )
-
-    def _model_entries(self, season) -> list:
-        """Every pick the app has made on a week that has since been scored.
-
-        Replayed rather than remembered: the stored forecasts and the week's
-        results are both on disk, so the record is rebuilt from them and
-        cannot drift away from what the app would say today.
-        """
-        entries = []
-        for number, stored in predictions.stored_weeks().items():
-            week = season.weeks.get(number)
-            if week is None or not stored:
-                continue
-            games = sorted(week.games, key=lambda g: g.index)
-            found = predictions.match_games(games, stored).by_game
-            lean = predictions.home_lean(stored)
-            typical = predictions.typical_disagreement(stored)
-            for game in games:
-                forecast = found.get(game.index)
-                if not game.played or forecast is None or forecast.market is None:
-                    continue
-                margin = predictions.home_margin(
-                    game, forecast, forecast.expected(lean=lean, typical=typical)
-                )
-                guess = analytics.predict_margin(
-                    game, margin,
-                    sd=math.hypot(
-                        analytics.SPREAD_SD, forecast.extra_spread(typical=typical)
-                    ),
-                )
-                if guess is not None:
-                    entries.append((number, guess, game.winner))
-        return entries
-
-    def _update_model(self, season) -> None:
-        """Week by week: what the picks got, against what they said they would."""
-        entries = self._model_entries(season)
-        if not entries:
-            self.model_card.set_title(MODEL_TITLE)
-            self.model_chart.empty(
-                "Appears once a week with a predictions file has been scored"
-            )
-            self.model_note.setText(
-                "Load a week's predictions on the Next Week page and this fills "
-                "in as the results come."
-            )
-            self.calibration_card.set_title(CALIBRATION_TITLE)
-            self.calibration_chart.empty("Appears with the record above")
-            return
-
-        by_week = analytics.grade_by_week(entries)
-        weeks = sorted(by_week)
-        card = analytics.grade(entries)
-        self.model_card.set_title(
-            f"{MODEL_TITLE} - {card.hits} of {card.picks} over "
-            f"{_plural(len(weeks), 'week')}"
-        )
-        self.model_chart.plot(
-            weeks,
-            [
-                ("Got right", [by_week[w].hits for w in weeks]),
-                ("Said it would", [round(by_week[w].expected, 1) for w in weeks]),
-            ],
-            ylabel="Picks",
-            zero_baseline=True,
-        )
-        gap = card.surprise
-        self.model_note.setText(
-            f"{card.straight_hits} of {card.straight_picks} picking winners"
-            + (f", {card.lined_hits} of {card.lined_picks} against the pool's lines"
-               if card.lined_picks else "")
-            + f". It expected {card.expected:.1f} and got {card.hits}"
-            + (" - about right." if abs(gap) < 3
-               else " - it is running bold." if gap < 0
-               else " - it is running shy.")
-        )
-
-        bands = analytics.calibration(entries)
-        if not bands:
-            self.calibration_card.set_title(CALIBRATION_TITLE)
-            self.calibration_chart.empty("Appears once there are picks to sort")
-            return
-        few = all(band.picks < CALIBRATION_MIN_PICKS for band in bands)
-        self.calibration_card.set_title(
-            f"{CALIBRATION_TITLE} - {card.picks} picks sorted by what they claimed"
-            + (" (too few in each band to judge yet)" if few else "")
-        )
-        self.calibration_chart.plot(
-            [f"said {band.claimed:.0%}" for band in bands],
-            [band.actual for band in bands],
-            xlabel="Bar: how often it was right  \u00b7  tick: what it said it would be",
-            value_format="{:.0%}",
-            markers=[band.claimed for band in bands],
-            # Colour says whether a band can be judged yet, and which way it
-            # errs. A handful of picks proves nothing, so small bands stay
-            # neutral; a shy band (better than it claimed) is a caution, and
-            # only a bold one - worse than it promised - is marked red.
-            colors=[
-                self.palette.accent if band.picks < CALIBRATION_MIN_PICKS
-                else self.palette.good if abs(band.gap) < 0.05
-                else self.palette.warning if band.gap > 0
-                else self.palette.critical
-                for band in bands
-            ],
-            tooltips=[
-                f"Picks it gave about {band.claimed:.0%}\n"
-                f"{band.hits} of {band.picks} came in ({band.actual:.0%})\n"
-                + ("about right" if abs(band.gap) < 0.05
-                   else f"{abs(band.gap):.0%} "
-                        + ("better than it claimed - the chances are shy"
-                           if band.gap > 0 else
-                           "worse than it claimed - the chances are bold"))
-                for band in bands
             ],
         )
 

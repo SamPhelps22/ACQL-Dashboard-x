@@ -24,6 +24,10 @@ Flags:
     --diagnose    print what the dashboard can see - every file it found,
                   every coach, every week - and exit. This is what to send
                   when a number looks wrong.
+    --selfcheck   open the dashboard, photograph every page and tab, write a
+                  report of anything that looks wrong, zip it into the data
+                  folder's selfcheck folder, and close. This is what to send
+                  when a page looks wrong.
     --verbose     show the commands being run and pip's own output
 """
 

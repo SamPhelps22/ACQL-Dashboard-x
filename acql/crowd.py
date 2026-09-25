@@ -198,17 +198,8 @@ def situation(season: Season, week: int, game: Game, home_margin: float) -> Situ
 
 def _market_margins(week: int, games: list[Game]) -> dict[int, float]:
     """Game index -> the market's home margin, from the stored predictions."""
-    forecasts, _ = predictions.load(week)
-    if not forecasts:
-        return {}
-    out = {}
-    for index, forecast in predictions.match_games(games, forecasts).by_game.items():
-        game = next(g for g in games if g.index == index)
-        value = forecast.market if forecast.market is not None else forecast.opening
-        margin = predictions.home_margin(game, forecast, value)
-        if margin is not None:
-            out[index] = margin
-    return out
+    from . import pricing
+    return pricing.market_margins(week, games)
 
 
 def observations(season: Season, market=None, sheets=None) -> list[Observation]:

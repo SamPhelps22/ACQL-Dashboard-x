@@ -19,11 +19,11 @@ from PySide6.QtWidgets import (
 
 from ... import mailer, picks
 from ...predictions import display_team
-from ...models import Season, Week
+from ...models import Week
 from ..charts import BarChart, HistogramChart
 from .. import recap
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
-from .base import Page
+from .base import POOL_PAGE, Page
 
 SLATE_HEADERS = [
     "#", "Matchup", "Pool line", "Result", "Pool took", "Got it right", "Hit rate",
@@ -40,8 +40,8 @@ def _plural(count: int, word: str) -> str:
 
 
 class WeeklyPage(Page):
-    title = "Weekly"
-    subtitle = "The slate, the scoreboard and the trap games"
+    title = "Results"
+    subtitle = "The slate, the scoreboard, the trap games and the recap"
     icon = "\N{SPIRAL CALENDAR PAD}"
 
     # ---- build ---------------------------------------------------------
@@ -62,9 +62,9 @@ class WeeklyPage(Page):
         for widget in (self.prev_btn, self.week_picker, self.next_btn):
             controls.addWidget(widget)
         controls.addStretch(1)
+        # On a line of its own under the week picker: the buttons need the room.
         self.status = QLabel("")
         self.status.setObjectName("Muted")
-        controls.addWidget(self.status)
         self.share_btn = QPushButton("\N{CAMERA}  Share recap")
         self.share_btn.setObjectName("Primary")
         self.share_btn.setToolTip(
@@ -86,8 +86,17 @@ class WeeklyPage(Page):
         self.email_settings_btn.setFixedWidth(40)
         self.email_settings_btn.clicked.connect(lambda: self._email_settings())
         controls.addWidget(self.email_settings_btn)
+        self.pool_btn = QPushButton("\N{GLOBE WITH MERIDIANS}  Pool page")
+        self.pool_btn.setToolTip(
+            "Put this week on the pool's website - standings, the week, the "
+            "side pools. Nothing about your card or the model goes on it. The "
+            "first time, it walks you through setting the website up."
+        )
+        self.pool_btn.clicked.connect(lambda *_: self.action_requested.emit(POOL_PAGE))
+        controls.addWidget(self.pool_btn)
         self._sender: _Sender | None = None
         self.layout_.addLayout(controls)
+        self.layout_.addWidget(self.status)
 
         self.share_note = QLabel("")
         self.share_note.setObjectName("Muted")
@@ -626,6 +635,9 @@ class EmailDialog(QDialog):
         form.addRow("Send from (Gmail)", self.sender)
         form.addRow("Send to", self.recipients)
         form.addRow("App password", self.password)
+        self.page_link = QLineEdit(settings.page_link)
+        self.page_link.setPlaceholderText("the pool page's link - leave blank to leave it out")
+        form.addRow("Pool page link", self.page_link)
         layout.addLayout(form)
         self.sender.textChanged.connect(self._default_recipient)
 
@@ -652,4 +664,5 @@ class EmailDialog(QDialog):
         )
         if self.password.text().strip():
             settings.set_password(self.password.text())
+        settings.page_link = self.page_link.text().strip()
         return settings

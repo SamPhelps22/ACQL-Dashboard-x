@@ -1,0 +1,35 @@
+ACQL Dashboard self-check - Friday 25 September 2026, 08:45
+Version 2.1.0 · Python 3.13.3 · PySide6 6.11.2 / Qt 6.11.2
+Windows-11-10.0.26200-SP0 · screen 1536x960 at 1.25x · window 1536x889 · dark theme
+35 players · weeks [1, 2, 3, 4]
+Memory: {'cards': 1, 'forecasts': 3, 'meta': 6, 'odds': 4, 'picks': 8, 'settings': 1, 'spreads': 3}
+
+12 pages, 0 thing(s) to look at
+
+OK Season > Overview  (content, 157 ms, 1648x1818)
+OK Season > Standings  (content, 121 ms, 1648x3094)
+OK Season > Winnings  (content, 76 ms, 1648x2958)
+OK Season > Projections  (content, 219 ms, 1648x2344)
+OK This Week > Your card  (content, 829 ms, 1648x2309)
+OK This Week > Every game  (content, 470 ms, 1648x2350)
+OK Results > Results  (content, 5 ms, 1648x2400)
+OK Side Pools > Side pools  (content, 76 ms, 1648x2756)
+OK Player > Player  (content, 50 ms, 1648x1361)
+OK Insights > The pool  (content, 317 ms, 1648x3473)
+OK Insights > The model  (content, 110 ms, 1648x2316)
+OK Data & Update > Data  (content, 8 ms, 1648x2315)
+
+The sums behind the pages:
+OK Win chances by the spread: 3 61.2%, 7 74.3%, 10 81.8%
+OK The pool's line rule: 7-point favourite against a pool line of 8: 41.7%
+OK The app's database: save, replace, read and delete on a scratch database
+OK Pricing a game: market 6.5 + models -> 7.60; a typed 3 wins -> 4.10; no file -> -2.5
+OK The win-the-week planner: finishes first 6.2% against 2.8% straight
+OK The suicide pool rules: 6-point favourite 71%, 10-point favourite under a line 47%
+OK Finishing first, ties shared: a lone card always wins; a two-way tie pays half
+OK The updater: version order and update file names
+
+Warnings from loading:
+  - Week 3 is not covered by the latest stats.xls (which reports through week 2), so it is shown as in-progress and left out of season averages.
+  - Stored pick sheets from another season were ignored (week 3, week 8, week 10, week 11, week 13). Their games are not this season's - clear them from Data & Update.
+  - Built from the pool's pick sheet, not the workbook: week 4

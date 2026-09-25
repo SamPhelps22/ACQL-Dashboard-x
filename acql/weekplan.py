@@ -202,6 +202,44 @@ def plan_week(
     return _plan(tuple(choices), frozen_cards, coaches, sims, seed)
 
 
+def card_odds(
+    choices: list[Choice],
+    take: list[str],
+    *,
+    cards: list[list[int]] | None = None,
+    coaches: int = 34,
+    sims: int = SIMULATIONS,
+    seed: int = SEED,
+) -> tuple[float, tuple[float, ...]] | None:
+    """(chance of finishing first, the same with each game flipped) for a given card.
+
+    For a card chosen some other way - the likeliest side of every game, say -
+    so the page can show what each of its picks is worth to winning the week
+    by the same measure the planner uses.
+    """
+    if not choices or len(take) != len(choices):
+        return None
+    bits = tuple(0 if t == c.pick else 1 for t, c in zip(take, choices))
+    frozen_cards = tuple(tuple(int(v) for v in row) for row in cards) if cards else None
+    return _card_odds(tuple(choices), bits, frozen_cards, coaches, sims, seed)
+
+
+@lru_cache(maxsize=32)
+def _card_odds(choices, bits, cards, coaches, sims, seed):
+    chance = np.array([c.chance for c in choices])
+    crowd = np.array([c.crowd for c in choices])
+    field = np.array(cards, dtype=np.int8) if cards else None
+    check = _Week(chance, crowd, field, coaches, sims, np.random.default_rng(seed + 1))
+    card = np.array(bits, dtype=np.int8)
+    odds = check.odds(card)[0]
+    flips = []
+    for game in range(len(choices)):
+        trial = card.copy()
+        trial[game] ^= 1
+        flips.append(check.odds(trial)[0])
+    return odds, tuple(flips)
+
+
 @lru_cache(maxsize=32)
 def _plan(
     choices: tuple[Choice, ...],

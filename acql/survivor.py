@@ -44,7 +44,15 @@ from .models import Season, same_team
 STRONG = 0.66
 #: Options this close to the best chance this week are treated as equally
 #: safe, and the one with the least left to give later is preferred.
-CLOSE_ENOUGH = 0.04
+#:
+#: This was 0.04 - "within four points, spend the team you need least" -
+#: until the rule was replayed over 2011-2025 under the pool's lines
+#: (backtest.py). Nothing survives a week at much better than 70% under
+#: them, so few coaches last past week 4 and a team saved for later is
+#: rarely used: giving up even a few points now cost more than it saved
+#: (2.09 weeks expected against 2.16). Only a true tie is now decided by
+#: what the teams are worth later.
+CLOSE_ENOUGH = 0.0
 #: A team whose best later spot beats this week by this much is worth saving.
 SAVE_MARGIN = 0.06
 #: Home advantage used for weeks with no line yet, in points.
@@ -174,8 +182,17 @@ def _posted_line(season: Season, week: int, team: str) -> tuple[float, bool] | N
     return None
 
 
-def _this_week_lines(week: int) -> dict[str, float]:
-    """Team code -> the market's margin for that team this week, if stored."""
+def _this_week_lines(week: int, season: Season | None = None) -> dict[str, float]:
+    """Team code -> this week's expected margin for that team.
+
+    Priced exactly as the week's card is (pricing.py): a typed spread, or the
+    market's latest number nudged by the models. Weeks the workbook doesn't
+    have a slate for yet fall back to the stored market numbers.
+    """
+    from . import pricing
+    found = pricing.team_margins(season, week) if season is not None else {}
+    if found:
+        return found
     forecasts, _ = predictions.load(week)
     out = {}
     for f in forecasts or []:
@@ -220,7 +237,7 @@ def advise(
     spent = {code for _, code in used}
     priced = games if games is not None else _lines_so_far(week)
     rating = ratings(priced)
-    market = this_week if this_week is not None else _this_week_lines(week)
+    market = this_week if this_week is not None else _this_week_lines(week, season)
     last_week = min(WEEKS_IN_SEASON, schedule.WEEKS)
 
     options = []
@@ -285,17 +302,19 @@ def advise(
                 f", and only {pick.strong_spots} later week"
                 f"{' is' if pick.strong_spots == 1 else 's are'} as safe."
                 if pick.strong_spots <= 2 else
-                f". It has {pick.strong_spots} strong weeks later too, but nothing "
-                f"else this week comes close."
+                f". It has {pick.strong_spots} strong weeks later too - but under the "
+                f"pool's lines few coaches last that long, so this week's chance comes "
+                f"first."
             )
             reason = f"{pick.team} is the likeliest to survive this week ({pick.chance:.0%}){later}"
         else:
             first = options[0]
             reason = (
-                f"{pick.team} ({pick.chance:.0%}) is within {CLOSE_ENOUGH:.0%} of "
-                f"{first.team} ({first.chance:.0%}), and {first.team} has "
-                f"{first.strong_spots} strong later spots to {pick.team}'s "
-                f"{pick.strong_spots} - so {first.team} is worth keeping."
+                f"{pick.team} and {first.team} are as likely as each other to survive "
+                f"({pick.chance:.0%})"
+                + (f" - within {CLOSE_ENOUGH:.0%}" if CLOSE_ENOUGH else "")
+                + f", and {first.team} has {first.strong_spots} strong later spots to "
+                f"{pick.team}'s {pick.strong_spots} - so {first.team} is worth keeping."
             )
 
     return Advice(

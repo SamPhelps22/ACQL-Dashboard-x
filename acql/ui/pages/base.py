@@ -42,6 +42,12 @@ LOG_NAME = "acql-log.txt"
 GO_TO_DATA = "data"
 OPEN_FOLDER = "open-folder"
 RELOAD = "reload"
+# ...and from the Data & Update page's "The app" card.
+SELF_CHECK = "self-check"
+INSTALL_UPDATE = "install-update"
+UNDO_UPDATE = "undo-update"
+# ...and from Results: the file the pool's web page is updated from.
+POOL_PAGE = "pool-page"
 
 VIEW_CONTENT, VIEW_STATE = 0, 1
 

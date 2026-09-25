@@ -1,0 +1,209 @@
+{
+ "environment": {
+  "version": "2.1.0",
+  "python": "3.13.3",
+  "qt": "PySide6 6.11.2 / Qt 6.11.2",
+  "os": "Windows-11-10.0.26200-SP0",
+  "screen": "1536x960 at 1.25x",
+  "window": "1536x889",
+  "theme": "dark",
+  "data_folder": "C:\\Users\\sam52\\OneDrive\\Documents\\Code x\\data",
+  "memory": {
+   "cards": 1,
+   "forecasts": 3,
+   "meta": 6,
+   "odds": 4,
+   "picks": 8,
+   "settings": 1,
+   "spreads": 3
+  },
+  "players": 35,
+  "weeks": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "warnings": [
+   "Week 3 is not covered by the latest stats.xls (which reports through week 2), so it is shown as in-progress and left out of season averages.",
+   "Stored pick sheets from another season were ignored (week 3, week 8, week 10, week 11, week 13). Their games are not this season's - clear them from Data & Update.",
+   "Built from the pool's pick sheet, not the workbook: week 4"
+  ]
+ },
+ "pages": [
+  {
+   "group": "Season",
+   "tab": "Overview",
+   "title": "Overview",
+   "ms": 157,
+   "state": "content",
+   "image": "01-season-overview.png",
+   "width": 1648,
+   "height": 1818,
+   "problems": []
+  },
+  {
+   "group": "Season",
+   "tab": "Standings",
+   "title": "Standings",
+   "ms": 121,
+   "state": "content",
+   "image": "02-season-standings.png",
+   "width": 1648,
+   "height": 3094,
+   "problems": []
+  },
+  {
+   "group": "Season",
+   "tab": "Winnings",
+   "title": "Winnings",
+   "ms": 76,
+   "state": "content",
+   "image": "03-season-winnings.png",
+   "width": 1648,
+   "height": 2958,
+   "problems": []
+  },
+  {
+   "group": "Season",
+   "tab": "Projections",
+   "title": "Projections",
+   "ms": 219,
+   "state": "content",
+   "image": "04-season-projections.png",
+   "width": 1648,
+   "height": 2344,
+   "problems": []
+  },
+  {
+   "group": "This Week",
+   "tab": "Your card",
+   "title": "This Week",
+   "ms": 829,
+   "state": "content",
+   "image": "05-this-week-your-card.png",
+   "width": 1648,
+   "height": 2309,
+   "problems": []
+  },
+  {
+   "group": "This Week",
+   "tab": "Every game",
+   "title": "Every Game",
+   "ms": 470,
+   "state": "content",
+   "image": "06-this-week-every-game.png",
+   "width": 1648,
+   "height": 2350,
+   "problems": []
+  },
+  {
+   "group": "Results",
+   "tab": "Results",
+   "title": "Results",
+   "ms": 5,
+   "state": "content",
+   "image": "07-results-results.png",
+   "width": 1648,
+   "height": 2400,
+   "problems": []
+  },
+  {
+   "group": "Side Pools",
+   "tab": "Side pools",
+   "title": "Side Pools",
+   "ms": 76,
+   "state": "content",
+   "image": "08-side-pools-side-pools.png",
+   "width": 1648,
+   "height": 2756,
+   "problems": []
+  },
+  {
+   "group": "Player",
+   "tab": "Player",
+   "title": "Player",
+   "ms": 50,
+   "state": "content",
+   "image": "09-player-player.png",
+   "width": 1648,
+   "height": 1361,
+   "problems": []
+  },
+  {
+   "group": "Insights",
+   "tab": "The pool",
+   "title": "The Pool",
+   "ms": 317,
+   "state": "content",
+   "image": "10-insights-the-pool.png",
+   "width": 1648,
+   "height": 3473,
+   "problems": []
+  },
+  {
+   "group": "Insights",
+   "tab": "The model",
+   "title": "The Model",
+   "ms": 110,
+   "state": "content",
+   "image": "11-insights-the-model.png",
+   "width": 1648,
+   "height": 2316,
+   "problems": []
+  },
+  {
+   "group": "Data & Update",
+   "tab": "Data",
+   "title": "Data & Update",
+   "ms": 8,
+   "state": "content",
+   "image": "12-data---update-data.png",
+   "width": 1648,
+   "height": 2315,
+   "problems": []
+  }
+ ],
+ "checks": [
+  {
+   "name": "Win chances by the spread",
+   "ok": true,
+   "detail": "3 61.2%, 7 74.3%, 10 81.8%"
+  },
+  {
+   "name": "The pool's line rule",
+   "ok": true,
+   "detail": "7-point favourite against a pool line of 8: 41.7%"
+  },
+  {
+   "name": "The app's database",
+   "ok": true,
+   "detail": "save, replace, read and delete on a scratch database"
+  },
+  {
+   "name": "Pricing a game",
+   "ok": true,
+   "detail": "market 6.5 + models -> 7.60; a typed 3 wins -> 4.10; no file -> -2.5"
+  },
+  {
+   "name": "The win-the-week planner",
+   "ok": true,
+   "detail": "finishes first 6.2% against 2.8% straight"
+  },
+  {
+   "name": "The suicide pool rules",
+   "ok": true,
+   "detail": "6-point favourite 71%, 10-point favourite under a line 47%"
+  },
+  {
+   "name": "Finishing first, ties shared",
+   "ok": true,
+   "detail": "a lone card always wins; a two-way tie pays half"
+  },
+  {
+   "name": "The updater",
+   "ok": true,
+   "detail": "version order and update file names"
+  }
+ ]
+}

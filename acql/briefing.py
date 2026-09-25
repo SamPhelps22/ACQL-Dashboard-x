@@ -20,12 +20,10 @@ real week without a screen - which is the only way any of it was trusted.
 
 from __future__ import annotations
 
-import math
 from collections import Counter
 from dataclasses import dataclass, field, replace
 
-from . import analytics, lines, picks, predictions, weekplan
-from . import crowd as crowd_model
+from . import analytics, lines, picks, predictions, pricing, weekplan
 from .models import Game, Season, same_team
 
 
@@ -92,6 +90,7 @@ class Brief:
     """The week, decided."""
 
     week: int
+    style: str = "win"
     choices: list[Choice] = field(default_factory=list)
     plan: weekplan.Plan | None = None
     losers: list[analytics.BigLoser] = field(default_factory=list)
@@ -99,6 +98,17 @@ class Brief:
     priced: int = 0
     games: int = 0
     counted_crowd: bool = False      # whether the pool's shares are real or guessed
+
+    @property
+    def straight(self) -> bool:
+        return self.style == STYLE_STRAIGHT
+
+    @property
+    def win_odds(self) -> float | None:
+        """Chance the card as shown finishes first."""
+        if self.plan is None:
+            return None
+        return self.plan.plain_win_odds if self.straight else self.plan.win_odds
 
     @property
     def expected(self) -> float:
@@ -132,7 +142,15 @@ class Brief:
         if not self.choices:
             return f"Week {self.week}: nothing priced yet."
         out = [f"ACQL week {self.week}", ""]
-        if self.plan is not None:
+        if self.plan is not None and self.straight:
+            out.append(
+                f"  The likeliest side of every game: {self.plan.plain_win_odds:.1%} "
+                f"to finish first of {self.plan.coaches + 1} (a fair share is "
+                f"{self.plan.fair_share:.1%}; the card built to win the week "
+                f"would be {self.plan.win_odds:.1%})"
+            )
+            out.append("")
+        elif self.plan is not None:
             out.append(
                 f"  Built to win the week: {self.plan.win_odds:.1%} to finish "
                 f"first of {self.plan.coaches + 1} (a fair share is "
@@ -165,72 +183,43 @@ class Brief:
         return "\n".join(out)
 
 
-def _spread_for(week: int, game: Game, forecast) -> lines.Spread | None:
-    """The line to price this game against: typed, else the file's opener."""
-    stored = lines.load_spreads(week, [game]).get(game.index)
-    if stored is not None:
-        return stored
-    if forecast is None:
-        return None
-    opening = forecast.opening if forecast.opening is not None else forecast.market
-    margin = predictions.home_margin(game, forecast, opening)
-    if margin is None:
-        return None
-    return lines.Spread("home" if margin >= 0 else "away", abs(margin))
+#: The two cards This Week can hand in.
+STYLE_WIN = "win"            # built to finish first (the planner's card)
+STYLE_STRAIGHT = "straight"  # the likeliest side of every game
 
 
-def build(season: Season, week: int) -> Brief:
+def build(season: Season, week: int, style: str = STYLE_WIN, *, use_sheet: bool = True) -> Brief:
     """Everything worth saying about a week, worked out once.
 
-    The pricing follows the Next Week page exactly - the market's latest
-    number moved a measured share toward the models, the slate's shared home
-    lean taken out, a line that has moved against the models discounted - so
-    the two can never quietly disagree about the same game.
+    `style` picks the card: the planner's, built to finish first, or the
+    likeliest side of every game. Both are worked out either way, so the
+    page can say what the other would do.
+
+    `use_sheet=False` ignores the week's pick sheet - the card as it would
+    have been made before anyone's picks were known, which is the only fair
+    one to grade a past week by.
+
+    Priced by pricing.py - the same rules as the Every Game worksheet, so the
+    two can never quietly disagree about the same game: a typed spread wins,
+    otherwise the market's latest number, nudged by the share of the models'
+    opinion this season's results have earned.
     """
     found = season.weeks.get(week)
     games = sorted(found.games, key=lambda g: g.index) if found else []
-    forecasts, _ = predictions.load(week)
-    matched = predictions.match_games(games, forecasts).by_game if forecasts else {}
-    lean = predictions.home_lean(forecasts) if forecasts else 0.0
-    typical = predictions.typical_disagreement(forecasts) if forecasts else 0.0
-    sheet = picks.load(week)
+    ctx = pricing.context(season, week, games)
+    prices = pricing.price_week(season, week, games, ctx)
+    sheet = picks.load(week) if use_sheet else None
     chalk_rate, _ = analytics.pool_chalk(season)
 
     choices: list[Choice] = []
-    for game in games:
-        forecast = matched.get(game.index)
-        spread = _spread_for(week, game, forecast)
-        if spread is None:
-            continue
-        margin = spread.points if spread.favourite == "home" else -spread.points
-        sd = analytics.SPREAD_SD
-        if forecast is not None:
-            current = predictions.home_margin(game, forecast, forecast.market)
-            if current is not None:
-                margin = current
-        margin_market = margin
-        if forecast is not None:
-            edge = forecast.live_edge(lean)
-            if edge is not None:
-                margin += forecast.model_weight(
-                    predictions.CONSENSUS_WEIGHT, typical
-                ) * predictions.home_margin(game, forecast, edge)
-                sd = math.hypot(
-                    analytics.SPREAD_SD,
-                    forecast.extra_spread(predictions.CONSENSUS_WEIGHT, typical),
-                )
-        guess = analytics.predict_margin(game, margin, sd=sd, source="market + models")
+    for p in prices:
+        guess = p.prediction()
         if guess is None:
             continue
+        game = p.game
         other = game.away if same_team(guess.pick, game.home) else game.home
-        crowd = _crowd_share(sheet, game, guess.pick)
-        if crowd is None:
-            # This pool's own habits when there is enough to learn them from,
-            # the usual curve until then.
-            margin_home = spread.points if spread.favourite == "home" else -spread.points
-            crowd = crowd_model.guess(season, week, game, margin_home, guess.pick)
-        if crowd is None:
-            crowd = _guessed_share(game, spread, guess.pick, chalk_rate)
+        spread = p.spread or lines.Spread("home" if p.base >= 0 else "away", abs(p.base))
+        crowd = pricing.crowd_share(season, week, game, guess.pick, spread, sheet, chalk_rate)
         choices.append(Choice(
             index=game.index,
             matchup=game.label,
@@ -241,7 +230,7 @@ def build(season: Season, week: int) -> Brief:
             lined=guess.against_line,
             line=_line_text(game),
             why=guess.reason,
-            home_margin=margin_market,
+            home_margin=p.base,
         ))
 
     plan = None
@@ -250,6 +239,10 @@ def build(season: Season, week: int) -> Brief:
         # as the side it takes, so the table, the tiles and the text to paste
         # are all the card that is trying to win the week - not the safer
         # card that mostly lands in the top five.
+        by_index = {g.index: g for g in games}
+        cards = pricing.field_cards(
+            sheet, [by_index[c.index] for c in choices], [c.pick for c in choices]
+        )
         plan = weekplan.plan_week(
             [
                 weekplan.Choice(
@@ -258,9 +251,10 @@ def build(season: Season, week: int) -> Brief:
                 )
                 for c in choices
             ],
+            cards=cards,
             coaches=max(1, len(season.players) - 1),
         )
-        if plan is not None:
+        if plan is not None and style != STYLE_STRAIGHT:
             choices = [
                 replace(
                     _turn(choice) if i in plan.flipped else choice,
@@ -268,12 +262,26 @@ def build(season: Season, week: int) -> Brief:
                 )
                 for i, choice in enumerate(choices)
             ]
+        elif plan is not None:
+            # The likeliest side everywhere: what each pick is worth to
+            # winning the week, measured the same way the planner measures.
+            found = weekplan.card_odds(
+                [weekplan.Choice(label=c.matchup, pick=c.pick, other=c.other,
+                                 chance=c.chance,
+                                 crowd=c.crowd if c.crowd is not None else 0.7)
+                 for c in choices],
+                [c.pick for c in choices], cards=cards,
+                coaches=max(1, len(season.players) - 1),
+            )
+            if found is not None:
+                choices = [replace(c, if_flipped=found[1][i]) for i, c in enumerate(choices)]
 
     return Brief(
         week=week,
+        style=style,
         choices=choices,
         plan=plan,
-        losers=_losers(games, matched, lean, typical),
+        losers=pricing.big_loser_candidates(prices)[:3],
         suicide_note=_suicide_note(season, week),
         priced=len(choices),
         games=len(games),
@@ -315,40 +323,6 @@ def _line_text(game: Game) -> str:
     if line is None or not favourite:
         return ""
     return f"{favourite} by {line:g}"
-
-
-def _crowd_share(sheet, game: Game, pick: str) -> float | None:
-    """What the pool really did, when the week's sheet has been loaded."""
-    if sheet is None:
-        return None
-    row = sheet.game_for(game.away, game.home)
-    return None if row is None else row.share_on(pick)
-
-
-def _guessed_share(game: Game, spread, pick: str, chalk_rate: float) -> float:
-    """What the pool usually does on a game shaped like this one."""
-    favourite = game.home if spread.favourite == "home" else game.away
-    on_favourite = (
-        chalk_rate if getattr(game, "line", None)
-        else analytics.crowd_on_favourite(spread.points)
-    )
-    return on_favourite if same_team(pick, favourite) else 1 - on_favourite
-
-
-def _losers(games, matched, lean: float, typical: float) -> list:
-    """The three teams most likely to be beaten by more than the big-loser mark."""
-    priced = []
-    for game in games:
-        forecast = matched.get(game.index)
-        if forecast is None:
-            continue
-        margin = predictions.home_margin(
-            game, forecast, forecast.expected(lean=lean, typical=typical)
-        )
-        if margin is None:
-            continue
-        priced.append((game.home, game.away, margin))
-    return analytics.big_losers(priced)[:3]
 
 
 def _suicide_note(season: Season, week: int) -> str:

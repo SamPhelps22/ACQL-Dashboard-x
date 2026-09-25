@@ -286,6 +286,8 @@ class Season:  # noqa: D101
     # Weeks whose money the app worked out from the scores, because the
     # files record it only as a spreadsheet formula with no saved result.
     computed_winnings: list[int] = field(default_factory=list)
+    # True when the season Won/Paid/Net totals were worked out here too.
+    computed_totals: bool = False
 
     # ---- convenience accessors -----------------------------------------
     def ordered_players(self) -> list[Player]:
