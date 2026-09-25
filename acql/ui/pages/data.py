@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -15,21 +16,23 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ... import picks, predictions
 from ..editor import WeekEditor
 from ..widgets import Banner, Card, TableModel, make_table, section
 from .base import Page
 
-FILE_HEADERS = ["File", "Type", "Week", "Folder", "Status"]
+FILE_HEADERS = ["File", "Type", "Week", "Updated", "What it gave", "Folder", "Status"]
 CONFLICT_HEADERS = ["Player", "Field", "stats.xls (used)", "Workbook", "Note"]
+WEEKLY_HEADERS = ["Week", "Kind", "From", "What is in it", "Status"]
 
 SOURCE_KINDS = {
     "stats": "Standings export",
+    "workbook": "Dashboard workbook",
     "dashboard": "Dashboard workbook",
 }
 
 ROW_HEIGHT = 27
-TABLE_PADDING = 6          # frame + a little breathing room
-MAX_TABLE_HEIGHT = 260     # tables scroll beyond this rather than push the editor away
+MAX_TABLE_ROWS = 8         # tables scroll beyond this rather than push the editor away
 
 
 def _norm(path: str | Path) -> str:
@@ -55,6 +58,8 @@ class DataPage(Page):
     title = "Data & Update"
     subtitle = "What is loaded, what disagrees, and how to enter this week's results"
     icon = "\N{CARD INDEX DIVIDERS}"
+    #: This is where folders get added, so it must work before any data does.
+    needs_data = False
 
     refresh_requested = Signal()
 
@@ -116,6 +121,37 @@ class DataPage(Page):
         self.layout_.addWidget(self.files_card)
         self.files_table: QWidget | None = None
 
+        # ---- the week-by-week files ----
+        # Pick sheets and predictions are read from Downloads as much as from
+        # the watched folders, and they are stored once read - so the folder
+        # listing above says nothing about them. Without this the only way to
+        # find out which sheets the app is actually holding was to read the
+        # numbers and work backwards.
+        self.weekly_card = Card("Pick sheets and predictions")
+        self.weekly_note = QLabel(
+            "Everything the app is holding for a particular week, whatever "
+            "folder it came from. A sheet from another pool is named here "
+            "rather than quietly ignored."
+        )
+        self.weekly_note.setObjectName("StatDetail")
+        self.weekly_note.setWordWrap(True)
+        self.weekly_card.add(self.weekly_note)
+        self.weekly_box = QVBoxLayout()
+        self.weekly_card.body().addLayout(self.weekly_box)
+        old_row = QHBoxLayout()
+        self.clear_old_btn = QPushButton("Clear sheets from other seasons")
+        self.clear_old_btn.setToolTip(
+            "Delete the stored pick sheets whose games are not this season's. "
+            "They are already being ignored; this just stops them being listed."
+        )
+        self.clear_old_btn.clicked.connect(self._clear_old_sheets)
+        self.clear_old_btn.hide()
+        old_row.addWidget(self.clear_old_btn)
+        old_row.addStretch(1)
+        self.weekly_card.body().addLayout(old_row)
+        self.layout_.addWidget(self.weekly_card)
+        self.weekly_table: QWidget | None = None
+
         # ---- conflicts ----
         self.conflicts_card = Card("Disagreements between files")
         self.conflicts_note = QLabel("")
@@ -147,13 +183,6 @@ class DataPage(Page):
         box.addWidget(new)
         return new
 
-    @staticmethod
-    def _fit_height(view, row_count: int) -> None:
-        """Size a table to its rows, capped so the editor keeps the spotlight."""
-        header = view.horizontalHeader().sizeHint().height()
-        wanted = header + row_count * ROW_HEIGHT + TABLE_PADDING
-        view.setMaximumHeight(min(wanted, MAX_TABLE_HEIGHT))
-
     # ---- inventory -------------------------------------------------------
     def refresh(self) -> None:
         settings = self._load_settings()
@@ -165,6 +194,7 @@ class DataPage(Page):
 
         self.banner.show_messages(s.warnings)
         self._refresh_files(s)
+        self._refresh_weekly(s)
         self._refresh_conflicts(s)
         self.editor.set_season(s)
 
@@ -177,8 +207,10 @@ class DataPage(Page):
             ]
             self.folders_label.setText(
                 "\n".join(lines)
-                + "\n\nDrop each week's stats.xls and the updated "
-                "ACQL Dashboard.xlsx into any of these, then press Rescan now."
+                + "\n\nDrop the updated ACQL Dashboard.xlsx, the week's pick "
+                "sheets or a predictions CSV into any of these. They are read "
+                "as soon as they land or are saved – Rescan now is only "
+                "for when you want to force it."
             )
         else:
             self.folders_label.setText(
@@ -186,20 +218,71 @@ class DataPage(Page):
                 "to point the app at the place you keep stats.xls and the workbook."
             )
 
+    @staticmethod
+    def _when(source) -> str:
+        """When the file was last written, in words rather than a timestamp."""
+        stamp = getattr(source, "modified", 0) or 0
+        if not stamp:
+            return "\u2013"
+        try:
+            age = max(0.0, time.time() - float(stamp))
+        except (TypeError, ValueError):
+            return "\u2013"
+        if age < 3600:
+            return f"{int(age // 60)} min ago"
+        if age < 86400:
+            return f"{int(age // 3600)} hr ago"
+        days = int(age // 86400)
+        return "yesterday" if days == 1 else f"{days} days ago"
+
+    def _gave(self, s, source) -> str:
+        """What the app actually got out of this file.
+
+        A file can load without error and still contribute nothing - the
+        workbook whose every cell is a formula did exactly that for weeks.
+        "Loaded" was true and useless; this says what came of it.
+        """
+        if source.error:
+            return "nothing"
+        name = source.path.name
+        people = sum(1 for p in s.players.values() if name in p.sources)
+        weeks = sorted(
+            number for number, week in s.weeks.items()
+            if getattr(week, "source", None) is not None
+            and Path(getattr(week, "source", "")).name == name
+        )
+        parts = []
+        if people:
+            parts.append(f"{people} coach{'' if people == 1 else 'es'}")
+        if weeks:
+            scored = [w for w in weeks if s.weeks[w].scored]
+            parts.append(
+                f"{len(weeks)} week{'' if len(weeks) == 1 else 's'}"
+                + (f" ({len(scored)} scored)" if scored else ", none scored")
+            )
+        return " \u00b7 ".join(parts) if parts else "nothing the app could use"
+
     def _refresh_files(self, s) -> None:
         rows, tones = [], {}
         for r, src in enumerate(s.sources):
+            gave = self._gave(s, src)
             rows.append([
                 src.path.name,
                 SOURCE_KINDS.get(src.kind, str(src.kind).title()),
                 src.week or "\u2013",
+                self._when(src),
+                gave,
                 str(src.path.parent),
                 src.error or "Loaded",
             ])
-            tones[(r, 4)] = "bad" if src.error else "good"
+            tones[(r, 6)] = "bad" if src.error else "good"
+            # A file that loaded but gave nothing is the quiet failure worth
+            # seeing, so it is marked even though nothing went wrong.
+            if not src.error and gave.startswith("nothing"):
+                tones[(r, 4)] = "bad"
         if not rows:
             rows = [[
-                "No files found", "\u2013", "\u2013", "\u2013",
+                "No files found", "\u2013", "\u2013", "\u2013", "\u2013", "\u2013",
                 "Drop files into a watched folder",
             ]]
 
@@ -210,9 +293,69 @@ class DataPage(Page):
             tones=tones,
             bold_columns={0},
         )
-        view, _ = make_table(model, stretch_column=3, row_height=ROW_HEIGHT)
-        self._fit_height(view, len(rows))
+        view, _ = make_table(model, stretch_column=5, row_height=ROW_HEIGHT, fit_rows=MAX_TABLE_ROWS)
         self.files_table = self._swap_table(self.files_box, self.files_table, view)
+
+    def _refresh_weekly(self, s) -> None:
+        """Pick sheets and prediction files, whichever folder they came from."""
+        rows, tones = [], {}
+        roster = {
+            "".join(c for c in p.display.casefold() if c.isalnum())
+            for p in s.players.values()
+        }
+        old = picks.other_season_weeks()
+        self.clear_old_btn.setVisible(bool(old))
+        for number, sheet in sorted(picks.load_all(every_season=True).items()):
+            coaches = sheet.coaches
+            if number in old:
+                rows.append([
+                    number, "Pick sheet", Path(sheet.source).name or "\u2013",
+                    f"{len(coaches)} coaches - games are not this season's week {number}",
+                    "Another season's",
+                ])
+                tones[(len(rows) - 1, 4)] = "bad"
+                continue
+            ours = [
+                name for name in coaches
+                if "".join(c for c in name.casefold() if c.isalnum()) in roster
+            ]
+            stranger = roster and len(ours) < max(2, 0.4 * len(coaches))
+            rows.append([
+                number, "Pick sheet", Path(sheet.source).name or "\u2013",
+                f"{len(coaches)} coach{'' if len(coaches) == 1 else 'es'}"
+                + (f", {len(ours)} in this pool" if roster and len(ours) != len(coaches)
+                   else ""),
+                "Another pool's" if stranger else "In use",
+            ])
+            tones[(len(rows) - 1, 4)] = "bad" if stranger else "good"
+
+        for number, stored in sorted(predictions.stored_weeks().items()):
+            _, where = predictions.load(number)
+            priced = sum(1 for f in stored if f.market is not None)
+            rows.append([
+                number, "Predictions", Path(where).name if where else "pasted",
+                f"{len(stored)} games, {priced} with a line",
+                "In use" if priced else "no lines in it",
+            ])
+            tones[(len(rows) - 1, 4)] = "good" if priced else "bad"
+
+        if not rows:
+            self.weekly_card.hide()
+            return
+        self.weekly_card.show()
+        model = TableModel(
+            WEEKLY_HEADERS, rows,
+            palette=self.palette,
+            numeric_columns={0},
+            tones=tones,
+            bold_columns={2},
+        )
+        view, _ = make_table(model, stretch_column=3, row_height=ROW_HEIGHT, fit_rows=MAX_TABLE_ROWS)
+        self.weekly_table = self._swap_table(self.weekly_box, self.weekly_table, view)
+
+    def _clear_old_sheets(self) -> None:
+        picks.forget_weeks(picks.other_season_weeks())
+        self.refresh_requested.emit()
 
     def _refresh_conflicts(self, s) -> None:
         if not s.conflicts:
@@ -232,8 +375,7 @@ class DataPage(Page):
         model = TableModel(
             CONFLICT_HEADERS, rows, palette=self.palette, bold_columns={0}
         )
-        view, _ = make_table(model, stretch_column=4, row_height=ROW_HEIGHT)
-        self._fit_height(view, len(rows))
+        view, _ = make_table(model, stretch_column=4, row_height=ROW_HEIGHT, fit_rows=MAX_TABLE_ROWS)
         self.conflicts_table = self._swap_table(
             self.conflicts_box, self.conflicts_table, view
         )

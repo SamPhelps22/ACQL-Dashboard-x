@@ -29,12 +29,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import APP_NAME, __version__, lines, picks
+from pathlib import Path
+
+from .. import APP_NAME, __version__, analytics, lines, picks, predictions
 from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
 from ..names import AliasTable
 from ..repository import load_season
-from .pages.base import Page
+from .pages.base import GO_TO_DATA, OPEN_FOLDER, RELOAD, Page, write_log
+from .watch import FolderWatcher, describe
+from .pages.thisweek import BriefingPage
 from .pages.data import DataPage
 from .pages.overview import OverviewPage
 from .pages.insights import InsightsPage
@@ -49,6 +53,9 @@ from .theme import PALETTES, stylesheet
 
 PAGE_CLASSES = (
     OverviewPage,
+    # Second, and on Ctrl+2: the question most visits are here to answer is
+    # "what do I play this week", and it should not be four clicks away.
+    BriefingPage,
     StandingsPage,
     WeeklyPage,
     NextWeekPage,
@@ -72,6 +79,34 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
+#: A reload the app started by itself gets one quiet retry if it fails -
+#: usually the file was still being written - before anyone is bothered.
+AUTO_RETRY_MS = 5000
+#: How often "Updated 3 min ago" is brought up to date.
+CLOCK_TICK_MS = 30_000
+
+
+def updated_text(loaded: datetime | None, now: datetime | None = None) -> str:
+    """"Updated just now", "Updated 4 min ago", "Updated at 14:05"."""
+    if loaded is None:
+        return ""
+    now = now or datetime.now()
+    seconds = max(0, (now - loaded).total_seconds())
+    if seconds < 60:
+        return "Updated just now"
+    if seconds < 3600:
+        return f"Updated {int(seconds // 60)} min ago"
+    if loaded.date() == now.date():
+        return f"Updated at {loaded:%H:%M}"
+    return f"Updated {loaded:%a %H:%M}"
+
+
+def failure_summary(trace: str) -> str:
+    """The last line of a traceback - the one that says what went wrong."""
+    lines_ = [line for line in trace.strip().splitlines() if line.strip()]
+    return lines_[-1].strip() if lines_ else "Unknown error"
+
+
 class Loader(QThread):
     """Parses the spreadsheets off the UI thread so the window stays live."""
 
@@ -84,7 +119,8 @@ class Loader(QThread):
 
     def run(self) -> None:
         try:
-            season = load_season(self.settings, AliasTable.load())
+            aliases = AliasTable.load()
+            season = load_season(self.settings, aliases)
         except Exception:  # noqa: BLE001 - reported in the UI, never swallowed
             self.failed.emit(traceback.format_exc())
             return
@@ -98,8 +134,33 @@ class Loader(QThread):
         # in weeks the workbook hasn't been given yet and check the ones it
         # has; they never overwrite a week the workbook owns.
         try:
-            picks.refresh_from_disk(getattr(season, "workbook_path", None))
-            graded = picks.attach(season)
+            workbook = getattr(season, "workbook_path", None)
+            picks.refresh_from_disk(workbook)
+            # Predictions for the week ahead are picked up here rather than
+            # only when the Next Week page is opened, so one press of Refresh
+            # takes in everything that has been dropped in the folder.
+            try:
+                ahead = analytics.upcoming_week(season)
+                week = season.weeks.get(ahead)
+                got, where, fresh = predictions.refresh_from_disk(
+                    ahead, workbook,
+                    sorted(week.games, key=lambda g: g.index) if week else [],
+                )
+                if fresh and got:
+                    season.warnings.append(
+                        f"Week {ahead} predictions read from "
+                        f"{Path(where).name}: {len(got)} games."
+                    )
+            except Exception as exc:                      # noqa: BLE001
+                season.warnings.append(f"Couldn't read the predictions file: {exc}")
+            graded = picks.attach(season, key_for=aliases.key)
+            if graded.other_season:
+                season.warnings.append(
+                    "Stored pick sheets from another season were ignored ("
+                    + ", ".join(f"week {n}" for n in graded.other_season)
+                    + "). Their games are not this season's - clear them from "
+                    "Data & Update."
+                )
             if graded.built:
                 season.warnings.append(
                     "Built from the pool's pick sheet, not the workbook: "
@@ -199,6 +260,10 @@ class MainWindow(QMainWindow):
         self.season = Season(buy_in=self.settings.buy_in)
         self._loader: Loader | None = None
         self._closing = False
+        self._loaded_at: datetime | None = None
+        self._auto = False                   # the running load started itself
+        self._retried = False                # and has already had its retry
+        self._pending: list[str] | None = None   # changes seen mid-load
         # Window size and last page survive restarts (skipped for smoke tests).
         self._state = QSettings() if remember_state else None
 
@@ -235,6 +300,15 @@ class MainWindow(QMainWindow):
         self._build_sidebar_footer()
         self._build_status_bar()
 
+        # Files dropped into a watched folder reload the app by themselves.
+        self.watcher = FolderWatcher(self)
+        self.watcher.changed.connect(self._files_changed)
+        # "Updated 3 min ago" has to keep counting to stay true.
+        self._clock = QTimer(self)
+        self._clock.setInterval(CLOCK_TICK_MS)
+        self._clock.timeout.connect(self._tick_updated)
+        self._clock.start()
+
         self.statusBar().showMessage("Loading\u2026")
         self._build_shortcuts()
         self.apply_theme()
@@ -244,13 +318,40 @@ class MainWindow(QMainWindow):
     # ---- chrome ----------------------------------------------------------
     def _make_page(self, index: int) -> Page:
         page = PAGE_CLASSES[index](self.palette_)
-        # The Data page asks the window to reload after a write.
-        if isinstance(page, DataPage):
-            page.refresh_requested.connect(self.reload)
+        # Buttons on a page's loading / no-data / error panel.
+        page.action_requested.connect(self._page_action)
+        # The Data page after a write, This Week after fetching new lines.
+        if hasattr(page, "refresh_requested"):
+            page.refresh_requested.connect(self.refresh_by_hand)
         # Double-clicking a standings row opens that player.
         if isinstance(page, StandingsPage):
             page.player_selected.connect(self.show_player)
         return page
+
+    def _page_action(self, what: str) -> None:
+        if what == GO_TO_DATA:
+            self._select_page(DATA_INDEX)
+        elif what == OPEN_FOLDER:
+            self.open_data_folder()
+        elif what == RELOAD:
+            self.refresh_by_hand()
+
+    def _watch_folders(self) -> list[Path]:
+        """Every folder the loader reads from: the watched ones, the app's
+        own data folder, and wherever the workbook turned out to be."""
+        folders = [Path(p) for p in self.settings.search_paths()]
+        folders.append(Path(DATA_DIR))
+        workbook = getattr(self.season, "workbook_path", None)
+        if workbook:
+            folders.append(Path(workbook).parent)
+        return folders
+
+    def open_data_folder(self) -> None:
+        """Open the first watched folder that exists, else the app's own."""
+        target = next(
+            (p for p in self._watch_folders() if p.is_dir()), Path(DATA_DIR)
+        )
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def show_player(self, display: str) -> None:
         index = PAGE_CLASSES.index(PlayerPage)
@@ -286,8 +387,11 @@ class MainWindow(QMainWindow):
         self.jump_btn.setToolTip("Search pages and commands (Ctrl+K)")
         self.jump_btn.clicked.connect(self.open_palette)
         self.refresh_btn = QPushButton("\u21bb  Refresh")
-        self.refresh_btn.setToolTip("Rescan the watched folders (F5)")
-        self.refresh_btn.clicked.connect(self.reload)
+        self.refresh_btn.setToolTip(
+            "Rescan the watched folders (F5 or Ctrl+R). New or saved files "
+            "are picked up by themselves, so this is rarely needed."
+        )
+        self.refresh_btn.clicked.connect(self.refresh_by_hand)
         self.theme_btn = QPushButton("\u25d0  Theme")
         self.theme_btn.setToolTip("Switch between light and dark (Ctrl+T)")
         self.theme_btn.clicked.connect(self.toggle_theme)
@@ -329,7 +433,8 @@ class MainWindow(QMainWindow):
             action.triggered.connect(slot)
             self.addAction(action)
 
-        add("Refresh", "F5", self.reload)
+        add("Refresh", "F5", self.refresh_by_hand)
+        add("Refresh", "Ctrl+R", self.refresh_by_hand)
         add("Toggle theme", "Ctrl+T", self.toggle_theme)
         add("Jump to\u2026", "Ctrl+K", self.open_palette)
         add("Quit", QKeySequence.StandardKey.Quit, self.close)
@@ -367,13 +472,9 @@ class MainWindow(QMainWindow):
         ]
         other_theme = "light" if self.palette_.name == "dark" else "dark"
         commands += [
-            Command("Refresh data", "F5", self.reload),
+            Command("Refresh data", "F5", self.refresh_by_hand),
             Command(f"Switch to {other_theme} theme", "Ctrl+T", self.toggle_theme),
-            Command(
-                "Open data folder",
-                "",
-                lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(DATA_DIR))),
-            ),
+            Command("Open data folder", "", self.open_data_folder),
         ]
         dialog = CommandPalette(commands, self)
         dialog.move(self.mapToGlobal(QPoint((self.width() - dialog.width()) // 2, 80)))
@@ -418,12 +519,35 @@ class MainWindow(QMainWindow):
         self.refresh_btn.setText("\u21bb  Refreshing\u2026" if loading else "\u21bb  Refresh")
         self.progress.setVisible(loading)
 
-    def reload(self) -> None:
+    def refresh_by_hand(self, *_signal_args) -> None:
+        """Refresh from a button, key or command.
+
+        Qt hands a clicked or triggered slot a `checked` flag; this soaks it
+        up so it can never land in one of reload's own parameters.
+        """
+        self.reload()
+
+    def reload(self, *, auto: bool = False, because: list[str] | None = None) -> None:
+        """Re-read every source. `auto` is a reload the app started itself."""
         if self._loader is not None and self._loader.isRunning():
+            # Mid-load: remember that something else changed and go again after.
+            if auto:
+                self._pending = (self._pending or []) + list(because or [])
             return
+        if not auto:
+            self._retried = False
+        self._auto = auto
         self._set_loading(True)
-        self.statusBar().showMessage("Scanning for spreadsheets\u2026")
+        self.statusBar().showMessage(
+            f"Picked up {describe(because)} \u2013 reading it\u2026"
+            if because
+            else "Scanning for spreadsheets\u2026"
+        )
         self.settings = Settings.load()
+        # What the loader is about to read is the new normal; only changes
+        # after this moment should trigger another reload.
+        self.watcher.watch(self._watch_folders())
+        self.watcher.settle()
 
         loader = Loader(self.settings)
         loader.finished_ok.connect(self._on_loaded)
@@ -438,12 +562,24 @@ class MainWindow(QMainWindow):
             self._loader = None
         loader.deleteLater()
 
+    def _files_changed(self, names: list[str]) -> None:
+        """Something the dashboard reads was added, saved or removed."""
+        if self._closing:
+            return
+        self.reload(auto=True, because=names)
+
+    def _tick_updated(self) -> None:
+        self.updated_label.setText(updated_text(self._loaded_at))
+
     def _on_loaded(self, season: Season) -> None:
         if self._closing:
             return
         self.season = season
+        self._retried = False
         self._set_loading(False)
-        self.updated_label.setText(f"Updated {datetime.now():%H:%M}")
+        self._loaded_at = datetime.now()
+        self._tick_updated()
+        self.updated_label.setToolTip(f"Last read {self._loaded_at:%A %H:%M:%S}")
         self.season_label.setText(
             f"{season.title}  \u00b7  week {season.current_week}"
             if season.current_week
@@ -451,8 +587,15 @@ class MainWindow(QMainWindow):
         )
         if season.title:
             self.setWindowTitle(f"{season.title} \u2013 {APP_NAME}")
+        # The workbook's folder is only known now; make sure it is watched.
+        self.watcher.watch(self._watch_folders())
         for page in self.pages:
-            page.set_season(season)
+            # Pages contain their own refresh errors; this guards the handoff
+            # so one page can never stop the rest from getting the new data.
+            try:
+                page.set_season(season)
+            except Exception as exc:  # noqa: BLE001
+                write_log(f"set_season failed on {page.title}: {exc!r}")
 
         conflicts = len(season.conflicts)
         self.conflict_btn.setVisible(conflicts > 0)
@@ -462,7 +605,8 @@ class MainWindow(QMainWindow):
 
         if season.is_empty:
             self.statusBar().showMessage(
-                f"No data found. Drop this week's files into {DATA_DIR} and press Refresh."
+                f"No data found yet. Drop this week's files into {DATA_DIR} "
+                "\u2013 they are picked up as soon as they land."
             )
         else:
             files = len([s for s in season.sources if not s.error])
@@ -472,10 +616,30 @@ class MainWindow(QMainWindow):
                 f"{_plural(files, 'file')}"
             )
 
+        # Files that changed while this load was running get their own load.
+        pending, self._pending = self._pending, None
+        if pending:
+            QTimer.singleShot(0, lambda: self.reload(auto=True, because=pending))
+
     def _on_failed(self, trace: str) -> None:
         if self._closing:
             return
         self._set_loading(False)
+        summary = failure_summary(trace)
+        write_log(f"load failed{' (automatic)' if self._auto else ''}: {summary}\n{trace}")
+
+        # A reload the app started by itself usually failed because the file
+        # was still being written (Excel mid-save, OneDrive mid-sync). Try
+        # once more quietly before interrupting anybody with a dialog.
+        if self._auto and not self._retried:
+            self._retried = True
+            self.statusBar().showMessage(
+                "Couldn't read the new file yet \u2013 it may still be saving. "
+                "Trying again in a few seconds\u2026"
+            )
+            QTimer.singleShot(AUTO_RETRY_MS, lambda: self.reload(auto=True))
+            return
+
         self.statusBar().showMessage(
             "Loading failed. Still showing the last data that loaded."
             if not self.season.is_empty
@@ -484,13 +648,20 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Critical)
         box.setWindowTitle("Could not read the spreadsheets")
-        box.setText("Something went wrong while loading. The details are below.")
+        box.setText(
+            f"{summary}\n\n"
+            "If a spreadsheet is open in Excel, save and close it, then press "
+            "Refresh. The full details are below and in acql-log.txt in the "
+            "data folder."
+        )
         box.setDetailedText(trace)
         box.exec()
 
     # ---- lifecycle -------------------------------------------------------
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         self._closing = True
+        self.watcher.set_enabled(False)
+        self._clock.stop()
         if self._state is not None:
             self._state.setValue("window/geometry", self.saveGeometry())
             self._state.setValue("window/page", self.stack.currentIndex())

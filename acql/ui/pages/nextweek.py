@@ -31,23 +31,29 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ... import analytics, lines, picks, predictions, schedule, weekplan
+from ... import analytics, crowd, lines, picks, predictions, schedule, weekplan
 from ...config import BIG_LOSER_PICKS, WEEKS_IN_SEASON
 from ...models import Game
-from ..widgets import Card, StatTile, section
+from ..widgets import Card, ColumnFitter, StatTile, fit_height, section
 from .base import Page
 
 HEADERS = [
-    "#", "Matchup", "Pool line", "Favourite", "Spread",
+    "#", "Matchup", "Pool line", "Favourite", "Spread", "Current line",
     "Models", "Fav up to", "Pick", "Chance", "Vs pool %", "Why",
 ]
-(COL_NUM, COL_MATCH, COL_LINE, COL_FAV, COL_SPREAD,
- COL_MODELS, COL_UPTO, COL_PICK, COL_CHANCE, COL_EDGE, COL_WHY) = range(11)
+(COL_NUM, COL_MATCH, COL_LINE, COL_FAV, COL_SPREAD, COL_NOW,
+ COL_MODELS, COL_UPTO, COL_PICK, COL_CHANCE, COL_EDGE, COL_WHY) = range(12)
 
 CONFIDENT = 0.60          # picks at or above this are shown as strong
 NOTABLE_EDGE = 2.0        # models this far from the book are worth noticing
 WORTH_LEVERAGE = 0.10     # a pick worth this much on the field is a week-winner
 LIKELY_LINED = 6.0        # the commissioner lines the games bigger than this
+#: Every row of the picks table is this tall; the favourite and spread boxes
+#: sit inside it with a few pixels of margin (see the theme).
+ROW_HEIGHT = 40
+LOSER_ROW_HEIGHT = 32
+#: The input columns never shrink below what their boxes need.
+CONTROL_WIDTH = {3: 170, 4: 84}
 PLAN_MINIMUM = 6          # games priced before planning a whole card is worth it
 GRADED_ENOUGH = 40        # graded picks before the record says anything
 NO_SPREAD = "—"
@@ -56,7 +62,11 @@ RULE = (
     "On a lined game the favourite has to win by MORE than the line - a win by "
     "exactly the line goes to the underdog. Chances come from how often NFL "
     "games really land on each margin, so 3, 7 and 10 count for more than the "
-    "numbers either side. \"Models\" is how many points the computer models like "
+    "numbers either side. \"Spread\" starts from the predictions file's opening "
+    "line, which is the number the commissioner sets his own against; "
+    "\"Current line\" is where the market has got to since, and a game that has "
+    "moved three points or more is worth a second look. "
+    "\"Models\" is how many points the computer models like "
     "the favourite more (or less) than the bookmakers do, once two things are "
     "taken out: the lean every game on the slate shares, and any disagreement "
     "the market has already moved against since the line opened, which is "
@@ -68,6 +78,14 @@ RULE = (
     "everyone else: being right when the whole pool is right wins nothing, so "
     "it is the chance of being right less the share of the pool expected to be "
     "on the same side. That is where weeks are won."
+)
+
+MODELS_PLACEHOLDER = (
+    "Paste the summary table from The Prediction Tracker - the block with a "
+    "row per game and the two lines, the model average and median, the "
+    "standard deviation and the two probabilities:\n\n"
+    "Green Bay      Atlanta       6.50   5.00   .   7.50   6.79   4.31  0.49 18.26  0.6995 0.5501\n"
+    "Buffalo        LA Chargers   4.00   7.00   .  10.36   8.25   4.98  3.95 23.50  0.7617 0.5667"
 )
 
 PLACEHOLDER = (
@@ -104,13 +122,13 @@ BIG_LOSER_RULE = (
 )
 
 PLAN_RULE = (
-    "Picking the likelier side of every game wins the most games. It does not "
-    "win the most money, because you are paid your margin over the field and "
-    "only when you finish top - so a game the whole pool gets right moves "
-    "everyone together and pays nothing. This plays the week ten thousand "
-    "times against the other coaches' cards and looks for the card that pays "
-    "best, which sometimes means taking a side that is less likely but far "
-    "less crowded."
+    "Picking the likelier side of every game gets the most games right and "
+    "lands you in the top five a third of the time - but it rarely wins the "
+    "week, because most of the pool holds the same card and a good week is "
+    "shared with them. Only first place is paid. This plays the week 20,000 "
+    "times against the other coaches' cards and looks for the card most "
+    "likely to finish first, which means taking a side that is less likely "
+    "but far less crowded wherever that gets you clear of the pack."
 )
 
 WHERE_TO_PUT_IT = (
@@ -131,36 +149,49 @@ def _same(a: object, b: object) -> bool:
 
 
 class OddsDialog(QDialog):
-    """A scratchpad for a block of odds copied off a website."""
+    """A scratchpad for a block of text copied off a website.
 
-    def __init__(self, week: int, parent=None) -> None:
+    Two things get pasted here - a list of odds, and The Prediction Tracker's
+    summary table - so the words belong to whoever opens it.
+    """
+
+    def __init__(
+        self,
+        week: int,
+        parent=None,
+        *,
+        title: str = "",
+        blurb: str = "",
+        placeholder: str = "",
+        button: str = "Read odds",
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Paste Week {week} odds")
+        self.setWindowTitle(title or f"Paste Week {week} odds")
         self.setMinimumSize(560, 380)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
 
-        blurb = QLabel(
+        note = QLabel(blurb or (
             "Every line that names one of this week's matchups and carries a "
             "spread is read; moneylines, totals and the odds in brackets are "
             "ignored. Anything that can't be read is listed afterwards, and "
             "games already filled in are only overwritten when the paste "
             "covers them."
-        )
-        blurb.setObjectName("Muted")
-        blurb.setWordWrap(True)
-        layout.addWidget(blurb)
+        ))
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        layout.addWidget(note)
 
         self.editor = QPlainTextEdit()
-        self.editor.setPlaceholderText(PLACEHOLDER)
+        self.editor.setPlaceholderText(placeholder or PLACEHOLDER)
         self.editor.setTabChangesFocus(True)
         layout.addWidget(self.editor, 1)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Read odds")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(button)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -177,6 +208,10 @@ class NextWeekPage(Page):
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
         self._games: list[Game] = []
+        self._typed: dict[int, bool] = {}
+        self._typical = 0.0
+        self._weight = predictions.CONSENSUS_WEIGHT
+        self._fitted: predictions.WeightFit | None = None
         self._forecasts: dict[int, predictions.Forecast] = {}
         self._picks: picks.WeekPicks | None = None
         self._lean = 0.0
@@ -205,6 +240,14 @@ class NextWeekPage(Page):
         )
         self.load_button.clicked.connect(self._load_predictions)
         controls.addWidget(self.load_button)
+
+        self.models_button = QPushButton("Paste models…")
+        self.models_button.setToolTip(
+            "Paste The Prediction Tracker's summary table: both lines, the "
+            "models' median and how far apart they are, in one go"
+        )
+        self.models_button.clicked.connect(self._paste_models)
+        controls.addWidget(self.models_button)
 
         self.paste_button = QPushButton("Paste odds…")
         self.paste_button.setToolTip(
@@ -261,15 +304,30 @@ class NextWeekPage(Page):
         self.table.setShowGrid(False)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.verticalHeader().setDefaultSectionSize(34)
-        self.table.verticalHeader().setMinimumSectionSize(34)
-        # "Why" is a sentence, so it is allowed to take a second line rather
-        # than being cut off; the rows are sized to fit once they are filled.
-        self.table.setWordWrap(True)
+        # One height for every row. "Why" used to wrap onto as many lines as
+        # its sentence needed, and with the columns to its left taking the
+        # width that was a dozen lines - rows 180 pixels tall, with the
+        # favourite and spread boxes stretched to match. The sentence is now
+        # cut to the column and whole in the tooltip.
+        self.table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
+        self.table.verticalHeader().setMinimumSectionSize(ROW_HEIGHT)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.table.setWordWrap(False)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
         header = self.table.horizontalHeader()
-        for col in range(len(HEADERS)):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        header.setMinimumSectionSize(48)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(COL_WHY, QHeaderView.ResizeMode.Stretch)
+        self._fitter = ColumnFitter(self.table, COL_WHY)
+        self.table.horizontalHeaderItem(COL_SPREAD).setToolTip(
+            "Filled from the predictions file's opening line - the number that "
+            "was up when the commissioner set his own. Type over it to change it."
+        )
+        self.table.horizontalHeaderItem(COL_NOW).setToolTip(
+            "The same game's line as it stands now. Where it has moved a long "
+            "way from the opener, the market has heard something - hover a row "
+            "to see which way and by how much."
+        )
         self.table.horizontalHeaderItem(COL_MODELS).setToolTip(
             "How many points the computer models like the favourite more than "
             "the bookmakers do - hover a row for who says what"
@@ -284,8 +342,7 @@ class NextWeekPage(Page):
             "The biggest whole-number pool line the favourite is still worth "
             "taking at - one point more and the underdog is the better side"
         )
-        self.table.setMinimumHeight(420)
-        self.card.add(self.table, 1)
+        self.card.add(self.table)
 
         self.paste_note = QLabel("")
         self.paste_note.setObjectName("Muted")
@@ -314,13 +371,16 @@ class NextWeekPage(Page):
         self.losers_table.setShowGrid(False)
         self.losers_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.losers_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.losers_table.verticalHeader().setDefaultSectionSize(30)
+        self.losers_table.verticalHeader().setDefaultSectionSize(LOSER_ROW_HEIGHT)
+        self.losers_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.losers_table.setWordWrap(False)
+        self.losers_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         loser_header = self.losers_table.horizontalHeader()
-        for col in range(len(LOSER_HEADERS)):
-            loser_header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        loser_header.setMinimumSectionSize(48)
+        loser_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         loser_header.setSectionResizeMode(LOSER_WHY, QHeaderView.ResizeMode.Stretch)
-        self.losers_table.setMinimumHeight(240)
-        self.losers.add(self.losers_table, 1)
+        self._loser_fitter = ColumnFitter(self.losers_table, LOSER_WHY)
+        self.losers.add(self.losers_table)
 
         self.rule = QLabel(RULE)
         self.rule.setObjectName("Muted")
@@ -370,7 +430,11 @@ class NextWeekPage(Page):
         week = season.weeks.get(number)
         sheet_games = sorted(week.games, key=lambda g: g.index) if week else []
         workbook = getattr(season, "workbook_path", None)
-        forecasts, source, _ = predictions.refresh_from_disk(number, workbook)
+        # The slate goes in too, so a download whose name does not say the
+        # week is still recognised by the games in it.
+        forecasts, source, _ = predictions.refresh_from_disk(
+            number, workbook, sheet_games
+        )
         picks.refresh_from_disk(workbook)
         self._picks = picks.load(number)
         # A week the commissioner hasn't typed in yet still has a slate. The
@@ -389,10 +453,22 @@ class NextWeekPage(Page):
         found = predictions.match_games(self._games, forecasts)
         self._forecasts = found.by_game
         self._lean = predictions.home_lean(forecasts)
+        # How strung out the models normally are this week, which is what each
+        # game's own disagreement is judged against.
+        self._typical = predictions.typical_disagreement(forecasts)
+        # How much of the models to believe at all, fitted to results so far.
+        self._fitted = self._fit()
+        self._weight = (
+            self._fitted.weight if self._fitted else predictions.CONSENSUS_WEIGHT
+        )
         self._chalk, self._chalk_games = analytics.pool_chalk(season)
         self._describe_source(number, forecasts, source, found)
 
         spreads = lines.load_spreads(number, self._games)
+        # Which rows carry a number somebody typed, as against one the file
+        # supplied. A typed number is a statement about the line and is what
+        # the odds are then worked out from.
+        self._typed = {index: True for index in spreads}
         self.paste_note.hide()
 
         dogs, decided = analytics.underdog_record(season)
@@ -415,10 +491,11 @@ class NextWeekPage(Page):
             # Without a predictions file the Models column is 16 blanks, and
             # the room is better spent on the sentence at the end of the row.
             self.table.setColumnHidden(COL_MODELS, not self._forecasts)
+            self.table.setColumnHidden(COL_NOW, not self._forecasts)
             self.table.setRowCount(len(self._games))
             for row, game in enumerate(self._games):
                 self._fill_row(row, game, spreads.get(game.index))
-            self.table.resizeRowsToContents()
+            self._fit_table()
         finally:
             self._loading = False
 
@@ -470,6 +547,10 @@ class NextWeekPage(Page):
         record = self._record()
         if record:
             lines_out.append(record)
+        if self._fitted is not None:
+            fitted = self._fitted.describe()
+            if fitted:
+                lines_out.append(fitted)
         self.source_note.setText("\n".join(lines_out))
         self.source_note.setToolTip(str(source or ""))
 
@@ -527,6 +608,28 @@ class NextWeekPage(Page):
                     entries.append((number, guess, game.winner))
         return analytics.grade(entries)
 
+    def _fit(self) -> predictions.WeightFit | None:
+        """How much of the models to believe, measured against results so far.
+
+        Every week that has both a stored forecast and a scored slate is
+        replayed at each weight, and the starting figure is moved toward
+        whichever scored best - slowly, because one season of sixteen-game
+        weeks cannot resolve a parameter worth a point or two of margin.
+        """
+        season = self.season
+        if season is None:
+            return None
+        weeks = []
+        for number, stored in predictions.stored_weeks().items():
+            week = season.weeks.get(number)
+            if week is None or not stored:
+                continue
+            if any(g.played for g in week.games):
+                weeks.append((number, list(week.games), stored))
+        if not weeks:
+            return None
+        return predictions.fit_weight(weeks)
+
     def _show_blank(self, number: int) -> None:
         self.table.hide()
         self.empty_note.setText(
@@ -545,6 +648,20 @@ class NextWeekPage(Page):
         for button in (self.paste_button, self.clear_button):
             button.setEnabled(False)
 
+    def _fit_table(self) -> None:
+        """Whole table, no inner scrolling, columns measured to what they hold."""
+        self.table.resizeColumnsToContents()
+        header = self.table.horizontalHeader()
+        for col in (COL_FAV, COL_SPREAD):
+            header.resizeSection(col, max(header.sectionSize(col), CONTROL_WIDTH[col]))
+        self._fitter.remeasure()
+        fit_height(self.table, self.table.rowCount(), ROW_HEIGHT)
+
+    def _fit_losers(self) -> None:
+        self.losers_table.resizeColumnsToContents()
+        self._loser_fitter.remeasure()
+        fit_height(self.losers_table, self.losers_table.rowCount(), LOSER_ROW_HEIGHT)
+
     def _fill_row(self, row: int, game: Game, spread: lines.Spread | None) -> None:
         def item(text: str, align=Qt.AlignmentFlag.AlignLeft) -> QTableWidgetItem:
             cell = QTableWidgetItem(text)
@@ -553,13 +670,14 @@ class NextWeekPage(Page):
             return cell
 
         self.table.setItem(row, COL_NUM, item(str(game.index), Qt.AlignmentFlag.AlignRight))
-        self.table.setItem(row, COL_MATCH, item(f"{game.away} @ {game.home}"))
+        self.table.setItem(row, COL_MATCH, item(predictions.display_matchup(game.away, game.home)))
 
         favourite = QComboBox()
         favourite.addItem("— choose —", None)
-        favourite.addItem(game.away, "away")
-        favourite.addItem(game.home, "home")
+        favourite.addItem(predictions.display_team(game.away), "away")
+        favourite.addItem(predictions.display_team(game.home), "home")
         points = QDoubleSpinBox()
+        points.setAlignment(Qt.AlignmentFlag.AlignRight)
         points.setRange(0.0, 40.0)
         points.setSingleStep(0.5)
         points.setDecimals(1)
@@ -576,14 +694,54 @@ class NextWeekPage(Page):
         self._render_row(row)
 
     def _market_spread(self, game: Game) -> lines.Spread | None:
-        """The betting line from the predictions file, as a Spread for this game."""
+        """The opening line from the predictions file, as a Spread for this game.
+
+        The opening number rather than the current one, because it is the one
+        the commissioner sets his own line against - he posts the week's card
+        early, off the number that was up when he looked. Where the market has
+        moved since is worth knowing, so it gets a column of its own rather
+        than quietly replacing this.
+
+        The file reads positive for the home team and negative for the road
+        team; a Spread says which side and by how much, so the sign becomes
+        the favourite and the size becomes the points.
+        """
         forecast = self._forecasts.get(game.index)
         if forecast is None:
             return None
-        margin = predictions.home_margin(game, forecast, forecast.market)
+        opening = forecast.opening if forecast.opening is not None else forecast.market
+        margin = predictions.home_margin(game, forecast, opening)
         if margin is None:
             return None
         return lines.Spread("home" if margin >= 0 else "away", abs(margin))
+
+    def _current_line(self, game: Game) -> tuple[str, str, str]:
+        """The line as it stands now: what it says, how it moved, and a tone."""
+        forecast = self._forecasts.get(game.index)
+        if forecast is None:
+            return "", "", ""
+        now = predictions.home_margin(game, forecast, forecast.market)
+        if now is None:
+            return "", "", ""
+        side = game.home if now >= 0 else game.away
+        text = f"{side} by {abs(now):g}" if now else "pick'em"
+
+        opening = predictions.home_margin(game, forecast, forecast.opening)
+        if opening is None or abs(now - opening) < 0.05:
+            return text, "unmoved since it opened", "muted"
+        # Movement is described from the side it moved toward, which is how
+        # anyone talks about it: "moved two points to Buffalo".
+        toward = game.home if now > opening else game.away
+        moved = abs(now - opening)
+        if opening:
+            was = f"{game.home if opening > 0 else game.away} by {abs(opening):g}"
+        else:
+            was = "pick'em"
+        return (
+            text,
+            f"opened {was} \u00b7 moved {moved:g} toward {toward}",
+            "warning" if moved >= 3 else "",
+        )
 
     def _inputs(self, row: int) -> tuple[str | None, float]:
         favourite = self.table.cellWidget(row, COL_FAV)
@@ -598,6 +756,7 @@ class NextWeekPage(Page):
         lines.save_spread(
             self._week_number, game, lines.Spread(side, points) if side else None
         )
+        self._typed[game.index] = side is not None
         self._render_row(row)
         self._update_tiles()
         self._show_big_losers()
@@ -611,18 +770,37 @@ class NextWeekPage(Page):
         pulls it a third of the way toward their own number, and how far
         apart the models are widens the range of results, so a game nobody
         agrees about reads closer to a coin flip.
+
+        The box shows the opening line, because that is the number the
+        commissioner sets his own against. The market's latest is a better
+        estimate of how the game will actually go, so that is what the odds
+        are worked out from unless the box has been typed in by hand - at
+        which point the typed number is the statement of what the line is,
+        and it wins. Both numbers are on the row, so neither is a surprise.
         """
         side, points = self._inputs(row)
         if side is None:
             return None, analytics.SPREAD_SD, "Vegas", 0.0
         margin = points if side == "home" else -points
+        if not self._typed.get(self._games[row].index):
+            forecast = self._forecasts.get(self._games[row].index)
+            current = predictions.home_margin(
+                self._games[row], forecast, forecast.market
+            ) if forecast is not None else None
+            if current is not None:
+                margin = current
 
         edge = self._edge(self._games[row])
         if edge is None:
             return margin, analytics.SPREAD_SD, "Vegas", 0.0
         forecast = self._forecasts[self._games[row].index]
-        weight = predictions.CONSENSUS_WEIGHT
-        sd = math.hypot(analytics.SPREAD_SD, forecast.extra_spread(weight))
+        # Not the flat share: a game the models cannot agree on gets less of
+        # their opinion, judged against how much they disagree this week.
+        weight = forecast.model_weight(self._weight, self._typical)
+        sd = math.hypot(
+            analytics.SPREAD_SD,
+            forecast.extra_spread(self._weight, self._typical),
+        )
         return margin + weight * edge, sd, "market + models", edge
 
     def _edge(self, game: Game) -> float | None:
@@ -690,15 +868,29 @@ class NextWeekPage(Page):
                 )
             tip += "."
         if forecast.disagreement is not None:
+            weight = forecast.model_weight(self._weight, self._typical)
+            share = weight / self._weight if self._weight else 1
+            if self._typical and share < 0.9:
+                how = (
+                    f", further apart than the {self._typical:.1f} normal for this "
+                    f"week, so only {weight:.0%} of their disagreement is believed "
+                    f"rather than the usual {self._weight:.0%}"
+                )
+            elif self._typical and share > 1.1:
+                how = (
+                    f", closer together than the {self._typical:.1f} normal for this "
+                    f"week, so {weight:.0%} of their disagreement is believed rather "
+                    f"than the usual {predictions.CONSENSUS_WEIGHT:.0%}"
+                )
+            else:
+                how = ", about the normal for this week"
             tip += (
                 f"\nThe models that count are {forecast.disagreement:.1f} points "
-                f"apart from each other, which widens every chance on this game."
+                f"apart from each other{how}. Either way it widens every chance "
+                f"on this game."
             )
-        if forecast.source_win is not None:
-            same_way = predictions.team_code(forecast.home) == predictions.team_code(game.home)
-            home_chance = forecast.source_win if same_way else 1 - forecast.source_win
-            chance = home_chance if backing_home else 1 - home_chance
-            tip += f"\nThe file gives {team} a {chance:.0%} chance of winning outright."
+        if forecast.spread_of_opinion:
+            tip += f"\nAcross the lot of them, {forecast.spread_of_opinion}."
         colour = (
             self.palette.good if their_edge >= NOTABLE_EDGE
             else self.palette.serious if their_edge <= -NOTABLE_EDGE
@@ -725,6 +917,15 @@ class NextWeekPage(Page):
         if measured is not None:
             return measured
         game = self._games[row]
+        # This pool's own habits, once its sheets have taught them.
+        side, points = self._inputs(row)
+        if side is not None and self.season is not None:
+            learned = crowd.guess(
+                self.season, self._week_number, game,
+                points if side == "home" else -points, pick,
+            )
+            if learned is not None:
+                return learned
         line = getattr(game, "line", None)
         if line is not None:
             # On a lined game the crowd mostly takes the better team and
@@ -883,8 +1084,10 @@ class NextWeekPage(Page):
         models, models_tip, models_colour = self._models_cell(row)
         upto, upto_tip, upto_colour = self._threshold(row)
         gain, gain_tip, gain_colour = self._edge_cell(row)
+        now_text, now_tip, now_tone = self._current_line(game)
         cells = {
             COL_LINE: QTableWidgetItem(pool_line),
+            COL_NOW: QTableWidgetItem(now_text or NO_SPREAD),
             COL_MODELS: QTableWidgetItem(models),
             COL_UPTO: QTableWidgetItem(upto),
             COL_EDGE: QTableWidgetItem(gain),
@@ -902,6 +1105,13 @@ class NextWeekPage(Page):
             if col == COL_LINE:
                 cell.setForeground(QColor(pool_colour))
                 cell.setToolTip(pool_tip)
+            if col == COL_NOW:
+                cell.setForeground(QColor(
+                    self.palette.warning if now_tone == "warning"
+                    else self.palette.ink_muted if now_tone == "muted"
+                    else self.palette.ink
+                ))
+                cell.setToolTip(now_tip)
             if col == COL_MODELS:
                 cell.setForeground(QColor(models_colour))
                 cell.setToolTip(models_tip)
@@ -960,6 +1170,66 @@ class NextWeekPage(Page):
                 f"for week {week} - the week picker decides."
             )
             self.paste_note.show()
+        self._show_week()
+
+    def _paste_models(self) -> None:
+        """Take the week's models and lines from the pasted summary table.
+
+        The same numbers as the CSV, in the form a person actually has: the
+        table on the page rather than the file behind it. What it adds over
+        the odds paste is the models - with them the page can say where the
+        market and the models disagree, which is the whole point of it.
+        """
+        week = self._week_number
+        dialog = OddsDialog(
+            week, self,
+            title=f"Paste Week {week} model table",
+            blurb=(
+                "Both lines, the middle of the models and how far apart they "
+                "are, straight off The Prediction Tracker's weekly page. The "
+                "updated line is the one used to price the games; the opening "
+                "line is kept so the movement can be seen. Rows whose teams "
+                "are not on this week's slate are ignored."
+            ),
+            placeholder=MODELS_PLACEHOLDER,
+            button="Read models",
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            forecasts = predictions.parse_summary_text(dialog.text())
+        except (ValueError, TypeError) as problem:
+            self.paste_note.setText(f"Couldn't read that table: {problem}")
+            self.paste_note.show()
+            return
+        if not forecasts:
+            self.paste_note.setText(
+                "No games found in that paste. Each row needs two team names "
+                "and the ten numbers after them - the header rows and blank "
+                "lines are skipped, so the whole block can be pasted as it is."
+            )
+            self.paste_note.show()
+            return
+
+        predictions.save(week, forecasts, "pasted model table")
+        matched = predictions.match_games(
+            sorted(self._games, key=lambda g: g.index), forecasts
+        ).by_game if self._games else {}
+        missing = len(self._games) - len(matched) if self._games else 0
+        parts = [
+            f"Read {_plural(len(forecasts), 'game')} from the model table."
+        ]
+        if self._games:
+            parts.append(
+                f"{_plural(len(matched), 'game')} on this week's slate matched"
+                + (f", {missing} not in the paste." if missing else ".")
+            )
+        parts.append(
+            "Both lines, the models' median and their spread are now on the "
+            "table below."
+        )
+        self.paste_note.setText(" ".join(parts))
+        self.paste_note.show()
         self._show_week()
 
     def _load_picks(self) -> None:
@@ -1066,12 +1336,13 @@ class NextWeekPage(Page):
             self._loading = False
         for row in range(len(self._games)):
             self._render_row(row)
-        self.table.resizeRowsToContents()
+        self._fit_table()
         self._update_tiles()
         self._show_big_losers()
         self._show_plan()
 
     def _clear_spreads(self) -> None:
+        self._typed = {}
         """Forget the typed-in spreads. The file's lines come back in their place."""
         self._loading = True
         try:
@@ -1089,7 +1360,7 @@ class NextWeekPage(Page):
         self.paste_note.hide()
         for row in range(len(self._games)):
             self._render_row(row)
-        self.table.resizeRowsToContents()
+        self._fit_table()
         self._update_tiles()
         self._show_big_losers()
         self._show_plan()
@@ -1171,7 +1442,7 @@ class NextWeekPage(Page):
                 elif col != LOSER_WHY:
                     cell.setForeground(QColor(self.palette.ink_secondary))
                 table.setItem(row, col, cell)
-        table.resizeRowsToContents()
+        self._fit_losers()
 
     # ---- planning the whole card --------------------------------------------
     def _week_plan(self) -> tuple[weekplan.Plan, list[int]] | None:
@@ -1223,9 +1494,9 @@ class NextWeekPage(Page):
             return
         plan, rows = found
         self.plan_card.set_title(
-            f"Week plan \u00b7 wins the week {plan.win_odds:.0%} and pays "
-            f"{self.money(plan.payout)} a week, against {plan.plain_win_odds:.0%} "
-            f"and {self.money(plan.plain_payout)} for taking every likelier side"
+            f"Week plan \u00b7 finishes first {plan.win_odds:.1%} of weeks, "
+            f"against {plan.plain_win_odds:.1%} for taking every likelier side "
+            f"(a fair share of {plan.coaches + 1} is {plan.fair_share:.1%})"
         )
         if not plan.flipped:
             self.plan_body.setText(
@@ -1247,11 +1518,14 @@ class NextWeekPage(Page):
                 + f". Less likely - {1 - guess.chance:.0%} against {guess.chance:.0%} - "
                 f"but that is the point."
             )
+        field = "real" if plan.field_known else "simulated"
         self.plan_body.setText(
             f"{_plural(len(plan.flipped), 'game')} worth turning around, against "
-            f"{plan.coaches} other cards:\n" + "\n".join(said)
+            f"{plan.coaches} other {field} cards:\n" + "\n".join(said)
             + f"\nIt expects {plan.expected_hits:.1f} right rather than "
-              f"{plan.plain_hits:.1f} - fewer games, more money."
+              f"{plan.plain_hits:.1f}, and makes the top five less often "
+              f"({plan.top_five:.0%} against {plan.plain_top_five:.0%}) - but "
+              f"top five pays nothing. First place is what it is after."
         )
 
     # ---- the headline numbers ----------------------------------------------

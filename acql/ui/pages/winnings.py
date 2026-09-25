@@ -304,26 +304,50 @@ class WinningsPage(Page):
         )
 
     def _update_chart(self, season: Season, standings: list[_Standing]) -> None:
-        trimmed = len(standings) > 2 * CHART_EXTREMES + 2
-        shown = standings[:CHART_EXTREMES] + standings[-CHART_EXTREMES:] if trimmed else standings
+        # Everyone who has not cashed yet is at exactly minus the buy-in.
+        # Drawn one bar each, that was seventeen identical red bars and the
+        # three players with a story squeezed in above them; they are now one
+        # bar, "Everyone else (32)", and every earner gets a bar of their own.
+        cashed = [s for s in standings if s.won > 0]
+        waiting = [s for s in standings if s.won <= 0]
+        same = bool(waiting) and all(abs(s.net - waiting[0].net) < 0.005 for s in waiting)
+        if same and len(waiting) > 1:
+            if len(cashed) > 2 * CHART_EXTREMES + 2:
+                cashed = cashed[:CHART_EXTREMES] + cashed[-CHART_EXTREMES:]
+            labels = [s.name for s in cashed] + [f"Everyone else ({len(waiting)})"]
+            values = [s.net for s in cashed] + [waiting[0].net]
+            names = ", ".join(s.name for s in waiting[:12]) + ("\u2026" if len(waiting) > 12 else "")
+            tooltips = [self._net_tip(season, s) for s in cashed] + [
+                f"{len(waiting)} players who have not cashed yet\n"
+                f"each {self.money(waiting[0].net, signed=True)}\n{names}"
+            ]
+            self.chart_card.set_title(
+                f"{CHART_TITLE}  \u00b7  {_plural(len([s for s in standings if s.won > 0]), 'player')} "
+                f"cashed, {len(waiting)} still at {self.money(waiting[0].net)}"
+            )
+        else:
+            trimmed = len(standings) > 2 * CHART_EXTREMES + 2
+            shown = (
+                standings[:CHART_EXTREMES] + standings[-CHART_EXTREMES:]
+                if trimmed else standings
+            )
+            labels = [s.name for s in shown]
+            values = [s.net for s in shown]
+            tooltips = [self._net_tip(season, s) for s in shown]
+            self.chart_card.set_title(
+                CHART_TITLE + (f" (top and bottom {CHART_EXTREMES})" if trimmed else "")
+            )
+        self.chart.plot(labels, values, xlabel="Net position ($)", tooltips=tooltips)
 
-        self.chart_card.set_title(
-            CHART_TITLE + (f" (top and bottom {CHART_EXTREMES})" if trimmed else "")
-        )
-        self.chart.plot(
-            [s.name for s in shown],
-            [s.net for s in shown],
-            xlabel="Net position",
-            tooltips=[
-                f"{s.name}\nWon {self.money(s.won)}\n"
-                + (
-                    f"Paid out {self.money(s.paid)}\n"
-                    if self._source == "season"
-                    else f"Buy-in {self.money(season.buy_in)}\n"
-                )
-                + f"Net {self.money(s.net, signed=True)}"
-                for s in shown
-            ],
+    def _net_tip(self, season: Season, s: _Standing) -> str:
+        return (
+            f"{s.name}\nWon {self.money(s.won)}\n"
+            + (
+                f"Paid out {self.money(s.paid)}\n"
+                if self._source == "season"
+                else f"Buy-in {self.money(season.buy_in)}\n"
+            )
+            + f"Net {self.money(s.net, signed=True)}"
         )
 
     def _update_table(self, season: Season, standings: list[_Standing]) -> None:
@@ -409,7 +433,6 @@ class WinningsPage(Page):
             ascending=ascending,
             row_height=28,
         )
-        view.setMinimumHeight(300)
 
         self.table_card.set_title(
             "Every player, season totals" if season_only

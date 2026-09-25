@@ -355,45 +355,97 @@ def form_profile(season: Season, minimum_weeks: int = 3) -> list[FormPoint]:
 # ======================================================================
 # Against the line
 # ======================================================================
-# How often an NFL regular-season game is decided by exactly this margin, as
-# a percentage of games: 6,752 regular-season games, 2000-2026. Football
-# scores in 3s and 7s, so margins pile up on certain numbers - which is
-# exactly where the pool puts its lines.
+# How often an NFL regular-season game ends by exactly this margin, as a
+# percentage of games: all 4,175 regular-season games from 2010 to 2025
+# (the 2010-2026 scores file). Football scores in 3s and 7s, so margins pile
+# up on certain numbers - 3, 7, 10, 14, and further out 17, 21, 24, 28, 31,
+# 35 - which is exactly where the pool puts its lines. Ties are the rare
+# exception to "every margin is possible": thirteen in sixteen seasons,
+# because overtime settles almost all of them.
+#
+# An earlier table stopped at 17 and left out ties, and it showed: the model
+# thought a game tied 2% of the time (really 0.3%) and that a 21-point
+# blowout was half as common as it is. Checked against the 2021-25 seasons.
 MARGIN_FREQUENCY = {
-    1: 4.15, 2: 4.10, 3: 14.96, 4: 4.93, 5: 3.60, 6: 6.01, 7: 9.09, 8: 3.79,
-    9: 1.60, 10: 5.52, 11: 2.33, 12: 1.66, 13: 2.77, 14: 4.81, 15: 1.53,
-    16: 2.07, 17: 3.42,
+    0: 0.31, 1: 4.43, 2: 4.43, 3: 14.54, 4: 5.01, 5: 3.98, 6: 6.56, 7: 8.69,
+    8: 4.14, 9: 1.51, 10: 5.17, 11: 2.06, 12: 1.75, 13: 2.28, 14: 4.98, 15: 1.65,
+    16: 2.40, 17: 3.26, 18: 2.40, 19: 1.08, 20: 1.99, 21: 2.44, 22: 1.03, 23: 1.20,
+    24: 2.11, 25: 1.22, 26: 0.96, 27: 1.05, 28: 1.60, 29: 0.60, 30: 0.50, 31: 1.15,
+    32: 0.48, 33: 0.26, 34: 0.57, 35: 0.62, 36: 0.02, 37: 0.31, 38: 0.43, 39: 0.05,
+    40: 0.19, 41: 0.10, 42: 0.12, 43: 0.07, 44: 0.02, 45: 0.10,
 }
-# Margins with no scoring reason to bunch up. A smooth curve through these
-# gives "how common would a margin this size be without key numbers", and
-# every margin's excess over that curve is its key-number weight.
-DEAD_MARGINS = (1, 2, 5, 8, 9, 11, 12, 15, 16)
+#: How widely a margin's neighbours are averaged to judge whether it is a key
+#: number. A margin twice as common as the margins around it has weight 2.
+KEY_SMOOTHING = 3.5
+#: A margin seen almost never in sixteen seasons is rare, not impossible.
+KEY_FLOOR = 0.2
 
-# Spread of results around the betting line. Fitted so straight-up win
-# chances match the market's own moneylines: at 11.4 the model says 60% for a
-# 3-point favourite against a market 60%, 74% at 7 against 74%, 82% at 10
-# against 82%.
-SPREAD_SD = 11.4
+# The shape of results around the expected margin. Real results are peaked
+# AND wide: most games land close to the line, but blowouts happen far more
+# often than one bell curve allows. So the curve is two bells with the same
+# centre - a narrow one for the ordinary game and a wide one for the day a
+# team falls apart - multiplied by the key-number weights.
+#
+# Fitted to two things at once: the market's win chances (60-61% for a
+# 3-point favourite, 74% at 7, 82% at 10 - unchanged from before), and how
+# far apart final scores really land (2021-25). Checked on the 2015-20 and
+# 2010-14 seasons, which were not used to fit it. Together the two bells put
+# results about 14 points either side of the line, as real games are; the
+# single curve used before put them about 10 either side, so it made every
+# lopsided result look rarer than it is.
+SPREAD_SD = 8.7          # width of the narrow bell - the ordinary game
+TAIL_RATIO = 2.26        # the wide bell is this many times wider (~19.7 points)
+TAIL_SHARE = 0.34        # and carries this share of games
 MARGIN_RANGE = range(-60, 61)
 
 
 def _key_weights() -> dict[int, float]:
-    xs = list(DEAD_MARGINS)
-    ys = [math.log(MARGIN_FREQUENCY[m]) for m in xs]
-    mx, my = statistics.fmean(xs), statistics.fmean(ys)
-    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
-    intercept = my - slope * mx
-    return {m: f / math.exp(intercept + slope * m) for m, f in MARGIN_FREQUENCY.items()}
+    """Each margin's frequency against the average of the margins around it.
+
+    Averaging over neighbours (rather than drawing a line through hand-picked
+    "dead" margins) needs no list of which margins are special, reaches all
+    the way out to 45, and gives ties their weight straight from the data -
+    about a tenth of a 1- or 2-point game.
+    """
+    reach = 15
+    kernel = [math.exp(-(k / KEY_SMOOTHING) ** 2 / 2) for k in range(-reach, reach + 1)]
+    total = sum(kernel)
+    kernel = [k / total for k in kernel]
+    top = max(MARGIN_FREQUENCY)
+
+    def signed(d: int) -> float:
+        f = MARGIN_FREQUENCY.get(abs(d), 0.0)
+        return f if d == 0 else f / 2           # a margin can go either way
+
+    weights = {}
+    for d in range(-top, top + 1):
+        smooth = sum(k * signed(d + off) for off, k in zip(range(-reach, reach + 1), kernel))
+        here = signed(d)
+        weights[d] = here / smooth if here > 0 and smooth > 0 else KEY_FLOOR
+    return {abs(d): w for d, w in weights.items() if d >= 0}
 
 
-KEY_WEIGHT = _key_weights()     # 3 is ~4x, 7 ~3.2x, 14 ~2.7x, 10 ~2.4x, 6 ~2x
+KEY_WEIGHT = _key_weights()     # tie ~0.1, 3 ~2.5, 7 ~1.7, 14 ~1.8, 21 ~1.4, 28 ~1.6
 
 
 def _shape(center: float, sd: float) -> dict[int, float]:
-    weights = {
-        d: math.exp(-((d - center) / sd) ** 2 / 2) * KEY_WEIGHT.get(abs(d), 1.0)
-        for d in MARGIN_RANGE
-    }
+    """Chance of each margin around `center`, before the mean is corrected.
+
+    `sd` is the width of the ordinary game. Callers widen it for a game the
+    forecasters disagree about (see `math.hypot(SPREAD_SD, extra)`); that
+    extra doubt is about where the centre is, so it widens both bells by the
+    same amount rather than stretching them in proportion.
+    """
+    extra = max(0.0, sd * sd - SPREAD_SD * SPREAD_SD)
+    narrow = math.sqrt(SPREAD_SD * SPREAD_SD + extra)
+    wide = math.sqrt((SPREAD_SD * TAIL_RATIO) ** 2 + extra)
+    weights = {}
+    for d in MARGIN_RANGE:
+        bell = (
+            (1 - TAIL_SHARE) * math.exp(-((d - center) / narrow) ** 2 / 2) / narrow
+            + TAIL_SHARE * math.exp(-((d - center) / wide) ** 2 / 2) / wide
+        )
+        weights[d] = bell * KEY_WEIGHT.get(abs(d), 1.0)
     total = sum(weights.values())
     return {d: w / total for d, w in weights.items()}
 
@@ -409,7 +461,7 @@ def margin_distribution(spread: float, sd: float = SPREAD_SD) -> tuple[tuple[int
     zero, drag the average down and every favourite looks weaker than the
     market prices them.
     """
-    low, high = spread - 6, spread + 6
+    low, high = spread - 8, spread + 8
     for _ in range(40):                      # bisection on the centre
         mid = (low + high) / 2
         if sum(d * p for d, p in _shape(mid, sd).items()) < spread:
@@ -792,6 +844,72 @@ def grade(entries: list[tuple[int, Prediction, str]]) -> Scorecard:
         lined_hits=sum(1 for _, guess, winner in lined if _same(guess.pick, winner)),
         lined_picks=len(lined),
     )
+
+
+def grade_by_week(entries: list[tuple[int, Prediction, str]]) -> dict[int, Scorecard]:
+    """The same scoring, one week at a time, for a chart of how it is going."""
+    weeks: dict[int, list[tuple[int, Prediction, str]]] = {}
+    for entry in entries:
+        weeks.setdefault(entry[0], []).append(entry)
+    return {number: grade(rows) for number, rows in sorted(weeks.items())}
+
+
+#: The confidence bands a pick is sorted into when checking whether its stated
+#: chances are honest. Wider than they look useful, because a season is only a
+#: few hundred picks and a narrow band is a coin toss with a decimal point.
+BANDS = ((0.50, 0.58), (0.58, 0.66), (0.66, 0.75), (0.75, 1.01))
+
+
+@dataclass(frozen=True)
+class Band:
+    """One confidence band: what it claimed, and what actually happened."""
+
+    low: float
+    high: float
+    picks: int
+    hits: int
+    claimed: float       # the average chance the picks in this band stated
+
+    @property
+    def actual(self) -> float:
+        return self.hits / self.picks if self.picks else 0.0
+
+    @property
+    def gap(self) -> float:
+        """Positive means the picks did better than they said they would."""
+        return self.actual - self.claimed
+
+    @property
+    def label(self) -> str:
+        return f"{self.low:.0%}-{self.high if self.high <= 1 else 1:.0%}"
+
+
+def calibration(entries: list[tuple[int, Prediction, str]]) -> list[Band]:
+    """Are the stated chances honest?
+
+    A predictor that says 70% should be right about seven times in ten. Being
+    right more often than it claims is not a virtue - it means the chances are
+    understated, and every decision made from them, above all whether a pick
+    is worth taking against the field, is made on a wrong number.
+
+    Bands with nothing in them are left out rather than drawn as zero, which
+    would read as "always wrong" instead of "never tried".
+    """
+    out: list[Band] = []
+    for low, high in BANDS:
+        inside = [
+            (guess, winner) for _, guess, winner in entries
+            if low <= guess.chance < high
+        ]
+        if not inside:
+            continue
+        out.append(Band(
+            low=low, high=high,
+            picks=len(inside),
+            hits=sum(1 for guess, winner in inside if _same(guess.pick, winner)),
+            claimed=statistics.fmean(guess.chance for guess, _ in inside),
+        ))
+    return out
 
 
 @dataclass(frozen=True)

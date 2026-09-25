@@ -432,6 +432,81 @@ def never_missed(season: Season) -> Award | None:
     )
 
 
+# ---- what the raw pick sheets know ------------------------------------
+#: Sheets a coach has to appear on before their habits are worth naming. One
+#: week of unusual picks is a mood; three is a way of playing.
+CHALK_WEEKS = 3
+
+
+def _chalk_shares(season: Season) -> dict[str, tuple[float, int]]:
+    """Each coach's average agreement with the pool, and over how many weeks.
+
+    Only the raw pick sheets carry this - the workbook records which picks
+    were right, never which were popular - so it is empty until a sheet has
+    been loaded, and the two awards below simply do not appear.
+    """
+    from . import picks
+
+    gathered: dict[str, list[float]] = {}
+    for sheet in picks.load_all().values():
+        for coach, share in picks.chalk(sheet).items():
+            gathered.setdefault(" ".join(coach.split()).casefold(), []).append(share)
+    known = {
+        " ".join(p.display.split()).casefold(): p.display
+        for p in season.players.values()
+    }
+    return {
+        known[key]: (sum(values) / len(values), len(values))
+        for key, values in gathered.items()
+        if key in known and len(values) >= CHALK_WEEKS
+    }
+
+
+def the_contrarian(season: Season) -> Award | None:
+    """Furthest from the crowd. The only way anyone finishes a week clear."""
+    shares = _chalk_shares(season)
+    if len(shares) < 3:
+        return None
+    name, (share, weeks) = min(shares.items(), key=lambda item: item[1][0])
+    pool = sum(s for s, _ in shares.values()) / len(shares)
+    return Award(
+        key="contrarian",
+        icon="\N{BLACK CHESS KNIGHT}",
+        title="The Contrarian",
+        winner=name,
+        value=f"{share:.0%}",
+        detail=(
+            f"takes the popular side {share:.0%} of the time against the pool's "
+            f"{pool:.0%}, over {_plural(weeks, 'sheet')}. Being right where "
+            f"everyone else is right pays nothing - this is the only way to "
+            f"finish a week clear of the field."
+        ),
+        tone="good",
+    )
+
+
+def the_sheep(season: Season) -> Award | None:
+    """Closest to the crowd. Not a criticism - it wins games, just not weeks."""
+    shares = _chalk_shares(season)
+    if len(shares) < 3:
+        return None
+    name, (share, weeks) = max(shares.items(), key=lambda item: item[1][0])
+    pool = sum(s for s, _ in shares.values()) / len(shares)
+    return Award(
+        key="sheep",
+        icon="\N{SHEEP}",
+        title="With The Crowd",
+        winner=name,
+        value=f"{share:.0%}",
+        detail=(
+            f"takes the popular side {share:.0%} of the time against the pool's "
+            f"{pool:.0%}, over {_plural(weeks, 'sheet')}. The crowd is usually "
+            f"right, so this wins games - it just never wins a week, because "
+            f"everybody else has the same card."
+        ),
+    )
+
+
 ALL_AWARDS = (
     best_week_award,
     hot_hand,
@@ -454,6 +529,8 @@ ALL_AWARDS = (
     free_fall,
     still_waiting,
     walking_dead,
+    the_contrarian,
+    the_sheep,
 )
 
 

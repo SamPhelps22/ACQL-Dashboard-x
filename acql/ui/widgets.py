@@ -6,17 +6,20 @@ from PySide6.QtCore import (
     QAbstractTableModel,
     QEvent,
     QModelIndex,
+    QObject,
     QSize,
     QSortFilterProxyModel,
     Qt,
 )
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QTableView,
     QVBoxLayout,
@@ -81,6 +84,11 @@ class Card(QFrame):
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(16, 14, 16, 14)
         self._layout.setSpacing(10)
+        # A card given more height than it needs keeps its contents at the
+        # top. Otherwise the spare height was shared out between the items,
+        # and a title label - which centres its text in whatever it is
+        # given - drifted down into the middle of an empty card.
+        self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.title_label: QLabel | None = None
         if title:
             self.title_label = QLabel(title)
@@ -322,32 +330,73 @@ def tile_grid(tiles: list[QWidget], per_row: int = 4, spacing: int = 12) -> QGri
 
 
 class Banner(QFrame):
-    """A dismissible strip for warnings and load messages."""
+    """Notes about the loaded files: one line, with the rest on request.
+
+    Four or five notes stacked at the top of a page pushed the page itself
+    down a quarter of the screen on every visit. The first note is shown in
+    full and the others wait behind "Show all", so the banner says that
+    there is something to read without making you read it every time.
+    """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("Banner")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 9, 12, 9)
+        layout.setContentsMargins(12, 8, 8, 8)
+        layout.setSpacing(10)
         self.icon = QLabel("\N{WARNING SIGN}")
+        self.icon.setObjectName("BannerIcon")
         self.label = QLabel("")
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.toggle = QPushButton("")
+        self.toggle.setObjectName("BannerToggle")
+        self.toggle.setFlat(True)
+        self.toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle.clicked.connect(self._flip)
         layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.label, 1)
+        layout.addWidget(self.toggle, 0, Qt.AlignmentFlag.AlignTop)
+        self._messages: list[str] = []
+        self._expanded = False
         self.hide()
 
-    def show_messages(self, messages: list[str], icon: str = "\N{WARNING SIGN}") -> None:
+    def show_messages(
+        self, messages: list[str], icon: str = "\N{WARNING SIGN}", tone: str = "warning",
+    ) -> None:
         text = [m for m in messages if m]
         if not text:
+            self._messages = []
             self.hide()
             return
+        if text != self._messages:
+            self._expanded = False          # new notes start folded
+        self._messages = text
         self.icon.setText(icon)
+        self.setProperty("tone", tone)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self._render()
+        self.show()
+
+    def _flip(self) -> None:
+        self._expanded = not self._expanded
+        self._render()
+
+    def _render(self) -> None:
+        text = self._messages
         if len(text) == 1:
             self.label.setText(text[0])
+            self.toggle.hide()
+            return
+        self.toggle.show()
+        if self._expanded:
+            self.label.setText("\n".join(f"\u2022  {m}" for m in text))
+            self.toggle.setText("Show less")
         else:
-            self.label.setText("\n".join(f"•  {m}" for m in text))
-        self.show()
+            more = len(text) - 1
+            self.label.setText(text[0])
+            self.toggle.setText(f"Show all {len(text)}  ({more} more)")
 
 
 class TableModel(QAbstractTableModel):
@@ -499,6 +548,91 @@ class SortProxy(QSortFilterProxyModel):
 # row stays on screen, which is the right trade: the full text is one hover
 # away, the numbers are the reason the table is there.
 MAX_COLUMN_WIDTH = 240
+#: Tables show this many rows before they scroll inside themselves. Every
+#: table in the app is shorter than this (35 coaches, 16 games), so in
+#: practice the page scrolls and the table never does - a box you have to
+#: scroll inside a page you are also scrolling hid most of every table.
+FIT_ROWS = 40
+#: A column squeezed to fit the window never goes narrower than this.
+COLUMN_FLOOR = 48
+#: And the sentence column ("Why", "Player") keeps at least this much.
+STRETCH_FLOOR = 180
+
+
+def fit_height(view: QAbstractItemView, rows: int, row_height: int, most: int = FIT_ROWS) -> None:
+    """Make a table exactly tall enough for its rows, up to `most`.
+
+    A table taller than `most` rows still scrolls inside itself; one shorter
+    takes exactly its own height, so a 3-row table is not a 300-pixel box.
+    The vertical scroll bar is left on "as needed" so that if the header
+    comes out taller than measured, the last row is reachable rather than
+    silently cut off.
+    """
+    header = view.horizontalHeader()
+    head = max(header.height(), header.sizeHint().height(), 30)
+    shown = max(1, min(rows, most))
+    frame = view.frameWidth() * 2
+    view.setFixedHeight(head + shown * row_height + frame + 4)
+    view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+
+class ColumnFitter(QObject):
+    """Keeps a table's columns inside its width, so it never scrolls sideways.
+
+    Columns are measured once (see make_table). When the window is too
+    narrow for all of them, the widest are trimmed first - down to a common
+    width, never below COLUMN_FLOOR - and their text is elided, with the
+    full value still in the tooltip or the cell. The sentence column takes
+    whatever is left, and at least STRETCH_FLOOR.
+    """
+
+    def __init__(self, view: QAbstractItemView, stretch: int | None) -> None:
+        super().__init__(view)
+        self.view = view
+        self.stretch = stretch
+        self.natural: list[int] = []
+        self.remeasure()
+        view.viewport().installEventFilter(self)
+
+    def remeasure(self) -> None:
+        header = self.view.horizontalHeader()
+        self.natural = [header.sectionSize(c) for c in range(header.count())]
+        self.fit()
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt naming)
+        if event.type() == QEvent.Type.Resize:
+            self.fit()
+        return False
+
+    def fit(self) -> None:
+        try:
+            header = self.view.horizontalHeader()
+            width = self.view.viewport().width()
+        except RuntimeError:            # the table is being torn down
+            return
+        if width <= 0 or not self.natural:
+            return
+        shown = [
+            c for c in range(min(header.count(), len(self.natural)))
+            if not header.isSectionHidden(c) and c != self.stretch
+        ]
+        room = width - (STRETCH_FLOOR if self.stretch is not None else 0)
+        want = {c: self.natural[c] for c in shown}
+        if sum(want.values()) > room > 0:
+            # The largest cap that fits: every column keeps its own width
+            # up to the cap, the wide ones are brought down to it.
+            low, high = COLUMN_FLOOR, max(want.values())
+            for _ in range(24):
+                mid = (low + high) / 2
+                if sum(min(w, mid) for w in want.values()) > room:
+                    high = mid
+                else:
+                    low = mid
+            cap = max(COLUMN_FLOOR, int(low))
+            want = {c: min(w, cap) for c, w in want.items()}
+        for c, w in want.items():
+            if header.sectionSize(c) != w:
+                header.resizeSection(c, w)
 
 
 def make_table(
@@ -509,32 +643,44 @@ def make_table(
     ascending: bool = True,
     row_height: int = 30,
     max_column_width: int = MAX_COLUMN_WIDTH,
+    fit_rows: int | None = FIT_ROWS,
 ) -> tuple[QTableView, SortProxy]:
-    """Build a configured table view over a model."""
+    """Build a configured table view over a model.
+
+    With no `sort_column` the rows stay in the order the page gave them
+    until a header is clicked. (Turning sorting on otherwise sorts at once by
+    the first column, descending - which is why This Week's card used to
+    start at game 16.) `fit_rows` sizes the table to its rows; pass None to
+    size it yourself.
+    """
     proxy = SortProxy()
     proxy.setSourceModel(model)
     view = QTableView()
     view.setModel(proxy)
     view.setAlternatingRowColors(True)
-    view.setSortingEnabled(True)
     view.setShowGrid(False)
     view.setWordWrap(False)
     view.verticalHeader().setVisible(False)
     view.verticalHeader().setDefaultSectionSize(row_height)
+    view.verticalHeader().setMinimumSectionSize(row_height)
     view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
     view.setSelectionMode(QTableView.SelectionMode.SingleSelection)
     view.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
     view.setHorizontalScrollMode(QTableView.ScrollMode.ScrollPerPixel)
     view.setVerticalScrollMode(QTableView.ScrollMode.ScrollPerPixel)
+    view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
     header = view.horizontalHeader()
     header.setHighlightSections(False)
+    header.setMinimumSectionSize(COLUMN_FLOOR)
     # Columns are measured once, here, rather than left on ResizeToContents.
     # That mode re-measures every cell of every column on every sort, scroll
     # and repaint, and each measurement asks the model for the cell - which
     # for a seventeen-column table of thirty-five coaches is the difference
     # between a page that opens and a window that stops answering.
     header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+    view.setSortingEnabled(True)
     if sort_column is not None:
         order = Qt.SortOrder.AscendingOrder if ascending else Qt.SortOrder.DescendingOrder
         view.sortByColumn(sort_column, order)
@@ -542,9 +688,15 @@ def make_table(
     for column in range(model.columnCount()):
         if column != stretch_column and header.sectionSize(column) > max_column_width:
             header.resizeSection(column, max_column_width)
+        # a little air either side of the widest value
+        elif column != stretch_column:
+            header.resizeSection(column, header.sectionSize(column) + 8)
     if stretch_column is not None and stretch_column < model.columnCount():
         header.setSectionResizeMode(stretch_column, QHeaderView.ResizeMode.Stretch)
     view.setTextElideMode(Qt.TextElideMode.ElideRight)
+    view.column_fitter = ColumnFitter(view, stretch_column)
+    if fit_rows:
+        fit_height(view, model.rowCount(), row_height, fit_rows)
     return view, proxy
 
 

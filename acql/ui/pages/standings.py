@@ -295,7 +295,6 @@ class StandingsPage(Page):
             ascending=ascending, row_height=29,
         )
         proxy.set_filter_columns([NAME_COLUMN])
-        view.setMinimumHeight(320)
         view.doubleClicked.connect(self._open_player)
 
         self.clear_layout(self.table_container)
