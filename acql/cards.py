@@ -11,7 +11,7 @@ Two questions need a card remembered from earlier in the week:
     your real card and the plain likeliest-side card. After five or six weeks
     that says whether to follow it, overrule it, or only take its turns.
 
-Kept in acql-cards.json beside the pool's data. Nothing here draws anything.
+Kept in the app's database (store.py). Nothing here draws anything.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 
 from .models import Season, same_team
 
@@ -29,29 +28,17 @@ STORE_NAME = "acql-cards.json"
 MOVE_WORTH_NOTING = 0.05
 
 
-def _store_path() -> Path:
-    try:
-        from .config import DATA_DIR  # lazy: config never imports this
-        return Path(DATA_DIR) / STORE_NAME
-    except Exception:  # noqa: BLE001
-        from .config import ROOT
-        return Path(ROOT) / STORE_NAME
-
-
 def _read() -> dict:
-    try:
-        raw = json.loads(_store_path().read_text(encoding="utf-8"))
-        return raw if isinstance(raw, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    """A private copy of everything kept here, safe to change before `_write`."""
+    from . import store
+    return json.loads(json.dumps(store.items("cards")))
 
 
-def _write(store: dict) -> None:
-    path = _store_path()
+def _write(mapping: dict) -> None:
+    from . import store
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(store, indent=1), encoding="utf-8")
-    except OSError:
+        store.replace("cards", mapping)
+    except store.StoreError:
         pass
 
 
@@ -64,6 +51,7 @@ class Snapshot:
     label: dict[int, str]                     # "Minnesota @ Chicago"
     margin: dict[int, float] = field(default_factory=dict)   # market home margin used
     plain: dict[int, str] = field(default_factory=dict)      # the likeliest side
+    planned: dict[int, str] = field(default_factory=dict)    # the planner's card
     win_odds: float | None = None
     rebuilt: bool = False                     # made after the fact, not at the time
 
@@ -76,7 +64,13 @@ class Snapshot:
             label={c.index: c.matchup for c in brief.choices},
             margin={c.index: c.home_margin for c in brief.choices if c.home_margin is not None},
             plain={c.index: (c.other if c.turned else c.pick) for c in brief.choices},
-            win_odds=brief.plan.win_odds if brief.plan is not None else None,
+            planned=(
+                {c.index: side for c, side in zip(brief.choices, brief.plan.take)}
+                if brief.plan is not None and len(brief.plan.take) == len(brief.choices)
+                else {}
+            ),
+            win_odds=(brief.win_odds if hasattr(brief, "win_odds")
+                      else brief.plan.win_odds if brief.plan is not None else None),
             rebuilt=rebuilt,
         )
 
@@ -93,6 +87,7 @@ class Snapshot:
                 label=ints(raw.get("label")),
                 margin={k: float(v) for k, v in ints(raw.get("margin")).items()},
                 plain=ints(raw.get("plain")),
+                planned=ints(raw.get("planned")),
                 win_odds=raw.get("win_odds"),
                 rebuilt=bool(raw.get("rebuilt", False)),
             )
@@ -149,9 +144,19 @@ def week_started(season: Season, week: int) -> bool:
 
 
 def record_model(season: Season, week: int, brief) -> bool:
-    """Keep the model's card, until the week's first result locks it."""
+    """Keep the model's card, until the week's first result locks it.
+
+    A card planned against the pool's real pick sheet isn't kept: nobody can
+    see everyone's picks before handing theirs in, so grading the model on
+    one would flatter it. The card from before the sheet arrived stands.
+    """
     if brief is None or not brief.choices or week_started(season, week):
         return False
+    plan = getattr(brief, "plan", None)
+    if plan is not None and getattr(plan, "field_known", False):
+        return False
+    if getattr(brief, "counted_crowd", False):
+        return False                      # the crowd was counted off the real sheet
     _put(week, "model", Snapshot.of(brief))
     return True
 
@@ -220,7 +225,8 @@ def compare(brief, base: Snapshot, what: str) -> Changes:
     return Changes(
         since=base, what=what, items=items,
         win_odds_then=base.win_odds,
-        win_odds_now=brief.plan.win_odds if brief.plan is not None else None,
+        win_odds_now=(brief.win_odds if hasattr(brief, "win_odds")
+                      else brief.plan.win_odds if brief.plan is not None else None),
     )
 
 
@@ -272,7 +278,8 @@ def score_week(season: Season, week_number: int, coach_key: str | None,
     week = season.weeks.get(week_number)
     if week is None or not week.scored:
         return None
-    model_hits, graded = _hits(snap.take, week)
+    # The model's card is the planner's, whichever card the page was showing.
+    model_hits, graded = _hits(snap.planned or snap.take, week)
     if not graded:
         return None
     plain_hits, _ = _hits(snap.plain or snap.take, week)
@@ -318,7 +325,7 @@ def _rebuild(season: Season, week: int) -> Snapshot | None:
     if not predictions.load(week)[0]:
         return None
     try:
-        brief = briefing.build(season, week)
+        brief = briefing.build(season, week, use_sheet=False)
     except Exception:  # noqa: BLE001 - an old week that can't be priced is skipped
         return None
     if not brief.choices:

@@ -486,6 +486,19 @@ def stylesheet(p: Palette) -> str:
     QTabBar::tab:hover {{ color: {p.ink}; }}
     QTabBar::tab:selected {{ color: {p.ink}; border-bottom: 2px solid {p.accent}; }}
 
+    /* ---- the tabs above a grouped page (groups.py) ---- */
+    #GroupTabs {{
+        background: {p.plane};
+        border-bottom: 1px solid {p.grid};
+    }}
+    QTabBar#GroupTabBar {{ background: transparent; }}
+    QTabBar#GroupTabBar::tab {{
+        font-size: {t["body"]}px;
+        font-weight: 600;
+        padding: 9px 18px 8px 18px;
+        margin-right: 4px;
+    }}
+
     QScrollArea {{ border: none; background: {p.plane}; }}
     QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
     QScrollBar::handle:vertical {{ background: {p.baseline}; border-radius: 5px; min-height: 30px; }}

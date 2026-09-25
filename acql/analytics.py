@@ -1004,4 +1004,5 @@ def fill_winnings(season: Season) -> list[int]:
                 sum(week_owed(week).get(key, 0.0) for week in season.weeks.values()), 2
             )
             person.net_points = round(person.points_won - person.points_paid, 2)
+        season.computed_totals = True
     return computed

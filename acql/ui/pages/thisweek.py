@@ -122,6 +122,20 @@ class BriefingPage(Page):
         self._update_note = ""        # what the last "Update lines" did
         head = QHBoxLayout()
         head.addWidget(section(self.title, self.subtitle), 1)
+        self.style_picker = QComboBox()
+        self.style_picker.addItem("Card: built to win the week", briefing.STYLE_WIN)
+        self.style_picker.addItem("Card: most games right", briefing.STYLE_STRAIGHT)
+        self.style_picker.setToolTip(
+            "Built to win the week turns a game or two against the pool when "
+            "that makes finishing first likelier; most games right takes the "
+            "likelier side everywhere, which is what counts toward the season "
+            "title. Replayed over 2011-2025 the two won about as many weeks - "
+            "see Insights > The model."
+        )
+        wanted = QSettings().value(self.STYLE_KEY, briefing.STYLE_WIN)
+        found = self.style_picker.findData(wanted)
+        self.style_picker.setCurrentIndex(max(found, 0))
+        self.style_picker.currentIndexChanged.connect(self._style_changed)
         self.lines_button = QPushButton("\u21bb  Update lines")
         self.lines_button.setToolTip(
             "Fetch the latest betting lines for this week and re-plan the card"
@@ -148,10 +162,15 @@ class BriefingPage(Page):
         self.copy_button.clicked.connect(self._copy)
         head.addWidget(self.copy_button, 0)
         self.layout_.addLayout(head)
+        # Second row: which card to play, and where the lines stand.
+        options = QHBoxLayout()
+        options.setSpacing(12)
+        options.addWidget(self.style_picker, 0)
         self.lines_status = QLabel("")
         self.lines_status.setObjectName("Muted")
         self.lines_status.setWordWrap(True)
-        self.layout_.addWidget(self.lines_status)
+        options.addWidget(self.lines_status, 1)
+        self.layout_.addLayout(options)
 
         self.tile_expected = StatTile("Expected Wins")
         self.tile_swing = StatTile("Biggest Swing")
@@ -221,7 +240,7 @@ class BriefingPage(Page):
         week = self._week(season)
         self._week_shown = week
         self._update_suicide(season, week)
-        self._brief = briefing.build(season, week) if week else None
+        self._brief = briefing.build(season, week, self._style()) if week else None
         brief = self._brief
         self.card.set_title(f"{CARD_TITLE} - week {week}" if week else CARD_TITLE)
         self._update_lines_status(week)
@@ -241,6 +260,16 @@ class BriefingPage(Page):
         self._update_swings(brief)
         self._update_table(brief)
         self._update_side(brief)
+
+    # ---- which card --------------------------------------------------------
+    STYLE_KEY = "thisweek/style"
+
+    def _style(self) -> str:
+        return self.style_picker.currentData() or briefing.STYLE_WIN
+
+    def _style_changed(self, _index: int = 0) -> None:
+        QSettings().setValue(self.STYLE_KEY, self._style())
+        self.refresh_now()
 
     # ---- the suicide pool ------------------------------------------------
     SUICIDE_KEY = "thisweek/suicide_coach"
@@ -339,7 +368,7 @@ class BriefingPage(Page):
         for box, message in (
             (self.swing_box, "The swings appear once the week is priced."),
             (self.card_box,
-             f"Week {week} has no prices yet. Open Next Week, load the "
+             f"Week {week} has no prices yet. Open the Every game tab, load the "
              f"predictions file or type the spreads, and the card appears here."),
             (self.side_box, ""),
         ):
@@ -380,17 +409,21 @@ class BriefingPage(Page):
 
         plan = brief.plan
         if plan is not None:
+            odds_now = brief.win_odds or 0.0
+            other = (
+                f"built to win the week: {plan.win_odds:.1%}" if brief.straight
+                else f"the likeliest side of every game: {plan.plain_win_odds:.1%}"
+            )
             self.tile_pays.update_values(
-                f"{plan.win_odds:.1%}",
+                f"{odds_now:.1%}",
                 f"first of {plan.coaches + 1} \u00b7 a fair share is "
-                f"{plan.fair_share:.1%}\nthe likeliest side of every game: "
-                f"{plan.plain_win_odds:.1%}",
-                "good" if plan.win_odds > plan.fair_share else "",
+                f"{plan.fair_share:.1%}\n{other}",
+                "good" if odds_now > plan.fair_share else "",
             )
             self.tile_pays.show_bar(
                 # Half-way along is a fair share of the week; past it, better.
-                min(1.0, plan.edge / 2), 0.5,
-                "good" if plan.win_odds > plan.fair_share else "", self.palette,
+                min(1.0, odds_now / plan.fair_share / 2 if plan.fair_share else 0.0), 0.5,
+                "good" if odds_now > plan.fair_share else "", self.palette,
             )
         else:
             self.tile_pays.update_values(
@@ -468,8 +501,8 @@ class BriefingPage(Page):
             )
             if choice.turned:
                 tones[(r, COL_TAKE)] = "warning"
-            if choice.if_flipped is not None and brief.plan is not None:
-                cost = brief.plan.win_odds - choice.if_flipped
+            if choice.if_flipped is not None and brief.win_odds is not None:
+                cost = brief.win_odds - choice.if_flipped
                 tones[(r, COL_FLIP)] = (
                     "bad" if cost >= 0.005 else "muted" if abs(cost) < FLIP_NOISE else ""
                 )
@@ -498,7 +531,25 @@ class BriefingPage(Page):
         plan = brief.plan
         if plan is not None:
             turned = brief.turned
-            if turned:
+            if brief.straight:
+                would = [brief.choices[i] for i in plan.flipped]
+                text = (
+                    f"This card takes the likelier side of every game: about "
+                    f"{plan.plain_hits:.1f} right, which is what counts toward "
+                    f"the season title, and first {plan.plain_win_odds:.1%} of "
+                    f"the time."
+                    + (
+                        f" Built to win the week instead, it would take "
+                        f"{', '.join(c.other for c in would)} against the pool and "
+                        f"finish first {plan.win_odds:.1%} of the time, with about "
+                        f"{plan.expected_hits:.1f} right."
+                        if would else
+                        " The card built to win the week is the same card this week."
+                    )
+                    + " Replayed over 2011-2025 the two won about as many weeks, "
+                      "so it's your call."
+                )
+            elif turned:
                 text = (
                     f"This card is built to finish <b>first</b>, not just near "
                     f"the top. \u21ba marks the "
@@ -524,7 +575,7 @@ class BriefingPage(Page):
                 )
             text += (
                 f" <b>If flipped</b> is the chance of winning the week with "
-                f"only that game taken the other way (now {plan.win_odds:.1%}): "
+                f"only that game taken the other way (now {brief.win_odds or 0.0:.1%}): "
                 f"the lower it is, the more that pick matters."
             )
             text += (
@@ -541,9 +592,9 @@ class BriefingPage(Page):
             self.card_box.addWidget(note)
 
     def _flip_text(self, brief: briefing.Brief, choice: briefing.Choice) -> str:
-        if choice.if_flipped is None or brief.plan is None:
+        if choice.if_flipped is None or brief.win_odds is None:
             return self.NO_VALUE
-        if abs(brief.plan.win_odds - choice.if_flipped) < FLIP_NOISE:
+        if abs(brief.win_odds - choice.if_flipped) < FLIP_NOISE:
             return "about the same"
         return f"{choice.if_flipped:.1%}"
 

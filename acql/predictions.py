@@ -26,7 +26,6 @@ exactly where a pool line is worth a second look.
 from __future__ import annotations
 
 import csv
-import json
 import math
 import re
 import statistics
@@ -39,6 +38,7 @@ from .config import ROOT
 from .lines import TEAMS
 from .models import Game
 
+#: Where older versions kept the predictions; read in once by store.py.
 FORECASTS_FILE = ROOT / "acql-forecasts.json"
 
 # Columns that are not a model's prediction.
@@ -699,34 +699,27 @@ def find_file(
     return None
 
 
-def store_stamp() -> tuple[float, int] | None:
+def store_stamp() -> tuple:
     """Changes whenever the stored predictions do - for caches built on them."""
-    try:
-        info = FORECASTS_FILE.stat()
-    except OSError:
-        return None
-    return (info.st_mtime, info.st_size)
+    from . import store
+    return store.stamp("forecasts")
 
 
 def _read_store() -> dict:
-    try:
-        raw = json.loads(FORECASTS_FILE.read_text(encoding="utf-8"))
-        return raw if isinstance(raw, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    from . import store
+    return store.items("forecasts")
 
 
 def save(week: int, forecasts: list[Forecast], source: str = "") -> None:
     """Keep a week's file, so it is there again next time the app opens."""
-    store = _read_store()
-    store[str(week)] = {
-        "source": str(source),
-        "imported": time.time(),
-        "games": [asdict(f) for f in forecasts],
-    }
+    from . import store
     try:
-        FORECASTS_FILE.write_text(json.dumps(store, indent=1), encoding="utf-8")
-    except OSError:
+        store.put("forecasts", str(week), {
+            "source": str(source),
+            "imported": time.time(),
+            "games": [asdict(f) for f in forecasts],
+        })
+    except store.StoreError:
         pass
 
 

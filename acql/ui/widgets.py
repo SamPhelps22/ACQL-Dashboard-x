@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .theme import Palette, TYPE, tone_color
+from .theme import Palette, tone_color
 
 #: The tones a widget may be given; anything else is treated as no tone.
 TONES = ("good", "warning", "serious", "bad", "muted")

@@ -6,7 +6,7 @@ https://myaccount.google.com/apppasswords once 2-Step Verification is on -
 which can send mail and nothing else, and can be revoked at any time from
 the same page without touching the real password.
 
-The settings live beside the pool's data in acql-email.json. On Windows the
+The settings live in the app's database (store.py). On Windows the
 app password is sealed with the Windows data-protection API (DPAPI), which
 ties it to the signed-in Windows account: the file alone, copied to another
 machine or read by another user, does not reveal it. Everything here is the
@@ -16,7 +16,7 @@ standard library; nothing extra to install.
 from __future__ import annotations
 
 import base64
-import json
+import html
 import mimetypes
 import smtplib
 import ssl
@@ -25,19 +25,18 @@ from dataclasses import asdict, dataclass, field
 from email.message import EmailMessage
 from pathlib import Path
 
+#: The pool's web page (ui/poolpage.py) - put in every recap email.
+POOL_PAGE_LINK = "https://samphelps22.github.io/ACQL---Pool/"
+#: Where the page lived before it had its own website; a saved setting still
+#: pointing there moves to the website.
+OLD_PAGE_LINKS = ("https://claude.ai/artifact/9H4wKFZiyzfopYpGtRH8eh",)
+
 GMAIL_HOST = "smtp.gmail.com"
 GMAIL_PORT = 465
 TIMEOUT = 25
+#: Where older versions kept these settings; read in once by store.py.
 SETTINGS_NAME = "acql-email.json"
 APP_PASSWORD_PAGE = "https://myaccount.google.com/apppasswords"
-
-
-def _settings_path() -> Path:
-    try:
-        from .config import DATA_DIR  # lazy: config never imports this
-        return Path(DATA_DIR) / SETTINGS_NAME
-    except Exception:  # noqa: BLE001
-        return Path.home() / ".acql" / SETTINGS_NAME
 
 
 # ---- keeping the app password out of plain sight -------------------------
@@ -91,6 +90,7 @@ class MailSettings:
     sender: str = ""                     # the Gmail address it sends from
     recipients: list[str] = field(default_factory=list)
     sealed_password: str = ""
+    page_link: str = POOL_PAGE_LINK      # "" leaves it out
 
     @property
     def ready(self) -> bool:
@@ -106,20 +106,21 @@ class MailSettings:
 
     @classmethod
     def load(cls) -> MailSettings:
-        try:
-            raw = json.loads(_settings_path().read_text(encoding="utf-8"))
-            return cls(
-                sender=str(raw.get("sender", "")),
-                recipients=[str(r) for r in raw.get("recipients", []) if str(r).strip()],
-                sealed_password=str(raw.get("sealed_password", "")),
-            )
-        except (OSError, ValueError):
+        from . import store
+        raw = store.get("settings", "email", {})
+        if not isinstance(raw, dict):
             return cls()
+        return cls(
+            sender=str(raw.get("sender", "")),
+            recipients=[str(r) for r in raw.get("recipients", []) if str(r).strip()],
+            sealed_password=str(raw.get("sealed_password", "")),
+            page_link=(lambda link: POOL_PAGE_LINK if link in OLD_PAGE_LINKS else link)(
+                str(raw.get("page_link", POOL_PAGE_LINK)).strip()),
+        )
 
     def save(self) -> None:
-        path = _settings_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(self), indent=1), encoding="utf-8")
+        from . import store
+        store.put("settings", "email", asdict(self))
 
 
 def parse_recipients(text: str) -> list[str]:
@@ -135,12 +136,20 @@ def build_message(settings: MailSettings, image: Path, subject: str, summary: st
     msg["From"] = settings.sender
     msg["To"] = ", ".join(settings.recipients)
     msg["Subject"] = subject
-    msg.set_content(summary + "\n\nThe recap picture is attached.\n\n- ACQL Dashboard")
+    link = (settings.page_link or "").strip()
+    text_link = f"\n\nStandings, every week and the side pools: {link}" if link else ""
+    msg.set_content(summary + text_link + "\n\nThe recap picture is attached.\n\n- ACQL Dashboard")
+    html_link = (
+        f"<p style='font-family:Segoe UI,Arial,sans-serif;font-size:15px'>"
+        f"<a href='{html.escape(link, quote=True)}' style='color:#1d6a44;font-weight:600'>"
+        f"Standings, every week and the side pools \u203a</a></p>"
+    ) if link else ""
     data = Path(image).read_bytes()
     cid = "recap-image"
     msg.add_alternative(
         f"<p style='font-family:Segoe UI,Arial,sans-serif;font-size:15px'>"
         f"{summary.replace(chr(10), '<br>')}</p>"
+        f"{html_link}"
         f"<img src='cid:{cid}' alt='Weekly recap' style='max-width:100%;width:540px'>"
         f"<p style='font-family:Segoe UI,Arial,sans-serif;color:#888;font-size:12px'>"
         f"ACQL Dashboard</p>",

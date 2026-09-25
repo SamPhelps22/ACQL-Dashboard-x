@@ -1,0 +1,93 @@
+ACQL DASHBOARD
+==============
+
+Standings, weekly scores, the money, and a look at next week's card.
+
+You do not need to know anything about computers to run this. There are two
+steps, and the second one is double-clicking something.
+
+
+STEP 1 - PUT THE FOLDER SOMEWHERE SENSIBLE
+------------------------------------------
+
+Copy the whole "Code x" folder onto your computer - Documents is fine.
+
+Keep it together. Everything in it matters, and the dashboard looks for its
+own files by sitting next to them. Don't open the folder and drag bits out.
+
+Do not run it from inside a zip file. If you downloaded it as a zip, right
+click the zip, choose "Extract All", and use the folder that comes out.
+
+
+STEP 2 - DOUBLE-CLICK "ACQL Dashboard"
+--------------------------------------
+
+Inside the folder there is a file called:
+
+    ACQL Dashboard
+
+Double-click it.
+
+The first time, a black window appears and text scrolls past for a minute
+while it sets itself up. That is normal and it only happens once. Leave it
+alone until the dashboard window opens.
+
+Every time after that it opens in a few seconds.
+
+If it tells you Python is missing, it will walk you through installing it -
+free, about five minutes, and it changes nothing else on your computer. One
+thing matters during that install: on the very first screen, tick the box at
+the bottom that says "Add python.exe to PATH" before clicking Install.
+
+
+WINDOWS MIGHT ASK FIRST
+-----------------------
+
+The first double-click may bring up a blue box saying "Windows protected
+your PC". That is Windows being careful about files that came from someone
+else, not a sign anything is wrong.
+
+Click "More info", then "Run anyway".
+
+
+WHAT YOU'RE LOOKING AT
+----------------------
+
+Down the left are seven places. Where a place holds more than one page,
+tabs across the top switch between them:
+
+    Season          Overview, Standings, Winnings and Projections
+    This Week       your card for the week, and every game on the slate
+    Results         one week at a time, and the recap to share or email
+    Side Pools      Big Loser and the suicide pool
+    Player          one coach's whole season (or double-click a name
+                    in Standings)
+    Insights        the pool's habits and luck, and how the dashboard's
+                    own picks are doing
+    Data & Update   what is loaded, entering results, and updates
+
+Ctrl+1 to Ctrl+7 jump between the places. Ctrl+K finds any page, tab or
+command by typing a few letters of it.
+
+Numbers come from the spreadsheets in the folder. When Sam sends a new
+week's files, drop them in - the dashboard notices and updates itself.
+
+
+UPDATES
+-------
+
+An update is one zip file. Download it, then in the dashboard go to
+Data & Update and press "Install update" - it finds the zip in Downloads,
+backs up the current version, installs the new one and restarts. If
+anything goes wrong it puts the old version back by itself, and "Undo last
+update" does the same whenever you like. Your data is never touched.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+
+The black window stays open and says what happened. Take a photo of it and
+send it to Sam. That message is usually enough to fix it in one go.
+
+Closing the black window closes the dashboard - it is the engine running
+underneath, so leave it be while you're using it.

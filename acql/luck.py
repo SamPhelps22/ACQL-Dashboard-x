@@ -125,8 +125,8 @@ class Luck:
 
 
 def _market(week: int, games: list[Game]) -> dict[int, float]:
-    from .crowd import _market_margins   # the stored predictions, read one way
-    return _market_margins(week, games)
+    from . import pricing                # the stored predictions, read one way
+    return pricing.market_margins(week, games)
 
 
 def week_luck(season: Season, week_number: int, market=None) -> dict[str, tuple[int, float, int]]:

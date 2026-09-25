@@ -10,7 +10,6 @@ the biggest pool line the favourite would still be worth backing at.
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -31,7 +30,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ... import analytics, crowd, lines, picks, predictions, schedule, weekplan
+from ... import analytics, lines, picks, predictions, pricing, schedule, weekplan
 from ...config import BIG_LOSER_PICKS, WEEKS_IN_SEASON
 from ...models import Game
 from ..widgets import Card, ColumnFitter, StatTile, fit_height, section
@@ -201,7 +200,7 @@ class OddsDialog(QDialog):
 
 
 class NextWeekPage(Page):
-    title = "Next Week"
+    title = "Every Game"
     subtitle = "A pick for every game on the slate, with your pool's lines applied"
     icon = "\N{AMERICAN FOOTBALL}"
 
@@ -213,6 +212,7 @@ class NextWeekPage(Page):
         self._weight = predictions.CONSENSUS_WEIGHT
         self._fitted: predictions.WeightFit | None = None
         self._forecasts: dict[int, predictions.Forecast] = {}
+        self._ctx = pricing.Context(0)
         self._picks: picks.WeekPicks | None = None
         self._lean = 0.0
         self._chalk, self._chalk_games = analytics.CHALK_PRIOR, 0
@@ -450,19 +450,18 @@ class NextWeekPage(Page):
             self._games = schedule.slate(number)
         self._from_schedule = not sheet_games and not forecasts and bool(self._games)
 
-        found = predictions.match_games(self._games, forecasts)
-        self._forecasts = found.by_game
-        self._lean = predictions.home_lean(forecasts)
-        # How strung out the models normally are this week, which is what each
-        # game's own disagreement is judged against.
-        self._typical = predictions.typical_disagreement(forecasts)
-        # How much of the models to believe at all, fitted to results so far.
-        self._fitted = self._fit()
-        self._weight = (
-            self._fitted.weight if self._fitted else predictions.CONSENSUS_WEIGHT
-        )
+        # Everything pricing needs about the week, worked out the one way
+        # every page shares (pricing.py): the file matched to the slate, the
+        # slate's shared lean, how strung out the models normally are, and
+        # how much of them this season's results say to believe.
+        self._ctx = pricing.context(season, number, self._games, forecasts)
+        self._forecasts = self._ctx.forecasts
+        self._lean = self._ctx.lean
+        self._typical = self._ctx.typical
+        self._fitted = self._ctx.fitted
+        self._weight = self._ctx.weight
         self._chalk, self._chalk_games = analytics.pool_chalk(season)
-        self._describe_source(number, forecasts, source, found)
+        self._describe_source(number, forecasts, source, self._ctx)
 
         spreads = lines.load_spreads(number, self._games)
         # Which rows carry a number somebody typed, as against one the file
@@ -576,59 +575,17 @@ class NextWeekPage(Page):
         return line + " \u00b7 the chances are landing about right"
 
     def _scorecard(self) -> analytics.Scorecard:
-        """Grade every past pick that had a predictions file behind it.
+        """Grade every past pick that had stored numbers behind it.
 
-        Only weeks whose file was kept can be graded, so a season graded from
-        week 5 onward says nothing about weeks 1 to 4 - it means their files
-        were never loaded.
+        The same replay the Insights page grades (pricing.graded_entries), so
+        the two records always agree. Only weeks whose numbers were kept can
+        be graded, so a season graded from week 5 onward says nothing about
+        weeks 1 to 4 - it means their files were never loaded.
         """
         season = self.season
         if season is None:
             return analytics.Scorecard(0, 0, 0.0, 0)
-        entries = []
-        for number, stored in predictions.stored_weeks().items():
-            week = season.weeks.get(number)
-            if week is None or not stored:
-                continue
-            games = sorted(week.games, key=lambda g: g.index)
-            found = predictions.match_games(games, stored).by_game
-            lean = predictions.home_lean(stored)
-            for game in games:
-                forecast = found.get(game.index)
-                if not game.played or forecast is None or forecast.market is None:
-                    continue
-                margin = predictions.home_margin(
-                    game, forecast, forecast.expected(lean=lean)
-                )
-                guess = analytics.predict_margin(
-                    game, margin,
-                    sd=math.hypot(analytics.SPREAD_SD, forecast.extra_spread()),
-                )
-                if guess is not None:
-                    entries.append((number, guess, game.winner))
-        return analytics.grade(entries)
-
-    def _fit(self) -> predictions.WeightFit | None:
-        """How much of the models to believe, measured against results so far.
-
-        Every week that has both a stored forecast and a scored slate is
-        replayed at each weight, and the starting figure is moved toward
-        whichever scored best - slowly, because one season of sixteen-game
-        weeks cannot resolve a parameter worth a point or two of margin.
-        """
-        season = self.season
-        if season is None:
-            return None
-        weeks = []
-        for number, stored in predictions.stored_weeks().items():
-            week = season.weeks.get(number)
-            if week is None or not stored:
-                continue
-            if any(g.played for g in week.games):
-                weeks.append((number, list(week.games), stored))
-        if not weeks:
-            return None
-        return predictions.fit_weight(weeks)
+        return analytics.grade(pricing.graded_entries(season))
 
     def _show_blank(self, number: int) -> None:
         self.table.hide()
@@ -694,7 +651,7 @@ class NextWeekPage(Page):
         self._render_row(row)
 
     def _market_spread(self, game: Game) -> lines.Spread | None:
-        """The opening line from the predictions file, as a Spread for this game.
+        """The opening line from the predictions file, as a Spread for this game (pricing.py).
 
         The opening number rather than the current one, because it is the one
         the commissioner sets his own line against - he posts the week's card
@@ -706,14 +663,7 @@ class NextWeekPage(Page):
         team; a Spread says which side and by how much, so the sign becomes
         the favourite and the size becomes the points.
         """
-        forecast = self._forecasts.get(game.index)
-        if forecast is None:
-            return None
-        opening = forecast.opening if forecast.opening is not None else forecast.market
-        margin = predictions.home_margin(game, forecast, opening)
-        if margin is None:
-            return None
-        return lines.Spread("home" if margin >= 0 else "away", abs(margin))
+        return pricing.opening_spread(game, self._forecasts.get(game.index))
 
     def _current_line(self, game: Game) -> tuple[str, str, str]:
         """The line as it stands now: what it says, how it moved, and a tone."""
@@ -763,45 +713,30 @@ class NextWeekPage(Page):
         self._show_plan()
 
     # ---- what the models add ------------------------------------------------
-    def _margin(self, row: int) -> tuple[float | None, float, str, float]:
-        """(expected home margin, spread of results, where it came from, model edge).
+    def _price(self, row: int) -> pricing.Price | None:
+        """This row, priced by the one rule every page shares (pricing.py).
 
-        The number in the Spread box is the bookmakers'. The models' average
-        pulls it a third of the way toward their own number, and how far
-        apart the models are widens the range of results, so a game nobody
-        agrees about reads closer to a coin flip.
-
-        The box shows the opening line, because that is the number the
+        The Spread box shows the opening line, because that is the number the
         commissioner sets his own against. The market's latest is a better
-        estimate of how the game will actually go, so that is what the odds
-        are worked out from unless the box has been typed in by hand - at
-        which point the typed number is the statement of what the line is,
-        and it wins. Both numbers are on the row, so neither is a surprise.
+        estimate of how the game will go, so that is what the odds are worked
+        out from - unless the box has been typed in by hand, at which point
+        the typed number is the statement of what the line is, and it wins.
+        Both numbers are on the row, so neither is a surprise. Emptying the
+        favourite box takes the game out of the reckoning altogether.
         """
         side, points = self._inputs(row)
         if side is None:
-            return None, analytics.SPREAD_SD, "Vegas", 0.0
-        margin = points if side == "home" else -points
-        if not self._typed.get(self._games[row].index):
-            forecast = self._forecasts.get(self._games[row].index)
-            current = predictions.home_margin(
-                self._games[row], forecast, forecast.market
-            ) if forecast is not None else None
-            if current is not None:
-                margin = current
+            return None
+        game = self._games[row]
+        spread = lines.Spread(side, points)
+        return pricing.price(game, self._ctx, spread, typed=bool(self._typed.get(game.index)))
 
-        edge = self._edge(self._games[row])
-        if edge is None:
-            return margin, analytics.SPREAD_SD, "Vegas", 0.0
-        forecast = self._forecasts[self._games[row].index]
-        # Not the flat share: a game the models cannot agree on gets less of
-        # their opinion, judged against how much they disagree this week.
-        weight = forecast.model_weight(self._weight, self._typical)
-        sd = math.hypot(
-            analytics.SPREAD_SD,
-            forecast.extra_spread(self._weight, self._typical),
-        )
-        return margin + weight * edge, sd, "market + models", edge
+    def _margin(self, row: int) -> tuple[float | None, float, str, float]:
+        """(expected home margin, spread of results, where it came from, model edge)."""
+        found = self._price(row)
+        if found is None or found.margin is None:
+            return None, analytics.SPREAD_SD, "Vegas", 0.0
+        return found.margin, found.sd, found.source, found.edge or 0.0
 
     def _edge(self, game: Game) -> float | None:
         """What the models say about this game alone, the right way round.
@@ -810,14 +745,11 @@ class NextWeekPage(Page):
         disagreement is the models carrying a bigger home-field advantage
         than the market, which says nothing about any particular game.
         """
-        forecast = self._forecasts.get(game.index)
-        if forecast is None:
-            return None
-        return predictions.home_margin(game, forecast, forecast.live_edge(self._lean))
+        return pricing.model_edge(game, self._ctx)
 
     def _prediction(self, row: int) -> analytics.Prediction | None:
-        margin, sd, source, _ = self._margin(row)
-        return analytics.predict_margin(self._games[row], margin, sd=sd, source=source)
+        found = self._price(row)
+        return found.prediction() if found is not None else None
 
     def _models_cell(self, row: int) -> tuple[str, str, str]:
         """(text, tooltip, colour) for what the models say about this game."""
@@ -908,36 +840,17 @@ class NextWeekPage(Page):
         return found.share_on(pick) if found is not None else None
 
     def _crowd_share(self, row: int, pick: str) -> float | None:
-        """The share of the pool on the same side as this pick.
+        """The share of the pool on the same side as this pick (pricing.crowd_share).
 
-        Measured from their own sheet when it is here, and estimated from how
-        pools take favourites of this size when it isn't.
+        Counted off their own sheet when it is here; estimated from this
+        pool's habits, or how pools take favourites of this size, when not.
         """
-        measured = self._measured_share(row, pick)
-        if measured is not None:
-            return measured
-        game = self._games[row]
-        # This pool's own habits, once its sheets have taught them.
         side, points = self._inputs(row)
-        if side is not None and self.season is not None:
-            learned = crowd.guess(
-                self.season, self._week_number, game,
-                points if side == "home" else -points, pick,
-            )
-            if learned is not None:
-                return learned
-        line = getattr(game, "line", None)
-        if line is not None:
-            # On a lined game the crowd mostly takes the better team and
-            # ignores the number, so the pool's own habit is the estimate.
-            favourite = getattr(game, "line_favourite", "")
-            return self._chalk if _same(pick, favourite) else 1 - self._chalk
-        side, points = self._inputs(row)
-        if side is None:
-            return None
-        favourite = game.home if side == "home" else game.away
-        share = analytics.crowd_on_favourite(points)
-        return share if _same(pick, favourite) else 1 - share
+        spread = lines.Spread(side, points) if side is not None else None
+        return pricing.crowd_share(
+            self.season, self._week_number, self._games[row], pick, spread,
+            self._picks, self._chalk,
+        )
 
     def _leverage(self, row: int) -> tuple[float, float] | None:
         """(games gained on the average card, share of the pool on this side)."""
@@ -1367,12 +1280,9 @@ class NextWeekPage(Page):
 
     # ---- the Big Loser mini pool -------------------------------------------
     def _show_big_losers(self) -> None:
-        entries = []
-        for row, game in enumerate(self._games):
-            margin, sd, _, _ = self._margin(row)
-            if margin is None or game.played:
-                continue
-            entries.append((game.home, game.away, margin, sd))
+        prices = [p for p in (self._price(row) for row in range(len(self._games)))
+                  if p is not None and p.margin is not None and not p.game.played]
+        entries = prices
 
         table = self.losers_table
         table.setRowCount(0)
@@ -1385,15 +1295,9 @@ class NextWeekPage(Page):
             return
         self.losers_note.setText(BIG_LOSER_RULE)
 
-        # Each game carries its own spread of results, so they are worked out
-        # one at a time rather than through analytics.big_losers in one go.
-        candidates = []
-        for home, away, margin, sd in entries:
-            candidates.append(analytics.BigLoser(
-                away, home, -margin, analytics.big_loser_chance(-margin, sd)))
-            candidates.append(analytics.BigLoser(
-                home, away, margin, analytics.big_loser_chance(margin, sd)))
-        candidates.sort(key=lambda b: -b.chance)
+        # Each game carries its own spread of results - the same numbers the
+        # picks use, and the same list This Week's side-pool line reads.
+        candidates = pricing.big_loser_candidates(prices)
         best = candidates[:BIG_LOSER_PICKS]
         expected = sum(b.chance for b in best)
         none_of_them = 1.0
@@ -1447,7 +1351,7 @@ class NextWeekPage(Page):
     # ---- planning the whole card --------------------------------------------
     def _week_plan(self) -> tuple[weekplan.Plan, list[int]] | None:
         """(the plan, the table rows it covers), or None when too little is priced."""
-        choices, rows, columns = [], [], []
+        choices, rows = [], []
         for row, game in enumerate(self._games):
             guess = self._prediction(row)
             if guess is None or game.played:
@@ -1459,29 +1363,14 @@ class NextWeekPage(Page):
                 analytics.CHALK_PRIOR if share is None else share,
             ))
             rows.append(row)
-            columns.append(self._field_column(row, guess.pick))
         if len(choices) < PLAN_MINIMUM:
             return None
-        cards = None
-        if all(column is not None for column in columns) and columns:
-            cards = [list(card) for card in zip(*columns)]
-        plan = weekplan.plan_week(choices, cards=cards)
+        cards = pricing.field_cards(
+            self._picks, [self._games[r] for r in rows], [c.pick for c in choices]
+        )
+        coaches = max(1, len(self.season.players) - 1) if self.season else 34
+        plan = weekplan.plan_week(choices, cards=cards, coaches=coaches)
         return (plan, rows) if plan is not None else None
-
-    def _field_column(self, row: int, pick: str) -> list[int] | None:
-        """How every other coach called this game: 0 for our side, 1 for theirs."""
-        if self._picks is None:
-            return None
-        game = self._games[row]
-        found = self._picks.game_for(game.away, game.home)
-        if found is None:
-            return None
-        wanted = predictions.team_code(pick)
-        column = [
-            0 if predictions.team_code(team) == wanted else 1
-            for team in found.picks.values() if predictions.team_code(team)
-        ]
-        return column or None
 
     def _show_plan(self) -> None:
         found = self._week_plan()

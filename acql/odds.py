@@ -10,7 +10,7 @@ This fetches the current NFL spreads from The Odds API (the-odds-api.com),
 which has a free plan of 500 requests a month - one press of "Update lines"
 is one request, so that is several a day all season.
 
-What is kept, per week, in acql-odds.json beside the pool's data:
+What is kept, per week, in the app's database (store.py):
 
     opening    the first number seen for each game
     latest     the most recent one, the median over every bookmaker quoted
@@ -36,7 +36,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
 
 API_URL = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
 SIGNUP_PAGE = "https://the-odds-api.com/"
@@ -53,39 +52,24 @@ class OddsError(Exception):
 
 
 # ---- where it lives ---------------------------------------------------------
-def _store_path() -> Path:
-    try:
-        from .config import DATA_DIR  # lazy: config never imports this
-        return Path(DATA_DIR) / STORE_NAME
-    except Exception:  # noqa: BLE001
-        from .config import ROOT
-        return Path(ROOT) / STORE_NAME
-
-
 def _read() -> dict:
-    try:
-        raw = json.loads(_store_path().read_text(encoding="utf-8"))
-        return raw if isinstance(raw, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    """A private copy of everything kept here, safe to change before `_write`."""
+    from . import store
+    return json.loads(json.dumps(store.items("odds")))
 
 
-def _write(store: dict) -> None:
-    path = _store_path()
+def _write(mapping: dict) -> None:
+    from . import store
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(store, indent=1), encoding="utf-8")
-    except OSError:
+        store.replace("odds", mapping)
+    except store.StoreError:
         pass
 
 
-def stamp() -> tuple[float, int] | None:
-    """Changes whenever the store does - for caches that depend on the lines."""
-    try:
-        info = _store_path().stat()
-    except OSError:
-        return None
-    return (info.st_mtime, info.st_size)
+def stamp() -> tuple:
+    """Changes whenever the lines do - for caches that depend on them."""
+    from . import store
+    return store.stamp("odds")
 
 
 # ---- the API key ------------------------------------------------------------
@@ -229,7 +213,6 @@ class Update:
     remaining: int | None = None
 
     def summary(self) -> str:
-        from .predictions import display_team
         if not self.matched:
             return (f"No week {self.week} lines on the board yet - books usually "
                     "post the next week's games on Sunday night.")

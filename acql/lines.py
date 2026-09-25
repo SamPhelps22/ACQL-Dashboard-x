@@ -13,17 +13,17 @@ Game. Nothing here depends on how the rest of the sheet was parsed.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from .config import ROOT
-from .models import Game, Season, same_team
+from .models import Game, Season
 
 LINE_ROW = 8
 FIRST_GAME_COL = 6        # column F holds game 1
 GAME_COLUMNS = 16         # F..U
+#: Where older versions kept typed spreads; read in once by store.py.
 SPREADS_FILE = ROOT / "acql-spreads.json"
 
 # "(phi by 8)", "(TB by 9.5)", "(kc -7)" - an abbreviation, then the points.
@@ -164,11 +164,10 @@ def _game_key(game: Game) -> str:
 
 
 def load_spreads(week: int, games: list[Game]) -> dict[int, Spread]:
-    try:
-        raw = json.loads(SPREADS_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    from . import store
+    saved = store.get("spreads", str(week), {})
+    if not isinstance(saved, dict):
         return {}
-    saved = raw.get(str(week), {}) if isinstance(raw, dict) else {}
     out = {}
     for game in games:
         entry = saved.get(str(game.index))
@@ -184,13 +183,8 @@ def load_spreads(week: int, games: list[Game]) -> dict[int, Spread]:
 
 def save_spread(week: int, game: Game, spread: Spread | None) -> None:
     """Store or clear one game's spread, leaving every other entry alone."""
-    try:
-        raw = json.loads(SPREADS_FILE.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            raw = {}
-    except (OSError, ValueError):
-        raw = {}
-    week_entries = raw.setdefault(str(week), {})
+    from . import store
+    week_entries = dict(store.get("spreads", str(week), {}) or {})
     if spread is None:
         week_entries.pop(str(game.index), None)
     else:
@@ -198,8 +192,11 @@ def save_spread(week: int, game: Game, spread: Spread | None) -> None:
             "match": _game_key(game), "favourite": spread.favourite, "points": spread.points,
         }
     try:
-        SPREADS_FILE.write_text(json.dumps(raw, indent=2), encoding="utf-8")
-    except OSError:
+        if week_entries:
+            store.put("spreads", str(week), week_entries)
+        else:
+            store.delete("spreads", str(week))
+    except store.StoreError:
         pass
 
 
