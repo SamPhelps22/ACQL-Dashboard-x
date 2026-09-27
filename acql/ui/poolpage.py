@@ -199,6 +199,52 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
     return out
 
 
+def _live(season: Season, latest: int) -> dict | None:
+    """The week being played: its games, the pool's lines and everyone's
+    picks, so the page can follow the games live. From the commissioner's
+    pick sheet, which goes out once picks are in; None until there is one."""
+    from .. import picks as pick_sheets
+    from ..predictions import team_code
+    ahead = sorted(n for n in season.weeks if n > latest)
+    number = ahead[0] if ahead else latest + 1
+    sheet = pick_sheets.load(number)
+    if sheet is None or not sheet.games:
+        return None
+    week = season.weeks.get(number)
+    slate = []
+    if week is not None and week.games:
+        for game in sorted(week.games, key=lambda g: g.index):
+            line = getattr(game, "line", None)
+            fav = getattr(game, "line_favourite", "") or ""
+            slate.append((game.away, game.home, line if line is not None and fav else None, fav))
+    else:
+        for game in sheet.games:
+            slate.append((game.away, game.home, None, ""))
+    by_name = {p.display.casefold(): p.display for p in season.players.values()}
+
+    def who(name: str) -> str:
+        return by_name.get(" ".join(str(name).split()).casefold(), str(name).strip())
+
+    games, columns = [], []
+    for away, home, line, fav in slate:
+        games.append({
+            "a": display_team(away), "h": display_team(home),
+            "ac": team_code(away), "hc": team_code(home),
+            "line": line, "fav": team_code(fav) if fav else "",
+        })
+        columns.append(sheet.game_for(away, home))
+    coaches = []
+    for coach in sheet.coaches:
+        coaches.append({
+            "name": who(coach),
+            "picks": [team_code(col.picks.get(coach, "")) if col else "" for col in columns],
+            "bl": [team_code(t) for t in sheet.losers.get(coach, []) if team_code(t)],
+            "sui": team_code(sheet.suicide.get(coach, "")),
+        })
+    coaches.sort(key=lambda c: c["name"].casefold())
+    return {"week": number, "games": games, "coaches": coaches}
+
+
 def snapshot(season: Season, *, generated: str | None = None) -> dict:
     """Everything the pool page shows, worked out from the season."""
     weeks = finished_weeks(season)
@@ -261,7 +307,12 @@ def snapshot(season: Season, *, generated: str | None = None) -> dict:
     players.sort(key=lambda r: (r["place"] if r["place"] is not None else 999, -r["wins"],
                                 r["name"].casefold()))
 
+    try:
+        live = _live(season, latest) if latest else None
+    except Exception:  # noqa: BLE001 - the finished weeks go up regardless
+        live = None
     return {
+        "live": live,
         "schema": SCHEMA,
         "title": getattr(season, "title", "") or "ACQL",
         "generated": generated or time.strftime("%Y-%m-%d %H:%M"),

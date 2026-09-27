@@ -293,6 +293,30 @@ tr.me td.stick-b { box-shadow: inset 3px 0 0 var(--gold), 1px 0 0 var(--rule); }
 .bar-cell { width: 40%; min-width: 80px; }
 .star { color: var(--gold); }
 
+/* ---- the week being played, live ---- */
+.live-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.live-status { color: var(--muted); font-size: 13px; }
+.live-status.bad { color: var(--bad); }
+.pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; vertical-align: middle; }
+@media (prefers-reduced-motion: no-preference) { .pulse { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { opacity: 0.25; } } }
+.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.game { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
+.game.in { border-color: var(--bad); }
+.game .row { display: flex; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
+.game .row.credit { font-weight: 700; }
+.game .row.credit .team::after { content: " ✓"; color: var(--good); }
+.game .when { color: var(--muted); font-size: 12px; }
+.game .when.in { color: var(--bad); font-weight: 600; }
+.game .meta { color: var(--muted); font-size: 12px; }
+td.pk { text-align: center; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--muted); }
+td.pk.ok { background: var(--field-soft); color: var(--good); }
+td.pk.no { color: var(--bad); text-decoration: line-through; opacity: 0.8; }
+td.pk.ok.live, td.pk.no.live { font-style: italic; }
+td.pk.no.live { text-decoration: none; }
+th.gk { text-align: center; font-size: 11px; }
+.sui-ok { color: var(--good); font-weight: 600; }
+.sui-no { color: var(--bad); font-weight: 600; }
+
 /* ---- side pools ---- */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
@@ -435,7 +459,9 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     return null;
   }
   function tabList() {
-    var t = [["standings", "Standings"], ["week", "The week"], ["pools", "Side pools"]];
+    var t = [["standings", "Standings"]];
+    if (DATA.live && DATA.live.games && DATA.live.games.length) t.push(["live", "Week " + DATA.live.week + " live"]);
+    t.push(["week", "The week"], ["pools", "Side pools"]);
     if (DATA.money) t.push(["money", "Money"]);
     return t;
   }
@@ -531,8 +557,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
       el("nav", { class: "tabs", role: "tablist", "aria-label": "Pool page" }, tabs.map(function (t) {
         return el("button", {
           role: "tab", id: "tab-" + t[0], type: "button", "aria-selected": state.tab === t[0] ? "true" : "false",
-          "aria-controls": "panel", onclick: function () { go(t[0]); }, text: t[1]
-        });
+          "aria-controls": "panel", onclick: function () { go(t[0]); }
+        }, t[0] === "live" ? [el("span", { class: "hide-narrow", text: "Week " + DATA.live.week + " " }), "live"] : [t[1]]);
       })),
       el("label", { class: "find" }, [el("span", { class: "label", text: "Find" }), pick])
     ]);
@@ -824,10 +850,186 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     render();
   }
 
+  // ---- the week being played, followed live --------------------------------------
+  // Scores come straight from ESPN's public scoreboard, fetched by the page
+  // itself every minute while games are on. The pool's own rules are applied
+  // to them here: a lined favourite must win by more than the line (a push
+  // goes to the underdog), and a Big Loser has to lose by 15 or more.
+  var SCORES = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
+  var ESPN_CODES = { wsh: "was", la: "lar", jac: "jax", lvr: "lv", oak: "lv", sd: "lac", stl: "lar" };
+  var live = { scores: {}, fetched: null, error: "", timer: null, busy: false };
+  function code(abbr) { var c = String(abbr || "").toLowerCase(); return ESPN_CODES[c] || c; }
+  function gameKey(a, b) { return [a, b].sort().join("@"); }
+  function fetchScores() {
+    var L = DATA.live;
+    if (!L || live.busy) return;
+    live.busy = true;
+    var year = String(DATA.generated || "").slice(0, 4);
+    var month = Number(String(DATA.generated || "").slice(5, 7));
+    if (month && month < 6) year = String(Number(year) - 1);
+    var url = SCORES + "?seasontype=2&week=" + L.week + "&dates=" + year + "&_=" + Date.now();
+    fetch(url, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("status " + r.status);
+      return r.json();
+    }).then(function (json) {
+      var got = {};
+      (json.events || []).forEach(function (ev) {
+        var comp = (ev.competitions || [])[0] || {};
+        var teams = {};
+        (comp.competitors || []).forEach(function (c) {
+          teams[c.homeAway] = { code: code(c.team && c.team.abbreviation), score: Number(c.score || 0) };
+        });
+        if (!teams.home || !teams.away) return;
+        var st = (comp.status || ev.status || {}).type || {};
+        got[gameKey(teams.home.code, teams.away.code)] = {
+          home: teams.home.code, away: teams.away.code,
+          hs: teams.home.score, as: teams.away.score,
+          state: st.state || "pre", detail: st.shortDetail || st.detail || ""
+        };
+      });
+      live.scores = got;
+      live.fetched = new Date();
+      live.error = "";
+    }).catch(function (e) {
+      live.error = "Live scores can’t be reached right now (" + (e && e.message ? e.message : "no connection") + "). The picks are still here; scores will fill in when it comes back.";
+    }).then(function () {
+      live.busy = false;
+      if (state.tab === "live" && !state.coach) render();
+      schedule();
+    });
+  }
+  function schedule() {
+    clearTimeout(live.timer);
+    var states = Object.keys(live.scores).map(function (k) { return live.scores[k].state; });
+    var done = states.length && states.every(function (st) { return st === "post"; });
+    if (state.tab === "live" && !done) live.timer = setTimeout(fetchScores, 60000);
+  }
+  // Who the pool credits in one game right now: "home", "away", or "" (level or not started).
+  function credited(g, sc) {
+    if (!sc || sc.state === "pre") return "";
+    var homeIsHome = sc.home === g.hc;
+    var hs = homeIsHome ? sc.hs : sc.as, as = homeIsHome ? sc.as : sc.hs;
+    if (g.line != null && g.fav) {
+      var need = Math.floor(g.line) + 1;
+      var favHome = g.fav === g.hc;
+      var favMargin = favHome ? hs - as : as - hs;
+      var favWins = favMargin >= need;
+      return favHome ? (favWins ? "home" : "away") : (favWins ? "away" : "home");
+    }
+    if (hs === as) return "";
+    return hs > as ? "home" : "away";
+  }
+  function liveTally() {
+    var L = DATA.live;
+    var games = L.games.map(function (g) {
+      var sc = live.scores[gameKey(g.hc, g.ac)] || null;
+      var side = credited(g, sc);
+      var homeIsHome = sc && sc.home === g.hc;
+      return { g: g, sc: sc, state: sc ? sc.state : "pre", credit: side === "home" ? g.hc : side === "away" ? g.ac : "",
+        hs: sc ? (homeIsHome ? sc.hs : sc.as) : null, as: sc ? (homeIsHome ? sc.as : sc.hs) : null };
+    });
+    function lostBy(team) {
+      for (var i = 0; i < games.length; i++) {
+        var x = games[i];
+        if (x.hs == null) continue;
+        if (x.g.hc === team) return { by: x.as - x.hs, state: x.state };
+        if (x.g.ac === team) return { by: x.hs - x.as, state: x.state };
+      }
+      return null;
+    }
+    var season = {};
+    DATA.players.forEach(function (p) { season[p.name] = p; });
+    var rows = L.coaches.map(function (c) {
+      var done = 0, now = 0, left = 0, bl = 0, blLive = 0;
+      c.picks.forEach(function (pick, i) {
+        var x = games[i];
+        if (!pick || !x) return;
+        if (x.state === "pre") { left++; return; }
+        if (x.credit === pick) { now++; if (x.state === "post") done++; }
+      });
+      c.bl.forEach(function (team) {
+        var r = lostBy(team);
+        if (r && r.by >= 15) { if (r.state === "post") bl++; else blLive++; }
+      });
+      var sui = "";
+      var p = season[c.name];
+      if (c.sui && p && p.suicide.alive) {
+        var gi = -1;
+        games.forEach(function (x, i) { if (x.g.hc === c.sui || x.g.ac === c.sui) gi = i; });
+        var x = games[gi];
+        sui = !x || x.state === "pre" ? "pending" : x.credit === c.sui ? (x.state === "post" ? "safe" : "ahead") : (x.state === "post" ? "out" : "behind");
+      }
+      return { c: c, now: now + bl + blLive, games: now, final: done + bl, left: left, bl: bl + blLive,
+        season: (p ? p.wins : 0) + now + bl + blLive, sui: sui, place: p ? p.place : null };
+    });
+    rows.sort(function (a, b) { return b.now - a.now || b.season - a.season || a.c.name.localeCompare(b.c.name); });
+    return { games: games, rows: rows };
+  }
+  function livePanel() {
+    var L = DATA.live;
+    if (!live.fetched && !live.error && !live.busy) fetchScores();
+    var t = liveTally();
+    var inPlay = t.games.filter(function (x) { return x.state === "in"; }).length;
+    var finals = t.games.filter(function (x) { return x.state === "post"; }).length;
+    var status = live.error ? el("span", { class: "live-status bad", text: live.error })
+      : el("span", { class: "live-status" }, [inPlay ? el("span", { class: "pulse" }) : null,
+          (inPlay ? inPlay + " on now · " : "") + finals + " of " + t.games.length + " final" +
+          (live.fetched ? " · scores at " + live.fetched.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ", refreshed every minute" : " · fetching scores…")]);
+    var cards = el("div", { class: "games" }, t.games.map(function (x) {
+      var g = x.g, sc = x.sc, share = { home: 0, away: 0 };
+      L.coaches.forEach(function (c, ci) { var pk = c.picks[L.games.indexOf(g)]; if (pk === g.hc) share.home++; else if (pk === g.ac) share.away++; });
+      function row(name, codeOf, score, n) {
+        return el("div", { class: "row" + (x.credit && x.credit === codeOf ? " credit" : "") }, [
+          el("span", { class: "team", text: name }), el("span", { class: "num", text: score == null ? n + " picked" : String(score) })]);
+      }
+      return el("div", { class: "game" + (x.state === "in" ? " in" : "") }, [
+        el("span", { class: "when" + (x.state === "in" ? " in" : ""), text: sc ? sc.detail : "Not started" }),
+        row(g.a, g.ac, x.state === "pre" ? null : x.as, share.away),
+        row(g.h, g.hc, x.state === "pre" ? null : x.hs, share.home),
+        el("span", { class: "meta", text: (g.line != null && g.fav ? "Pool line: " + (g.fav === g.hc ? g.h : g.a) + " by " + g.line + " · " : "") +
+          share.away + " on " + g.ac.toUpperCase() + ", " + share.home + " on " + g.hc.toUpperCase() })
+      ]);
+    }));
+    var head = [el("th", { class: "n", text: "#" }), el("th", { class: "stick-b", text: "Coach" }),
+      el("th", { class: "n", text: "Now" }), el("th", { class: "n hide-narrow", text: "Final" }),
+      el("th", { class: "n hide-narrow", text: "Left" }), el("th", { class: "n", text: "BL" }),
+      el("th", { class: "n", text: "Season" }), el("th", { text: "Suicide" })];
+    t.games.forEach(function (x) { head.push(el("th", { class: "gk", text: x.g.ac.toUpperCase() + " @ " + x.g.hc.toUpperCase() })); });
+    var body = t.rows.map(function (r, i) {
+      var place = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length;
+      var suiText = { pending: r.c.sui.toUpperCase(), safe: r.c.sui.toUpperCase() + " ✓", ahead: r.c.sui.toUpperCase() + " ahead",
+        behind: r.c.sui.toUpperCase() + " behind", out: r.c.sui.toUpperCase() + " ✗ out" }[r.sui] || "–";
+      var cells = [el("td", { class: "n place num", text: String(place) }),
+        el("td", { class: "coach stick-b" }, [who(r.c.name)]),
+        el("td", { class: "n total num", text: String(r.now) }),
+        el("td", { class: "n num hide-narrow", text: String(r.final) }),
+        el("td", { class: "n num hide-narrow", text: String(r.left) }),
+        el("td", { class: "n num", text: r.bl ? String(r.bl) : "–" }),
+        el("td", { class: "n num", text: String(r.season) }),
+        el("td", { class: r.sui === "safe" || r.sui === "ahead" ? "sui-ok" : r.sui === "out" || r.sui === "behind" ? "sui-no" : "", text: suiText })];
+      t.games.forEach(function (x, gi) {
+        var pick = r.c.picks[gi] || "";
+        var cls = "pk";
+        if (pick && x.state !== "pre") cls += (x.credit === pick ? " ok" : x.credit ? " no" : "") + (x.state === "in" ? " live" : "");
+        cells.push(el("td", { class: cls, text: pick ? pick.toUpperCase() : "·" }));
+      });
+      return el("tr", { class: isMe(r.c.name) ? "me" : null }, cells);
+    });
+    return el("div", { class: "panel", id: "panel", role: "tabpanel", "aria-labelledby": "tab-live" }, [
+      el("div", { class: "live-head" }, [el("h2", { text: "Week " + L.week + ", as it happens" }), status]),
+      el("p", { class: "note", text: "Now counts every pick that would be right if the scores stayed as they are, with the pool’s lines applied, plus Big Loser teams losing by 15 or more. Final counts only finished games. Season adds Now to each coach’s wins so far." }),
+      scroller(el("table", {}, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, body)])),
+      el("h3", { text: "The games" }),
+      cards,
+      el("div", { class: "owner" }, [el("button", { class: "btn", type: "button", text: "Refresh scores now", onclick: function () { fetchScores(); } })])
+    ]);
+  }
+
   // ---- putting it together ----------------------------------------------------------
   function go(tab) {
     state.tab = tab;
     state.coach = "";
+    if (tab === "live") { clearTimeout(live.timer); fetchScores(); } else clearTimeout(live.timer);
     try { history.replaceState(null, "", "#" + tab); } catch (e) { /* not allowed here */ }
     render();
     var t = document.getElementById("tab-" + tab);
@@ -848,7 +1050,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     app.appendChild(tabBar());
     var coach = state.coach ? DATA.players.filter(function (p) { return p.name === state.coach; })[0] : null;
     if (state.coach && !coach) state.coach = "";
-    app.appendChild(coach ? coachPanel(coach) : state.tab === "week" ? weekPanel() : state.tab === "pools" ? poolsPanel()
+    app.appendChild(coach ? coachPanel(coach) : state.tab === "live" ? livePanel() : state.tab === "week" ? weekPanel() : state.tab === "pools" ? poolsPanel()
       : state.tab === "money" ? moneyPanel() : standings());
     app.appendChild(el("footer", {}, [
       "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every figure comes from the pool’s own sheets, with the pool’s lines applied.",
