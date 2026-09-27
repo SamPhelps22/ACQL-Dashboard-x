@@ -165,11 +165,15 @@ def publish(window, season) -> str | None:
     try:
         from . import previewcard
         page = poolpage.page_html(season)
+        files = {}
         try:
-            picture = previewcard.render(poolpage.snapshot(season))
+            files[poolpage.PREVIEW] = previewcard.render(poolpage.snapshot(season))
         except Exception as exc:  # noqa: BLE001 - the page goes up without its preview
             write_log(f"preview card failed: {exc!r}\n{traceback.format_exc()}")
-            picture = None
+        try:
+            files.update(poolpage.app_files())
+        except Exception as exc:  # noqa: BLE001 - or without its home-screen icon
+            write_log(f"home-screen icon failed: {exc!r}\n{traceback.format_exc()}")
     except Exception as exc:  # noqa: BLE001
         write_log(f"pool page build failed: {exc!r}\n{traceback.format_exc()}")
         QMessageBox.warning(window, "Pool page", f"Couldn't build the page: {exc}")
@@ -179,7 +183,7 @@ def publish(window, season) -> str | None:
     QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
     try:
         url = webpublish.publish(settings, page, message=f"After week {week}",
-                                 files={poolpage.PREVIEW: picture} if picture else None)
+                                 files=files or None)
     except webpublish.WebPublishError as exc:
         QApplication.restoreOverrideCursor()
         window.statusBar().showMessage("The pool page wasn't published.")

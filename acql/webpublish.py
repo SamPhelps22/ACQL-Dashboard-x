@@ -11,6 +11,7 @@ Windows account, like the Gmail app password.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import urllib.error
 import urllib.request
@@ -124,6 +125,11 @@ def _explain(status: int, settings: WebSettings, doing: str) -> WebPublishError:
     return WebPublishError(f"GitHub said no while trying to {doing} ({status}). Try again in a minute.")
 
 
+def blob_sha(content: bytes) -> str:
+    """The id GitHub gives a file's contents, to tell an unchanged file."""
+    return hashlib.sha1(b"blob %d\0" % len(content) + content).hexdigest()
+
+
 def publish(settings: WebSettings, page: str, *, message: str = "Update the pool page",
             files: dict[str, bytes] | None = None, opener=None) -> str:
     """Upload `page` as index.html (and any `files` beside it), and make sure
@@ -154,6 +160,8 @@ def publish(settings: WebSettings, page: str, *, message: str = "Update the pool
     for name, content in uploads.items():
         status, current = _call(settings, "GET", f"{repo}/contents/{name}?ref={branch}", opener=opener)
         sha = current.get("sha") if status == 200 else None
+        if sha and sha == blob_sha(content):
+            continue                      # already there, byte for byte
         body = {
             "message": message,
             "content": base64.b64encode(content).decode("ascii"),
