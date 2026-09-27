@@ -24,6 +24,8 @@ from ..predictions import display_team
 from . import recap
 
 SCHEMA = 1
+#: What happened to the live week on the last snapshot - said when publishing.
+LIVE_NOTE = [""]
 FILE_PREFIX = "ACQL pool page"
 
 
@@ -207,8 +209,19 @@ def _live(season: Season, latest: int) -> dict | None:
     from ..predictions import team_code
     ahead = sorted(n for n in season.weeks if n > latest)
     number = ahead[0] if ahead else latest + 1
-    sheet = pick_sheets.load(number)
+    sheet = pick_sheets.load(number, every_season=True)
     if sheet is None or not sheet.games:
+        # Not stored yet: read it straight from the folder.
+        for path in pick_sheets.find_files(getattr(season, "workbook_path", None)):
+            try:
+                found = pick_sheets.read_file(path)
+            except Exception:  # noqa: BLE001 - another file, another week
+                continue
+            if found.week == number and found.games:
+                sheet = found
+                break
+    if sheet is None or not sheet.games:
+        LIVE_NOTE[0] = f"no pick sheet for week {number} found in your folders"
         return None
     week = season.weeks.get(number)
     slate = []
@@ -242,6 +255,7 @@ def _live(season: Season, latest: int) -> dict | None:
             "sui": team_code(sheet.suicide.get(coach, "")),
         })
     coaches.sort(key=lambda c: c["name"].casefold())
+    LIVE_NOTE[0] = f"week {number} live: {len(coaches)} coaches, {len(games)} games"
     return {"week": number, "games": games, "coaches": coaches}
 
 
@@ -307,10 +321,12 @@ def snapshot(season: Season, *, generated: str | None = None) -> dict:
     players.sort(key=lambda r: (r["place"] if r["place"] is not None else 999, -r["wins"],
                                 r["name"].casefold()))
 
+    LIVE_NOTE[0] = ""
     try:
         live = _live(season, latest) if latest else None
-    except Exception:  # noqa: BLE001 - the finished weeks go up regardless
+    except Exception as exc:  # noqa: BLE001 - the finished weeks go up regardless
         live = None
+        LIVE_NOTE[0] = f"the live week couldn't be built ({exc!r})"
     return {
         "live": live,
         "schema": SCHEMA,
@@ -331,9 +347,21 @@ def snapshot(season: Season, *, generated: str | None = None) -> dict:
     }
 
 
+def _clean(value):
+    """NaN and infinity have no JSON spelling; a stray one would stop the page."""
+    if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+        return None
+    if isinstance(value, dict):
+        return {k: _clean(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_clean(v) for v in value]
+    return value
+
+
 def to_json(data: dict) -> str:
     """JSON safe to put inside a <script> block (no "</" can end it early)."""
-    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    return json.dumps(_clean(data), ensure_ascii=False, separators=(",", ":"),
+                      allow_nan=False).replace("</", "<\\/")
 
 
 TEMPLATE = Path(__file__).with_name("pool_page.html")
