@@ -209,21 +209,38 @@ def _live(season: Season, latest: int) -> dict | None:
     from ..predictions import team_code
     ahead = sorted(n for n in season.weeks if n > latest)
     number = ahead[0] if ahead else latest + 1
+    week = season.weeks.get(number)
+    slate = {frozenset((team_code(g.home), team_code(g.away))) for g in (week.games if week else [])}
+
+    def fits(candidate) -> bool:
+        """A sheet from THIS season: most of its games are on this week's slate.
+        (The app also keeps other seasons' sheets, and a week number alone
+        can't tell last September's week 3 from this one.)"""
+        if candidate is None or not candidate.games:
+            return False
+        if not slate:
+            return True
+        theirs = {frozenset((team_code(g.home), team_code(g.away))) for g in candidate.games}
+        return len(theirs & slate) >= 0.6 * max(1, len(theirs))
+
     sheet = pick_sheets.load(number, every_season=True)
-    if sheet is None or not sheet.games:
-        # Not stored yet: read it straight from the folder.
+    problems = []
+    if not fits(sheet):
+        sheet = None
+        # Not stored (or only another season's): read it straight from the folder.
         for path in pick_sheets.find_files(getattr(season, "workbook_path", None)):
             try:
                 found = pick_sheets.read_file(path)
-            except Exception:  # noqa: BLE001 - another file, another week
+            except Exception as exc:  # noqa: BLE001 - say why, try the next
+                problems.append(f"{path.name}: {exc}")
                 continue
-            if found.week == number and found.games:
+            if found.week == number and fits(found):
                 sheet = found
                 break
-    if sheet is None or not sheet.games:
-        LIVE_NOTE[0] = f"no pick sheet for week {number} found in your folders"
+    if sheet is None:
+        LIVE_NOTE[0] = (f"no week {number} pick sheet for this season could be read"
+                        + (" - " + "; ".join(problems[:2]) if problems else ""))
         return None
-    week = season.weeks.get(number)
     slate = []
     if week is not None and week.games:
         for game in sorted(week.games, key=lambda g: g.index):
