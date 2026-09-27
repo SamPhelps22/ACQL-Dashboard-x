@@ -52,3 +52,7 @@
 [2026-09-25 11:30:42] slow: Every Game took 547 ms to refresh
 [2026-09-27 14:22:31] slow: Every Game took 974 ms to refresh
 [2026-09-27 14:22:37] slow: This Week took 556 ms to refresh
+[2026-09-27 14:38:01] slow: Results took 250 ms to refresh
+[2026-09-27 14:39:39] slow: Results took 302 ms to refresh
+[2026-09-27 14:40:23] slow: Results took 274 ms to refresh
+[2026-09-27 14:40:32] slow: Results took 275 ms to refresh
