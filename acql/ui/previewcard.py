@@ -70,9 +70,10 @@ def render(data: dict) -> bytes:
     text(end + 22, 52, year, 54, FIELD, "bold")
     through = data.get("through_week", "")
     text(WIDTH - 64, 64, f"AFTER WEEK {through}", 26, FIELD, "bold", ha="right")
-    text(66, 132, f"{data.get('entrants', len(players))} coaches · weekly pick'em, Big Loser and the suicide pool",
-         19, MUTED)
-    ax.plot([64, WIDTH - 64], [182, 182], color=RULE, linewidth=2)
+    fitted(66, 120, "ARM CHAIR QUARTERBACK LEAGUE", 20, WIDTH - 128, FIELD)
+    text(66, 153, f"{data.get('entrants', len(players))} coaches · weekly pick'em, Big Loser and the suicide pool",
+         16, MUTED)
+    ax.plot([64, WIDTH - 64], [190, 190], color=RULE, linewidth=2)
 
     # the week's winner, big
     if week:
@@ -108,4 +109,33 @@ def render(data: dict) -> bytes:
 
     out = io.BytesIO()
     fig.savefig(out, format="png", dpi=100, facecolor=GROUND)
+    return out.getvalue()
+
+
+ICON_GROUND = "#1d6a44"
+
+
+def icon(size: int = 512) -> bytes:
+    """The home-screen icon: "ACQL" on the pool's green, as a square PNG.
+
+    Full-bleed colour with the lettering inside the middle 60%, so phones
+    that cut icons into circles or rounded squares never clip it.
+    """
+    fig = Figure(figsize=(size / 100, size / 100), dpi=100)
+    FigureCanvasAgg(fig)
+    fig.patch.set_facecolor(ICON_GROUND)
+    ax = fig.add_axes((0, 0, 1, 1))
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    renderer = fig.canvas.get_renderer()
+    word = ax.text(0.5, 0.53, "ACQL", ha="center", va="center", color="#ffffff",
+                   fontweight="bold", fontsize=size * 0.22)
+    wide = word.get_window_extent(renderer).width
+    if wide > size * 0.6:
+        word.set_fontsize(size * 0.22 * size * 0.6 / wide)
+    # a short gold stripe under the word, like a yard line
+    ax.plot([0.36, 0.64], [0.37, 0.37], color=GOLD, linewidth=size * 0.028, solid_capstyle="round")
+    out = io.BytesIO()
+    fig.savefig(out, format="png", dpi=100, facecolor=ICON_GROUND)
     return out.getvalue()

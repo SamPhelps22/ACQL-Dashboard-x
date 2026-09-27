@@ -1,4 +1,4 @@
-<title>ACQL Pool</title>
+<title>ACQL · Arm Chair Quarterback League</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
@@ -112,6 +112,7 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 .brand h1 { font-size: 40px; line-height: 1; letter-spacing: 0.01em; }
 .brand h1 span { color: var(--field); }
 .brand p { margin: 0; color: var(--ink-2); }
+.brand p.league { font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--field); }
 .corner { display: grid; justify-items: end; gap: 8px; }
 .badge {
   display: inline-flex;
@@ -341,6 +342,42 @@ th.gk { text-align: center; font-size: 11px; }
 .grave-row .who mark { background: var(--gold-soft); color: var(--ink); font-weight: 600; border-radius: 3px; padding: 0 2px; }
 .card table td { padding: 5px 8px 5px 0; }
 .card table td.bar-cell { padding-right: 0; }
+.card table th { padding: 4px 8px 4px 0; }
+
+/* ---- the title race ---- */
+.race-sum { margin: 0; color: var(--ink-2); }
+td.pct { font-family: var(--display); font-weight: 700; font-size: 16px; }
+td.gone, span.gone { color: var(--muted); }
+
+/* ---- so close ---- */
+.close-one { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.close-one:last-of-type { border-bottom: 0; padding-bottom: 0; }
+.close-one .who { font-weight: 600; }
+.close-one ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
+
+/* ---- suicide board ---- */
+.sboard { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.scard { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; background: var(--surface); }
+.scard.me { border-color: var(--gold); background: var(--gold-soft); }
+.scard .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.scard .top .who-link { font-weight: 600; }
+.scard .small { font-size: 13px; color: var(--ink-2); }
+.scard .thin { color: var(--bad); font-weight: 600; }
+.scard details { font-size: 13px; }
+.scard summary { cursor: pointer; color: var(--muted); }
+.scard .chips { margin-top: 6px; gap: 4px; }
+.scard .chip { font-size: 12px; padding: 1px 7px; }
+.chip.strong { border-color: var(--field); font-weight: 600; }
+
+/* ---- head-to-head ---- */
+.vs { display: grid; grid-template-columns: minmax(0, 14em) auto minmax(0, 14em) auto; align-items: center; gap: 8px; }
+.vs select { border: 1px solid var(--rule); background: var(--surface); border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; font-weight: 600; }
+@media (max-width: 720px) { .vs { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; width: 100%; } }
+.vs .and { font-family: var(--display); font-weight: 700; color: var(--muted); }
+.split-row td { white-space: normal; min-width: 6em; }
+.split-row td.ok { color: var(--good); font-weight: 600; }
+.split-row td.no { color: var(--bad); }
+td.won-it { font-weight: 700; }
 
 /* ---- updating (only whoever can edit the page sees this) ---- */
 .update {
@@ -403,11 +440,11 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
   "use strict";
   var LIVE = JSON.parse(document.getElementById("pool-data").textContent);
   var DATA = LIVE;          // what's on screen: the live page, or the owner's preview
-  var TITLE = "ACQL Pool";
+  var TITLE = "ACQL · Arm Chair Quarterback League";
   var FONTS = "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap";
   var ME_KEY = "acql-pool-me";
   var app = document.getElementById("app");
-  var state = { tab: "standings", week: DATA.through_week, me: remembered(), coach: "" };
+  var state = { tab: "standings", week: DATA.through_week, me: remembered(), coach: "", a: "", b: "" };
   var updateBar = null;     // the owner's update controls, kept across redraws
 
   // ---- small helpers ------------------------------------------------------
@@ -467,8 +504,16 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     var t = [["standings", "Standings"]];
     if (DATA.live && DATA.live.games && DATA.live.games.length) t.push(["live", "Week " + DATA.live.week + " live"]);
     t.push(["week", "The week"], ["pools", "Side pools"]);
+    if (DATA.weeks.some(function (w) { return w.picks; })) t.push(["h2h", "Head-to-head"]);
     if (DATA.money) t.push(["money", "Money"]);
     return t;
+  }
+  function titleText(p) {
+    if (p.title == null) return "";
+    if (p.out_of_reach) return "out";
+    if (p.title >= 99.95) return "100%";
+    if (p.title < 1) return "<1%";
+    return Math.round(p.title) + "%";
   }
   function isMe(name) { return !!state.me && name === state.me; }
   function moveCell(move) {
@@ -508,6 +553,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     return el("header", { class: "masthead" }, [
       el("div", { class: "brand" }, [
         el("h1", {}, ["ACQL ", el("span", { text: String(seasonYear()) })]),
+        el("p", { class: "league", text: "Arm Chair Quarterback League" }),
         el("p", { text: DATA.entrants + " coaches · weekly pick’em, Big Loser and the suicide pool" })
       ]),
       el("div", { class: "corner" }, [
@@ -563,7 +609,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
         return el("button", {
           role: "tab", id: "tab-" + t[0], type: "button", "aria-selected": state.tab === t[0] ? "true" : "false",
           "aria-controls": "panel", onclick: function () { go(t[0]); }
-        }, t[0] === "live" ? [el("span", { class: "hide-narrow", text: "Week " + DATA.live.week + " " }), "live"] : [t[1]]);
+        }, t[0] === "live" ? [el("span", { class: "hide-narrow", text: "Week " + DATA.live.week + " " }), "live"]
+          : t[0] === "h2h" ? [el("span", { class: "hide-narrow", text: t[1] }), el("span", { class: "narrow-only", text: "H2H" })] : [t[1]]);
       })),
       el("label", { class: "find" }, [el("span", { class: "label", text: "Find" }), pick])
     ]);
@@ -575,7 +622,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     var avg = poolAverage();
     var head = [el("th", { class: "n stick-a", text: "#" }), el("th", { class: "stick-b", text: "Coach" }),
       el("th", { class: "n", text: "Wins" }), el("th", { class: "n", text: "Move" }),
-      el("th", { class: "n", text: "Big Loser" }), el("th", { text: "Suicide" })];
+      DATA.race ? el("th", { class: "n", text: "Title", title: "Chance of finishing the season on top" }) : null,
+      el("th", { class: "n", text: "Big Loser" }), el("th", { text: "Suicide" })].filter(Boolean);
     weeks.forEach(function (n) {
       head.push(el("th", { class: "n" + (n === DATA.through_week ? " latest" : ""), text: "Wk " + n }));
     });
@@ -590,8 +638,9 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
       var cells = [el("td", { class: "n place num stick-a", text: p.place != null ? String(p.place) : "" }),
         el("td", { class: "coach stick-b" }, [who(p.name)]),
         el("td", { class: "n total num", text: String(p.wins) }), moveCell(p.move),
+        DATA.race ? el("td", { class: "n num" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }) : null,
         el("td", { class: "n num", text: p.big_loser ? String(p.big_loser) : "–" }),
-        el("td", {}, [el("span", { class: "dot " + (s.alive ? "alive" : "out") }), s.alive ? "Still in" : (s.out ? "Out wk " + s.out : "–")])];
+        el("td", {}, [el("span", { class: "dot " + (s.alive ? "alive" : "out") }), s.alive ? "Still in" : (s.out ? "Out wk " + s.out : "–")])].filter(Boolean);
       weeks.forEach(function (n) {
         var v = p.weekly[String(n)];
         cells.push(el("td", { class: "n num" + (n === DATA.through_week ? " latest" : ""), text: v == null ? "" : String(v) }));
@@ -604,7 +653,58 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
         el("span", { class: "note" }, ["Wins include Big Loser points · Move is places since last week",
           el("span", { class: "narrow-only", text: " · swipe the table for each week" })])
       ]),
-      scroller(el("table", {}, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, rows)]))
+      scroller(el("table", {}, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, rows)])),
+      raceCard()
+    ]);
+  }
+
+  // ---- catch the leader: who's in range, and each coach's title chance ----------
+  function raceCard() {
+    var R = DATA.race;
+    if (!R || !DATA.players.length) return null;
+    var lead = DATA.players[0].wins;
+    var left = R.weeks_left;
+    var byChance = DATA.players.slice().sort(function (a, b) {
+      return (b.title || 0) - (a.title || 0) || b.wins - a.wins || a.name.localeCompare(b.name);
+    });
+    var shown = byChance.slice(0, 8);
+    var mine = DATA.players.filter(function (p) { return isMe(p.name); })[0];
+    if (mine && shown.indexOf(mine) < 0) shown.push(mine);
+    var top = Math.max.apply(null, shown.map(function (p) { return p.title || 0; }).concat([1]));
+    var close = DATA.players.filter(function (p) { return p.wins < lead && lead - p.wins <= 3; }).length;
+    var gone = DATA.players.filter(function (p) { return p.out_of_reach; }).length;
+    var leaders = DATA.players.filter(function (p) { return p.wins === lead; }).map(function (p) { return p.name; });
+    var summary = left
+      ? listNames(leaders, 2) + (leaders.length > 1 ? " share the lead" : " leads") + " with " + plural(lead, "win") + ", " + plural(left, "week") + " to go. " +
+        (close ? plural(close, "coach is", "coaches are") + " within 3 wins. " : "") +
+        (gone ? plural(gone, "coach", "coaches") + " can no longer catch the lead, even with perfect weeks." : "Nobody is out of it yet.")
+      : "The season is over: " + listNames(leaders, 2) + (leaders.length > 1 ? " share the title." : " wins the title.");
+    function perWeek(p) {
+      var back = lead - p.wins;
+      if (!back) return "leads";
+      if (!left || p.out_of_reach) return "–";
+      return "+" + (back / left).toFixed(1);
+    }
+    return el("div", { class: "card" }, [
+      el("div", { class: "section-head" }, [el("h3", { text: "The title race" }), el("span", { class: "label", text: plural(left, "week") + " left" })]),
+      el("p", { class: "race-sum", text: summary }),
+      el("table", {}, [
+        el("thead", {}, [el("tr", {}, [el("th", { text: "Coach" }), el("th", { class: "n", text: "Wins" }),
+          el("th", { class: "n", text: "Back" }), el("th", { class: "n", text: "Per wk" }),
+          el("th", { class: "n", text: "Title" }), el("th", { class: "bar-cell hide-narrow", text: "" })])]),
+        el("tbody", {}, shown.map(function (p) {
+          var back = lead - p.wins;
+          return el("tr", { class: isMe(p.name) ? "me" : null }, [
+            el("td", { class: "coach" }, [who(p.name)]),
+            el("td", { class: "n num", text: String(p.wins) }),
+            el("td", { class: "n num", text: back ? String(back) : "–" }),
+            el("td", { class: "n num", text: perWeek(p) }),
+            el("td", { class: "n pct num" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }),
+            el("td", { class: "bar-cell hide-narrow" }, [bar(p.title || 0, top)])
+          ]);
+        }))
+      ]),
+      el("p", { class: "note", text: "Per wk: how much a coach has to beat the leader by, every week left, to catch up. Title: the rest of the season played out 10,000 times, with every coach scoring like a typical week in the pool - so it comes from the standings alone, not from anyone’s picks." })
     ]);
   }
 
@@ -676,11 +776,39 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
       el("div", { class: "section-head" }, [el("h2", { text: "Week " + w.week }), picker]),
       el("p", { class: "note", text: bits.join(" · ") }),
       el("div", { class: "two" }, [awards, upsets]),
+      soCloseCard(w),
       el("h3", { text: "Scoreboard" }),
       scores,
       el("h3", { text: "Results" }),
       results
     ]);
+  }
+
+  // ---- so close: the one game that would have changed who won the week ----------
+  function soCloseCard(w) {
+    var sc = w.so_close;
+    if (!sc) return null;
+    var outcomes = sc.outcomes || [];
+    var MAX_GAMES = 4;
+    var kids = [el("div", { class: "section-head" }, [el("h3", { text: "So close" }),
+      el("span", { class: "label", text: "one game from winning week " + w.week })])];
+    if (!outcomes.length) {
+      kids.push(el("p", { class: "race-sum", text: sc.margin >= 2
+        ? listNames(w.winners) + " won by " + plural(sc.margin, "clear win") + " – no single game would have changed it."
+        : "No single game going the other way would have changed who won." }));
+    }
+    outcomes.forEach(function (o) {
+      var shared = o.who.length > 1;
+      var games = o.games.slice(0, MAX_GAMES).map(function (g) {
+        return el("li", { text: g.instead + " instead of " + g.was + " (" + g.matchup + ")" });
+      });
+      if (o.games.length > MAX_GAMES) games.push(el("li", { text: "or " + plural(o.games.length - MAX_GAMES, "other game") }));
+      var head = listNames(o.new) + (shared ? " would have shared it" + (o.who.length > o.new.length ? " with " + listNames(o.who.filter(function (n) { return o.new.indexOf(n) < 0; })) : "") : " would have won it") +
+        " with " + o.score + ", if the pool had credited " + (o.games.length > 1 ? "any one of:" : ":");
+      kids.push(el("div", { class: "close-one" }, [el("span", { class: "who", text: head }), el("ul", {}, games)]));
+    });
+    kids.push(el("p", { class: "note", text: "Pick’em points only: Big Loser points stay as they were." }));
+    return el("div", { class: "card" }, kids);
   }
 
   // ---- side pools --------------------------------------------------------------
@@ -738,7 +866,58 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
           bl.length > shown.length ? el("p", { class: "note", text: "and " + plural(bl.length - shown.length, "more coach", "more coaches") + " on the board" }) : null,
           el("p", { class: "note", text: "Three picks a week, a point each when the team loses by 15 or more." })
         ])
-      ])
+      ]),
+      suicideBoard()
+    ]);
+  }
+
+  // ---- the suicide board: what each coach still standing has left to use --------
+  var TOP_TEAMS = 10, THIN = 5;
+  function suicideBoard() {
+    var teams = DATA.teams || {};
+    var codes = Object.keys(teams);
+    var alive = DATA.players.filter(function (p) { return p.suicide.alive && p.suicide.used; });
+    if (!codes.length || !alive.length) return null;
+    var rank = DATA.team_rank || {};
+    var ranked = Object.keys(rank).length >= 28;
+    function strong(c) { return ranked && rank[c] <= TOP_TEAMS; }
+    var liveSui = {};
+    if (DATA.live && DATA.live.coaches) DATA.live.coaches.forEach(function (c) { if (c.sui) liveSui[c.name] = c.sui; });
+    var rows = alive.map(function (p) {
+      var used = p.suicide.used;
+      var left = codes.filter(function (c) { return used.indexOf(c) < 0; });
+      return { p: p, left: left, top: left.filter(strong).length };
+    }).sort(function (a, b) {
+      return (ranked ? a.top - b.top : 0) || a.left.length - b.left.length || a.p.name.localeCompare(b.p.name);
+    });
+    // which teams the whole pool has leaned on
+    var count = {};
+    DATA.players.forEach(function (p) { (p.suicide.used || []).forEach(function (c) { count[c] = (count[c] || 0) + 1; }); });
+    var popular = Object.keys(count).sort(function (a, b) { return count[b] - count[a] || teams[a].localeCompare(teams[b]); }).slice(0, 4);
+    var cards = rows.map(function (r) {
+      var p = r.p;
+      var weeks = Object.keys(p.suicide.picks).map(Number).sort(function (a, b) { return a - b; });
+      var usedText = p.suicide.used.map(function (c) { return c.toUpperCase(); }).join(" · ");
+      var usedFull = weeks.map(function (n) { return "Week " + n + ": " + p.suicide.picks[String(n)]; }).join("\n");
+      var now = liveSui[p.name];
+      return el("div", { class: "scard" + (isMe(p.name) ? " me" : "") }, [
+        el("div", { class: "top" }, [who(p.name), el("span", { class: "label", text: r.left.length + " left" })]),
+        el("span", { class: "small", title: usedFull, text: usedText ? "Used, week by week: " + usedText : "Nothing used yet" }),
+        ranked ? el("span", { class: "small" + (r.top <= THIN ? " thin" : "") },
+          [r.top + " of the top " + TOP_TEAMS + " left" + (r.top <= THIN ? " – running thin" : "")]) : null,
+        now && teams[now] ? el("span", { class: "small", text: "Week " + DATA.live.week + ": " + teams[now] }) : null,
+        el("details", {}, [el("summary", { text: "Teams left" }), el("div", { class: "chips" }, r.left.slice().sort(function (a, b) {
+          return teams[a].localeCompare(teams[b]);
+        }).map(function (c) { return el("span", { class: "chip" + (strong(c) ? " strong" : ""), text: teams[c] }); }))])
+      ]);
+    });
+    return el("div", { class: "card" }, [
+      el("div", { class: "section-head" }, [el("h3", { text: "Suicide board" }), el("span", { class: "label", text: "teams each survivor has left" })]),
+      popular.length ? el("p", { class: "race-sum", text: "Most used so far: " + popular.map(function (c) { return teams[c] + " (" + count[c] + ")"; }).join(", ") + "." }) : null,
+      el("div", { class: "sboard" }, cards),
+      el("p", { class: "note", text: "Each team can be used once a season." + (ranked
+        ? " Top " + TOP_TEAMS + " is the ten best teams by this season’s betting lines, shown in bold under Teams left; fewest left comes first."
+        : " Fewest teams left comes first.") })
     ]);
   }
 
@@ -763,6 +942,134 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
           ]);
         }))
       ]))
+    ]);
+  }
+
+  // ---- head-to-head: any two coaches, pick by pick ------------------------------
+  var VS_KEY = "acql-pool-vs";
+  function rememberedVs() { try { return localStorage.getItem(VS_KEY) || ""; } catch (e) { return ""; } }
+  function names() { return DATA.players.map(function (p) { return p.name; }); }
+  function pair() {
+    var all = names();
+    var a = all.indexOf(state.a) >= 0 ? state.a : (all.indexOf(state.me) >= 0 ? state.me : all[0]);
+    var b = all.indexOf(state.b) >= 0 ? state.b : rememberedVs();
+    if (all.indexOf(b) < 0 || b === a) b = all[0] !== a ? all[0] : all[1];
+    state.a = a;
+    state.b = b;
+    return [a, b];
+  }
+  function vsHash() { return "#vs=" + encodeURIComponent(state.a) + "&" + encodeURIComponent(state.b); }
+  function setPair(a, b) {
+    state.a = a;
+    state.b = b;
+    try { localStorage.setItem(VS_KEY, b); } catch (e) { /* this visit only */ }
+    try { history.replaceState(null, "", vsHash()); } catch (e) { /* not allowed here */ }
+    render();
+  }
+  function compare(a, b) {
+    var out = { weeks: [], agree: 0, both: 0, aSplit: 0, bSplit: 0, aWeeks: 0, bWeeks: 0, level: 0 };
+    DATA.weeks.slice().sort(function (x, y) { return x.week - y.week; }).forEach(function (w) {
+      var pa = w.picks && w.picks[a], pb = w.picks && w.picks[b];
+      var sa = null, sb = null;
+      w.scores.forEach(function (s) { if (s.name === a) sa = s.total; if (s.name === b) sb = s.total; });
+      var row = { week: w.week, a: sa, b: sb, splits: [], aRight: 0, bRight: 0 };
+      if (pa && pb) {
+        for (var j = 0; j < Math.min(pa.length, pb.length); j++) {
+          if (pa[j] === "-" || pb[j] === "-") continue;
+          out.both++;
+          if (pa[j] === pb[j]) { out.agree++; continue; }
+          var g = w.results[j] || {};
+          var aOk = pa[j] === "1";
+          row.splits.push({ game: g.matchup || "", aTeam: aOk ? g.winner : g.loser, bTeam: aOk ? g.loser : g.winner, aOk: aOk });
+          if (aOk) row.aRight++; else row.bRight++;
+        }
+        out.aSplit += row.aRight;
+        out.bSplit += row.bRight;
+      }
+      if (sa != null && sb != null) {
+        if (sa > sb) out.aWeeks++; else if (sb > sa) out.bWeeks++; else out.level++;
+      }
+      out.weeks.push(row);
+    });
+    return out;
+  }
+  function h2hPanel() {
+    var ab = pair(), a = ab[0], b = ab[1];
+    var pa = DATA.players.filter(function (p) { return p.name === a; })[0];
+    var pb = DATA.players.filter(function (p) { return p.name === b; })[0];
+    var all = names().slice().sort(function (x, y) { return x.localeCompare(y); });
+    function chooser(value, label, onpick) {
+      return el("select", { "aria-label": label, onchange: function (e) { onpick(e.target.value); } }, all.map(function (n) {
+        return el("option", { value: n, text: n, selected: n === value });
+      }));
+    }
+    var copy = el("button", { class: "linkish", type: "button", text: "Copy a link to this matchup" });
+    copy.addEventListener("click", function () {
+      var link = location.href.split("#")[0] + vsHash();
+      var done = function () { copy.textContent = "Link copied"; };
+      try { navigator.clipboard.writeText(link).then(done, function () { copy.textContent = link; }); } catch (e) { copy.textContent = link; }
+    });
+    var head = el("div", { class: "section-head" }, [
+      el("div", { class: "vs" }, [
+        chooser(a, "First coach", function (v) { setPair(v, v === b ? a : b); }),
+        el("span", { class: "and", text: "vs" }),
+        chooser(b, "Second coach", function (v) { setPair(v === a ? b : a, v); }),
+        el("button", { class: "btn", type: "button", title: "Swap them", "aria-label": "Swap the two coaches", text: "⇄", onclick: function () { setPair(b, a); } })
+      ]),
+      copy
+    ]);
+    var c = compare(a, b);
+    function fact(label, value, detail) {
+      return el("div", { class: "fact" }, [el("span", { class: "label", text: label }),
+        el("span", { class: "value num", text: value }), el("span", { class: "detail", text: detail })]);
+    }
+    function ahead(x, y, what) {
+      return x === y ? "level" : (x > y ? a : b) + " by " + plural(Math.abs(x - y), what);
+    }
+    var agreePct = c.both ? Math.round(100 * c.agree / c.both) : 0;
+    var facts = el("div", { class: "facts4" }, [
+      fact("Season", pa.wins + "–" + pb.wins, ahead(pa.wins, pb.wins, "win")),
+      fact("Weeks won", c.aWeeks + "–" + c.bWeeks, c.level ? plural(c.level, "week") + " level" : "weeks with the higher score"),
+      fact("Same pick", agreePct + "%", c.agree + " of " + c.both + " games"),
+      fact("When they split", c.aSplit + "–" + c.bSplit, c.aSplit === c.bSplit ? "even" : (c.aSplit > c.bSplit ? a : b) + " called it right more")
+    ]);
+    var rows = c.weeks.slice().reverse().map(function (r) {
+      var cls = function (x, y) { return "n num" + (x != null && y != null && x > y ? " won-it" : ""); };
+      return el("tr", {}, [
+        el("td", { class: "n num", text: String(r.week) }),
+        el("td", { class: cls(r.a, r.b), text: r.a == null ? "–" : String(r.a) }),
+        el("td", { class: cls(r.b, r.a), text: r.b == null ? "–" : String(r.b) }),
+        el("td", { class: "n num", text: String(r.splits.length) }),
+        el("td", { class: "n num", text: r.aRight + "–" + r.bRight })
+      ]);
+    });
+    var weekList = c.weeks.filter(function (r) { return r.splits.length; });
+    var shownWeek = weekList.filter(function (r) { return r.week === state.week; })[0] || weekList[weekList.length - 1];
+    var picker = weekList.length > 1 ? el("div", { class: "weeks", role: "group", "aria-label": "Choose a week" }, [el("span", { class: "label", text: "Week" })].concat(weekList.map(function (r) {
+      return el("button", { type: "button", "aria-pressed": r === shownWeek ? "true" : "false", "aria-label": "Week " + r.week,
+        onclick: function () { state.week = r.week; render(); }, text: String(r.week) });
+    }))) : null;
+    var splits = shownWeek ? scroller(el("table", {}, [
+      el("thead", {}, [el("tr", {}, [el("th", { text: "Game" }), el("th", { text: a }), el("th", { text: b })])]),
+      el("tbody", {}, shownWeek.splits.map(function (s) {
+        return el("tr", { class: "split-row" }, [
+          el("td", { class: "game", text: s.game }),
+          el("td", { class: s.aOk ? "ok" : "no", text: s.aTeam + (s.aOk ? " ✓" : "") }),
+          el("td", { class: s.aOk ? "no" : "ok", text: s.bTeam + (s.aOk ? "" : " ✓") })
+        ]);
+      }))
+    ])) : null;
+    return el("div", { class: "panel", id: "panel", role: "tabpanel", "aria-labelledby": "tab-h2h" }, [
+      head,
+      facts,
+      scroller(el("table", {}, [
+        el("thead", {}, [el("tr", {}, [el("th", { class: "n", text: "Wk" }), el("th", { class: "n", text: a }),
+          el("th", { class: "n", text: b }), el("th", { class: "n", text: "Split", title: "Games where they picked different sides" }), el("th", { class: "n", text: "Right", title: "Who was right in those games" })])]),
+        el("tbody", {}, rows)
+      ])),
+      shownWeek ? el("div", { class: "section-head" }, [el("h3", { text: "Where they split in week " + shownWeek.week }), picker]) : el("p", { class: "note", text: a + " and " + b + " have picked the same side in every game so far." }),
+      splits,
+      el("p", { class: "note", text: "Only games already played. ✓ is the side the pool credited, with the pool’s lines applied. Scores include Big Loser points." })
     ]);
   }
 
@@ -839,6 +1146,12 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
       el("button", { class: "btn back", type: "button", text: "‹ Back to " + (back ? back[1].toLowerCase() : "standings"),
         onclick: function () { closeCoach(); } }),
       el("div", { class: "coach-head" }, [el("h2", { text: p.name }), el("p", { class: "coach-line note", text: line })]),
+      tabList().some(function (t) { return t[0] === "h2h"; }) ? el("div", { class: "owner" }, [el("button", { class: "btn", type: "button", text: "Head-to-head with…",
+        onclick: function () {
+          state.a = p.name;
+          if (state.b === p.name) state.b = "";
+          go("h2h");
+        } })]) : null,
       played ? el("div", { class: "facts4" }, [
         fact("Best week", best ? String(best.total) : "–", best ? "week " + best.week : ""),
         fact("Worst week", worst ? String(worst.total) : "–", worst ? "week " + worst.week : ""),
@@ -1246,7 +1559,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     state.tab = tab;
     state.coach = "";
     if (tab === "live") { clearTimeout(live.timer); fetchScores(); } else clearTimeout(live.timer);
-    try { history.replaceState(null, "", "#" + tab); } catch (e) { /* not allowed here */ }
+    if (tab === "h2h") pair();
+    try { history.replaceState(null, "", tab === "h2h" ? vsHash() : "#" + tab); } catch (e) { /* not allowed here */ }
     render();
     var t = document.getElementById("tab-" + tab);
     if (t) t.focus();
@@ -1271,12 +1585,20 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
     var coach = state.coach ? DATA.players.filter(function (p) { return p.name === state.coach; })[0] : null;
     if (state.coach && !coach) state.coach = "";
     app.appendChild(coach ? coachPanel(coach) : state.tab === "live" ? livePanel() : state.tab === "week" ? weekPanel() : state.tab === "pools" ? poolsPanel()
-      : state.tab === "money" ? moneyPanel() : standings());
+      : state.tab === "money" ? moneyPanel() : state.tab === "h2h" ? h2hPanel() : standings());
     app.appendChild(el("footer", {}, [
       "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every figure comes from the pool’s own sheets, with the pool’s lines applied.",
-      typeof ownerFooter === "function" ? ownerFooter() : null
+      typeof ownerFooter === "function" ? ownerFooter() : null,
+      homeScreenTip()
     ]));
     edges();
+  }
+  function homeScreenTip() {
+    if (!LIVE.hosted) return null;
+    var saved = false;
+    try { saved = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; } catch (e) { /* older browser */ }
+    if (saved) return null;
+    return el("span", { class: "narrow-only", text: "Keep this one tap away: on iPhone tap Share › Add to Home Screen; on Android tap ⋮ › Add to Home screen." });
   }
   window.addEventListener("resize", edges);
   var wanted = (location.hash || "").replace("#", "");
@@ -1284,6 +1606,12 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule)
   if (DATA.live && DATA.live.games && DATA.live.games.length) setTimeout(fetchScores, 0);
   if (wanted.indexOf("coach=") === 0) {
     try { state.coach = decodeURIComponent(wanted.slice(6)); } catch (e) { state.coach = ""; }
+  }
+  if (wanted.indexOf("vs=") === 0) {
+    // a shared matchup: #vs=First%20coach&Second%20coach
+    var both = wanted.slice(3).split("&");
+    try { state.a = decodeURIComponent(both[0] || ""); state.b = decodeURIComponent(both[1] || ""); } catch (e) { state.a = state.b = ""; }
+    if (tabList().some(function (t) { return t[0] === "h2h"; })) state.tab = "h2h";
   }
   render();
 
