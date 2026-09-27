@@ -205,7 +205,9 @@ def publish(window, season) -> str | None:
         mail.save()
 
     window.statusBar().showMessage(f"Pool page published: {url}")
-    box = _box(window, "Pool page published", f"Week {week} is on the pool's website:\n{url}",
+    note = poolpage.LIVE_NOTE[0]
+    box = _box(window, "Pool page published", f"Week {week} is on the pool's website:\n{url}"
+               + (f"\n\nLive tab: {note}" if note else ""),
                "Anyone with the link can open it - no sign-in. The first time, GitHub "
                "takes a minute or two before the link works; after that, updates show "
                "within a minute.")
