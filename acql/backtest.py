@@ -26,17 +26,17 @@ called 70% came in about 70% of the time.
 The pool's rules, as used
 -------------------------
   * a game with a favourite of 6.5 points or more carries a pool line,
-    about the size of the spread; the favourite has to win by more than it,
-    and a win by exactly the line goes to the underdog;
+    about the size of the spread; the favourite has to win by at least it -
+    a win by exactly the line goes to the favourite;
   * 34 other coaches, who take the favourite of a straight game the way
     pools usually do (analytics.crowd_on_favourite) and the favourite of a
-    lined game about 73% of the time (analytics.CHALK_PRIOR);
+    lined game about 75% of the time (analytics.CHALK_PRIOR);
   * the suicide pool plays by the same lines: a team in a lined game
     survives only if it is credited with the game.
 
 Run `python -m acql.backtest` from the project folder to replay it again
 (with a new season's scores added to the CSV, say); the app shows the
-stored results on Insights > The model.
+stored results on The Model > Report card and Details.
 """
 
 from __future__ import annotations
@@ -50,6 +50,8 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 from . import analytics
 
@@ -146,11 +148,19 @@ def rate(games: list[HistGame]) -> tuple[list[HistGame], dict[tuple[int, int], R
 
 # ---- the pool's rules ---------------------------------------------------------------
 def pool_line(home_margin: float) -> float | None:
-    """The line the commissioner would post on a game this size, or None."""
-    size = abs(home_margin)
-    if size < LINED_FROM:
+    """The line the commissioner would post on a game this size, or None.
+
+    His habit, measured on 33 lined games of his own sheets (2025 weeks
+    15-17, 2026 weeks 1-3) against the betting market: the next whole number
+    above the spread - a half-point spread rounded up (15 of 23), a
+    whole-number spread plus one (6 of 10). With a win by exactly the line
+    going to the favourite, that leaves the favourite needing to beat the
+    market by half a point to a point.
+    """
+    quoted = round(abs(home_margin) * 2) / 2          # spreads come in half points
+    if quoted < LINED_FROM:
         return None
-    return float(max(SMALLEST_LINE, math.floor(size + 0.5)))
+    return float(max(SMALLEST_LINE, math.floor(quoted) + 1))
 
 
 def _sd() -> float:
@@ -158,8 +168,8 @@ def _sd() -> float:
 
 
 def favourite_credited(fav_margin: float, line: float) -> float:
-    """Chance the pool favourite wins by more than the line, on a proxy margin."""
-    need = math.floor(line) + 1
+    """Chance the pool favourite wins by at least the line, on a proxy margin."""
+    need = analytics.line_need(line)
     if fav_margin >= 0:
         return analytics.cover_chance(fav_margin, need, _sd())
     return 1 - analytics.cover_chance(-fav_margin, -need + 1, _sd())
@@ -196,7 +206,7 @@ def credited_winner(g: HistGame) -> str | None:
         return g.home if g.margin > 0 else g.away
     fav, dog = (g.home, g.away) if g.rated > 0 else (g.away, g.home)
     fav_margin = g.margin if fav == g.home else -g.margin
-    return fav if fav_margin >= math.floor(line) + 1 else dog
+    return fav if fav_margin >= analytics.line_need(line) else dog
 
 
 def crowd_on(g: HistGame, side: str) -> float:
@@ -281,6 +291,113 @@ def replay_weeks(rated: list[HistGame], *, sims: int = 8000, progress=None) -> l
         ))
         if progress:
             progress(n + 1, len(by_week))
+    return out
+
+
+# ---- the money: the pool's own payout rule, Big Losers included ---------------------------
+@dataclass
+class MoneyWeek:
+    season: int
+    week: int
+    games: int
+    #: card name -> (dollars that week against the real results, the card's
+    #: own expectation before the games, points scored, points expected,
+    #: share of first place)
+    cards: dict[str, tuple[float, float, int, float, float]]
+    pool_right: float           # share of games a typical coach got right
+
+
+MONEY_CARDS = ("most wins", "built to finish first", "most money")
+
+
+def replay_money(rated: list[HistGame], *, sims: int = 6000, progress=None) -> list[MoneyWeek]:
+    """Every scored week, three cards, paid by the pool's rule.
+
+    The rule, from the workbook: every coach owes the week's best card a
+    dollar a game behind it, and the best card (shared when tied) collects.
+    Scores include three Big Losers. The 34 other coaches take each side with
+    the usual pool's share, and hold each Big Loser with the share a pool
+    like this one gives it (moneyplan.loser_shares).
+
+      most wins              the likeliest side of every game, and the three
+                             teams likeliest to be blown out
+      built to finish first  the planner's card (weekplan), same Big Losers
+      most money             the likeliest side of every game, with the Big
+                             Losers chosen for money (moneyplan)
+
+    Given the real results, the money a card made is exact: every other
+    coach's score has a known distribution. What the card expected is priced
+    on simulated weeks, before the games.
+    """
+    from . import moneyplan, weekplan
+
+    by_week: dict[tuple[int, int], list[HistGame]] = defaultdict(list)
+    for g in rated:
+        if g.season >= SCORED_FROM:
+            by_week[(g.season, g.week)].append(g)
+    sd = _sd()
+    out = []
+    for n, key in enumerate(sorted(by_week)):
+        games = by_week[key]
+        chances = {}
+        for g in games:
+            chances[g.home] = analytics.big_loser_chance(g.rated, sd)
+            chances[g.away] = analytics.big_loser_chance(-g.rated, sd)
+        held = moneyplan.loser_shares(chances)
+        planned, credited = [], []
+        for g in games:
+            p_home = credited_home(g.rated)
+            pick, other = (g.home, g.away) if p_home >= 0.5 else (g.away, g.home)
+            planned.append(moneyplan.Game(
+                f"{g.away}@{g.home}", pick, other, max(p_home, 1 - p_home), crowd_on(g, pick),
+                ((g.home, chances[g.home], held[g.home]), (g.away, chances[g.away], held[g.away])),
+            ))
+            credited.append(credited_winner(g))
+        blown = ({g.home for g in games if g.margin <= -(analytics.BIG_LOSER_MARGIN + 1)}
+                 | {g.away for g in games if g.margin >= analytics.BIG_LOSER_MARGIN + 1})
+        coins = [crowd_on(g, w) if w else 0.0 for g, w in zip(games, credited)]
+        coins += [held[t] for t in held if t in blown]
+        money_table, first_table = moneyplan.field_tables(np.array([coins]), OTHER_COACHES)
+
+        likeliest = tuple(sorted(chances, key=lambda t: (-chances[t], t))[:moneyplan.BIG_LOSER_PICKS])
+        first_plan = weekplan.plan_week(
+            [weekplan.Choice(x.label, x.pick, x.other, x.chance, x.crowd) for x in planned],
+            coaches=OTHER_COACHES, sims=sims)
+        money_plan = moneyplan.plan(planned, sims=sims, allow_flips=False)
+        cards = {
+            "most wins": ([x.pick for x in planned], likeliest),
+            "built to finish first": (first_plan.take if first_plan else [x.pick for x in planned], likeliest),
+            "most money": (list(money_plan.best.take), money_plan.best.losers),
+        }
+        results = {}
+        for name, (take, losers) in cards.items():
+            scored = (sum(1 for side, w in zip(take, credited) if side == w)
+                      + sum(1 for t in losers if t in blown))
+            priced = moneyplan.card_value(planned, take, list(losers), sims=sims)
+            results[name] = (float(money_table[0, scored]), priced.money, scored,
+                             priced.points, float(first_table[0, scored]))
+        out.append(MoneyWeek(key[0], key[1], len(games), results,
+                             statistics.fmean(c for c in coins[:len(games)])))
+        if progress:
+            progress(n + 1, len(by_week))
+    return out
+
+
+def money_summary(weeks: list[MoneyWeek]) -> dict:
+    base = [w.cards["most wins"][0] for w in weeks]
+    out = {"weeks": len(weeks), "pool_right": statistics.fmean(w.pool_right for w in weeks)}
+    for name in MONEY_CARDS:
+        real = [w.cards[name][0] for w in weeks]
+        gaps = [r - b for r, b in zip(real, base)]
+        out[name] = {
+            "money": statistics.fmean(real),
+            "expected": statistics.fmean(w.cards[name][1] for w in weeks),
+            "gain": statistics.fmean(gaps),
+            "gain_se": statistics.pstdev(gaps) / math.sqrt(len(gaps)),
+            "points": statistics.fmean(w.cards[name][2] for w in weeks),
+            "points_expected": statistics.fmean(w.cards[name][3] for w in weeks),
+            "first": statistics.fmean(w.cards[name][4] for w in weeks),
+        }
     return out
 
 
@@ -460,7 +577,8 @@ def replay_big_losers(rated: list[HistGame]) -> dict:
 
 
 # ---- the whole thing -------------------------------------------------------------------
-def run(path: str | Path = SCORES_FILE, *, sims: int = 8000, tune: bool = True, progress=None) -> dict:
+def run(path: str | Path = SCORES_FILE, *, sims: int = 8000, tune: bool = True, progress=None,
+        money_sims: int = 6000) -> dict:
     games = [g for g in load_games(path) if FIRST_SEASON <= g.season <= LAST_SEASON]
     rated, snapshots = rate(games)
     scored = [g for g in rated if g.season >= SCORED_FROM]
@@ -514,6 +632,7 @@ def run(path: str | Path = SCORES_FILE, *, sims: int = 8000, tune: bool = True, 
             "straight_up": su,
         },
         "week": week_summary,
+        "money": money_summary(replay_money(rated, sims=money_sims, progress=progress)),
         "suicide": suicide,
         "big_loser": replay_big_losers(rated),
     }
@@ -526,30 +645,51 @@ class Results:
 
     TABLE_HEADERS = ["Suicide pool rule", "Weeks its chances expected",
                      "Weeks it really lasted", "Lasted 4+ weeks"]
-    WEEK_HEADERS = ["Weekly card", "Finished first", "Its own estimate", "Games right"]
+    WEEK_HEADERS = ["Weekly card", "Points a week", "Finished first", "Money a week",
+                    "Against most wins"]
 
     def headline_html(self) -> str:
         w = self.raw["week"]
         lo, hi = self.raw["seasons"]
-        first, plain, fair = w["plan_first"], w["plain_first"], w["fair"]
-        gain, se = first - plain, w.get("gain_se", 0.0)
-        verdict = (
-            "a difference smaller than sixteen seasons can measure"
-            if abs(gain) < 2 * se else
-            ("a real gain" if gain > 0 else "a real loss")
-        )
-        text = (
-            f"<b>Winning the week.</b> Replayed over {w['weeks']} weeks from {lo} to {hi} "
-            f"against a pool that picks the way pools do, the card built to finish "
-            f"first did so <b>{first:.1%}</b> of the time and the card that takes "
-            f"every likelier side <b>{plain:.1%}</b> - {verdict} "
-            f"({gain * 100:+.1f} points, give or take {se * 100:.1f}). Both are well over a fair share of "
-            f"{fair:.1%}. Turning games against the pool costs about "
-            f"{(w['plain_right'] - w['plan_right']) * 16:.1f} right answers a week, "
-            f"which counts toward the season title; the extra weeks it wins are too "
-            f"few for history to confirm. So the turns are a choice, not a rule - "
-            f"This Week lets you play either card."
-        )
+        money = self.raw.get("money")
+        if money:
+            wins, first, cash = (money[name] for name in MONEY_CARDS)
+            text = (
+                f"<b>The weekly card.</b> Replayed over {money['weeks']} weeks from {lo} to "
+                f"{hi}, paid by this pool's rule (a dollar a game to the week's best card) "
+                f"against 34 coaches who pick the way pools do. The card with the "
+                f"likeliest side of every game and the three likeliest Big Losers scored "
+                f"<b>{wins['points']:.2f}</b> points a week - a typical coach gets "
+                f"{money['pool_right']:.0%} of games right to its {w['plain_right']:.0%} - "
+                f"and made <b>{_dollars(wins['money'])}</b> a week. "
+                f"Turning games against the pool (the card built to finish first) made "
+                f"{_dollars(first['gain'])} against it, give or take {first['gain_se']:.2f}: "
+                f"its expected gain of {_dollars(first['expected'] - wins['expected'])} did not "
+                f"show up in real results, and it cost {wins['points'] - first['points']:.2f} "
+                f"points a week. Choosing the Big Losers the pool isn't on made "
+                f"<b>{_dollars(cash['gain'])}</b> a week more, give or take "
+                f"{cash['gain_se']:.2f} - "
+                + ("a real gain" if cash['gain'] > 2 * cash['gain_se'] else "not yet a proven gain")
+                + " - for "
+                f"{max(0.0, wins['points'] - cash['points']):.2f} fewer points a week. "
+                f"The card aims for most wins unless This Week is told to aim for money."
+            )
+        else:
+            first, plain, fair = w["plan_first"], w["plain_first"], w["fair"]
+            gain, se = first - plain, w.get("gain_se", 0.0)
+            verdict = (
+                "a difference smaller than sixteen seasons can measure"
+                if abs(gain) < 2 * se else
+                ("a real gain" if gain > 0 else "a real loss")
+            )
+            text = (
+                f"<b>Winning the week.</b> Replayed over {w['weeks']} weeks from {lo} to {hi} "
+                f"against a pool that picks the way pools do, the card built to finish "
+                f"first did so <b>{first:.1%}</b> of the time and the card that takes "
+                f"every likelier side <b>{plain:.1%}</b> - {verdict} "
+                f"({gain * 100:+.1f} points, give or take {se * 100:.1f}). Both are well over a fair share of "
+                f"{fair:.1%}."
+            )
         s = self.raw["suicide"]
         now, before, outright = (s.get(r.name) for r in RULES)
         if now and before:
@@ -576,13 +716,25 @@ class Results:
 
     def week_rows(self) -> list[list]:
         w = self.raw["week"]
-        return [
-            ["Built to win the week", f"{w['plan_first']:.1%}", f"{w['plan_claimed']:.1%}",
-             f"{w['plan_right']:.1%}"],
-            ["Likeliest side of every game", f"{w['plain_first']:.1%}", f"{w['plain_claimed']:.1%}",
-             f"{w['plain_right']:.1%}"],
-            ["A fair share of the pool", f"{w['fair']:.1%}", "", ""],
-        ]
+        money = self.raw.get("money")
+        if not money:
+            return [
+                ["Built to win the week", "", f"{w['plan_first']:.1%}", "", ""],
+                ["Likeliest side of every game", "", f"{w['plain_first']:.1%}", "", ""],
+                ["A fair share of the pool", "", f"{w['fair']:.1%}", "", ""],
+            ]
+        names = {"most wins": "Most wins (the default)",
+                 "built to finish first": "Built to finish first",
+                 "most money": "Most money (Big Losers the pool isn't on)"}
+        rows = []
+        for name in MONEY_CARDS:
+            c = money[name]
+            rows.append([
+                names[name], f"{c['points']:.2f}", f"{c['first']:.1%}", _dollars(c["money"]),
+                "" if name == "most wins" else f"{_dollars(c['gain'])} ±{c['gain_se']:.2f}",
+            ])
+        rows.append(["A fair share of the pool", "", f"{w['fair']:.1%}", "$0.00", ""])
+        return rows
 
     def table_rows(self) -> list[list]:
         rows = []
@@ -604,12 +756,22 @@ class Results:
             f"{p['straight_up']:.0%} of winners straight up over {p['games']:,} "
             f"games (the closing line manages about 66%), and its chances are "
             f"widened to stay honest. Pool lines go on every game of 6.5 points or "
-            f"more, 34 other coaches pick the way pools usually do, and each "
-            f"suicide rule is played from weeks 1 to 4 of every season. \u201cIts "
-            f"own estimate\u201d is what the planner expected before the games; the "
-            f"real results came in a little kinder to both cards. Replayed "
-            f"{self.raw['generated']}."
+            f"more, 34 other coaches pick the way pools usually do and hold the "
+            f"obvious Big Losers the way this pool does (up to 70% of cards on the "
+            f"likeliest few), and each suicide rule is played from weeks 1 to 4 "
+            f"of every season. Money is the pool's rule: a dollar a game to the "
+            f"week's best card, Big Loser points counted. \u00b1 is the week-to-week "
+            f"spread of the difference - a gain under twice it is not proven. "
+            f"Replayed {self.raw['generated']}."
         )
+
+
+MINUS = "−"
+
+
+def _dollars(value: float) -> str:
+    sign = "+" if value >= 0 else MINUS
+    return f"{sign}${abs(value):.2f}"
 
 
 def stored_results(path: str | Path = RESULTS_FILE) -> Results | None:

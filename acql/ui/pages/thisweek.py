@@ -39,6 +39,11 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
+def _dollars(value: float) -> str:
+    sign = "+" if value >= 0 else "\u2212"
+    return f"{sign}${abs(value):.2f}"
+
+
 def _when(at: float) -> str:
     """"Thu 6:10 pm" - or "today 6:10 pm"."""
     stamp = time.localtime(at)
@@ -107,7 +112,7 @@ class OddsDialog(QDialog):
 
 class BriefingPage(Page):
     title = "This Week"
-    subtitle = "The card most likely to win the week, and the games that decide it"
+    subtitle = "Your card for the week, the games that decide it, and the side pools"
     icon = "\N{MEMO}"
 
     #: Asks the window to re-read everything - after new lines are stored.
@@ -123,16 +128,20 @@ class BriefingPage(Page):
         head = QHBoxLayout()
         head.addWidget(section(self.title, self.subtitle), 1)
         self.style_picker = QComboBox()
-        self.style_picker.addItem("Card: built to win the week", briefing.STYLE_WIN)
-        self.style_picker.addItem("Card: most games right", briefing.STYLE_STRAIGHT)
+        self.style_picker.addItem("Card: most wins (season title)", briefing.STYLE_STRAIGHT)
+        self.style_picker.addItem("Card: most money this week", briefing.STYLE_MONEY)
+        self.style_picker.addItem("Card: built to finish first", briefing.STYLE_WIN)
         self.style_picker.setToolTip(
-            "Built to win the week turns a game or two against the pool when "
-            "that makes finishing first likelier; most games right takes the "
-            "likelier side everywhere, which is what counts toward the season "
-            "title. Replayed over 2011-2025 the two won about as many weeks - "
-            "see Insights > The model."
+            "Most wins takes the likelier side of every game and the three "
+            "likeliest Big Losers - the most points toward the season title.\n"
+            "Most money keeps those sides but picks Big Losers the pool isn't on: "
+            "about $3.70 a week more in the 2011-2025 replay, for a tenth or two "
+            "of a point a week.\n"
+            "Built to finish first turns a game or two against the pool; in the "
+            "replay that cost points and made no more money.\n"
+            "See The Model > Report card."
         )
-        wanted = QSettings().value(self.STYLE_KEY, briefing.STYLE_WIN)
+        wanted = QSettings().value(self.STYLE_KEY, briefing.DEFAULT_STYLE)
         found = self.style_picker.findData(wanted)
         self.style_picker.setCurrentIndex(max(found, 0))
         self.style_picker.currentIndexChanged.connect(self._style_changed)
@@ -251,7 +260,7 @@ class BriefingPage(Page):
             return
 
         # The model's card is kept as it stands before the first kickoff, to
-        # be scored against yours once the week is graded (Insights).
+        # be scored against yours once the week is graded (The Model).
         cards.record_model(season, week, brief)
         self.copy_button.setEnabled(True)
         self.save_button.setEnabled(not cards.week_started(season, week))
@@ -262,10 +271,12 @@ class BriefingPage(Page):
         self._update_side(brief)
 
     # ---- which card --------------------------------------------------------
-    STYLE_KEY = "thisweek/style"
+    #: A new key in 2.9: the old one remembered "built to win the week",
+    #: which was the default then, and the default is now the most-wins card.
+    STYLE_KEY = "thisweek/card"
 
     def _style(self) -> str:
-        return self.style_picker.currentData() or briefing.STYLE_WIN
+        return self.style_picker.currentData() or briefing.DEFAULT_STYLE
 
     def _style_changed(self, _index: int = 0) -> None:
         QSettings().setValue(self.STYLE_KEY, self._style())
@@ -349,8 +360,8 @@ class BriefingPage(Page):
             f"{survivor.STRONG:.0%} or better; later weeks are estimated from the "
             f"{advice.rated_from} betting lines seen so far this season, so they "
             f"sharpen as the season goes. 'est.' means this week's line isn't in yet. "
-            f"The pool's lines apply: a lined favourite must win by more than "
-            f"the line and an underdog survives by covering, so big favourites "
+            f"The pool's lines apply: a lined favourite must win by at least "
+            f"the line and an underdog survives by keeping it closer, so big favourites "
             f"are close to coin flips. A line with '?' is a guess - the pool "
             f"hasn't posted it."
         )
@@ -411,9 +422,12 @@ class BriefingPage(Page):
         if plan is not None:
             odds_now = brief.win_odds or 0.0
             other = (
-                f"built to win the week: {plan.win_odds:.1%}" if brief.straight
+                f"built to finish first: {plan.win_odds:.1%}" if brief.straight
                 else f"the likeliest side of every game: {plan.plain_win_odds:.1%}"
             )
+            if brief.money is not None:
+                card = brief.money.best if brief.for_money else brief.money.plain
+                other += f"\nmoney this week: {_dollars(card.money)} expected"
             self.tile_pays.update_values(
                 f"{odds_now:.1%}",
                 f"first of {plan.coaches + 1} \u00b7 a fair share is "
@@ -539,15 +553,14 @@ class BriefingPage(Page):
                     f"the season title, and first {plan.plain_win_odds:.1%} of "
                     f"the time."
                     + (
-                        f" Built to win the week instead, it would take "
-                        f"{', '.join(c.other for c in would)} against the pool and "
-                        f"finish first {plan.win_odds:.1%} of the time, with about "
-                        f"{plan.expected_hits:.1f} right."
-                        if would else
-                        " The card built to win the week is the same card this week."
+                        f" Built to finish first instead, it would take "
+                        f"{', '.join(c.other for c in would)} against the pool "
+                        f"({plan.win_odds:.1%} to finish first, about "
+                        f"{plan.expected_hits:.1f} right) - but replayed over "
+                        f"2011-2025, turning games cost points and made no more money."
+                        if would else ""
                     )
-                    + " Replayed over 2011-2025 the two won about as many weeks, "
-                      "so it's your call."
+                    + self._money_sentence(brief)
                 )
             elif turned:
                 text = (
@@ -590,6 +603,28 @@ class BriefingPage(Page):
             note.setWordWrap(True)
             note.setTextFormat(Qt.TextFormat.RichText)
             self.card_box.addWidget(note)
+
+    @staticmethod
+    def _money_sentence(brief: briefing.Brief) -> str:
+        """What aiming for money changes this week, in a sentence."""
+        money = brief.money
+        if money is None:
+            return ""
+        if not money.swapped:
+            return (" Aiming for money would change nothing this week: the "
+                    "likeliest Big Losers are also the best for money.")
+        dropped = [t for t in money.plain.losers if t not in money.best.losers]
+        added = list(money.swapped)
+        names = lambda codes: ", ".join(display_team(c) for c in codes)  # noqa: E731
+        if brief.for_money:
+            return (f" The Big Losers are chosen for money: {names(added)} in place of "
+                    f"{names(dropped)}, which most of the pool will hold - "
+                    f"{_dollars(money.gain)} a week expected over the most-wins card, "
+                    f"for {money.plain.points - money.best.points:.2f} fewer points.")
+        return (f" Aiming for money would swap Big Losers {names(dropped)} for "
+                f"{names(added)}, which few of the pool will hold: "
+                f"{_dollars(money.gain)} a week expected, for "
+                f"{money.plain.points - money.best.points:.2f} fewer points.")
 
     def _flip_text(self, brief: briefing.Brief, choice: briefing.Choice) -> str:
         if choice.if_flipped is None or brief.win_odds is None:

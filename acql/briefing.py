@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field, replace
 
-from . import analytics, lines, picks, predictions, pricing, weekplan
+from . import analytics, lines, moneyplan, picks, predictions, pricing, weekplan
 from .models import Game, Season, same_team
 
 
@@ -90,10 +90,13 @@ class Brief:
     """The week, decided."""
 
     week: int
-    style: str = "win"
+    style: str = "straight"
     choices: list[Choice] = field(default_factory=list)
     plan: weekplan.Plan | None = None
     losers: list[analytics.BigLoser] = field(default_factory=list)
+    #: The card planned for the pool's money rule, whichever card is shown,
+    #: so the page can say what aiming for money would change and pay.
+    money: moneyplan.Plan | None = None
     suicide_note: str = ""
     priced: int = 0
     games: int = 0
@@ -101,7 +104,12 @@ class Brief:
 
     @property
     def straight(self) -> bool:
-        return self.style == STYLE_STRAIGHT
+        """The likeliest side of every game - the most-wins card and the money card both."""
+        return self.style in (STYLE_STRAIGHT, STYLE_MONEY)
+
+    @property
+    def for_money(self) -> bool:
+        return self.style == STYLE_MONEY
 
     @property
     def win_odds(self) -> float | None:
@@ -142,7 +150,14 @@ class Brief:
         if not self.choices:
             return f"Week {self.week}: nothing priced yet."
         out = [f"ACQL week {self.week}", ""]
-        if self.plan is not None and self.straight:
+        if self.money is not None and self.for_money:
+            out.append(
+                f"  Aimed at the pool's money: {_dollars(self.money.best.money)} a week "
+                f"expected, {_dollars(self.money.gain)} more than the most-wins card, "
+                f"for {self.money.plain.points - self.money.best.points:.2f} fewer points"
+            )
+            out.append("")
+        elif self.plan is not None and self.straight:
             out.append(
                 f"  The likeliest side of every game: {self.plan.plain_win_odds:.1%} "
                 f"to finish first of {self.plan.coaches + 1} (a fair share is "
@@ -183,17 +198,28 @@ class Brief:
         return "\n".join(out)
 
 
-#: The two cards This Week can hand in.
+#: The cards This Week can hand in.
+STYLE_STRAIGHT = "straight"  # most wins: the likeliest side of every game and
+                             # the three likeliest Big Losers (the default)
+STYLE_MONEY = "money"        # the likeliest sides, Big Losers chosen for the
+                             # pool's money rule (moneyplan)
 STYLE_WIN = "win"            # built to finish first (the planner's card)
-STYLE_STRAIGHT = "straight"  # the likeliest side of every game
+DEFAULT_STYLE = STYLE_STRAIGHT
 
 
-def build(season: Season, week: int, style: str = STYLE_WIN, *, use_sheet: bool = True) -> Brief:
+def _dollars(value: float) -> str:
+    sign = "+" if value >= 0 else "\u2212"
+    return f"{sign}${abs(value):.2f}"
+
+
+def build(season: Season, week: int, style: str = DEFAULT_STYLE, *, use_sheet: bool = True) -> Brief:
     """Everything worth saying about a week, worked out once.
 
-    `style` picks the card: the planner's, built to finish first, or the
-    likeliest side of every game. Both are worked out either way, so the
-    page can say what the other would do.
+    `style` picks the card: the most wins (the likeliest side of every game
+    and the likeliest Big Losers), the most money (the same sides, Big
+    Losers chosen for the pool's payout), or the planner's, built to finish
+    first. All are worked out either way, so the page can say what the
+    others would do.
 
     `use_sheet=False` ignores the week's pick sheet - the card as it would
     have been made before anyone's picks were known, which is the only fair
@@ -254,7 +280,7 @@ def build(season: Season, week: int, style: str = STYLE_WIN, *, use_sheet: bool 
             cards=cards,
             coaches=max(1, len(season.players) - 1),
         )
-        if plan is not None and style != STYLE_STRAIGHT:
+        if plan is not None and style == STYLE_WIN:
             choices = [
                 replace(
                     _turn(choice) if i in plan.flipped else choice,
@@ -276,17 +302,94 @@ def build(season: Season, week: int, style: str = STYLE_WIN, *, use_sheet: bool 
             if found is not None:
                 choices = [replace(c, if_flipped=found[1][i]) for i, c in enumerate(choices)]
 
+    candidates = pricing.big_loser_candidates(prices)
+    money = _money_plan(season, choices, candidates, sheet, games)
+    losers = candidates[:3]
+    if style == STYLE_MONEY and money is not None:
+        chosen = set(money.best.losers)
+        losers = [b for b in candidates if predictions.team_code(b.team) in chosen][:3] or losers
+
     return Brief(
         week=week,
         style=style,
         choices=choices,
         plan=plan,
-        losers=pricing.big_loser_candidates(prices)[:3],
+        losers=losers,
+        money=money,
         suicide_note=_suicide_note(season, week),
         priced=len(choices),
         games=len(games),
         counted_crowd=sheet is not None,
     )
+
+
+def _money_plan(season: Season, choices: list[Choice], candidates: list[analytics.BigLoser],
+                sheet, games: list[Game]) -> moneyplan.Plan | None:
+    """The card for the pool's money rule: the likeliest sides, Big Losers
+    chosen against where the pool will be (moneyplan). None without enough
+    of the week priced."""
+    if len(choices) < weekplan_minimum(choices) or not candidates:
+        return None
+    chance = {predictions.team_code(b.team): b.chance for b in candidates
+              if predictions.team_code(b.team)}
+    held = _loser_shares_from_sheet(sheet, chance) or moneyplan.loser_shares(chance)
+    planned = []
+    for c in choices:
+        pick, other = (c.other, c.pick) if c.turned else (c.pick, c.other)
+        p_pick = 1 - c.chance if c.turned else c.chance
+        crowd = c.crowd if c.crowd is not None else 0.7
+        crowd = 1 - crowd if c.turned else crowd
+        teams = tuple(
+            (code, chance[code], held.get(code, 0.0))
+            for code in (predictions.team_code(pick), predictions.team_code(other))
+            if code in chance
+        )
+        planned.append(moneyplan.Game(c.matchup, predictions.team_code(pick),
+                                      predictions.team_code(other), p_pick, crowd, teams))
+    field = _field_from_sheet(sheet, games, choices, planned)
+    try:
+        return moneyplan.plan(planned, allow_flips=False, field_cards=field,
+                              coaches=max(1, len(season.players) - 1))
+    except Exception:  # noqa: BLE001 - the card stands without the money plan
+        return None
+
+
+def _loser_shares_from_sheet(sheet, chance: dict[str, float]) -> dict[str, float]:
+    """Team -> share of the pool holding it, counted off the real pick sheet."""
+    if sheet is None or not getattr(sheet, "losers", None):
+        return {}
+    coaches = [c for c, teams in sheet.losers.items() if any(predictions.team_code(t) for t in teams)]
+    if not coaches:
+        return {}
+    counts = Counter(predictions.team_code(t) for c in coaches for t in sheet.losers[c]
+                     if predictions.team_code(t))
+    return {code: counts.get(code, 0) / len(coaches) for code in chance}
+
+
+def _field_from_sheet(sheet, games: list[Game], choices: list[Choice], planned) -> tuple | None:
+    """(sides, losers) for moneyplan from the real sheet, or None if it doesn't cover the week."""
+    if sheet is None:
+        return None
+    by_index = {g.index: g for g in games}
+    columns = []
+    for c, p in zip(choices, planned):
+        game = by_index.get(c.index)
+        found = sheet.game_for(game.away, game.home) if game is not None else None
+        if found is None:
+            return None
+        columns.append((found, p.pick))
+    coaches = [name for name in sheet.coaches
+               if all(predictions.team_code(col.picks.get(name, "")) for col, _ in columns)]
+    if not coaches:
+        return None
+    sides = [[0 if predictions.team_code(col.picks.get(name, "")) == pick else 1
+              for col, pick in columns] for name in coaches]
+    order = [t for p in planned for t, _, _ in p.losers]
+    held = []
+    for name in coaches:
+        mine = {predictions.team_code(t) for t in sheet.losers.get(name, [])}
+        held.append([1 if t in mine else 0 for t in order])
+    return sides, held
 
 
 def _turn(choice: Choice) -> Choice:

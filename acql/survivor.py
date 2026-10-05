@@ -13,8 +13,8 @@ What this knows:
                    otherwise a rating-based estimate
     the pool line  the suicide pool plays by the pool's lines: a team in a
                    lined game survives only if it is credited with it (a
-                   favourite must win by more than the line, an underdog
-                   survives by covering). This week's real pool lines are
+                   favourite must win by at least the line, an underdog
+                   survives by keeping it closer than that). This week's real pool lines are
                    used when the sheet has them; for later weeks, and for
                    this week before they are posted, a line is assumed on
                    any game with a favourite of LINED_FROM points or more
@@ -138,11 +138,13 @@ def ratings(games: list[tuple[str, str, float]]) -> dict[str, float]:
 
 
 def assumed_line(margin: float) -> float | None:
-    """The pool line a game with this favourite's margin would probably get."""
-    size = abs(margin)
-    if size < LINED_FROM:
+    """The pool line a game with this favourite's margin would probably get:
+    the next whole number above the spread, the commissioner's habit over
+    33 lined games (see backtest.pool_line)."""
+    quoted = round(abs(margin) * 2) / 2
+    if quoted < LINED_FROM:
         return None
-    return float(max(SMALLEST_LINE, math.floor(size + 0.5)))
+    return float(max(SMALLEST_LINE, math.floor(quoted) + 1))
 
 
 def survive_chance(margin: float, line: float | None, team_is_favourite: bool) -> float:

@@ -19,6 +19,15 @@ loaded that share has to be estimated from a curve.
 
 The week is read from the sheet's own title rather than the file name,
 because the files are numbered by something other than the week.
+
+The same link serves the sheet again once the week is scored, graded: each
+coach's total and regular wins in the first two columns, the name moved to
+the third, and every wrong pick deleted. Read as a raw sheet, its totals
+became the coaches' names and every winner looked like everyone's pick. So a
+graded sheet is recognised, and each coach's card is rebuilt from it - every
+pick is one of two teams, so a blank under a graded game means the coach had
+the other side. Its Big Losers are only half there (a correct one is written
+over with "1"), which is why the sheet says it was graded.
 """
 
 from __future__ import annotations
@@ -46,6 +55,7 @@ LOSER_HEADER = re.compile(r"LOSER\s*(\d)", re.IGNORECASE)
 SUICIDE_HEADER = re.compile(r"SUICIDE", re.IGNORECASE)
 # Rows at the bottom that summarise rather than pick.
 SUMMARY_ROW = re.compile(r"^\s*(picked|total|average|avg)\b", re.IGNORECASE)
+NUMBER = re.compile(r"^\s*-?\d+(\.\d+)?\s*$")
 
 
 class Unreadable(Exception):
@@ -126,6 +136,9 @@ class WeekPicks:
     losers: dict[str, list[str]] = field(default_factory=dict)    # coach -> 3 teams
     suicide: dict[str, str] = field(default_factory=dict)         # coach -> team
     source: str = ""
+    #: Read from the scored sheet: the sides are rebuilt, but a correct Big
+    #: Loser is only a "1", so the Big Loser shares are not to be trusted.
+    graded: bool = False
 
     @property
     def coaches(self) -> list[str]:
@@ -309,16 +322,23 @@ def read_file(path: str | Path) -> WeekPicks:
     picks: dict[int, dict[str, str]] = {col: {} for col, *_ in games}
     loser_picks: dict[str, list[str]] = {}
     suicide: dict[str, str] = {}
+    name_col = _name_column(rows, min(col for col, *_ in games))
+    graded = name_col > 1 and _scores_to_the_left(rows, name_col)
+    coaches: list[str] = []
     for number in range(FIRST_PLAYER_ROW, len(rows) + 1):
-        name = _cell(rows, number, 1)
-        if not name or SUMMARY_ROW.match(name):
+        name = _cell(rows, number, name_col)
+        if not name or SUMMARY_ROW.match(name) or NUMBER.match(name):
             continue
         # A coach is a row with picks on it. Separators, notes and whatever
         # else is typed down the left-hand column are not coaches, and
         # counting them makes every share in the pool come out too small.
+        # On a graded sheet a coach who got everything wrong has no picks
+        # left, but still has a score beside the name.
         chosen = {col: _cell(rows, number, col) for col, *_ in games}
-        if not any(team_code(team) for team in chosen.values()):
+        scored = graded and NUMBER.match(_cell(rows, number, 1) or "x")
+        if not any(team_code(team) for team in chosen.values()) and not scored:
             continue
+        coaches.append(name)
         for col, team in chosen.items():
             if team:
                 picks[col][name] = team
@@ -330,13 +350,63 @@ def read_file(path: str | Path) -> WeekPicks:
             if pick:
                 suicide[name] = pick
 
+    if graded:
+        for col, away, home, _note in games:
+            _ungrade(picks[col], away, home, coaches)
     return WeekPicks(
         week=week,
         games=[GamePicks(away, home, note, picks[col]) for col, away, home, note in games],
         losers=loser_picks,
         suicide=suicide,
         source=str(path),
+        graded=graded,
     )
+
+
+def _name_column(rows: list[list[str]], first_game: int) -> int:
+    """Which column holds the coaches' names: the one, left of the games,
+    with the most plain words in the coaches' rows."""
+    best, best_count = 1, -1
+    for col in range(1, max(2, first_game)):
+        count = sum(
+            1 for number in range(FIRST_PLAYER_ROW, len(rows) + 1)
+            for value in (_cell(rows, number, col),)
+            if value and not NUMBER.match(value) and not SUMMARY_ROW.match(value)
+            and not team_code(value)
+        )
+        if count > best_count:
+            best, best_count = col, count
+    return best
+
+
+def _scores_to_the_left(rows: list[list[str]], name_col: int) -> bool:
+    """A graded sheet keeps each coach's score in the columns before the name."""
+    numbers = total = 0
+    for number in range(FIRST_PLAYER_ROW, len(rows) + 1):
+        if not _cell(rows, number, name_col):
+            continue
+        total += 1
+        numbers += bool(NUMBER.match(_cell(rows, number, 1) or "x"))
+    return total > 0 and numbers >= 0.8 * total
+
+
+def _ungrade(picks: dict[str, str], away: str, home: str, coaches: list[str]) -> None:
+    """Put back the wrong picks a graded sheet deleted, for one game.
+
+    Only the side the pool credited is left standing, so every coach with
+    no pick here had the other side. A game still showing both sides has not
+    been graded (it hadn't been played) and is left as it is.
+    """
+    shown = Counter(team_code(team) for team in picks.values() if team_code(team))
+    if len(shown) != 1:
+        return
+    credited = next(iter(shown))
+    other = away if team_code(home) == credited else home if team_code(away) == credited else ""
+    if not other:
+        return
+    for name in coaches:
+        if not team_code(picks.get(name, "")):
+            picks[name] = other
 
 
 def summary(week: WeekPicks) -> str:
@@ -733,11 +803,21 @@ def save(week: WeekPicks) -> None:
             "games": [asdict(game) for game in week.games],
             "losers": week.losers,
             "suicide": week.suicide,
+            "graded": week.graded,
         })
     except store.StoreError:
         pass
     # A sheet saved now is this season's until the next load says otherwise.
     _OTHER_SEASON.discard(week.week)
+
+
+def imported_at(week: int) -> float | None:
+    """When the stored sheet for a week was read in (seconds since 1970)."""
+    entry = _read_store().get(str(week))
+    try:
+        return float(entry["imported"]) if isinstance(entry, dict) and entry.get("imported") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def load(week: int, *, every_season: bool = False) -> WeekPicks | None:
@@ -760,6 +840,7 @@ def load(week: int, *, every_season: bool = False) -> WeekPicks | None:
         losers={k: list(v) for k, v in (entry.get("losers") or {}).items()},
         suicide=dict(entry.get("suicide") or {}),
         source=str(entry.get("source", "")),
+        graded=bool(entry.get("graded", False)),
     )
 
 

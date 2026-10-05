@@ -1,4 +1,4 @@
-"""The sidebar's seven places, each holding one page or a few as tabs.
+"""The sidebar's eight places, each holding one page or a few as tabs.
 
 Eleven pages side by side had grown up one request at a time, and several
 answered the same question from different ends - Next Week and This Week
@@ -10,7 +10,8 @@ are four looks at one season. Grouped the way the week is actually lived:
     Results      how last week went, and the recap to send round
     Side Pools   Big Loser and the suicide pool
     Player       one coach's season
-    Insights     the pool's habits and luck, and the model's own record
+    Insights     the pool's habits and luck
+    The Model    how accurate it is, and whether to follow it
     Data         what is loaded, and entering results
 
 Each page is unchanged inside; a group only adds a row of tabs above them.

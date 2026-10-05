@@ -220,7 +220,7 @@ class OverviewPage(Page):
         """The pool's record on the games the commissioner puts a line on.
 
         The single most decisive number in this pool: the favourite has to
-        win by MORE than the line, and the pool takes the favourite anyway.
+        win by at least the line, and the pool takes the favourite anyway.
         """
         dogs, decided = analytics.underdog_record(season)
         if not decided:

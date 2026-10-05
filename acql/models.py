@@ -34,8 +34,8 @@ class Game:
     winner: str = ""                # blank until the result is entered
     is_big_loser: bool = False
     # The pool's line, from the "(phi by 8)" note under the game: the
-    # favourite must win by MORE than this, so a win by exactly the line
-    # goes to the underdog. None for a straight-up game.
+    # favourite must win by at least this - a win by exactly the line goes
+    # to the favourite (analytics.line_need). None for a straight-up game.
     line: float | None = None
     line_favourite: str = ""        # the favourite's name as the slate spells it
 

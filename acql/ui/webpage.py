@@ -1,25 +1,32 @@
 """Publishing the pool page from the dashboard: its own website, or the file
-for the Claude page. The window's "Pool page" button lands here."""
+for the Claude page. The window's "Pool page" button lands here, and so does
+the quiet update after new results or a new pick sheet load."""
 
 from __future__ import annotations
 
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
 )
 
-from .. import mailer, webpublish
+from .. import mailer, siteextras, webpublish
 from . import poolpage
 from .pages.base import write_log
 
@@ -135,6 +142,221 @@ def save_file(window, season) -> Path | None:
     return path
 
 
+def build_site(season) -> tuple[str, dict[str, bytes], dict]:
+    """The page, every file that goes beside it, and the snapshot it shows.
+    The link-preview picture and the home-screen icons go along when they
+    can be drawn; the page goes up without them when they can't."""
+    from . import previewcard
+    page, files, data = poolpage.site(season)
+    try:
+        files[poolpage.PREVIEW] = previewcard.render(data)
+    except Exception as exc:  # noqa: BLE001 - the page goes up without its preview
+        write_log(f"preview card failed: {exc!r}\n{traceback.format_exc()}")
+    try:
+        files.update(poolpage.app_files())
+    except Exception as exc:  # noqa: BLE001 - or without its home-screen icon
+        write_log(f"home-screen icon failed: {exc!r}\n{traceback.format_exc()}")
+    return page, files, data
+
+
+def published(data: dict, week: int, url: str) -> None:
+    """After any publish: the season goes in the History archive, and the
+    site is marked up to date so the quiet update knows to leave it."""
+    try:
+        siteextras.archive(data)
+        siteextras.mark_published(poolpage.site_fingerprint(data), week, url)
+    except Exception as exc:  # noqa: BLE001 - the page is up; the bookkeeping can wait
+        write_log(f"after publishing: {exc!r}\n{traceback.format_exc()}")
+
+
+class AutoPublisher(QThread):
+    """Brings the website up to date off the UI thread: builds the page, and
+    publishes only when what it shows has changed since the last publish."""
+
+    done = Signal(str)          # the site's link
+    failed = Signal(str)        # what went wrong, in words
+
+    def __init__(self, season, settings: webpublish.WebSettings) -> None:
+        super().__init__()
+        self.season = season
+        self.settings = settings
+
+    def run(self) -> None:
+        try:
+            weeks = poolpage.finished_weeks(self.season)
+            if not weeks:
+                return
+            page, files, data = poolpage.site(self.season)
+            fingerprint = poolpage.site_fingerprint(data)
+            if not siteextras.needs_publish(fingerprint):
+                return
+            from . import previewcard
+            try:
+                files[poolpage.PREVIEW] = previewcard.render(data)
+            except Exception as exc:  # noqa: BLE001
+                write_log(f"preview card failed: {exc!r}")
+            try:
+                files.update(poolpage.app_files())
+            except Exception as exc:  # noqa: BLE001
+                write_log(f"home-screen icon failed: {exc!r}")
+            week = max(weeks)
+            url = webpublish.publish(self.settings, page, message=f"After week {week} (by itself)",
+                                     files=files)
+            published(data, week, url)
+            self.done.emit(url)
+        except webpublish.WebPublishError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            write_log(f"automatic website update failed: {exc!r}\n{traceback.format_exc()}")
+            self.failed.emit(f"{exc}")
+
+
+def auto_publish(window, season) -> bool:
+    """After a load: update the website by itself, in the background - when
+    it is set up, the switch is on, and something it shows has changed.
+    True when an update started."""
+    if season is None or getattr(season, "is_empty", True) or not getattr(window, "auto_site", True):
+        return False
+    try:
+        settings = webpublish.WebSettings.load()
+        extras = siteextras.Extras.load()
+    except Exception as exc:  # noqa: BLE001
+        write_log(f"automatic website update skipped: {exc!r}")
+        return False
+    if not settings.ready or not extras.auto_publish:
+        return False
+    running = getattr(window, "_site_worker", None)
+    if running is not None and running.isRunning():
+        window._site_again = True          # once this one is done, look again
+        return False
+    worker = AutoPublisher(season, settings)
+    worker.done.connect(window.site_published)
+    worker.failed.connect(window.site_failed)
+    worker.finished.connect(window.site_worker_finished)
+    window._site_worker = worker
+    window._site_again = False
+    worker.start()
+    return True
+
+
+class ExtrasDialog(QDialog):
+    """What the website says beyond the standings: an announcement at the
+    top, the league's past champions, and whether it updates by itself."""
+
+    def __init__(self, extras: siteextras.Extras, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("What the website says")
+        self.setMinimumWidth(620)
+        self._extras = extras
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("<b>Announcement</b> - shows at the top of the website until you clear it."))
+        self.note = QPlainTextEdit()
+        self.note.setPlainText(extras.note)
+        self.note.setPlaceholderText("e.g. Week 6 picks are due Thursday by 6pm. Payments to Kit by week 8.")
+        self.note.setMaximumHeight(90)
+        layout.addWidget(self.note)
+        self.count = QLabel("")
+        self.count.setObjectName("Muted")
+        layout.addWidget(self.count)
+        self.note.textChanged.connect(self._show_count)
+        self._show_count()
+
+        layout.addWidget(QLabel("<b>Past champions</b> - for the History page. One season a row; "
+                                "a tie is two names with &amp;."))
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Season", "Champion", "Note"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setColumnWidth(0, 80)
+        self.table.setColumnWidth(1, 200)
+        self.table.setMinimumHeight(180)
+        for champ in extras.champions:
+            self._add_row(str(champ.year), champ.names, champ.note)
+        layout.addWidget(self.table)
+        row = QHBoxLayout()
+        add = QPushButton("Add a season")
+        add.clicked.connect(lambda: self._add_row("", "", ""))
+        remove = QPushButton("Remove the selected season")
+        remove.clicked.connect(self._remove_row)
+        row.addWidget(add)
+        row.addWidget(remove)
+        row.addStretch(1)
+        layout.addLayout(row)
+
+        self.auto = QCheckBox("Update the website by itself when new results or a pick sheet are loaded")
+        self.auto.setChecked(extras.auto_publish)
+        layout.addWidget(self.auto)
+        self.problems = QLabel("")
+        self.problems.setWordWrap(True)
+        self.problems.setStyleSheet("color:#d03b3b")
+        layout.addWidget(self.problems)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _show_count(self) -> None:
+        used = len(" ".join(self.note.toPlainText().split()))
+        self.count.setText(f"{used} of {siteextras.NOTE_MOST} characters"
+                           + (" - the rest is cut off" if used > siteextras.NOTE_MOST else ""))
+
+    def _add_row(self, year: str, names: str, note: str) -> None:
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        for c, text in enumerate((year, names, note)):
+            self.table.setItem(r, c, QTableWidgetItem(text))
+
+    def _remove_row(self) -> None:
+        r = self.table.currentRow()
+        if r >= 0:
+            self.table.removeRow(r)
+
+    def rows(self) -> list[tuple[str, str, str]]:
+        out = []
+        for r in range(self.table.rowCount()):
+            cells = [self.table.item(r, c) for c in range(3)]
+            out.append(tuple(cell.text() if cell is not None else "" for cell in cells))
+        return out
+
+    def _save(self) -> None:
+        extras = self._extras
+        problems = extras.set_champions(self.rows())
+        if problems:
+            self.problems.setText("Fix these first: " + "; ".join(problems) + ".")
+            return
+        extras.set_note(self.note.toPlainText())
+        extras.auto_publish = self.auto.isChecked()
+        self.accept()
+
+    def result_extras(self) -> siteextras.Extras:
+        return self._extras
+
+
+def edit_extras(window) -> bool:
+    """The "What the website says" dialog; True when something was saved."""
+    try:
+        extras = siteextras.Extras.load()
+    except Exception as exc:  # noqa: BLE001
+        QMessageBox.warning(window, "Pool page", f"Couldn't read the website's extras: {exc}")
+        return False
+    dialog = ExtrasDialog(extras, window)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return False
+    try:
+        dialog.result_extras().save()
+    except Exception as exc:  # noqa: BLE001
+        QMessageBox.warning(window, "Pool page", f"Couldn't save: {exc}")
+        return False
+    window.statusBar().showMessage("Saved. The website shows it after its next update.")
+    # Straight onto the site when it updates itself; the button does it otherwise.
+    if auto_publish(window, getattr(window, "season", None)):
+        window.statusBar().showMessage("Saved - updating the website…")
+    return True
+
+
 def publish(window, season) -> str | None:
     """The "Pool page" button: put this week on the pool's website."""
     if season is None or season.is_empty or not poolpage.finished_weeks(season):
@@ -162,18 +384,24 @@ def publish(window, season) -> str | None:
             return None
         settings = webpublish.WebSettings.load()
 
+    # The quiet background update may be uploading right now: two at once
+    # would trip over each other on GitHub.
+    worker = getattr(window, "_site_worker", None)
+    if worker is not None and worker.isRunning():
+        window.statusBar().showMessage("The website is updating itself - waiting for that to finish…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            finished = worker.wait(20_000)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not finished:
+            QMessageBox.information(
+                window, "Pool page",
+                "The website is updating itself right now. Give it a minute, then press Pool page again.")
+            return None
+
     try:
-        from . import previewcard
-        page = poolpage.page_html(season)
-        files = {}
-        try:
-            files[poolpage.PREVIEW] = previewcard.render(poolpage.snapshot(season))
-        except Exception as exc:  # noqa: BLE001 - the page goes up without its preview
-            write_log(f"preview card failed: {exc!r}\n{traceback.format_exc()}")
-        try:
-            files.update(poolpage.app_files())
-        except Exception as exc:  # noqa: BLE001 - or without its home-screen icon
-            write_log(f"home-screen icon failed: {exc!r}\n{traceback.format_exc()}")
+        page, files, data = build_site(season)
     except Exception as exc:  # noqa: BLE001
         write_log(f"pool page build failed: {exc!r}\n{traceback.format_exc()}")
         QMessageBox.warning(window, "Pool page", f"Couldn't build the page: {exc}")
@@ -184,6 +412,7 @@ def publish(window, season) -> str | None:
     try:
         url = webpublish.publish(settings, page, message=f"After week {week}",
                                  files=files or None)
+        published(data, week, url)
     except webpublish.WebPublishError as exc:
         QApplication.restoreOverrideCursor()
         window.statusBar().showMessage("The pool page wasn't published.")

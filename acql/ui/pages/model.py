@@ -25,9 +25,11 @@ MODEL_TITLE = "How the dashboard's own picks are doing"
 CALIBRATION_TITLE = "Are its chances honest?"
 TRACK_TITLE = "Following the model - its card against yours"
 TRACK_KEY = "insights/me"
-TRACK_HEADERS = ["Week", "Model's card", "Likeliest side", "You", "Week's best",
+TRACK_HEADERS = ["Week", "Model's card", "Built to finish first", "You", "Week's best",
                  "Model would have been"]
-BACKTEST_TITLE = "Over the long run - 2010 to 2025 under this pool's rules"
+CALLS_TITLE = "Your own calls - the games you went against its card"
+CALLS_HEADERS = ["Week", "Game", "You took", "Model's card (its chance)", "Going your own way"]
+BACKTEST_TITLE ="Over the long run - 2010 to 2025 under this pool's rules"
 #: A band needs this many picks before its colour says anything about it.
 CALIBRATION_MIN_PICKS = 20
 
@@ -42,7 +44,7 @@ def _ordinal(n: int) -> str:
 
 
 class ModelPage(Page):
-    title = "The Model"
+    title = "Model Details"
     subtitle = "How the dashboard's own picks have done, and whether to follow them"
     icon = "\N{BAR CHART}"
     needs_data = False
@@ -79,10 +81,11 @@ class ModelPage(Page):
         self.track_box = QVBoxLayout()
         self.track_card.body().addLayout(self.track_box)
         self.track_note = QLabel(
-            "The model's card is kept as it stood before the week's first "
-            "kickoff - the card This Week showed you - and scored on the 16 "
-            "regular games once results are in. \u201cRebuilt\u201d weeks came "
-            "before this was kept, and were re-made from the stored lines."
+            "The model's card is the likeliest side of every game as it stood "
+            "before the week's first kickoff - This Week's default card - scored "
+            "on the regular games once results are in; the card built to finish "
+            "first is shown beside it. \u201cRebuilt\u201d weeks came before cards "
+            "were kept, and were re-made from the stored lines."
         )
         self.track_note.setObjectName("Muted")
         self.track_note.setWordWrap(True)
@@ -167,7 +170,7 @@ class ModelPage(Page):
             rows.append([
                 f"{sc.week}" + ("  (rebuilt)" if sc.rebuilt else ""),
                 f"{sc.model} of {sc.games}",
-                sc.plain,
+                sc.planned,
                 sc.mine if sc.mine is not None else self.NO_VALUE,
                 sc.best,
                 ("tied " if sc.model_tied else "")
@@ -182,6 +185,45 @@ class ModelPage(Page):
             numeric_columns={1, 2, 3, 4}, tones=tones, bold_columns={1},
         )
         view, _ = make_table(model, stretch_column=5, row_height=28)
+        self.track_box.addWidget(view)
+        self._render_calls(season, key, name, len(scores))
+
+    def _render_calls(self, season, key, name: str, weeks: int) -> None:
+        """Your own calls: every game where your side wasn't the model's, and
+        whether going your own way paid."""
+        calls = cards.my_calls(season, key)
+        heading = QLabel(CALLS_TITLE)
+        heading.setObjectName("CardTitle")
+        self.track_box.addWidget(heading)
+        summary = QLabel(cards.call_record(calls).sentence(name, weeks))
+        summary.setWordWrap(True)
+        self.track_box.addWidget(summary)
+        if not calls:
+            return
+        # the latest week's story in a line, then every call, newest first
+        latest = max(c.week for c in calls)
+        this = cards.call_record([c for c in calls if c.week == latest])
+        sign = "+" if this.net > 0 else "−" if this.net < 0 else "±"
+        lines = QLabel(
+            f"Week {latest}: {_plural(this.calls, 'call')}, {this.paid} paid off "
+            f"({sign}{abs(this.net)} against the model's card)"
+        )
+        lines.setObjectName("Muted")
+        self.track_box.addWidget(lines)
+        rows, tones = [], {}
+        ordered = sorted(calls, key=lambda c: (-c.week, c.index))
+        for r, c in enumerate(ordered):
+            rows.append([
+                f"{c.week}" + ("  (rebuilt)" if c.rebuilt else ""),
+                c.game,
+                c.mine,
+                c.model + (f"  ({c.chance:.0%})" if c.chance is not None else ""),
+                "✓ paid off" if c.paid else "✗ cost a win",
+            ])
+            tones[(r, 4)] = "good" if c.paid else "bad"
+            tones[(r, 2)] = "good" if c.paid else ""
+        model = TableModel(CALLS_HEADERS, rows, palette=self.palette, tones=tones, bold_columns={2})
+        view, _ = make_table(model, stretch_column=1, row_height=28)
         self.track_box.addWidget(view)
 
     def _model_entries(self, season) -> list:

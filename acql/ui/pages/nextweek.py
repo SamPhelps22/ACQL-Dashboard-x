@@ -58,8 +58,8 @@ GRADED_ENOUGH = 40        # graded picks before the record says anything
 NO_SPREAD = "—"
 
 RULE = (
-    "On a lined game the favourite has to win by MORE than the line - a win by "
-    "exactly the line goes to the underdog. Chances come from how often NFL "
+    "On a lined game the favourite has to win by at least the line - a win by "
+    "exactly the line goes to the favourite. Chances come from how often NFL "
     "games really land on each margin, so 3, 7 and 10 count for more than the "
     "numbers either side. \"Spread\" starts from the predictions file's opening "
     "line, which is the number the commissioner sets his own against; "
@@ -121,13 +121,14 @@ BIG_LOSER_RULE = (
 )
 
 PLAN_RULE = (
-    "Picking the likelier side of every game gets the most games right and "
-    "lands you in the top five a third of the time - but it rarely wins the "
-    "week, because most of the pool holds the same card and a good week is "
-    "shared with them. Only first place is paid. This plays the week 20,000 "
-    "times against the other coaches' cards and looks for the card most "
-    "likely to finish first, which means taking a side that is less likely "
-    "but far less crowded wherever that gets you clear of the pack."
+    "Only the week's best card collects - everyone else owes it a dollar a "
+    "game behind - so being different from the pool can pay. This plays the "
+    "week 20,000 times against the other coaches' cards and shows the card "
+    "most likely to finish first, which takes a less likely but far less "
+    "crowded side wherever that gets clear of the pack. Replayed over "
+    "2011-2025 that trade cost points and made no more money, so This "
+    "Week's card takes the likelier side of every game unless you choose "
+    "otherwise; this shows what the planner would turn."
 )
 
 WHERE_TO_PUT_IT = (
@@ -1405,7 +1406,7 @@ class NextWeekPage(Page):
                 f"\u2022 {game.away} @ {game.home}: take {taking} over {guess.pick}"
                 + (f", who {(1 - share):.0%} of the pool has" if share is not None else "")
                 + f". Less likely - {1 - guess.chance:.0%} against {guess.chance:.0%} - "
-                f"but that is the point."
+                f"but less crowded."
             )
         field = "real" if plan.field_known else "simulated"
         self.plan_body.setText(
@@ -1413,8 +1414,9 @@ class NextWeekPage(Page):
             f"{plan.coaches} other {field} cards:\n" + "\n".join(said)
             + f"\nIt expects {plan.expected_hits:.1f} right rather than "
               f"{plan.plain_hits:.1f}, and makes the top five less often "
-              f"({plan.top_five:.0%} against {plan.plain_top_five:.0%}) - but "
-              f"top five pays nothing. First place is what it is after."
+              f"({plan.top_five:.0%} against {plan.plain_top_five:.0%}). In the "
+              f"2011-2025 replay that trade didn't pay, so This Week's card keeps "
+              f"the likelier side unless you pick the card built to finish first."
         )
 
     # ---- the headline numbers ----------------------------------------------

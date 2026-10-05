@@ -56,3 +56,66 @@
 [2026-09-27 14:39:39] slow: Results took 302 ms to refresh
 [2026-09-27 14:40:23] slow: Results took 274 ms to refresh
 [2026-09-27 14:40:32] slow: Results took 275 ms to refresh
+[2026-09-27 16:03:58] slow: Every Game took 719 ms to refresh
+[2026-09-27 16:04:28] slow: Every Game took 1100 ms to refresh
+[2026-09-27 16:04:48] slow: Every Game took 360 ms to refresh
+[2026-09-27 16:07:58] slow: Every Game took 538 ms to refresh
+[2026-09-27 18:46:58] slow: Every Game took 502 ms to refresh
+[2026-09-27 18:47:12] slow: Every Game took 351 ms to refresh
+[2026-09-27 18:48:04] slow: Every Game took 631 ms to refresh
+[2026-09-27 18:48:06] slow: Every Game took 392 ms to refresh
+[2026-09-28 08:04:26] slow: The Pool took 527 ms to refresh
+[2026-09-28 08:04:32] slow: Every Game took 403 ms to refresh
+[2026-09-28 08:06:41] slow: Every Game took 360 ms to refresh
+[2026-09-29 19:35:12] slow: Every Game took 964 ms to refresh
+[2026-09-29 19:38:54] slow: Every Game took 412 ms to refresh
+[2026-09-29 19:47:57] slow: Every Game took 457 ms to refresh
+[2026-09-29 19:49:33] slow: Every Game took 635 ms to refresh
+[2026-09-29 19:49:40] slow: Every Game took 320 ms to refresh
+[2026-09-29 19:49:44] slow: Every Game took 279 ms to refresh
+[2026-09-29 19:49:58] slow: Every Game took 321 ms to refresh
+[2026-09-29 19:50:48] slow: Every Game took 707 ms to refresh
+[2026-09-30 16:14:14] slow: The Model took 422 ms to refresh
+[2026-09-30 16:14:16] slow: Every Game took 446 ms to refresh
+[2026-09-30 16:14:38] slow: Every Game took 544 ms to refresh
+[2026-09-30 16:15:17] slow: Every Game took 429 ms to refresh
+[2026-09-30 16:21:43] slow: Every Game took 609 ms to refresh
+[2026-09-30 16:23:32] slow: Every Game took 2801 ms to refresh
+[2026-09-30 16:23:34] slow: Every Game took 1179 ms to refresh
+[2026-09-30 16:24:17] slow: Every Game took 1707 ms to refresh
+[2026-09-30 16:25:10] slow: Every Game took 1424 ms to refresh
+[2026-09-30 16:25:14] slow: Every Game took 1094 ms to refresh
+[2026-09-30 16:25:18] slow: Every Game took 823 ms to refresh
+[2026-09-30 16:26:59] slow: Every Game took 1569 ms to refresh
+[2026-09-30 16:27:01] slow: Every Game took 920 ms to refresh
+[2026-09-30 16:31:22] slow: Every Game took 894 ms to refresh
+[2026-09-30 16:32:37] slow: The Pool took 527 ms to refresh
+[2026-09-30 16:47:27] slow: Standings took 257 ms to refresh
+[2026-09-30 16:47:48] slow: Every Game took 396 ms to refresh
+[2026-09-30 16:47:49] slow: This Week took 304 ms to refresh
+[2026-09-30 17:16:21] slow: The Pool took 293 ms to refresh
+[2026-09-30 17:16:25] slow: Report Card took 779 ms to refresh
+[2026-09-30 17:17:31] slow: This Week took 1770 ms to refresh
+[2026-09-30 17:17:33] slow: Every Game took 645 ms to refresh
+[2026-10-01 21:15:47] slow: Every Game took 354 ms to refresh
+[2026-10-01 21:16:08] slow: This Week took 1605 ms to refresh
+[2026-10-01 21:16:10] slow: This Week took 1561 ms to refresh
+[2026-10-01 21:44:31] slow: Charts took 411 ms to refresh
+[2026-10-01 21:44:33] slow: Every Game took 383 ms to refresh
+[2026-10-02 07:56:31] slow: Data & Update took 259 ms to refresh
+[2026-10-02 07:56:53] slow: This Week took 2444 ms to refresh
+[2026-10-02 07:56:56] slow: Every Game took 557 ms to refresh
+[2026-10-02 07:58:01] slow: Every Game took 675 ms to refresh
+[2026-10-02 07:58:19] slow: Every Game took 449 ms to refresh
+[2026-10-02 20:40:05] slow: Every Game took 1364 ms to refresh
+[2026-10-04 16:12:05] slow: Every Game took 907 ms to refresh
+[2026-10-04 16:12:14] slow: Report Card took 324 ms to refresh
+[2026-10-04 16:13:09] slow: Report Card took 393 ms to refresh
+[2026-10-04 16:14:42] slow: Report Card took 260 ms to refresh
+[2026-10-04 17:53:27] slow: Report Card took 1780 ms to refresh
+[2026-10-04 17:57:31] slow: The Pool took 305 ms to refresh
+[2026-10-04 21:49:33] slow: The Pool took 423 ms to refresh
+[2026-10-04 21:49:35] slow: Report Card took 616 ms to refresh
+[2026-10-04 21:50:09] slow: Every Game took 319 ms to refresh
+[2026-10-04 21:51:08] slow: Model Details took 386 ms to refresh
+[2026-10-04 21:53:11] slow: Every Game took 331 ms to refresh

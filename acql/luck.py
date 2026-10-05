@@ -18,7 +18,6 @@ with half its lines missing still compares like with like.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from . import analytics
@@ -33,13 +32,13 @@ def _home_win(margin: float) -> float:
 
 
 def favourite_covers(fav_margin: float, line: float) -> float:
-    """Chance the pool's favourite wins by more than the pool's line.
+    """Chance the pool's favourite is credited: wins by at least the line.
 
     `fav_margin` is the market's margin for that favourite (negative when
     the market has it as the underdog). A win by exactly the line goes to
-    the underdog, so the favourite needs floor(line) + 1.
+    the favourite (analytics.line_need).
     """
-    need = math.floor(line) + 1
+    need = analytics.line_need(line)
     if fav_margin >= 0:
         return analytics.cover_chance(fav_margin, need)
     # The pool's favourite is the market's underdog: it must win by `need`

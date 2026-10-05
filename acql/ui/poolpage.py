@@ -14,11 +14,12 @@ the same code as the dashboard's own pages, so the two always agree.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
 
-from .. import analytics
+from .. import analytics, siteextras
 from ..models import Season, same_team
 from ..predictions import DISPLAY, display_team, team_code
 from . import recap
@@ -92,17 +93,65 @@ def _loser(game) -> str:
     return ""
 
 
+def _market(season: Season, number: int) -> dict[int, tuple[str, float]]:
+    """Game index -> (the betting favourite as the pages name it, points),
+    for the games of a week the dashboard has a betting line for: a spread
+    typed in on Next Week first, else the forecasts file or fetched odds.
+    Only ever asked of finished weeks, so it gives nothing away."""
+    week = season.weeks[number]
+    out: dict[int, tuple[str, float]] = {}
+    try:
+        from .. import lines as lines_
+        for index, spread in lines_.load_spreads(number, week.games).items():
+            game = next((g for g in week.games if g.index == index), None)
+            if game is not None and spread.points > 0:
+                fav = game.home if spread.favourite == "home" else game.away
+                out[index] = (display_team(fav), float(spread.points))
+    except Exception:  # noqa: BLE001 - the page goes up without the favourites
+        pass
+    try:
+        from .. import predictions as predictions_
+        forecasts, _ = predictions_.load(number)
+        priced = {}
+        for f in forecasts or []:
+            value = f.market if f.market is not None else f.opening
+            home, road = team_code(f.home), team_code(f.road)
+            if value is not None and home and road:
+                priced[frozenset((home, road))] = (home, float(value))
+        for game in week.games:
+            if game.index in out:
+                continue
+            hit = priced.get(frozenset((team_code(game.home), team_code(game.away))))
+            if not hit or not hit[1]:
+                continue
+            home_code, margin = hit                  # the home side's expected margin
+            home_favoured = (margin > 0) == (team_code(game.home) == home_code)
+            out[game.index] = (display_team(game.home if home_favoured else game.away), abs(margin))
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def _week_games(season: Season, number: int) -> list[dict]:
     week = season.weeks[number]
+    market = _market(season, number)
     out = []
     for game in sorted(week.games, key=lambda g: g.index):
         line = getattr(game, "line", None)
         fav = getattr(game, "line_favourite", "") or ""
+        lined = line is not None and bool(fav)
+        bet_fav, spread = market.get(game.index, ("", None))
         out.append({
             "matchup": game.label,
+            "home": display_team(game.home),
+            "away": display_team(game.away),
             "winner": display_team(game.winner) if game.played else "",
             "loser": _loser(game),
-            "line": f"{display_team(fav)} by {line:g}" if line is not None and fav else "",
+            "line": f"{display_team(fav)} by {line:g}" if lined else "",
+            "pool_line": float(line) if lined else None,
+            "pool_fav": display_team(fav) if lined else "",
+            "fav": bet_fav,
+            "spread": spread,
             "right": week.correct_count(game.index) if game.played else None,
         })
     return out
@@ -351,21 +400,24 @@ def _live(season: Season, latest: int) -> dict | None:
     week = season.weeks.get(number)
     slate = {frozenset((team_code(g.home), team_code(g.away))) for g in (week.games if week else [])}
 
-    def fits(candidate) -> bool:
+    def fits(candidate, imported: float | None = None) -> bool:
         """A sheet from THIS season: most of its games are on this week's slate.
         (The app also keeps other seasons' sheets, and a week number alone
-        can't tell last September's week 3 from this one.)"""
+        can't tell last September's week 3 from this one.) With no slate to
+        compare - the workbook hasn't got that far - only a sheet that
+        arrived lately can be for the week coming up."""
         if candidate is None or not candidate.games:
             return False
         if not slate:
-            return True
+            return _recent_sheet(candidate, imported)
         theirs = {frozenset((team_code(g.home), team_code(g.away))) for g in candidate.games}
         return len(theirs & slate) >= 0.6 * max(1, len(theirs))
 
-    sheet = pick_sheets.load(number, every_season=True)
-    problems = []
-    if not fits(sheet):
+    sheet = pick_sheets.load(number)
+    if not fits(sheet, pick_sheets.imported_at(number)):
         sheet = None
+    problems = []
+    if sheet is None:
         # Not stored (or only another season's): read it straight from the folder.
         for path in pick_sheets.find_files(getattr(season, "workbook_path", None)):
             try:
@@ -429,30 +481,98 @@ def _race(season: Season, players: list[dict], latest: int) -> dict:
     weeks mostly measures luck. "Out of reach" is plain arithmetic: even a
     perfect week every week left would not reach the leader's total.
     """
-    import numpy as np
     from ..config import WEEKS_IN_SEASON
     left = max(0, WEEKS_IN_SEASON - latest)
     lead = max((p["wins"] for p in players), default=0)
     perfect = max([len(w.games) for w in season.weeks.values()] + [int(season.max_regular_points or 0)]) \
         + int(season.max_big_loser_points or 0)
     try:
-        wins = np.array([float(p["wins"]) for p in players])
-        pool = np.array([float(v) for p in players for v in p["weekly"].values() if v is not None])
-        if left and pool.size:
-            rng = np.random.default_rng(analytics.SEED)
-            finals = np.empty((len(players), TITLE_SIMS))
-            for i in range(len(players)):
-                finals[i] = wins[i] + pool[rng.integers(pool.size, size=(TITLE_SIMS, left))].sum(axis=1)
-        else:
-            finals = wins[:, None]
-        title, _ = analytics._odds(finals)
-        odds = [round(100 * float(v), 1) for v in title]
+        odds = _title_odds([p["wins"] for p in players],
+                           [v for p in players for v in p["weekly"].values() if v is not None],
+                           left, TITLE_SIMS)
     except Exception:  # noqa: BLE001 - the page goes up without the odds
         odds = [None] * len(players)
     for p, chance in zip(players, odds):
         p["title"] = chance
         p["out_of_reach"] = p["wins"] + left * perfect < lead
     return {"weeks_left": left, "season_weeks": WEEKS_IN_SEASON, "perfect_week": perfect}
+
+
+def _title_odds(wins: list[float], pool: list[float], left: int, sims: int) -> list[float]:
+    """Each coach's % chance of the title: the weeks left played out `sims`
+    times, every coach scoring a week drawn at random from `pool`."""
+    import numpy as np
+    wins_ = np.array([float(w) for w in wins])
+    pool_ = np.array([float(v) for v in pool])
+    if left and pool_.size:
+        rng = np.random.default_rng(analytics.SEED)
+        finals = np.empty((len(wins_), sims))
+        for i in range(len(wins_)):
+            finals[i] = wins_[i] + pool_[rng.integers(pool_.size, size=(sims, left))].sum(axis=1)
+    else:
+        finals = wins_[:, None]
+    title, _ = analytics._odds(finals)
+    return [round(100 * float(v), 1) for v in title]
+
+
+#: Past weeks' title odds need less precision than this week's: a line on a chart.
+HISTORY_SIMS = 3_000
+
+
+def _title_by_week(players: list[dict], weeks: list[int]) -> dict:
+    """The title odds as they stood after each week shown, from the scores
+    known by then - the same reckoning as this week's. The last week is this
+    week's own figures, so the chart ends where the standings do."""
+    from ..config import WEEKS_IN_SEASON
+    out: dict[str, list[float | None]] = {p["name"]: [] for p in players}
+    shown = []
+    for number in weeks:
+        if number == max(weeks):
+            odds = [p.get("title") for p in players]
+        else:
+            done = [{w: v for w, v in p["weekly"].items() if int(w) <= number and v is not None}
+                    for p in players]
+            try:
+                odds = _title_odds([sum(d.values()) for d in done], [v for d in done for v in d.values()],
+                                   max(0, WEEKS_IN_SEASON - number), HISTORY_SIMS)
+            except Exception:  # noqa: BLE001 - that week is left out
+                continue
+        shown.append(number)
+        for p, chance in zip(players, odds):
+            out[p["name"]].append(chance)
+    return {"weeks": shown, "odds": out} if shown else {}
+
+
+def _money_weeks(season: Season, weeks: list[int], money: dict, money_from: str) -> dict[str, list[float]]:
+    """Each coach's money after each week, for the chart: week by week by the
+    pool's rule (the week's best card collects a dollar a game from everyone
+    behind it). Only when the pool's files give money at all - and, with the
+    standings export, only when the weeks add up to its totals."""
+    if not money_from:
+        return {}
+    out = {}
+    for key, person in season.players.items():
+        running, series = 0.0, []
+        for number in weeks:
+            week = season.weeks[number]
+            if key not in week.lines:
+                series.append(round(running, 2))
+                continue
+            owed = analytics.week_owed(week).get(key, 0.0)
+            if money_from == "workbook":
+                won = person.weekly_winnings.get(number) or 0.0
+                won = won if won > 0 else 0.0
+            else:
+                won = analytics.week_payouts(week).get(key, 0.0)
+            running += won - owed
+            series.append(round(running, 2))
+        out[key] = series
+    if money_from == "stats":
+        for key, series in out.items():
+            official = money.get(key, (None, None, None))[2]
+            if official is None or not series or abs(series[-1] - official) > 1.0:
+                return {}
+    return {season.players[key].display: series for key, series in out.items()}
 
 
 def _team_ranks(latest: int) -> dict[str, int]:
@@ -469,8 +589,34 @@ def _team_ranks(latest: int) -> dict[str, int]:
     return {c: i + 1 for i, c in enumerate(order)}
 
 
-def snapshot(season: Season, *, generated: str | None = None) -> dict:
-    """Everything the pool page shows, worked out from the season."""
+#: How old a pick sheet can be and still be for the week coming up, when
+#: the workbook has no slate for that week to check it against.
+RECENT_SHEET_DAYS = 21
+
+
+def _recent_sheet(sheet, imported: float | None = None, now: float | None = None) -> bool:
+    """Whether a pick sheet arrived lately: its file was saved in the last
+    three weeks (or, with no file to look at, it was read in then). Last
+    season's sheet for the same week is a year old."""
+    now = time.time() if now is None else now
+    when = None
+    source = str(getattr(sheet, "source", "") or "")
+    if source:
+        try:
+            path = Path(source)
+            if path.is_file():
+                when = path.stat().st_mtime
+        except (OSError, ValueError):
+            when = None
+    if when is None:
+        when = imported
+    return when is not None and now - when <= RECENT_SHEET_DAYS * 86400
+
+
+def snapshot(season: Season, *, generated: str | None = None, strict: bool = False) -> dict:
+    """Everything the pool page shows, worked out from the season. `strict`
+    (publishing) lets a store that can't be read stop the build rather than
+    put the site up without its announcement and past seasons."""
     weeks = finished_weeks(season)
     latest = max(weeks, default=0)
     # The standings the files give (places, wins, Big Loser points) are as
@@ -534,6 +680,14 @@ def snapshot(season: Season, *, generated: str | None = None) -> dict:
     players.sort(key=lambda r: (r["place"] if r["place"] is not None else 999, -r["wins"],
                                 r["name"].casefold()))
     race = _race(season, players, latest)
+    try:
+        title_by_week = _title_by_week(players, weeks) if weeks else {}
+    except Exception:  # noqa: BLE001 - the chart is left off, the page goes up
+        title_by_week = {}
+    try:
+        money_by_week = _money_weeks(season, weeks, money, money_from)
+    except Exception:  # noqa: BLE001
+        money_by_week = {}
 
     LIVE_NOTE[0] = ""
     try:
@@ -541,17 +695,30 @@ def snapshot(season: Season, *, generated: str | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001 - the finished weeks go up regardless
         live = None
         LIVE_NOTE[0] = f"the live week couldn't be built ({exc!r})"
+    stamp = generated or time.strftime("%Y-%m-%d %H:%M")
+    try:
+        extras = siteextras.Extras.load()
+        note = extras.page_note()
+        history = siteextras.page_history(siteextras.season_year(stamp), extras)
+    except Exception as exc:  # noqa: BLE001 - no store (a test, a broken backup): no extras
+        if strict:
+            raise RuntimeError(f"the announcement and past seasons couldn't be read ({exc})") from exc
+        note, history = None, {"champions": [], "seasons": []}
     return {
         "live": live,
         "schema": SCHEMA,
         "title": getattr(season, "title", "") or "ACQL",
-        "generated": generated or time.strftime("%Y-%m-%d %H:%M"),
+        "generated": stamp,
         "through_week": latest,
         "buy_in": _money(season.buy_in),
         "entrants": len(season.players),
         "money": money_from,               # "" when the files don't give it
         "players": players,
         "race": race,
+        "title_by_week": title_by_week,
+        "money_by_week": money_by_week,
+        "note": note,
+        "history": history,
         "teams": {code: display_team(code) for code in sorted(DISPLAY)},
         "team_rank": _team_ranks(latest),
         "weeks": [
@@ -587,7 +754,7 @@ SITE = "__SITE__"               # the website's address, filled in on upload
 PREVIEW = "preview.png"         # the link-preview picture, next to the page
 MANIFEST = "manifest.webmanifest"
 ICONS = {512: "icon-512.png", 192: "icon-192.png", 180: "apple-touch-icon.png"}
-THEME = "#1d6a44"
+THEME = "#0d1b2c"               # the on-air navy of the site's top bar
 
 
 def app_files() -> dict[str, bytes]:
@@ -598,11 +765,11 @@ def app_files() -> dict[str, bytes]:
     manifest = {
         "name": "ACQL - Arm Chair Quarterback League",
         "short_name": "ACQL",
-        "description": "Standings, results, live scores and side pools for the Arm Chair Quarterback League.",
+        "description": "Standings, live scores, side pools, charts and history for the Arm Chair Quarterback League.",
         "start_url": "./",
         "scope": "./",
         "display": "standalone",
-        "background_color": "#0e1411",
+        "background_color": "#07111d",
         "theme_color": THEME,
         "icons": [
             {"src": ICONS[192], "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
@@ -613,22 +780,81 @@ def app_files() -> dict[str, bytes]:
     return files
 
 
+HISTORY_FILE = "history.json"   # past seasons and champions, fetched when History opens
+SERVICE_WORKER = "sw.js"         # keeps the site opening with no signal
+SW_TEMPLATE = Path(__file__).with_name("pool_sw.js")
+
+
+def service_worker(version: str) -> str:
+    return SW_TEMPLATE.read_text(encoding="utf-8").replace("__VERSION__", version)
+
+
+def site(season: Season, *, generated: str | None = None) -> tuple[str, dict[str, bytes], dict]:
+    """(index.html, the files that go beside it, the snapshot it shows) for
+    the pool's own website. The season's own figures are in the page itself,
+    so the page and its numbers always arrive together; the archive of past
+    seasons, which only grows, is its own file and is only fetched when
+    someone opens History."""
+    data = snapshot(season, generated=generated, strict=True)
+    if not data["weeks"]:
+        raise ValueError("no finished week to put on the page yet")
+    history = data.pop("history", None) or {"champions": [], "seasons": []}
+    data["history_url"] = HISTORY_FILE
+    page = _hosted_page(data)
+    stamp = "".join(ch for ch in data["generated"] if ch.isdigit())
+    files = {
+        HISTORY_FILE: to_json(history).encode("utf-8"),
+        SERVICE_WORKER: service_worker(stamp).encode("utf-8"),
+    }
+    data["history"] = history
+    return page, files, data
+
+
+#: The suicide board marks a coach's teams left among the ten best
+#: (TOP_TEAMS in the page's 50-pages.js) - all it shows of the ratings.
+TOP_TEAMS = 10
+
+
+def _as_shown(data: dict) -> dict:
+    """The snapshot as far as the page shows it. The ratings' full order and
+    the betting spreads of finished games shift whenever a line is stored;
+    the page shows only the top ten and never the spreads, so those alone
+    shouldn't put the site up again."""
+    out = dict(data)
+    rank = data.get("team_rank") or {}
+    out["team_rank"] = sorted(c for c, r in rank.items() if r <= TOP_TEAMS) if len(rank) >= 28 else []
+    out["weeks"] = [
+        dict(w, results=[{k: v for k, v in g.items() if k != "spread"} for g in w.get("results") or []])
+        for w in data.get("weeks") or []
+    ]
+    return out
+
+
+def site_fingerprint(data: dict) -> str:
+    """Changes whenever the website would: new results, a new pick sheet, the
+    announcement or champions, or a dashboard update that changes the page."""
+    from ..version import VERSION
+    template = hashlib.sha256(TEMPLATE.read_bytes()).hexdigest()
+    return siteextras.fingerprint(_as_shown(data), [VERSION, template])
+
+
 def page_html(season: Season, *, generated: str | None = None) -> str:
     """The whole pool page as one web page, for the pool's own website.
 
     The same page as the Claude one, marked as hosted so it offers no
     "update this page" controls - the dashboard publishes it instead.
     """
+    return site(season, generated=generated)[0]
+
+
+def _hosted_page(data: dict) -> str:
     import html as _html
-    data = snapshot(season, generated=generated)
-    if not data["weeks"]:
-        raise ValueError("no finished week to put on the page yet")
     data["hosted"] = "web"
     fragment = TEMPLATE.read_text(encoding="utf-8").replace("__POOL_DATA__", to_json(data))
     head, body = fragment.split('<div id="app"', 1)
-    year = data["generated"][:4]
+    year = siteextras.season_year(data["generated"])      # January is still last autumn's season
     version = f"{data['through_week']}-" + "".join(ch for ch in data["generated"] if ch.isdigit())
-    blurb = (f"Arm Chair Quarterback League: standings, results and side pools after week "
+    blurb = (f"Arm Chair Quarterback League: standings, live scores and side pools after week "
              f"{data['through_week']} - {data['entrants']} coaches.")
     meta = (
         f'<meta name="description" content="{_html.escape(blurb, quote=True)}">'

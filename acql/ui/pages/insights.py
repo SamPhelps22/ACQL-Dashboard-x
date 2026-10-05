@@ -224,9 +224,9 @@ class InsightsPage(Page):
     def _update_commish(self, season) -> None:
         """How far above the betting line the commissioner sets his numbers.
 
-        It decides almost every lined game: because the favourite has to win
-        by MORE than the line, a number set at or above the market's makes
-        the underdog the better side before a ball is thrown.
+        It decides almost every lined game: the favourite has to win by at
+        least the line, so a number set above the market's makes the
+        underdog the better side before a ball is thrown.
         """
         gaps = []
         for number, sheet in predictions.stored_weeks().items():
