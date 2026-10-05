@@ -248,8 +248,8 @@ def changes(week: int, brief) -> Changes | None:
 class WeekScore:
     week: int
     games: int                  # games graded on the model's card
-    model: int
-    plain: int                  # the likeliest side of every game
+    model: int                  # the model's card: the likeliest side of every game
+    planned: int                # the card built to finish first (the old default)
     mine: int | None            # your regular wins that week
     best: int                   # the best regular score in the pool
     model_place: int            # where the model's card would have finished
@@ -278,15 +278,16 @@ def score_week(season: Season, week_number: int, coach_key: str | None,
     week = season.weeks.get(week_number)
     if week is None or not week.scored:
         return None
-    # The model's card is the planner's, whichever card the page was showing.
-    model_hits, graded = _hits(snap.planned or snap.take, week)
+    # The model's card is the one This Week recommends: the likeliest side of
+    # every game, whichever card the page happened to be showing.
+    model_hits, graded = _hits(snap.plain or snap.take, week)
     if not graded:
         return None
-    plain_hits, _ = _hits(snap.plain or snap.take, week)
+    planned_hits, _ = _hits(snap.planned or snap.take, week)
     regular = [line.regular_wins or 0 for line in week.lines.values()]
     me = week.lines.get(coach_key) if coach_key else None
     return WeekScore(
-        week=week_number, games=graded, model=model_hits, plain=plain_hits,
+        week=week_number, games=graded, model=model_hits, planned=planned_hits,
         mine=(me.regular_wins or 0) if me is not None else None,
         best=max(regular, default=0),
         model_place=1 + sum(1 for r in regular if r > model_hits),
@@ -339,7 +340,7 @@ def _rebuild(season: Season, week: int) -> Snapshot | None:
 class Record:
     weeks: int
     model_total: int
-    plain_total: int
+    planned_total: int
     mine_total: int | None
     model_wins: int             # weeks the model's card would have won outright or tied
     mine_better: int
@@ -350,7 +351,7 @@ class Record:
             return "No graded weeks with a model card yet."
         text = (
             f"Over {self.weeks} week{'s' if self.weeks != 1 else ''} the model's card got "
-            f"{self.model_total} right; the likeliest-side card {self.plain_total}"
+            f"{self.model_total} right; the card built to finish first {self.planned_total}"
         )
         if self.mine_total is not None:
             text += f"; {coach} {self.mine_total}"
@@ -365,12 +366,118 @@ class Record:
         return text
 
 
+# ---- your own calls: the games where you went against the model's card -------
+@dataclass(frozen=True)
+class Call:
+    week: int
+    index: int
+    game: str                   # "Minnesota @ Chicago"
+    mine: str                   # the side you took
+    model: str                  # the side the model's card took
+    chance: float | None        # the model's chance its side would be credited
+    paid: bool                  # True when your side was the one credited
+    rebuilt: bool               # the model's card was re-made after the fact
+
+
+def _other_side(game, team: str) -> str:
+    if same_team(team, game.home):
+        return game.away
+    if same_team(team, game.away):
+        return game.home
+    return ""
+
+
+def my_calls(season: Season, coach_key: str | None, *, rebuild: bool = True) -> list[Call]:
+    """Every played game where the coach's side differed from the model's
+    card, oldest first. A graded sheet keeps only the right picks, so a game
+    missing from the coach's line means they had the other side."""
+    from .predictions import display_team
+    out: list[Call] = []
+    if not coach_key:
+        return out
+    for number in sorted(season.weeks):
+        week = season.weeks[number]
+        line = week.lines.get(coach_key)
+        if line is None or not week.scored:
+            continue
+        if not line.correct_picks and not line.regular_wins:
+            continue                           # no card handed in that week
+        snap = model(number)
+        if snap is None and rebuild:
+            snap = _rebuild(season, number)
+        if snap is None:
+            continue
+        take = snap.plain or snap.take
+        for game in sorted(week.games, key=lambda g: g.index):
+            side = take.get(game.index)
+            if side is None or not game.played:
+                continue
+            model_right = same_team(side, game.winner)
+            pick = line.correct_picks.get(game.index) or ""
+            mine_right = same_team(pick, game.winner)
+            if mine_right == model_right:
+                continue                       # same side as the model
+            if pick:
+                mine = pick
+            else:
+                mine = _other_side(game, game.winner if model_right else side)
+            if not mine:
+                continue
+            # The kept chance is for the side the page showed; the model's
+            # card is the likeliest side, so turn it round where they differ.
+            chance = snap.chance.get(game.index)
+            if chance is not None and not same_team(snap.take.get(game.index, side), side):
+                chance = 1 - chance
+            out.append(Call(
+                week=number, index=game.index,
+                game=snap.label.get(game.index) or game.label,
+                mine=display_team(mine), model=display_team(side),
+                chance=chance,
+                paid=mine_right, rebuilt=snap.rebuilt,
+            ))
+    return out
+
+
+@dataclass(frozen=True)
+class CallRecord:
+    calls: int
+    paid: int
+
+    @property
+    def cost(self) -> int:
+        return self.calls - self.paid
+
+    @property
+    def net(self) -> int:
+        """Wins your own calls made you against playing the model's card."""
+        return self.paid - self.cost
+
+    def sentence(self, coach: str, weeks: int) -> str:
+        if not self.calls:
+            return (f"{coach} has played the model's card game for game"
+                    + (f" over {weeks} week{'s' if weeks != 1 else ''}." if weeks else "."))
+        net = self.net
+        verdict = ("adding " + _count(net, "win") if net > 0 else
+                   "costing " + _count(-net, "win") if net < 0 else "breaking even")
+        return (f"{coach}'s own calls: {_count(self.calls, 'game')} against the model's card, "
+                f"{self.paid} came in and {self.cost} didn't - so far they are {verdict} "
+                f"against playing its card.")
+
+
+def _count(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def call_record(calls: list[Call]) -> CallRecord:
+    return CallRecord(calls=len(calls), paid=sum(1 for c in calls if c.paid))
+
+
 def record(scores: list[WeekScore]) -> Record:
     mine_scores = [s for s in scores if s.mine is not None]
     return Record(
         weeks=len(scores),
         model_total=sum(s.model for s in scores),
-        plain_total=sum(s.plain for s in scores),
+        planned_total=sum(s.planned for s in scores),
         mine_total=sum(s.mine for s in mine_scores) if mine_scores else None,
         model_wins=sum(1 for s in scores if s.model_would_win),
         mine_better=sum(1 for s in mine_scores if s.mine > s.model),

@@ -48,6 +48,8 @@ INSTALL_UPDATE = "install-update"
 UNDO_UPDATE = "undo-update"
 # ...and from Results: the file the pool's web page is updated from.
 POOL_PAGE = "pool-page"
+# ...and what the website says beyond the standings (announcement, champions).
+POOL_EXTRAS = "pool-extras"
 
 VIEW_CONTENT, VIEW_STATE = 0, 1
 

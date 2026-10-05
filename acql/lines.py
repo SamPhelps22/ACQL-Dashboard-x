@@ -1,10 +1,10 @@
 """Pool lines, and the Vegas spreads typed in to predict against them.
 
 Some games on a week sheet carry a line in row 8, under the game's column:
-"(phi by 8)". The named favourite has to win by MORE than the number; a win
-by exactly the line goes to the underdog, and the Result row records that
-outcome (Lions 31-30 over the Saints with "(det by 8)" is recorded as a
-Saints win).
+"(phi by 8)". The named favourite has to win by at least the number - a win
+by exactly the line goes to the favourite ("(sf by 13)", 49ers 37-24, was
+graded a 49ers pick) - and the Result row records that outcome (Lions 31-30
+over the Saints with "(det by 8)" is recorded as a Saints win).
 
 The parser that builds the Season does not read these notes, so this module
 reads them straight from the workbook as it loads and attaches them to each

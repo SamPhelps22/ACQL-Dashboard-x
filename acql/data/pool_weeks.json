@@ -1,0 +1,61 @@
+{
+ "generated": "2026-10-01",
+ "weeks": [
+  {
+   "season": 2025,
+   "week": 15,
+   "games": 16,
+   "coaches": 39,
+   "model": 7,
+   "old_rule": 5,
+   "pool_average": 8.26,
+   "best": 13,
+   "place": 27
+  },
+  {
+   "season": 2025,
+   "week": 16,
+   "games": 16,
+   "coaches": 39,
+   "model": 9,
+   "old_rule": 9,
+   "pool_average": 8.51,
+   "best": 11,
+   "place": 10
+  },
+  {
+   "season": 2025,
+   "week": 17,
+   "games": 16,
+   "coaches": 39,
+   "model": 7,
+   "old_rule": 6,
+   "pool_average": 6.74,
+   "best": 11,
+   "place": 13
+  },
+  {
+   "season": 2026,
+   "week": 1,
+   "games": 16,
+   "coaches": 35,
+   "model": 13,
+   "old_rule": 12,
+   "pool_average": 9.66,
+   "best": 13,
+   "place": 1
+  },
+  {
+   "season": 2026,
+   "week": 2,
+   "games": 16,
+   "coaches": 35,
+   "model": 13,
+   "old_rule": 13,
+   "pool_average": 8.71,
+   "best": 12,
+   "place": 1
+  }
+ ],
+ "source": "the pool's own pick sheets (2025 weeks 15-17 graded and raw; 2026 weeks 1-2), with the closing betting lines and the final scores"
+}

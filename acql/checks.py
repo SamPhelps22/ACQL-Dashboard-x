@@ -35,8 +35,8 @@ def _check_chances() -> str:
 
 def _check_pool_line() -> str:
     from . import luck
-    # the favourite has to win by MORE than the line: an 8-point line on a
-    # 7-point favourite makes the underdog the likelier side
+    # the favourite has to win by at least the line: an 8-point line on a
+    # 7-point favourite still makes the underdog the likelier side
     fav = luck.favourite_covers(7.0, 8.0)
     assert fav < 0.5, f"favourite covers an 8-point line {fav:.3f}"
     # the market's underdog, made the pool's favourite, is a long shot to cover

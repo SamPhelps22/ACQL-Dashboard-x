@@ -12,17 +12,88 @@ import io
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
-from matplotlib.patches import FancyBboxPatch
+from matplotlib.patches import Ellipse, FancyBboxPatch, PathPatch
+from matplotlib.path import Path as MplPath
 
 WIDTH, HEIGHT = 1200, 630
-GROUND = "#0e1411"
-SURFACE = "#151d18"
-RULE = "#26312a"
-INK = "#e8eee8"
-MUTED = "#8c998f"
-FIELD = "#52bd86"
-GOLD = "#e6b34b"
-GOLD_SOFT = "#2c2415"
+# The website's night colours: the on-air navy, the pool's green and gold.
+GROUND = "#0b1624"
+SURFACE = "#12243a"
+RULE = "#1f3550"
+INK = "#eef3f8"
+MUTED = "#93a4b8"
+FIELD = "#45c486"
+GOLD = "#f0b43c"
+GOLD_SOFT = "#2b2413"
+
+# ---- the crest ---------------------------------------------------------------------
+# The league's crest: an armchair with a football on its seat, on a shield.
+# Drawn on a 100 x 112 grid, y downwards - the same numbers as the website's
+# own SVG (pool_page.html, CREST), so the two always match.
+CREST_GREEN = "#1d6a44"
+CREST_GOLD = "#e8b23a"
+CREST_CHAIR = "#f4f7f2"
+CREST_INK = "#0d1b2c"
+SHIELD = [("M", 8, 6), ("L", 92, 6), ("L", 92, 52), ("C", 92, 80, 70, 98, 50, 108),
+          ("C", 30, 98, 8, 80, 8, 52), ("Z",)]
+CHAIR = [  # (x, y, width, height, corner radius)
+    (30, 20, 40, 38, 8),     # the back
+    (21, 46, 13, 26, 5),     # the arms
+    (66, 46, 13, 26, 5),
+    (31, 58, 38, 13, 4),     # the seat
+    (26, 70, 6, 10, 1.5),    # the legs
+    (68, 70, 6, 10, 1.5),
+]
+BALL = (50, 54, 26, 15, -14)  # centre x, centre y, width, height, tilt (degrees, y down)
+
+
+def crest(ax, to, scale: float, flipped: bool) -> None:
+    """Draw the crest onto `ax`. `to(x, y)` maps the 100 x 112 grid to the
+    axes; `scale` is axes units per grid unit (for line widths, in points per
+    grid unit); `flipped` says whether the axes' y runs downwards too."""
+    verts, codes = [], []
+    for step in SHIELD:
+        if step[0] in "ML":
+            verts.append(to(step[1], step[2]))
+            codes.append(MplPath.MOVETO if step[0] == "M" else MplPath.LINETO)
+        elif step[0] == "C":
+            for i in (1, 3, 5):
+                verts.append(to(step[i], step[i + 1]))
+                codes.append(MplPath.CURVE4)
+        else:
+            verts.append(verts[0])
+            codes.append(MplPath.CLOSEPOLY)
+    ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=CREST_GREEN, edgecolor=CREST_GOLD,
+                           linewidth=max(1.0, 3.2 * scale), joinstyle="round"))
+    for x, y, w, h, r in CHAIR:
+        (x0, y0), (x1, y1) = to(x, y), to(x + w, y + h)
+        left, bottom = min(x0, x1), min(y0, y1)
+        width, height = abs(x1 - x0), abs(y1 - y0)
+        rad = r * width / w
+        ax.add_patch(FancyBboxPatch((left + rad, bottom + rad), width - 2 * rad, height - 2 * rad,
+                                    boxstyle=f"round,pad={rad}", facecolor=CREST_CHAIR,
+                                    edgecolor=CREST_INK, linewidth=max(0.6, 1.2 * scale)))
+    cx, cy, bw, bh, tilt = BALL
+    (ex, ey), (fx, fy) = to(cx, cy), to(cx + bw, cy + bh)
+    w, h = abs(fx - ex), abs(fy - ey)
+    # The grid's y runs down, as on screen: a tilt of -14 lifts the ball's
+    # right end. Matplotlib turns angles counter-clockwise in its own y, so
+    # on axes whose y runs up the sign flips.
+    angle = tilt if flipped else -tilt
+    ax.add_patch(Ellipse((ex, ey), w, h, angle=angle, facecolor=CREST_GOLD,
+                         edgecolor=CREST_INK, linewidth=max(0.6, 1.4 * scale)))
+    # the laces, along the ball
+    import math
+    rad = math.radians(tilt)
+    def along(t: float, across: float = 0.0):
+        x = cx + t * math.cos(rad) - across * math.sin(rad)
+        y = cy + t * math.sin(rad) + across * math.cos(rad)
+        return to(x, y)
+    (a0, b0), (a1, b1) = along(-6), along(6)
+    ax.plot([a0, a1], [b0, b1], color=CREST_CHAIR, linewidth=max(0.8, 1.6 * scale), solid_capstyle="round")
+    for t in (-4, 0, 4):
+        (a0, b0), (a1, b1) = along(t, -2.2), along(t, 2.2)
+        ax.plot([a0, a1], [b0, b1], color=CREST_CHAIR, linewidth=max(0.8, 1.3 * scale), solid_capstyle="round")
 
 
 def _names(names: list[str], most: int = 2) -> str:
@@ -36,7 +107,9 @@ def render(data: dict) -> bytes:
     weeks = data.get("weeks") or []
     week = next((w for w in weeks if w.get("week") == data.get("through_week")), weeks[-1] if weeks else None)
     players = data.get("players") or []
-    year = str(data.get("generated", ""))[:4] or ""
+    from .. import siteextras
+    # January's page is still last autumn's season
+    year = str(siteextras.season_year(data.get("generated"))) if data.get("generated") else ""
 
     fig = Figure(figsize=(WIDTH / 100, HEIGHT / 100), dpi=100)
     FigureCanvasAgg(fig)
@@ -63,15 +136,16 @@ def render(data: dict) -> bytes:
             t.set_fontsize(max(size * room / wide, size * 0.5))
         return t
 
-    # masthead
-    brand = ax.text(64, 52, "ACQL", fontsize=54, color=INK, fontweight="bold", va="top")
+    # masthead: the crest, then the wordmark
+    crest(ax, lambda x, y: (64 + x * 0.82, 40 + y * 0.82), 0.82 * 0.9, flipped=True)
+    brand = ax.text(162, 52, "ACQL", fontsize=54, color=INK, fontweight="bold", va="top")
     # the year goes just after the word, wherever the font makes it end
     end = ax.transData.inverted().transform(brand.get_window_extent(renderer).corners()[-1])[0]
     text(end + 22, 52, year, 54, FIELD, "bold")
     through = data.get("through_week", "")
     text(WIDTH - 64, 64, f"AFTER WEEK {through}", 26, FIELD, "bold", ha="right")
-    fitted(66, 120, "ARM CHAIR QUARTERBACK LEAGUE", 20, WIDTH - 128, FIELD)
-    text(66, 153, f"{data.get('entrants', len(players))} coaches · weekly pick'em, Big Loser and the suicide pool",
+    fitted(164, 120, "ARM CHAIR QUARTERBACK LEAGUE", 20, WIDTH - 228, FIELD)
+    text(164, 153, f"{data.get('entrants', len(players))} coaches · weekly pick'em, Big Loser and the suicide pool",
          16, MUTED)
     ax.plot([64, WIDTH - 64], [190, 190], color=RULE, linewidth=2)
 
@@ -112,30 +186,28 @@ def render(data: dict) -> bytes:
     return out.getvalue()
 
 
-ICON_GROUND = "#1d6a44"
+ICON_GROUND = "#0d1b2c"
 
 
 def icon(size: int = 512) -> bytes:
-    """The home-screen icon: "ACQL" on the pool's green, as a square PNG.
+    """The home-screen icon: the league's crest on the website's navy, as a
+    square PNG.
 
-    Full-bleed colour with the lettering inside the middle 60%, so phones
-    that cut icons into circles or rounded squares never clip it.
+    Full-bleed colour with the crest inside the middle 60%, so phones that
+    cut icons into circles or rounded squares never clip it.
     """
     fig = Figure(figsize=(size / 100, size / 100), dpi=100)
     FigureCanvasAgg(fig)
     fig.patch.set_facecolor(ICON_GROUND)
     ax = fig.add_axes((0, 0, 1, 1))
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    ax.set_xlim(0, size)
+    ax.set_ylim(size, 0)
     ax.axis("off")
-    renderer = fig.canvas.get_renderer()
-    word = ax.text(0.5, 0.53, "ACQL", ha="center", va="center", color="#ffffff",
-                   fontweight="bold", fontsize=size * 0.22)
-    wide = word.get_window_extent(renderer).width
-    if wide > size * 0.6:
-        word.set_fontsize(size * 0.22 * size * 0.6 / wide)
-    # a short gold stripe under the word, like a yard line
-    ax.plot([0.36, 0.64], [0.37, 0.37], color=GOLD, linewidth=size * 0.028, solid_capstyle="round")
+    tall = size * 0.62                     # the crest's height: inside the safe middle
+    unit = tall / 112
+    left = (size - 100 * unit) / 2
+    top = (size - tall) / 2
+    crest(ax, lambda x, y: (left + x * unit, top + y * unit), unit * 72 / 100, flipped=True)
     out = io.BytesIO()
     fig.savefig(out, format="png", dpi=100, facecolor=ICON_GROUND)
     return out.getvalue()

@@ -38,7 +38,7 @@ from ..names import AliasTable
 from ..repository import load_season
 from .groups import GroupSpec, PageGroup
 from .pages.base import (
-    GO_TO_DATA, INSTALL_UPDATE, OPEN_FOLDER, POOL_PAGE, RELOAD, SELF_CHECK, UNDO_UPDATE, Page,
+    GO_TO_DATA, INSTALL_UPDATE, OPEN_FOLDER, POOL_EXTRAS, POOL_PAGE, RELOAD, SELF_CHECK, UNDO_UPDATE, Page,
     write_log,
 )
 from .watch import FolderWatcher, describe
@@ -52,12 +52,13 @@ from .pages.nextweek import NextWeekPage
 from .pages.player import PlayerPage
 from .pages.pools import PoolsPage
 from .pages.projections import ProjectionsPage
+from .pages.reportcard import ReportCardPage
 from .pages.standings import StandingsPage
 from .pages.weekly import WeeklyPage
 from .pages.winnings import WinningsPage
 from .theme import PALETTES, stylesheet
 
-#: The sidebar: seven places, the pages inside each shown as tabs (groups.py).
+#: The sidebar: eight places, the pages inside each shown as tabs (groups.py).
 NAV = (
     GroupSpec("Season", "\N{TROPHY}", "Where the season stands: the table, the money, the odds",
               (("Overview", OverviewPage), ("Standings", StandingsPage),
@@ -73,8 +74,12 @@ NAV = (
               (("Side pools", PoolsPage),)),
     GroupSpec("Player", "\N{BUST IN SILHOUETTE}", "One coach's season in detail",
               (("Player", PlayerPage),)),
-    GroupSpec("Insights", "\N{LEFT-POINTING MAGNIFYING GLASS}", "The pool's habits and luck, and the model's record",
-              (("The pool", InsightsPage), ("The model", ModelPage))),
+    GroupSpec("Insights", "\N{LEFT-POINTING MAGNIFYING GLASS}", "The pool's habits and luck",
+              (("The pool", InsightsPage),)),
+    # Its own place, so "is it any good, and should I follow it?" is one
+    # click from anywhere rather than a tab inside Insights.
+    GroupSpec("The Model", "\N{BAR CHART}", "How accurate the model is, and whether to follow it",
+              (("Report card", ReportCardPage), ("Details", ModelPage))),
     GroupSpec("Data & Update", "\N{CARD INDEX DIVIDERS}", "What is loaded, entering results, and updating the app",
               (("Data", DataPage),)),
 )
@@ -283,6 +288,7 @@ class MainWindow(QMainWindow):
         self.season = Season(buy_in=self.settings.buy_in)
         self._loader: Loader | None = None
         self._closing = False
+        self._close_when_published = False   # closed mid-upload: close once it's done
         self._loaded_at: datetime | None = None
         self._auto = False                   # the running load started itself
         self._retried = False                # and has already had its retry
@@ -375,6 +381,8 @@ class MainWindow(QMainWindow):
             updating.undo(self)
         elif what == POOL_PAGE:
             self.export_pool_page()
+        elif what == POOL_EXTRAS:
+            self.pool_page_extras()
 
     # ---- the self-check and updates -----------------------------------------
     def run_self_check(self, *, quiet: bool = False) -> Path | None:
@@ -421,6 +429,47 @@ class MainWindow(QMainWindow):
     def pool_page_settings(self) -> None:
         from . import webpage
         webpage.edit_settings(self)
+
+    def pool_page_extras(self) -> None:
+        from . import webpage
+        webpage.edit_extras(self)
+
+    # ---- the website keeping itself up to date (webpage.auto_publish) -----------
+    #: Off for the smoke test and the self-check, which must never publish.
+    auto_site = True
+
+    def update_site(self) -> None:
+        """After a load: the website, brought up to date in the background."""
+        if self._closing:
+            return
+        try:
+            from . import webpage
+            webpage.auto_publish(self, self.season)
+        except Exception as exc:  # noqa: BLE001 - the dashboard carries on regardless
+            write_log(f"automatic website update didn't start: {exc!r}")
+
+    def site_published(self, url: str) -> None:
+        if not self._closing:
+            self.statusBar().showMessage(f"The pool website updated itself: {url}")
+
+    def site_failed(self, why: str) -> None:
+        if not self._closing:
+            self.statusBar().showMessage(
+                f"The pool website didn't update by itself: {why} "
+                "Results › Pool page tries again."
+            )
+
+    def site_worker_finished(self) -> None:
+        worker = getattr(self, "_site_worker", None)
+        if worker is not None and not worker.isRunning():
+            self._site_worker = None
+            worker.deleteLater()
+        if getattr(self, "_close_when_published", False):
+            self.close()                    # the window went earlier; now the app can go too
+            return
+        if getattr(self, "_site_again", False) and not self._closing:
+            self._site_again = False
+            self.update_site()
 
     def install_update(self) -> None:
         from . import updating
@@ -590,6 +639,7 @@ class MainWindow(QMainWindow):
             Command("Open data folder", "", self.open_data_folder),
             Command("Publish the pool page", "", self.export_pool_page),
             Command("Pool page website settings\u2026", "", self.pool_page_settings),
+            Command("What the website says (announcement, champions)\u2026", "", self.pool_page_extras),
             Command("Run self-check (photograph every page)", "", self.run_self_check),
             Command("Install update\u2026", "", self.install_update),
             Command("Undo last update", "", lambda: self._page_action(UNDO_UPDATE)),
@@ -740,6 +790,9 @@ class MainWindow(QMainWindow):
         pending, self._pending = self._pending, None
         if pending:
             QTimer.singleShot(0, lambda: self.reload(auto=True, because=pending))
+        elif not season.is_empty:
+            # New results or a new pick sheet: the website follows by itself.
+            self.update_site()
 
     def _on_failed(self, trace: str) -> None:
         if self._closing:
@@ -791,7 +844,18 @@ class MainWindow(QMainWindow):
         loader = self._loader
         if loader is not None and loader.isRunning():
             loader.wait(5000)
+        site = getattr(self, "_site_worker", None)
+        if site is not None and site.isRunning() and not site.wait(3_000):
+            # Still uploading, and a thread can't be torn down mid-upload
+            # without crashing: the window goes now, the upload finishes out of
+            # sight, and the app closes itself when it's done.
+            self._close_when_published = True
+            self.hide()
+            event.ignore()
+            return
         super().closeEvent(event)
+        if getattr(self, "_close_when_published", False):
+            QApplication.quit()             # a hidden window closing may not end the app by itself
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -818,6 +882,8 @@ def main(argv: list[str] | None = None) -> int:
         app.setWindowIcon(QIcon(str(ICON_FILE)))
 
     window = MainWindow(remember_state=not smoke_test)
+    if smoke_test or self_check:
+        window.auto_site = False        # checking the app must never publish the website
     window.show()
 
     if self_check:

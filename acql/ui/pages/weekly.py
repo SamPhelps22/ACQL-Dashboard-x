@@ -23,7 +23,7 @@ from ...models import Week
 from ..charts import BarChart, HistogramChart
 from .. import recap
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
-from .base import POOL_PAGE, Page
+from .base import POOL_EXTRAS, POOL_PAGE, Page
 
 SLATE_HEADERS = [
     "#", "Matchup", "Pool line", "Result", "Pool took", "Got it right", "Hit rate",
@@ -89,11 +89,20 @@ class WeeklyPage(Page):
         self.pool_btn = QPushButton("\N{GLOBE WITH MERIDIANS}  Pool page")
         self.pool_btn.setToolTip(
             "Put this week on the pool's website - standings, the week, the "
-            "side pools. Nothing about your card or the model goes on it. The "
-            "first time, it walks you through setting the website up."
+            "side pools, history. Nothing about your card or the model goes on "
+            "it. The first time, it walks you through setting the website up; "
+            "after that it also updates by itself when new results load."
         )
         self.pool_btn.clicked.connect(lambda *_: self.action_requested.emit(POOL_PAGE))
         controls.addWidget(self.pool_btn)
+        self.extras_btn = QPushButton("\N{GEAR}")
+        self.extras_btn.setToolTip(
+            "What the website says: an announcement at the top, the league's past "
+            "champions for its History page, and whether it updates by itself"
+        )
+        self.extras_btn.setFixedWidth(40)
+        self.extras_btn.clicked.connect(lambda *_: self.action_requested.emit(POOL_EXTRAS))
+        controls.addWidget(self.extras_btn)
         self._sender: _Sender | None = None
         self.layout_.addLayout(controls)
         self.layout_.addWidget(self.status)

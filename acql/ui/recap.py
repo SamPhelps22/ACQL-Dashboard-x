@@ -144,8 +144,8 @@ def _suicide_lost(season: Season, week_number: int, key: str, team: str) -> bool
     """Did this coach's suicide pick lose? None when the files can't say.
 
     The suicide pool plays by the pool's lines: a team in a lined game has
-    to be credited with it - a favourite must win by more than the line, an
-    underdog survives by covering it. The Result row already records the
+    to be credited with it - a favourite must win by at least the line, an
+    underdog survives by keeping it closer. The Result row already records the
     credited side, so the pick lost exactly when its team isn't the one
     recorded. Before the result is in, the next week's sheet can still say
     (DEAD there means out here; a new team means survived).

@@ -471,6 +471,18 @@ def margin_distribution(spread: float, sd: float = SPREAD_SD) -> tuple[tuple[int
     return tuple(_shape((low + high) / 2, sd).items())
 
 
+def line_need(line: float) -> int:
+    """How many points the pool's favourite has to win by to be credited.
+
+    A win by exactly the line goes to the favourite. That is the
+    commissioner's own grading - "(sf by 13)", 49ers 37-24, credited to San
+    Francisco on the graded 2025 week 15 sheet - and the pool's rule as Sam
+    states it. So a whole-number line needs that many points, and a
+    half-point line the next whole number up.
+    """
+    return math.ceil(line - 1e-9)
+
+
 def cover_chance(spread: float, need: int, sd: float = SPREAD_SD) -> float:
     """Chance a team favoured by `spread` wins by at least `need` points."""
     return sum(p for margin, p in margin_distribution(round(spread, 1), sd) if margin >= need)
@@ -488,7 +500,7 @@ def line_threshold(spread: float, most: int = 30, sd: float = SPREAD_SD) -> int:
     """
     best = 0
     for line in range(most + 1):
-        if cover_chance(spread, line + 1, sd) > 0.5:
+        if cover_chance(spread, line_need(line), sd) > 0.5:
             best = line
     return best
 
@@ -650,10 +662,10 @@ def predict_margin(
     """The pick for one game from an expected margin, positive for the home team.
 
     Straight-up games take whoever is favoured. On a lined game the pool's
-    favourite must win by more than the line - by at least floor(line) + 1 -
-    so a win by exactly a whole-number line goes to the underdog. The chance
-    is that of the expected margin clearing that bar, with results spread
-    `sd` points either side of it.
+    favourite must win by at least the line (line_need): a win by exactly a
+    whole-number line goes to the favourite. The chance is that of the
+    expected margin clearing that bar, with results spread `sd` points
+    either side of it.
 
     `sd` is a way in for a game nobody agrees about: widen it and every
     chance moves toward a coin flip, which is what disagreement means.
@@ -679,13 +691,13 @@ def predict_margin(
     fav_is_home = _same(favourite, game.home)
     underdog = getattr(game, "line_underdog", "") or (game.away if fav_is_home else game.home)
     fav_margin = home_margin if fav_is_home else -home_margin
-    need = math.floor(line) + 1
+    need = line_need(line)
     p_fav = cover_chance(fav_margin, need, sd)
     says = f"{source.capitalize()} makes it {favourite} by {_points(fav_margin)}" \
         if fav_margin >= PICK_EM else f"{source.capitalize()} doesn't even have {favourite} favoured"
     detail = (
-        f"{favourite} have to win by {need} or more to take this one, because a "
-        f"win by exactly {_points(line)} goes to {underdog}. {says}, which clears {need} "
+        f"{favourite} have to win by {need} or more to take this one; a win by "
+        f"{need - 1} or less goes to {underdog}. {says}, which clears {need} "
         f"about {p_fav:.0%} of the time."
     )
     if fav_margin < PICK_EM:
@@ -724,19 +736,18 @@ def upcoming_week(season: Season) -> int:
 # ======================================================================
 # A pick'em pool takes the favourite more often than the favourite wins, and
 # more so the bigger the number. Published pools sit around 0.19 on this
-# curve; measured over 22 unlined games of this pool's own raw pick sheets it
-# came out at 0.49 - they are far chalkier than a public pool, with 89% on
-# every favourite of three points or more. This is the measurement shrunk
-# toward the published figure, because 22 games is not a season: it puts a
-# 3-point favourite on 77% of cards against a 60% chance of winning, and a
-# 7-point one on 94%. The practical meaning is that an unlined game has no
-# leverage in it at all.
-CROWD_SLOPE = 0.40
+# curve. This pool is far chalkier: measured over 53 unlined games of its own
+# sheets across two seasons (2025 weeks 15-17, 2026 weeks 1-2) it comes out
+# at 0.37 - a 3-point favourite on 75% of cards, a 7-point one on 93%, and
+# 91% on every favourite of 5 points or more. The practical meaning is that
+# an unlined game has almost no leverage in it.
+CROWD_SLOPE = 0.37
 # On a game with a pool line the crowd mostly ignores the line and takes the
-# better team anyway - measured at 72.6% over ten lined games, with a range
-# of 40% to 83%. This is where that starts before a pool's own habit is
-# measured, and how many lined games it takes for the measurement to lead.
-CHALK_PRIOR = 0.73
+# better team anyway - 75.6% on the pool's favourite over 27 lined games of
+# the same sheets, ranging from 40% to 90%. This is where that starts before
+# a season's own habit is measured, and how many lined games it takes for
+# the measurement to lead.
+CHALK_PRIOR = 0.75
 CHALK_WEIGHT = 8
 
 
