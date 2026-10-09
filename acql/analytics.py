@@ -996,6 +996,8 @@ def fill_winnings(season: Season) -> list[int]:
     for number, week in sorted(season.weeks.items()):
         if any(p.weekly_winnings.get(number) for p in season.players.values()):
             continue
+        if week.games and not all(game.played for game in week.games):
+            continue        # a week still being played pays nobody yet
         paid = week_payouts(week)
         if not paid:
             continue

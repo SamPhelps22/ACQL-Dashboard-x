@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from ... import analytics, picks
+from ... import analytics, ghost, picks
 from ...models import Player, Season
 from ..charts import HeatmapChart, LineChart
 from ..widgets import Card, TableModel, make_table, section
@@ -25,6 +25,10 @@ GRID_ROWS = 24
 RACE_PLAYERS = 4
 RACE_TITLE = "The race - wins behind the leader, week by week"
 UP, DOWN = "▲", "▼"
+
+
+def _ordinal(n: int) -> str:
+    return "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
 
 
 def _plural(count: int, word: str) -> str:
@@ -126,6 +130,9 @@ class StandingsPage(Page):
         if self.proxy is None or self.season is None:
             return
         shown, total = self.proxy.rowCount(), len(self.season.players)
+        typed = self.search.text().strip().casefold()
+        if getattr(self, "_ghost_shown", False) and (not typed or typed in ghost.LABEL.casefold()):
+            shown -= 1                      # the ghost row is never a player
         self.count_label.setText(
             _plural(total, "player") if shown == total else f"{shown} of {total} players"
         )
@@ -258,6 +265,7 @@ class StandingsPage(Page):
                     f"Pool average {self.pct(pool_rate, 0)}"
                 )
 
+        self._ghost_shown = self._add_ghost(order, rows, tones, tooltips)
         sort_values = {
             # The displayed position, not the row number: after a re-sort the
             # two differ, and the column has to keep meaning what it shows.
@@ -278,6 +286,9 @@ class StandingsPage(Page):
             ],
             CHALK_COLUMN: [self._chalk_for(p) for p in order],
         }
+        if self._ghost_shown:
+            for column in sort_values:
+                sort_values[column].append(self._ghost_sort.get(column))
 
         model = TableModel(
             HEADERS, rows,
@@ -303,6 +314,41 @@ class StandingsPage(Page):
         self.hint.show()
         self._apply_filter(self.search.text())
 
+    def _add_ghost(self, order: list[Player], rows: list, tones: dict, tooltips: dict) -> bool:
+        """Deadeye's season as a ghost row: where it would stand, never placed."""
+        try:
+            record = ghost.season_record(self.season)
+        except Exception:  # noqa: BLE001 - the table goes up without it
+            record = None
+        if record is None:
+            return False
+        leader = max((p.wins for p in order), default=0)
+        latest = record.latest
+        r = len(rows)
+        rows.append([
+            self.NO_VALUE, ghost.LABEL, record.wins, record.losses, f"{record.pct:.3f}",
+            f"{leader - record.wins:.0f}" if leader > record.wins else self.NO_VALUE,
+            self.money(record.won) if record.won else self.NO_VALUE,
+            self.money(record.net, signed=True),
+            latest.total if latest else self.NO_VALUE,
+            record.last(3), self.NO_VALUE, record.best_week, f"{record.average:.1f}",
+            self.NO_VALUE, self.NO_VALUE, self.NO_VALUE, len(record.weeks),
+        ])
+        for column in range(len(HEADERS)):
+            tones[(r, column)] = "muted"
+        place = record.place_among([p.wins for p in order])
+        tooltips[(r, NAME_COLUMN)] = (
+            (f"Would stand {place}{_ordinal(place)} of {len(order) + 1}.\n" if record.complete else "")
+            + ghost.tooltip(record))
+        # Sorted just above the coaches it would have passed; level ones stay ahead of it.
+        self._ghost_sort = {
+            0: place - 0.5 if record.complete else 9_998,
+            4: record.pct, 5: max(0, leader - record.wins), 6: record.won, 7: record.net,
+            8: latest.total if latest else None, 9: record.last(3), 10: -99,
+            11: record.best_week, 12: record.average,
+        }
+        return True
+
     def _blank(self, value: object) -> object:
         return self.NO_VALUE if value is None else value
 
@@ -312,7 +358,7 @@ class StandingsPage(Page):
             return
         source = self.proxy.mapToSource(index)
         name = self.proxy.sourceModel().row_values(source.row())[NAME_COLUMN]
-        if name:
+        if name and name != ghost.LABEL:
             self.player_selected.emit(str(name))
 
     def _current_sort(self) -> tuple[int, bool]:

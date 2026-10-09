@@ -300,6 +300,38 @@ def stylesheet(p: Palette) -> str:
         color: {p.critical};
     }}
 
+    /* Game Day: one game, scoreboard style. The left edge says how your
+       pick stands - credited now, not, or a game on you have no pick in. */
+    #GameCard {{
+        background: {p.raised};
+        border: 1px solid {p.grid};
+        border-left: 4px solid {p.baseline};
+        border-radius: 10px;
+    }}
+    #GameCard[tone="good"] {{ border-left-color: {p.good}; }}
+    #GameCard[tone="bad"] {{ border-left-color: {p.critical}; }}
+    #GameCard[tone="live"] {{ border-left-color: {p.accent}; }}
+    #GameState {{
+        font-size: {t["caption"]}px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        color: {p.ink_secondary};
+    }}
+    #GameState[live="true"] {{ color: {p.critical}; }}
+    #GameTeam {{ font-size: {t["body"] + 1}px; font-weight: 600; color: {p.ink}; }}
+    #GameTeam[faded="true"] {{ color: {p.ink_muted}; font-weight: 500; }}
+    #GameScore {{
+        font-family: {NUMERIC_STACK};
+        font-size: {t["title"]}px;
+        font-weight: 700;
+        color: {p.ink};
+    }}
+    #GameScore[faded="true"] {{ color: {p.ink_muted}; }}
+    #GameLine {{ font-size: {t["caption"]}px; color: {p.ink_secondary}; font-weight: 600; }}
+    #GameMeta {{ font-size: {t["caption"]}px; color: {p.ink_secondary}; }}
+    #GameNote {{ font-size: {t["caption"]}px; color: {p.ink_muted}; font-style: italic; }}
+    #Ball {{ font-size: {t["label"]}px; }}
+
     #PageTitle {{ font-size: {t["title"]}px; font-weight: 700; color: {p.ink}; }}
     #PageSubtitle {{ font-size: {t["body"]}px; color: {p.ink_muted}; }}
     #CardTitle {{

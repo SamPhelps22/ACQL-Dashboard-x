@@ -50,6 +50,16 @@ UNDO_UPDATE = "undo-update"
 POOL_PAGE = "pool-page"
 # ...and what the website says beyond the standings (announcement, champions).
 POOL_EXTRAS = "pool-extras"
+# ...and Data & Update's results card: ask the scoreboard now.
+CHECK_RESULTS = "check-results"
+# ...and Game Day: the scores as they are (a look if one is due), and now.
+LIVE_CHECK = "live-check"
+LIVE_CHECK_NOW = "live-check-now"
+#: Look for an update now; where updates come from (updatecheck.py).
+CHECK_UPDATES = "check-updates"
+UPDATE_SETTINGS = "update-settings"
+#: The tray or start-up setting changed on Data & Update (keeping.py).
+KEEPING = "keeping"
 
 VIEW_CONTENT, VIEW_STATE = 0, 1
 
@@ -417,9 +427,9 @@ class Page(QWidget):
             icon="\N{OPEN FILE FOLDER}",
             title="No pool data yet",
             message=(
-                "Put the ACQL Dashboard workbook, the week's pick sheets or a "
-                "predictions CSV in the data folder. They are picked up as "
-                "soon as they land - there is nothing else to press."
+                "Put the week's pick sheet and stats.xls in the data folder (pick "
+                "sheets in Downloads are found too). They are picked up as soon "
+                "as they land, and the results come by themselves."
             ),
             actions=[
                 ("Open the data folder", self._page_ask(OPEN_FOLDER), True),

@@ -5,21 +5,15 @@ from __future__ import annotations
 import os
 import sys
 import traceback
-from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QPoint, QSettings, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtCore import QPoint, QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -31,20 +25,22 @@ from PySide6.QtWidgets import (
 
 from pathlib import Path
 
-from .. import APP_NAME, __version__, analytics, lines, picks, predictions
+from .. import APP_NAME, __version__, analytics, oddslock, results
 from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
-from ..names import AliasTable
-from ..repository import load_season
+from ..version import MODEL_NAME
 from .groups import GroupSpec, PageGroup
 from .pages.base import (
-    GO_TO_DATA, INSTALL_UPDATE, OPEN_FOLDER, POOL_EXTRAS, POOL_PAGE, RELOAD, SELF_CHECK, UNDO_UPDATE, Page,
+    CHECK_RESULTS, CHECK_UPDATES, GO_TO_DATA, INSTALL_UPDATE, KEEPING, LIVE_CHECK, LIVE_CHECK_NOW, OPEN_FOLDER,
+    POOL_EXTRAS, UPDATE_SETTINGS,
+    POOL_PAGE, RELOAD, SELF_CHECK, UNDO_UPDATE, Page,
     write_log,
 )
 from .watch import FolderWatcher, describe
 from .pages.thisweek import BriefingPage
 from .pages.charts import ChartsPage
 from .pages.data import DataPage
+from .pages.gameday import GameDayPage
 from .pages.overview import OverviewPage
 from .pages.insights import InsightsPage
 from .pages.model import ModelPage
@@ -68,6 +64,9 @@ NAV = (
     # "what do I play this week", and it should not be four clicks away.
     GroupSpec("This Week", "\N{MEMO}", "The card to hand in, and every game on the slate",
               (("Your card", BriefingPage), ("Every game", NextWeekPage))),
+    # While the games are on: every score against the pool's lines, live.
+    GroupSpec("Game Day", "\N{TELEVISION}", "Every game as it happens, against your pool's lines",
+              (("Game day", GameDayPage),)),
     GroupSpec("Results", "\N{SPIRAL CALENDAR PAD}", "One week at a time, and the recap to send round",
               (("Results", WeeklyPage),)),
     GroupSpec("Side Pools", "\N{DIRECT HIT}", "Big Loser and the suicide pool",
@@ -78,11 +77,15 @@ NAV = (
               (("The pool", InsightsPage),)),
     # Its own place, so "is it any good, and should I follow it?" is one
     # click from anywhere rather than a tab inside Insights.
-    GroupSpec("The Model", "\N{BAR CHART}", "How accurate the model is, and whether to follow it",
+    GroupSpec(MODEL_NAME, "\N{BOW AND ARROW}", f"How accurate {MODEL_NAME} is, and whether to follow it",
               (("Report card", ReportCardPage), ("Details", ModelPage))),
-    GroupSpec("Data & Update", "\N{CARD INDEX DIVIDERS}", "What is loaded, entering results, and updating the app",
+    GroupSpec("Data & Update", "\N{CARD INDEX DIVIDERS}", "What is loaded, where the results came from, and updating the app",
               (("Data", DataPage),)),
 )
+#: The sidebar before Game Day joined it (2.13), so a place remembered by its
+#: number then still opens the same place now.
+PLACES_BEFORE = ("Season", "This Week", "Results", "Side Pools", "Player", "Insights",
+                 MODEL_NAME, "Data & Update")
 #: Every page, in sidebar order - one instance of each.
 PAGE_CLASSES = tuple(cls for spec in NAV for cls in spec.classes)
 
@@ -112,6 +115,11 @@ def _plural(count: int, word: str) -> str:
 AUTO_RETRY_MS = 5000
 #: How often "Updated 3 min ago" is brought up to date.
 CLOCK_TICK_MS = 30_000
+#: How often the window considers looking at the scoreboard. It only goes
+#: online when a look is due (results.due: every few minutes while a game
+#: is on, every minute while Game Day is open), and only reloads when a game
+#: has finished.
+RESULTS_CHECK_MS = 60 * 1000
 
 
 def updated_text(loaded: datetime | None, now: datetime | None = None) -> str:
@@ -135,152 +143,16 @@ def failure_summary(trace: str) -> str:
     return lines_[-1].strip() if lines_ else "Unknown error"
 
 
-class Loader(QThread):
-    """Parses the spreadsheets off the UI thread so the window stays live."""
-
-    finished_ok = Signal(object)
-    failed = Signal(str)
-
-    def __init__(self, settings: Settings) -> None:
-        super().__init__()
-        self.settings = settings
-
-    def run(self) -> None:
-        try:
-            aliases = AliasTable.load()
-            season = load_season(self.settings, aliases)
-        except Exception:  # noqa: BLE001 - reported in the UI, never swallowed
-            self.failed.emit(traceback.format_exc())
-            return
-        # Pool lines live in notes the parser doesn't read; add them here, off
-        # the UI thread. A problem with a note is a warning, not a failed load.
-        try:
-            season.warnings.extend(lines.attach_from_workbook(season))
-        except Exception as exc:  # noqa: BLE001
-            season.warnings.append(f"Couldn't read the pool lines: {exc}")
-        # The pool's raw pick sheets, if any have been downloaded. They fill
-        # in weeks the workbook hasn't been given yet and check the ones it
-        # has; they never overwrite a week the workbook owns.
-        try:
-            workbook = getattr(season, "workbook_path", None)
-            picks.refresh_from_disk(workbook)
-            # Predictions for the week ahead are picked up here rather than
-            # only when the Next Week page is opened, so one press of Refresh
-            # takes in everything that has been dropped in the folder.
-            try:
-                ahead = analytics.upcoming_week(season)
-                week = season.weeks.get(ahead)
-                got, where, fresh = predictions.refresh_from_disk(
-                    ahead, workbook,
-                    sorted(week.games, key=lambda g: g.index) if week else [],
-                )
-                if fresh and got:
-                    season.warnings.append(
-                        f"Week {ahead} predictions read from "
-                        f"{Path(where).name}: {len(got)} games."
-                    )
-            except Exception as exc:                      # noqa: BLE001
-                season.warnings.append(f"Couldn't read the predictions file: {exc}")
-            graded = picks.attach(season, key_for=aliases.key)
-            if graded.other_season:
-                season.warnings.append(
-                    "Stored pick sheets from another season were ignored ("
-                    + ", ".join(f"week {n}" for n in graded.other_season)
-                    + "). Their games are not this season's - clear them from "
-                    "Data & Update."
-                )
-            if graded.built:
-                season.warnings.append(
-                    "Built from the pool's pick sheet, not the workbook: "
-                    + ", ".join(f"week {n}" for n in graded.built)
-                )
-            season.warnings.extend(graded.disagreements)
-        except Exception as exc:  # noqa: BLE001
-            season.warnings.append(f"Couldn't read the pool's pick sheets: {exc}")
-        self.finished_ok.emit(season)
-
-
-@dataclass(frozen=True)
-class Command:
-    label: str
-    hint: str  # shortcut shown beside the label
-    run: Callable[[], None]
-
-
-class CommandPalette(QDialog):
-    """Ctrl+K quick switcher: type a few letters, press Enter.
-
-    Styled by the app stylesheet; target `QDialog#CommandPalette` in the
-    theme to give it its own look.
-    """
-
-    def __init__(self, commands: list[Command], parent: QWidget) -> None:
-        super().__init__(parent, Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
-        self.setObjectName("CommandPalette")
-        self.setModal(True)
-        self.setFixedWidth(520)
-        self._commands = commands
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
-
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Jump to a page or run a command\u2026")
-        self.search.textChanged.connect(self._filter)
-        self.search.returnPressed.connect(self._run_current)
-        self.search.installEventFilter(self)
-        layout.addWidget(self.search)
-
-        self.results = QListWidget()
-        self.results.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.results.setFixedHeight(260)
-        self.results.itemClicked.connect(lambda _item: self._run_current())
-        layout.addWidget(self.results)
-
-        self._filter("")
-        self.search.setFocus()
-
-    def _filter(self, text: str) -> None:
-        terms = text.lower().split()
-        self.results.clear()
-        for index, command in enumerate(self._commands):
-            label = command.label.lower()
-            if all(term in label for term in terms):
-                shown = f"{command.label}   ({command.hint})" if command.hint else command.label
-                item = QListWidgetItem(shown)
-                item.setData(Qt.ItemDataRole.UserRole, index)
-                self.results.addItem(item)
-        if self.results.count():
-            self.results.setCurrentRow(0)
-        else:
-            empty = QListWidgetItem("No matches")
-            empty.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.results.addItem(empty)
-
-    def _run_current(self) -> None:
-        item = self.results.currentItem()
-        index = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
-        if index is None:
-            return
-        command = self._commands[index]
-        self.accept()
-        # Run after the dialog has closed so page switches don't fight its focus.
-        QTimer.singleShot(0, command.run)
-
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt naming)
-        if obj is self.search and event.type() == QEvent.Type.KeyPress:
-            key = event.key()
-            if key in (Qt.Key.Key_Down, Qt.Key.Key_Up):
-                count = self.results.count()
-                if count:
-                    step = 1 if key == Qt.Key.Key_Down else -1
-                    self.results.setCurrentRow((self.results.currentRow() + step) % count)
-                return True
-        return super().eventFilter(obj, event)
+from .workers import Loader, ResultsCheck  # noqa: E402 - here so tests can stand them in
+from .palette import Command, CommandPalette  # noqa: E402
 
 
 class MainWindow(QMainWindow):
+    #: The tray icon while the dashboard is to keep running in it (keeping.py).
+    _tray = None
+    _quitting = False
+    remember_state = True
+
     def __init__(self, remember_state: bool = True) -> None:
         super().__init__()
         self.settings = Settings.load()
@@ -343,8 +215,18 @@ class MainWindow(QMainWindow):
         # "Updated 3 min ago" has to keep counting to stay true.
         self._clock = QTimer(self)
         self._clock.setInterval(CLOCK_TICK_MS)
-        self._clock.timeout.connect(self._tick_updated)
+        self._clock.timeout.connect(self._on_clock)
         self._clock.start()
+        # Results arrive by themselves while the window is open.
+        self._results_timer = QTimer(self)
+        self._results_timer.setInterval(RESULTS_CHECK_MS)
+        self._results_timer.timeout.connect(self.check_results)
+        self._results_timer.start()
+        # In the tray, closing the window leaves the dashboard running (keeping.py).
+        self._tray = None
+        self._quitting = False
+        self.remember_state = remember_state
+        self.apply_keeping()
 
         self.statusBar().showMessage("Loading\u2026")
         self._build_shortcuts()
@@ -383,6 +265,20 @@ class MainWindow(QMainWindow):
             self.export_pool_page()
         elif what == POOL_EXTRAS:
             self.pool_page_extras()
+        elif what == CHECK_RESULTS:
+            self.check_results_now()
+        elif what == LIVE_CHECK:
+            self.check_results(live=True)
+        elif what == KEEPING:
+            self.apply_keeping()
+        elif what == CHECK_UPDATES:
+            self.check_updates(by_hand=True)
+        elif what == UPDATE_SETTINGS:
+            from . import updatecheck
+            updatecheck.edit_settings(self)
+        elif what == LIVE_CHECK_NOW:
+            self.statusBar().showMessage("Asking ESPN for the latest scores\u2026", 4000)
+            self.check_results(live=True, force=True)
 
     # ---- the self-check and updates -----------------------------------------
     def run_self_check(self, *, quiet: bool = False) -> Path | None:
@@ -479,12 +375,19 @@ class MainWindow(QMainWindow):
 
     def _watch_folders(self) -> list[Path]:
         """Every folder the loader reads from: the watched ones, the app's
-        own data folder, and wherever the workbook turned out to be."""
+        own data folder, wherever the workbook turned out to be, and
+        Downloads - where a pick sheet usually lands (only the pool's own
+        files count there)."""
+        from . import watch
         folders = [Path(p) for p in self.settings.search_paths()]
         folders.append(Path(DATA_DIR))
         workbook = getattr(self.season, "workbook_path", None)
         if workbook:
             folders.append(Path(workbook).parent)
+        downloads = Path.home() / "Downloads"
+        if downloads.is_dir() and downloads not in folders:
+            watch.NARROW.add(str(downloads))
+            folders.append(downloads)
         return folders
 
     def open_data_folder(self) -> None:
@@ -593,13 +496,24 @@ class MainWindow(QMainWindow):
             geometry = self._state.value("window/geometry")
             if geometry is not None:
                 self.restoreGeometry(geometry)
-            try:
-                start = int(self._state.value("window/group", 0))
-            except (TypeError, ValueError):
-                start = 0
+            titles = [spec.title for spec in NAV]
+            place = self._state.value("window/place", "")
+            if isinstance(place, str) and place in titles:
+                start = titles.index(place)
+                keys = {g: f"window/tabs/{title}" for g, title in enumerate(titles)}
+            else:
+                # remembered by number, before places were remembered by name
+                try:
+                    old = int(self._state.value("window/group", 0))
+                except (TypeError, ValueError):
+                    old = 0
+                name = PLACES_BEFORE[old] if 0 <= old < len(PLACES_BEFORE) else ""
+                start = titles.index(name) if name in titles else 0
+                keys = {titles.index(name): f"window/tab/{i}"
+                        for i, name in enumerate(PLACES_BEFORE) if name in titles}
             for g, group in enumerate(self.groups):
                 try:
-                    tab = int(self._state.value(f"window/tab/{g}", 0))
+                    tab = int(self._state.value(keys[g], 0)) if g in keys else 0
                 except (TypeError, ValueError):
                     tab = 0
                 if 0 < tab < len(group.pages):
@@ -637,6 +551,7 @@ class MainWindow(QMainWindow):
             Command("Refresh data", "F5", self.refresh_by_hand),
             Command(f"Switch to {other_theme} theme", "Ctrl+T", self.toggle_theme),
             Command("Open data folder", "", self.open_data_folder),
+            Command("Check for results now", "", self.check_results_now),
             Command("Publish the pool page", "", self.export_pool_page),
             Command("Pool page website settings\u2026", "", self.pool_page_settings),
             Command("What the website says (announcement, champions)\u2026", "", self.pool_page_extras),
@@ -697,8 +612,10 @@ class MainWindow(QMainWindow):
         """
         self.reload()
 
-    def reload(self, *, auto: bool = False, because: list[str] | None = None) -> None:
-        """Re-read every source. `auto` is a reload the app started itself."""
+    def reload(self, *, auto: bool = False, because: list[str] | None = None,
+               force_results: bool = False) -> None:
+        """Re-read every source. `auto` is a reload the app started itself;
+        `force_results` asks the scoreboard about every unfinished week now."""
         if self._loader is not None and self._loader.isRunning():
             # Mid-load: remember that something else changed and go again after.
             if auto:
@@ -720,6 +637,7 @@ class MainWindow(QMainWindow):
         self.watcher.settle()
 
         loader = Loader(self.settings)
+        loader.force_results = force_results
         loader.finished_ok.connect(self._on_loaded)
         loader.failed.connect(self._on_failed)
         loader.finished.connect(lambda l=loader: self._on_loader_finished(l))
@@ -731,6 +649,91 @@ class MainWindow(QMainWindow):
         if self._loader is loader:
             self._loader = None
         loader.deleteLater()
+        if getattr(self, "_close_when_published", False):
+            self.close()                    # closed mid-load: now it can go
+
+    # ---- results, by themselves ---------------------------------------------
+    #: Off for the smoke test and the self-check, which never go online by themselves.
+    auto_results = True
+
+    def _results_weeks(self) -> list[int]:
+        """Weeks the dashboard grades whose games aren't all decided - and this
+        week and next by the calendar, whose first kickoffs lock the odds."""
+        season = self.season
+        if season is None or season.is_empty:
+            return []
+        out, owned = set(), set()
+        for number, week in season.weeks.items():
+            if getattr(week, "source", None) is not None and any(
+                    g.played and getattr(g, "result_from", "") in ("", "workbook") for g in week.games):
+                owned.add(number)   # the workbook is being filled in by hand
+                continue
+            if week.games and not all(g.played for g in week.games):
+                out.add(number)
+        year = getattr(season, "results_year", 0) or 0
+        if year:
+            out |= set(results.calendar_weeks(year)) - owned
+        return sorted(out)
+
+    def check_results(self, *, live: bool | None = None, force: bool = False) -> None:
+        """Every minute: ask the scoreboard if a look is due - a game under
+        way or about to start; every minute while Game Day is open (`live`)
+        - and reload once a game has finished. `force` asks now."""
+        if self._closing or not self.auto_results:
+            return
+        if self._loader is not None and self._loader.isRunning():
+            return
+        running = getattr(self, "_results_worker", None)
+        if running is not None and running.isRunning():
+            return
+        weeks = self._results_weeks()
+        year = getattr(self.season, "results_year", 0) or 0
+        if live is None:
+            live = self._game_day_showing()
+        every = results.LIVE_RECHECK_S if live else None
+        if not weeks or not year or not (force or results.due(year, weeks, every=every)):
+            return
+        graded = [w for w in weeks if w in self.season.weeks]
+        worker = ResultsCheck(year, weeks, graded, every=every, force=force)
+        worker.found.connect(self._results_found)
+        worker.finished.connect(self._results_worker_finished)
+        self._results_worker = worker
+        worker.start()
+
+    def _results_found(self, changed: bool) -> None:
+        if changed and not self._closing:
+            self.reload(auto=True, because=["new results"])
+
+    def _results_worker_finished(self) -> None:
+        worker = getattr(self, "_results_worker", None)
+        if worker is not None and not worker.isRunning():
+            self._results_worker = None
+            worker.deleteLater()
+        if getattr(self, "_close_when_published", False):
+            self.close()
+            return
+        # Game Day draws the scores as kept, so a look redraws it at once -
+        # a finished game reloads everything anyway.
+        page = self._game_day_page()
+        if page is not None and self._game_day_showing():
+            try:
+                page.invalidate()
+            except Exception as exc:  # noqa: BLE001
+                write_log(f"game day redraw failed: {exc!r}")
+
+    def _game_day_page(self) -> GameDayPage | None:
+        return next((p for p in getattr(self, "pages", []) if isinstance(p, GameDayPage)), None)
+
+    def _game_day_showing(self) -> bool:
+        try:
+            return isinstance(self.current_page(), GameDayPage) and bool(self.isVisible())
+        except Exception:  # noqa: BLE001 - a window part-built (tests, closing)
+            return False
+
+    def check_results_now(self) -> None:
+        """Data & Update's button: ask the scoreboard now, whatever the time."""
+        self.statusBar().showMessage("Asking ESPN for the latest results\u2026")
+        self.reload(force_results=True)
 
     def _files_changed(self, names: list[str]) -> None:
         """Something the dashboard reads was added, saved or removed."""
@@ -740,6 +743,38 @@ class MainWindow(QMainWindow):
 
     def _tick_updated(self) -> None:
         self.updated_label.setText(updated_text(self._loaded_at))
+
+    def _on_clock(self) -> None:
+        self._tick_updated()
+        self._watch_lock()
+        page = self._game_day_page()
+        if page is not None and self._game_day_showing():
+            page.tick()
+
+    def _lock_now(self) -> tuple[int, bool] | None:
+        """The week ahead, and whether its first game has kicked off."""
+        season = self.season
+        if season is None or season.is_empty:
+            return None
+        try:
+            week = analytics.upcoming_week(season)
+            return week, oddslock.locked_for(season, week)
+        except Exception as exc:  # noqa: BLE001 - a missed look is no matter
+            write_log(f"odds lock check failed: {exc!r}")
+            return None
+
+    def _watch_lock(self) -> None:
+        """The week's first game has kicked off: every page shows its odds
+        locked at once, not at the next reload."""
+        state = self._lock_now()
+        before, self._lock_state = getattr(self, "_lock_state", None), state
+        if state is None or before is None or state == before or not state[1]:
+            return
+        for page in self.pages:
+            try:
+                page.invalidate()
+            except Exception as exc:  # noqa: BLE001
+                write_log(f"refresh at the odds lock failed on {page.title}: {exc!r}")
 
     def _on_loaded(self, season: Season) -> None:
         if self._closing:
@@ -766,6 +801,7 @@ class MainWindow(QMainWindow):
                 page.set_season(season)
             except Exception as exc:  # noqa: BLE001
                 write_log(f"set_season failed on {page.title}: {exc!r}")
+        self._lock_state = self._lock_now()
 
         conflicts = len(season.conflicts)
         self.conflict_btn.setVisible(conflicts > 0)
@@ -793,6 +829,23 @@ class MainWindow(QMainWindow):
         elif not season.is_empty:
             # New results or a new pick sheet: the website follows by itself.
             self.update_site()
+        self.check_updates()
+
+    # ---- updates that find themselves (autoupdate.py, updatecheck.py) ------------
+    def check_updates(self, *, by_hand: bool = False) -> None:
+        """Twice a day by itself after a load, or now by hand; a waiting one is offered."""
+        if self._closing or not (by_hand or self.auto_site):
+            return
+        try:
+            from .. import autoupdate
+            from . import updatecheck
+            if by_hand and getattr(self, "_pending_update", None):
+                updatecheck.offer(self)
+                return
+            if by_hand or (autoupdate.UpdateSettings.load().automatic and autoupdate.due()):
+                updatecheck.check(self, by_hand=by_hand)
+        except Exception as exc:  # noqa: BLE001 - the dashboard carries on regardless
+            write_log(f"update check didn't start: {exc!r}")
 
     def _on_failed(self, trace: str) -> None:
         if self._closing:
@@ -831,24 +884,60 @@ class MainWindow(QMainWindow):
         box.exec()
 
     # ---- lifecycle -------------------------------------------------------
+    # ---- out of sight: the tray (keeping.py) ---------------------------------
+    def apply_keeping(self) -> None:
+        """Show the tray icon when the dashboard is to keep running in it."""
+        from . import keeping
+        want = self.remember_state and keeping.tray_wanted() and keeping.tray_available()
+        if want and self._tray is None:
+            self._tray = keeping.Tray(self)
+        elif not want and self._tray is not None:
+            self._tray.hide()
+            self._tray = None
+        try:
+            # in the tray, the window closing mustn't end the app
+            QApplication.setQuitOnLastWindowClosed(self._tray is None)
+        except Exception:  # noqa: BLE001 - no application yet (a test): nothing to tell
+            pass
+
+    def quit_for_real(self) -> None:
+        """Quit from the tray: close for good, whatever the tray setting."""
+        self._quitting = True
+        self.showNormal()
+        self.close()
+        QApplication.quit()
+
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        if self._tray is not None and not self._quitting:
+            # The tray keeps it going: the window goes, the work carries on.
+            if self._state is not None:
+                self._state.setValue("window/geometry", self.saveGeometry())
+            self.hide()
+            event.ignore()
+            self._tray.say_once()
+            return
         self._closing = True
+        if self._tray is not None:
+            self._tray.hide()
         self.watcher.set_enabled(False)
         self._clock.stop()
+        self._results_timer.stop()
         if self._state is not None:
             self._state.setValue("window/geometry", self.saveGeometry())
             self._state.setValue("window/group", self.stack.currentIndex())
+            self._state.setValue("window/place", NAV[self.stack.currentIndex()].title)
             for g, group in enumerate(self.groups):
                 self._state.setValue(f"window/tab/{g}", group.current_index())
-        # Quitting mid-load would destroy a running QThread and crash.
+                self._state.setValue(f"window/tabs/{NAV[g].title}", group.current_index())
+        # Quitting with a thread still running would destroy it and crash.
         loader = self._loader
-        if loader is not None and loader.isRunning():
-            loader.wait(5000)
         site = getattr(self, "_site_worker", None)
-        if site is not None and site.isRunning() and not site.wait(3_000):
-            # Still uploading, and a thread can't be torn down mid-upload
-            # without crashing: the window goes now, the upload finishes out of
-            # sight, and the app closes itself when it's done.
+        check = getattr(self, "_results_worker", None)
+        busy = [w for w in (loader, site, check) if w is not None and w.isRunning()]
+        if busy and not all(w.wait(5_000 if w is loader else 3_000) for w in busy):
+            # Still loading, uploading or asking the scoreboard, and a thread
+            # can't be torn down mid-way without crashing: the window goes
+            # now, the work finishes out of sight, and the app closes after.
             self._close_when_published = True
             self.hide()
             event.ignore()
@@ -881,10 +970,23 @@ def main(argv: list[str] | None = None) -> int:
     if ICON_FILE.is_file():
         app.setWindowIcon(QIcon(str(ICON_FILE)))
 
+    background = "--background" in argv
+    argv = [a for a in argv if a != "--background"]
+    from . import keeping
+    if not (smoke_test or self_check) and keeping.hand_over(show=not background):
+        return 0                        # already running: that one comes forward instead
     window = MainWindow(remember_state=not smoke_test)
+    if not (smoke_test or self_check):
+        window._doorbell = keeping.listen(window)
     if smoke_test or self_check:
         window.auto_site = False        # checking the app must never publish the website
-    window.show()
+        window.auto_results = False     # nor go online by itself
+    if background and window._tray is not None and not (smoke_test or self_check):
+        app.setQuitOnLastWindowClosed(False)    # started with Windows: straight to the tray
+    else:
+        window.show()
+    if window._tray is not None:
+        app.setQuitOnLastWindowClosed(False)    # closing the window leaves it in the tray
 
     if self_check:
 

@@ -19,16 +19,17 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
 from ... import analytics, cards, pricing
 from ..charts import BarChart, LineChart
 from ..widgets import Card, TableModel, make_table, section
+from ...version import MODEL_NAME
 from .base import Page
 
-MODEL_TITLE = "How the dashboard's own picks are doing"
+MODEL_TITLE = f"How {MODEL_NAME}'s picks are doing"
 CALIBRATION_TITLE = "Are its chances honest?"
-TRACK_TITLE = "Following the model - its card against yours"
+TRACK_TITLE = f"Following {MODEL_NAME} - its card against yours"
 TRACK_KEY = "insights/me"
-TRACK_HEADERS = ["Week", "Model's card", "Built to finish first", "You", "Week's best",
-                 "Model would have been"]
+TRACK_HEADERS = ["Week", f"{MODEL_NAME}'s card", "Built to finish first", "You", "Week's best",
+                 f"{MODEL_NAME} would have been"]
 CALLS_TITLE = "Your own calls - the games you went against its card"
-CALLS_HEADERS = ["Week", "Game", "You took", "Model's card (its chance)", "Going your own way"]
+CALLS_HEADERS = ["Week", "Game", "You took", f"{MODEL_NAME}'s card (its chance)", "Going your own way"]
 BACKTEST_TITLE ="Over the long run - 2010 to 2025 under this pool's rules"
 #: A band needs this many picks before its colour says anything about it.
 CALIBRATION_MIN_PICKS = 20
@@ -44,9 +45,9 @@ def _ordinal(n: int) -> str:
 
 
 class ModelPage(Page):
-    title = "Model Details"
-    subtitle = "How the dashboard's own picks have done, and whether to follow them"
-    icon = "\N{BAR CHART}"
+    title = f"{MODEL_NAME}, in detail"
+    subtitle = f"How {MODEL_NAME}'s picks have done, and whether to follow them"
+    icon = "\N{BOW AND ARROW}"
     needs_data = False
 
     # ---- build ---------------------------------------------------------
@@ -81,7 +82,7 @@ class ModelPage(Page):
         self.track_box = QVBoxLayout()
         self.track_card.body().addLayout(self.track_box)
         self.track_note = QLabel(
-            "The model's card is the likeliest side of every game as it stood "
+            f"{MODEL_NAME}'s card is the likeliest side of every game as it stood "
             "before the week's first kickoff - This Week's default card - scored "
             "on the regular games once results are in; the card built to finish "
             "first is shown beside it. \u201cRebuilt\u201d weeks came before cards "
@@ -160,7 +161,7 @@ class ModelPage(Page):
         scores = cards.history(season, key)
         if not scores:
             self.track_summary.setText(
-                "Nothing to score yet. The model's card is kept each week from "
+                f"Nothing to score yet. {MODEL_NAME}'s card is kept each week from "
                 "This Week, and graded here once the results are in."
             )
             return
@@ -206,7 +207,7 @@ class ModelPage(Page):
         sign = "+" if this.net > 0 else "−" if this.net < 0 else "±"
         lines = QLabel(
             f"Week {latest}: {_plural(this.calls, 'call')}, {this.paid} paid off "
-            f"({sign}{abs(this.net)} against the model's card)"
+            f"({sign}{abs(this.net)} against {MODEL_NAME}'s card)"
         )
         lines.setObjectName("Muted")
         self.track_box.addWidget(lines)

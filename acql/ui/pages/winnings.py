@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from ... import ghost
 from ...models import Season
 from ..charts import DivergingBarChart, LineChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
@@ -176,6 +177,41 @@ class WinningsPage(Page):
             ranks.append(rank)
         return ranks
 
+    def _ghost_row(self, season: Season, standings: list[_Standing], weeks: list[int],
+                   season_only: bool, rows: list, tones: dict) -> tuple[dict, str] | None:
+        """Deadeye as a ghost: what the weeks would have paid or cost it had it
+        played, the pool's rule and all. Adds its row; returns its sort values
+        and its hover, or None when it has no scored card."""
+        try:
+            record = ghost.season_record(season)
+        except Exception:  # noqa: BLE001 - the table goes up without it
+            record = None
+        if record is None:
+            return None
+        paid_by_week = {w.week: w.payout for w in record.weeks if w.payout}
+        buy_in = season.buy_in
+        net = record.net if season_only else round(record.won - buy_in, 2)
+        if season_only:
+            row = [self.NO_VALUE, ghost.LABEL, self.money(record.won), self.money(record.paid),
+                   self.money(net, signed=True)]
+        else:
+            row = [self.NO_VALUE, ghost.LABEL, self.money(buy_in), self.money(record.won),
+                   self.money(net, signed=True), len(paid_by_week)]
+            row += [self._dollars(paid_by_week[w]) if paid_by_week.get(w) else "" for w in weeks]
+        r = len(rows)
+        rows.append(row)
+        for column in range(len(row)):
+            tones[(r, column)] = "muted"
+        nets = [s.net for s in standings]
+        values = {0: 1 + sum(1 for v in nets if v > net) - 0.5, 2: record.won if season_only else buy_in,
+                  3: record.paid if season_only else record.won, 4: net}
+        for column, week in enumerate(weeks, start=FIRST_WEEK_COLUMN):
+            values[column] = paid_by_week.get(week, 0.0)
+        tip = (("What the weeks would have paid it, against the same buy-in, had it played.\n"
+                if not season_only else "What it would have won and paid, had it played.\n")
+               + ghost.tooltip(record))
+        return values, tip
+
     @classmethod
     def _dollars(cls, value: float) -> str:
         """Compact money for week columns: $110, but $110.50 when there are cents."""
@@ -229,7 +265,7 @@ class WinningsPage(Page):
                 self.tile_best.update_values(
                     self.money(biggest.won),
                     f"{biggest.name} - most won\n"
-                    f"week by week needs the workbook's Winnings sheet",
+                    f"week by week needs each week's scores",
                 )
 
             top = standings[0]
@@ -275,8 +311,8 @@ class WinningsPage(Page):
             # beats an empty box that looks broken.
             self.trajectory_card.set_title(TRAJECTORY_TITLE)
             self.trajectory_chart.empty(
-                "Season totals only - the week-by-week split lives on the "
-                "workbook's Winnings sheet"
+                "Season totals only - the week-by-week split needs each "
+                "week's scores (from the pick sheets and results)"
             )
             return
         if not earners or len(weeks) < 2:
@@ -395,6 +431,7 @@ class WinningsPage(Page):
             rows.append(row)
             tones[(r, NET_COLUMN)] = "good" if s.net > 0 else ("bad" if s.net < 0 else "muted")
 
+        ghost_row = self._ghost_row(season, standings, weeks, season_only, rows, tones)
         if season_only:
             sort_values = {
                 0: ranks,
@@ -413,6 +450,12 @@ class WinningsPage(Page):
             numeric = {0, 2, 3, 4, 5} | set(range(FIRST_WEEK_COLUMN, len(headers)))
         for column, week in enumerate(weeks, start=FIRST_WEEK_COLUMN):
             sort_values[column] = [s.weekly.get(week, 0.0) for s in standings]
+        tooltips = {}
+        if ghost_row is not None:
+            values, tip = ghost_row
+            for column in sort_values:
+                sort_values[column].append(values.get(column))
+            tooltips[(len(rows) - 1, 1)] = tip
 
         model = TableModel(
             headers,
@@ -421,6 +464,7 @@ class WinningsPage(Page):
             numeric_columns=numeric,
             sort_values=sort_values,
             tones=tones,
+            tooltips=tooltips,
             bold_columns={1},
         )
 
@@ -450,11 +494,11 @@ class WinningsPage(Page):
         if season_only:
             text = (
                 "Season totals from stats.xls. The week-by-week split appears "
-                "here once the workbook's Winnings sheet is filled in."
+                "here once the weeks have their pick sheets and results."
             )
         elif computed:
-            # The workbook saves these as formulas without results, so they
-            # are worked out from the scores by the pool's own rule: a dollar
+            # Nothing gives these as numbers (the workbook kept them as
+            # formulas), so they are worked out from the scores by the pool's own rule: a dollar
             # a game for every coach your record differs from, to the best
             # card of the week, shared when it is tied.
             covered = (

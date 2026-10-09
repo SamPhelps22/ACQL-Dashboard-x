@@ -14,14 +14,15 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
 from ... import reportcard
 from ..charts import LineChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ...version import MODEL_NAME
 from .base import Page
 
 VERDICT_TITLE = "Should I follow it?"
 WEEKS_TITLE = "Week by week - its card against yours"
-WEEK_HEADERS = ["Week", "Model's card", "You", "Pool average", "Week's best",
-                "Model would have been", "You were"]
+WEEK_HEADERS = ["Week", f"{MODEL_NAME}'s card", "You", "Pool average", "Week's best",
+                f"{MODEL_NAME} would have been", "You were"]
 LOSER_TITLE = "Big Losers - its three likeliest against yours"
-LOSER_HEADERS = ["Week", "Model's three", "Its points", "Your points"]
+LOSER_HEADERS = ["Week", f"{MODEL_NAME}'s three", "Its points", "Your points"]
 LONG_TITLE = "Over the long run - 2011 to 2025 under this pool's rules"
 #: Shared with The Model > Details so both pages remember the same coach.
 ME_KEY = "insights/me"
@@ -38,7 +39,7 @@ def _plural(count: int, word: str) -> str:
 
 class ReportCardPage(Page):
     title = "Report Card"
-    subtitle = "How accurate the model is, and whether to follow it"
+    subtitle = f"How accurate {MODEL_NAME} is, and whether to follow it"
     icon = "\N{BAR CHART}"
 
     # ---- build ---------------------------------------------------------
@@ -73,11 +74,11 @@ class ReportCardPage(Page):
         self.weeks_box = QVBoxLayout()
         self.weeks_card.body().addLayout(self.weeks_box)
         self.weeks_note = QLabel(
-            "Regular games only, so every card is scored on the same games. The "
-            "model's card is the likeliest side of every game as it stood before "
+            "Regular games only, so every card is scored on the same games. "
+            f"{MODEL_NAME}'s card is the likeliest side of every game as it stood before "
             "the week's first kickoff - the card This Week recommends. "
             "“Rebuilt” weeks came before cards were kept, and were re-made "
-            "from the stored lines, which is a little kind to the model."
+            f"from the stored lines, which is a little kind to {MODEL_NAME}."
         )
         self.weeks_note.setObjectName("Muted")
         self.weeks_note.setWordWrap(True)
@@ -148,7 +149,7 @@ class ReportCardPage(Page):
             f"<p style='font-size:20px; font-weight:700;{f' color:{colour};' if colour else ''} margin:0'>"
             f"{report.headline}</p>"
             f"<ul style='margin-top:6px'>{bullets}</ul>"
-            "<p style='margin:0'>This Week plays the model's card by default: the likeliest "
+            f"<p style='margin:0'>This Week plays {MODEL_NAME}'s card by default: the likeliest "
             "side of every game and the three likeliest Big Losers - the most wins toward "
             "the season title. Its card picker also offers <i>most money this week</i>, "
             "which chooses Big Losers the pool isn't on.</p>"
@@ -203,10 +204,10 @@ class ReportCardPage(Page):
         self.clear_layout(self.weeks_box)
         weeks = report.weeks
         if not weeks:
-            self.weeks_chart.empty("Appears once a week with the model's card is graded")
+            self.weeks_chart.empty(f"Appears once a week with {MODEL_NAME}'s card is graded")
             return
         x = [w.week for w in weeks]
-        series = [("Model's card", [w.model for w in weeks])]
+        series = [(f"{MODEL_NAME}'s card", [w.model for w in weeks])]
         if any(w.mine is not None for w in weeks):
             series.append((report.coach, [w.mine for w in weeks]))
         series.append(("Week's best", [w.best for w in weeks]))
@@ -241,9 +242,9 @@ class ReportCardPage(Page):
         found = report.losers
         if not found:
             self.loser_summary.setText(
-                "Graded once a week's pick sheet is stored alongside the graded "
-                "workbook (or the standings export names the week's big losers) - "
-                "that is how the app knows which teams were blown out."
+                "Graded once a week has its pick sheet and its final scores (or "
+                "the standings export names the week's big losers) - that is how "
+                "the app knows which teams were blown out."
             )
             return
         model = sum(x.model_points for x in found)

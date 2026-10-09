@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ... import analytics, lines, picks, predictions, pricing, schedule, weekplan
+from ... import analytics, lines, oddslock, picks, predictions, pricing, schedule, weekplan
 from ...config import BIG_LOSER_PICKS, WEEKS_IN_SEASON
 from ...models import Game
 from ..widgets import Card, ColumnFitter, StatTile, fit_height, section
@@ -132,8 +132,8 @@ PLAN_RULE = (
 )
 
 WHERE_TO_PUT_IT = (
-    "No predictions file for this week yet. Save the week's CSV next to the "
-    "workbook (or leave it in Downloads) with the week in its name - "
+    "No predictions file for this week yet. Save the week's CSV in the data "
+    "folder (or leave it in Downloads) with the week in its name - "
     "\"nflpredictions_week_3.csv\" - and press Refresh; it is picked up from "
     "then on. Load predictions… takes one from anywhere."
 )
@@ -164,6 +164,7 @@ class OddsDialog(QDialog):
         blurb: str = "",
         placeholder: str = "",
         button: str = "Read odds",
+        text: str = "",
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title or f"Paste Week {week} odds")
@@ -186,6 +187,8 @@ class OddsDialog(QDialog):
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText(placeholder or PLACEHOLDER)
         self.editor.setTabChangesFocus(True)
+        if text:
+            self.editor.setPlainText(text)
         layout.addWidget(self.editor, 1)
 
         buttons = QDialogButtonBox(
@@ -204,6 +207,9 @@ class NextWeekPage(Page):
     title = "Every Game"
     subtitle = "A pick for every game on the slate, with your pool's lines applied"
     icon = "\N{AMERICAN FOOTBALL}"
+
+    #: Line games were typed in: the window reads everything again with them.
+    refresh_requested = Signal()
 
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
@@ -233,6 +239,14 @@ class NextWeekPage(Page):
             self.week_picker.addItem(f"Week {number}", number)
         self.week_picker.currentIndexChanged.connect(lambda _: self._on_week_chosen())
         controls.addWidget(self.week_picker)
+
+        self.lines_button = QPushButton("Line games…")
+        self.lines_button.setToolTip(
+            "Type or paste the week's line games - (kc by 10) - until the "
+            "commissioner's pick sheet says them"
+        )
+        self.lines_button.clicked.connect(self._line_games)
+        controls.addWidget(self.lines_button)
 
         self.load_button = QPushButton("Load predictions…")
         self.load_button.setToolTip(
@@ -433,8 +447,9 @@ class NextWeekPage(Page):
         workbook = getattr(season, "workbook_path", None)
         # The slate goes in too, so a download whose name does not say the
         # week is still recognised by the games in it.
+        self._locked = oddslock.locked_for(season, number)
         forecasts, source, _ = predictions.refresh_from_disk(
-            number, workbook, sheet_games
+            number, workbook, sheet_games, locked=self._locked
         )
         picks.refresh_from_disk(workbook)
         self._picks = picks.load(number)
@@ -498,6 +513,7 @@ class NextWeekPage(Page):
             self._fit_table()
         finally:
             self._loading = False
+        self._show_lock(number)
 
         self.card.set_title(f"Week {number} picks")
         self._update_tiles()
@@ -542,6 +558,17 @@ class NextWeekPage(Page):
             lines_out.append(
                 f"Pick sheet \u00b7 {picks.summary(self._picks)} \u00b7 every "
                 f"\"Vs pool\" figure below is counted, not estimated"
+            )
+        elif self._games:
+            lined = [g for g in self._games if getattr(g, "line", None) is not None]
+            lines_out.append(
+                f"No pick sheet for week {number} yet \u00b7 "
+                + ("line games: " + ", ".join(
+                    f"{predictions.display_team(g.line_favourite)} by {g.line:g}" for g in lined)
+                   + " \u00b7 Line games\u2026 changes them"
+                   if lined else
+                   "no line games yet - add them with Line games\u2026, and every game "
+                   "is straight up until then")
             )
 
         record = self._record()
@@ -591,8 +618,8 @@ class NextWeekPage(Page):
     def _show_blank(self, number: int) -> None:
         self.table.hide()
         self.empty_note.setText(
-            f"Week {number} has no games. The workbook's Week {number} sheet is "
-            f"empty, there is no predictions file for it, and the schedule "
+            f"Week {number} has no games. There is no pick sheet for it yet, "
+            f"no predictions file for it, and the schedule "
             f"doesn't have it either - which usually means the season table in "
             f"schedule.py stops short of week {number}."
         )
@@ -603,8 +630,7 @@ class NextWeekPage(Page):
             tile.update_values(self.NO_VALUE, "slate not entered yet")
         self._show_big_losers()
         self._show_plan()
-        for button in (self.paste_button, self.clear_button):
-            button.setEnabled(False)
+        self._show_lock(number)
 
     def _fit_table(self) -> None:
         """Whole table, no inner scrolling, columns measured to what they hold."""
@@ -699,8 +725,39 @@ class NextWeekPage(Page):
         points = self.table.cellWidget(row, COL_SPREAD)
         return favourite.currentData(), float(points.value())
 
+    def _locked_now(self) -> bool:
+        """Whether the week on show is locked - asked afresh, so a page left
+        open over the first kickoff locks then, not at its next refresh."""
+        if getattr(self, "_locked", False):
+            return True
+        if self.season is None or not getattr(self, "_games", None):
+            return False
+        if not oddslock.locked_for(self.season, self._week_number):
+            return False
+        # Kicked off since the page was drawn: the stored numbers go back in
+        # every box, locked - once this event is over, as a box may have sent it.
+        self._locked = True
+        self._show_lock(self._week_number)
+        QTimer.singleShot(0, self._show_week)
+        return True
+
+    def _show_lock(self, number: int) -> None:
+        """A week past its odds lock: its numbers can be read, not changed."""
+        locked = getattr(self, "_locked", False)
+        games = bool(getattr(self, "_games", None))
+        for button in (self.load_button, self.models_button):
+            button.setEnabled(not locked)
+        for button in (self.paste_button, self.clear_button):
+            button.setEnabled(games and not locked)
+        for row in range(self.table.rowCount()):
+            for col in (COL_FAV, COL_SPREAD):
+                widget = self.table.cellWidget(row, col)
+                if widget is not None:
+                    widget.setEnabled(not locked)
+        self.status.setToolTip(oddslock.note(self.season, number) if locked and self.season is not None else "")
+
     def _on_input(self, row: int) -> None:
-        if self._loading or not 0 <= row < len(self._games):
+        if self._loading or not 0 <= row < len(self._games) or self._locked_now():
             return
         side, points = self._inputs(row)
         game = self._games[row]
@@ -1053,6 +1110,8 @@ class NextWeekPage(Page):
 
     # ---- filling the slate in bulk -----------------------------------------
     def _load_predictions(self) -> None:
+        if self._locked_now():
+            return                # the week's odds are locked
         start = predictions.search_folders(
             getattr(self.season, "workbook_path", None) if self.season else None
         )
@@ -1060,8 +1119,8 @@ class NextWeekPage(Page):
             self, f"Week {self._week_number} predictions",
             str(start[0]) if start else "", "Predictions (*.csv);;All files (*)",
         )
-        if not path:
-            return
+        if not path or self._locked_now():
+            return                # nothing chosen, or kicked off while choosing
         try:
             forecasts = predictions.read_csv(path)
         except (OSError, ValueError) as problem:
@@ -1094,6 +1153,8 @@ class NextWeekPage(Page):
         the odds paste is the models - with them the page can say where the
         market and the models disagree, which is the whole point of it.
         """
+        if self._locked_now():
+            return                # the week's odds are locked
         week = self._week_number
         dialog = OddsDialog(
             week, self,
@@ -1108,8 +1169,8 @@ class NextWeekPage(Page):
             placeholder=MODELS_PLACEHOLDER,
             button="Read models",
         )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
+        if dialog.exec() != QDialog.DialogCode.Accepted or self._locked_now():
+            return                # cancelled, or kicked off while it was open
         try:
             forecasts = predictions.parse_summary_text(dialog.text())
         except (ValueError, TypeError) as problem:
@@ -1199,20 +1260,75 @@ class NextWeekPage(Page):
 
         if sheet.week in graded.checked:
             return (
-                " The workbook already scores this week, so it was checked "
-                "against the sheet rather than rescored."
+                " The workbook already has results for this week, so it was "
+                "checked against the sheet rather than rescored."
             )
         if sheet.week in graded.built or sheet.week in graded.filled:
             counted = len(self.season.weeks[sheet.week].lines)
             return f" Week {sheet.week} is now scored from it for all {counted} coaches."
         return ""
 
+    def _line_games(self) -> None:
+        """The week's line games, typed or pasted - what used to be typed into
+        the workbook. They count until the commissioner's pick sheet arrives;
+        its lines are used from then on, and any difference is pointed out.
+        Not held by the odds lock: they are the pool's rules, not a forecast."""
+        if self.season is None or not self._games:
+            return
+        from ... import results
+        year = results.season_year(self.season)
+        week = self._week_number
+        dialog = OddsDialog(
+            week, self,
+            title=f"Week {week} line games",
+            blurb=(
+                "One line game a line, the way the pick sheet writes them - "
+                "(kc by 10), Chiefs by 10 or KC -10. Games not listed are "
+                "straight up. Until the commissioner's pick sheet is in, these "
+                "are the week's lines everywhere in the dashboard; once it is, "
+                "its lines are used and any difference is listed on Data & Update."
+            ),
+            placeholder="(kc by 10)\n(buf by 7)\nPhilly by 3.5",
+            button="Save line games",
+            # what is in force now - typed here, or else the workbook's or the
+            # sheet's - since the list saved is the whole week's
+            text=lines.pool_lines_text(year, week) or "\n".join(
+                f"({predictions.team_code(g.line_favourite)} by {g.line:g})"
+                for g in self._games if g.line is not None and predictions.team_code(g.line_favourite)),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        found, problems = lines.parse_pool_lines(dialog.text(), self._games)
+        if problems and not found:
+            self.paste_note.setText("Line games not saved - " + "; ".join(problems[:4]) + ".")
+            self.paste_note.show()
+            return
+        try:
+            lines.save_pool_lines(year, week, found)
+        except Exception as exc:  # noqa: BLE001 - the store says why
+            self.paste_note.setText(f"Line games not saved: {exc}")
+            self.paste_note.show()
+            return
+        listed = ", ".join(f"{predictions.DISPLAY.get(fav, fav)} by {points:g}"
+                           for fav, points in sorted(found.values()))
+        parts = [f"Week {week}: {_plural(len(found), 'line game')} kept"
+                 + (f" - {listed}." if listed else " - every game straight up.")]
+        if problems:
+            parts.append("Not read: " + "; ".join(problems[:4]) + ".")
+        if self._picks is not None:
+            parts.append("The pick sheet for this week is in, so its lines are the ones used.")
+        self.paste_note.setText(" ".join(parts))
+        self.paste_note.show()
+        self.refresh_requested.emit()
+
     def _paste_odds(self) -> None:
+        if self._locked_now():
+            return                # the week's odds are locked
         if not self._games:
             return
         dialog = OddsDialog(self._week_number, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
+        if dialog.exec() != QDialog.DialogCode.Accepted or self._locked_now():
+            return                # cancelled, or kicked off while it was open
         found, notes = lines.parse_odds_text(dialog.text(), self._games)
         self._apply_spreads(found)
 
@@ -1256,8 +1372,10 @@ class NextWeekPage(Page):
         self._show_plan()
 
     def _clear_spreads(self) -> None:
-        self._typed = {}
         """Forget the typed-in spreads. The file's lines come back in their place."""
+        if self._locked_now():
+            return                # the week's odds are locked
+        self._typed = {}
         self._loading = True
         try:
             for row, game in enumerate(self._games):
@@ -1422,8 +1540,9 @@ class NextWeekPage(Page):
     # ---- the headline numbers ----------------------------------------------
     def _update_tiles(self) -> None:
         games = self._games
+        locked = getattr(self, "_locked", False)
         for button in (self.paste_button, self.clear_button):
-            button.setEnabled(bool(games))
+            button.setEnabled(bool(games) and not locked)
         lined = sum(1 for g in games if getattr(g, "line", None) is not None)
         guesses = [self._prediction(row) for row in range(len(games))]
         outlook = analytics.slate_outlook(guesses)
@@ -1431,6 +1550,8 @@ class NextWeekPage(Page):
         self.status.setText(
             f"{_plural(len(games), 'game')} · {lined} with a pool line"
             + (" · slate from the predictions file" if self._from_file else "")
+            + (" · " + oddslock.badge(self.season, self._week_number)
+               if locked and self.season is not None else "")
         )
         self.tile_slate.update_values(
             f"{outlook.priced}/{len(games)}",

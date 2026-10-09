@@ -23,6 +23,8 @@ from ... import briefing, cards, odds, survivor
 from ...predictions import display_team
 from ...models import Season
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ...version import MODEL_NAME
+from ... import oddslock
 from .base import Page
 
 HEADERS = ["#", "Game", "Take", "Chance", "Vs pool", "If flipped", "Pool line", "Why"]
@@ -139,7 +141,7 @@ class BriefingPage(Page):
             "of a point a week.\n"
             "Built to finish first turns a game or two against the pool; in the "
             "replay that cost points and made no more money.\n"
-            "See The Model > Report card."
+            f"See {MODEL_NAME} > Report card."
         )
         wanted = QSettings().value(self.STYLE_KEY, briefing.DEFAULT_STYLE)
         found = self.style_picker.findData(wanted)
@@ -634,20 +636,55 @@ class BriefingPage(Page):
         return f"{choice.if_flipped:.1%}"
 
     # ---- lines ------------------------------------------------------------
+    def _locked(self, week: int) -> bool:
+        return bool(week) and self.season is not None and oddslock.locked_for(self.season, week)
+
+    def _pool_note(self, week: int) -> str:
+        """For a week no pick sheet has built yet: where its games and line
+        games came from, and where to type them."""
+        season = self.season
+        fixture = getattr(season, "fixture_weeks", None) if season is not None else None
+        if not isinstance(fixture, (list, tuple, set)) or week not in fixture:
+            return ""
+        found = season.weeks.get(week)
+        lined = [g for g in (found.games if found else []) if g.line is not None]
+        if not lined:
+            return (f"No pick sheet for week {week} yet, and no line games - add them on the "
+                    f"Every game tab (Line games\u2026); every game is straight up until then.")
+        return (f"No pick sheet for week {week} yet: the line games are the ones typed in on the "
+                f"Every game tab ({', '.join(f'{display_team(g.line_favourite)} by {g.line:g}' for g in lined)}).")
+
     def _update_lines_status(self, week: int) -> None:
+        pool = self._pool_note(week)
+        self._update_lines_text(
+            week, (lambda text: self.lines_status.setText(pool + "  " + text)) if pool
+            else self.lines_status.setText)
+
+    def _update_lines_text(self, week: int, say) -> None:
+        locked = self._locked(week)
+        self.lines_button.setEnabled(not locked and self._fetcher is None)
+        self.lines_button.setToolTip(
+            "The odds locked at the week's first kickoff - the lines stay as they were then"
+            if locked else "Fetch the latest lines from the books (The Odds API)"
+        )
+        if locked:
+            say(oddslock.note(self.season, week))
+            return
         found = odds.stored(week) if week else None
         note = self._update_note
         if found is None:
-            self.lines_status.setText((note + "  " if note else "") + (
+            coming = oddslock.coming(self.season, week) if self.season is not None and week else ""
+            say((note + "  " if note else "") + (
                 "Lines: from the predictions file or typed spreads. "
                 "\u21bb Update lines fetches the latest from the books."
                 if odds.api_key() else
                 "Lines: from the predictions file or typed spreads. Add a free "
                 "Odds API key (\u2699) and \u21bb Update lines fetches them for you."
-            ))
+            ) + (" " + coming if coming else ""))
             return
         moved = odds.movements(week)
         text = (note + "  " if note else "") + f"Lines updated {_when(found.at)}"
+        coming = oddslock.coming(self.season, week) if self.season is not None else ""
         left = odds.remaining()
         if left is not None:
             text += f" \u00b7 {left} requests left this month"
@@ -656,7 +693,9 @@ class BriefingPage(Page):
                 f"{odds.describe_margin(label, then)} \u2192 {odds.describe_margin(label, now)}"
                 for label, then, now in moved[:4]
             ) + ("\u2026" if len(moved) > 4 else "")
-        self.lines_status.setText(text)
+        if coming:
+            text += " \u00b7 " + coming
+        say(text)
 
     def _odds_settings(self, reason: str = "") -> bool:
         dialog = OddsDialog(reason, self)
@@ -666,7 +705,7 @@ class BriefingPage(Page):
         return bool(odds.api_key())
 
     def _update_lines(self) -> None:
-        if self._fetcher is not None:
+        if self._fetcher is not None or self._locked(self._week_shown):
             return
         key = odds.api_key()
         if not key:
@@ -685,10 +724,11 @@ class BriefingPage(Page):
     def _release_fetcher(self, fetcher) -> None:
         if self._fetcher is fetcher:
             self._fetcher = None
+            self.lines_button.setEnabled(not self._locked(self._week_shown))
         fetcher.deleteLater()
 
     def _lines_fetched(self, result: object) -> None:
-        self.lines_button.setEnabled(True)
+        self.lines_button.setEnabled(not self._locked(self._week_shown))
         self.lines_button.setText("\u21bb  Update lines")
         if isinstance(result, str):
             self.lines_status.setText(f"Lines not updated. {result}")
@@ -699,6 +739,10 @@ class BriefingPage(Page):
         week = self._week_shown
         season = self.season
         if not week or season is None:
+            return
+        if self._locked(week):
+            # the lock passed while the lines were on their way: they don't count
+            self._update_lines_status(week)
             return
         # What the card was just before, so the change panel has something
         # to compare with even if no card was saved.

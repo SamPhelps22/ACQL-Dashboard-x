@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from .models import Season, same_team
+from .version import MODEL_NAME
 
 STORE_NAME = "acql-cards.json"
 #: A pick whose chance moved this much (either way) since the card was
@@ -99,6 +100,61 @@ def _get(week: int, slot: str) -> Snapshot | None:
     return Snapshot.load(((_read().get("weeks") or {}).get(str(week)) or {}).get(slot))
 
 
+def _teams(label: object) -> tuple[str, str] | None:
+    """(away code, home code) from a kept label, "Tampa Bay @ Dallas"."""
+    from .predictions import team_code
+    text = str(label or "")
+    if " @ " not in text:
+        return None
+    away, home = text.split(" @ ", 1)
+    a, h = team_code(away), team_code(home)
+    return (a, h) if a and h and a != h else None
+
+
+def aligned(snap: Snapshot, slate: list[tuple[int, str, str]]) -> Snapshot:
+    """The card with its games numbered as this slate numbers them.
+
+    A card is kept by game number, and a week's numbering can change under
+    it: a week the dashboard set up from the NFL's fixtures (first kickoff
+    first) is numbered again in the commissioner's order once his sheet
+    arrives. So each kept game is found again by its two teams - a game the
+    slate no longer has is left out - and one kept without a label keeps its
+    number. `slate` is (number, away, home) for each game.
+    """
+    from .predictions import team_code
+    where = {}
+    for index, away, home in slate:
+        a, h = team_code(away), team_code(home)
+        if a and h:
+            where[frozenset((a, h))] = (index, a)
+    move: dict[int, int] = {}
+    flip: set[int] = set()
+    for index in set(snap.take) | set(snap.chance) | set(snap.label):
+        teams = _teams(snap.label.get(index))
+        if teams is None:
+            move[index] = index
+            continue
+        found = where.get(frozenset(teams))
+        if found is None:
+            continue
+        move[index] = found[0]
+        if found[1] != teams[0]:
+            flip.add(index)             # home and away the other way round now
+    if not flip and all(move.get(i) == i for i in set(snap.take) | set(snap.chance) | set(snap.label)):
+        return snap
+
+    def moved(values: dict, turn: bool = False) -> dict:
+        return {move[i]: (-v if turn and i in flip else v) for i, v in values.items() if i in move}
+
+    return replace(snap, take=moved(snap.take), chance=moved(snap.chance), label=moved(snap.label),
+                   margin=moved(snap.margin, True), plain=moved(snap.plain),
+                   planned=moved(snap.planned))
+
+
+def _slate(games) -> list[tuple[int, str, str]]:
+    return [(g.index, g.away, g.home) for g in games]
+
+
 def _put(week: int, slot: str, snap: Snapshot | None) -> None:
     store = _read()
     entry = store.setdefault("weeks", {}).setdefault(str(week), {})
@@ -144,7 +200,8 @@ def week_started(season: Season, week: int) -> bool:
 
 
 def record_model(season: Season, week: int, brief) -> bool:
-    """Keep the model's card, until the week's first result locks it.
+    """Keep the model's card until the week's first game kicks off - the odds
+    lock (oddslock.py) - or its first result is in, whichever comes first.
 
     A card planned against the pool's real pick sheet isn't kept: nobody can
     see everyone's picks before handing theirs in, so grading the model on
@@ -152,6 +209,9 @@ def record_model(season: Season, week: int, brief) -> bool:
     """
     if brief is None or not brief.choices or week_started(season, week):
         return False
+    from . import oddslock
+    if oddslock.locked_for(season, week):
+        return False                      # kicked off: the card stands as it was
     plan = getattr(brief, "plan", None)
     if plan is not None and getattr(plan, "field_known", False):
         return False
@@ -192,6 +252,7 @@ def _line_note(label: str, then: float | None, now: float | None) -> str:
 def compare(brief, base: Snapshot, what: str) -> Changes:
     """How the card made now differs from an earlier one."""
     items = []
+    base = aligned(base, [(c.index, *(_teams(c.matchup) or ("", ""))) for c in brief.choices])
     for c in brief.choices:
         then_side = base.take.get(c.index)
         if then_side is None:
@@ -278,6 +339,7 @@ def score_week(season: Season, week_number: int, coach_key: str | None,
     week = season.weeks.get(week_number)
     if week is None or not week.scored:
         return None
+    snap = aligned(snap, _slate(week.games))
     # The model's card is the one This Week recommends: the likeliest side of
     # every game, whichever card the page happened to be showing.
     model_hits, graded = _hits(snap.plain or snap.take, week)
@@ -348,15 +410,15 @@ class Record:
 
     def sentence(self, coach: str) -> str:
         if not self.weeks:
-            return "No graded weeks with a model card yet."
+            return f"No graded weeks with a card from {MODEL_NAME} yet."
         text = (
-            f"Over {self.weeks} week{'s' if self.weeks != 1 else ''} the model's card got "
+            f"Over {self.weeks} week{'s' if self.weeks != 1 else ''} {MODEL_NAME}'s card got "
             f"{self.model_total} right; the card built to finish first {self.planned_total}"
         )
         if self.mine_total is not None:
             text += f"; {coach} {self.mine_total}"
             text += (
-                f". The model beat {coach} in {self.model_better}, "
+                f". {MODEL_NAME} beat {coach} in {self.model_better}, "
                 f"{coach} beat it in {self.mine_better}"
             )
         text += (
@@ -407,6 +469,7 @@ def my_calls(season: Season, coach_key: str | None, *, rebuild: bool = True) -> 
             snap = _rebuild(season, number)
         if snap is None:
             continue
+        snap = aligned(snap, _slate(week.games))
         take = snap.plain or snap.take
         for game in sorted(week.games, key=lambda g: g.index):
             side = take.get(game.index)
@@ -454,12 +517,12 @@ class CallRecord:
 
     def sentence(self, coach: str, weeks: int) -> str:
         if not self.calls:
-            return (f"{coach} has played the model's card game for game"
+            return (f"{coach} has played {MODEL_NAME}'s card game for game"
                     + (f" over {weeks} week{'s' if weeks != 1 else ''}." if weeks else "."))
         net = self.net
         verdict = ("adding " + _count(net, "win") if net > 0 else
                    "costing " + _count(-net, "win") if net < 0 else "breaking even")
-        return (f"{coach}'s own calls: {_count(self.calls, 'game')} against the model's card, "
+        return (f"{coach}'s own calls: {_count(self.calls, 'game')} against {MODEL_NAME}'s card, "
                 f"{self.paid} came in and {self.cost} didn't - so far they are {verdict} "
                 f"against playing its card.")
 

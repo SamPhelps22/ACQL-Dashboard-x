@@ -99,10 +99,11 @@ class UpdateFlow:
         )
         return Path(path) if path else None
 
-    def start(self) -> None:
+    def start(self, path: Path | None = None) -> None:
+        """Install `path` (an update found by itself), or ask which zip."""
         if self._thread is not None:
             return
-        path = self.choose()
+        path = path or self.choose()
         if path is None:
             return
         try:

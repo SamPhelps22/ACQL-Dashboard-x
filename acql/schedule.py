@@ -17,6 +17,9 @@ from .config import WEEKS_IN_SEASON
 from .models import Game
 
 BYE = "BYE"
+#: The season the table below is. A pick sheet is only checked against it in
+#: that season; any other year is checked against the NFL's own scoreboard.
+SCHEDULE_YEAR = 2026
 
 #: Team code, then one entry a week. Paste a new season's table in here.
 TABLE = """

@@ -20,7 +20,8 @@ model and the Insights record - one set of rules, in one place:
                  the slate's shared home lean taken out first, and anything
                  the line has already moved against discounted (see
                  predictions.Forecast.live_edge). How big a share is fitted
-                 to this season's results once there are enough of them.
+                 to this season's results once there are enough of them -
+                 the results of the weeks before the one being priced.
     the spread   the usual 8.7 points, widened by how far apart the models
                  are on this game.
 
@@ -30,22 +31,31 @@ Every margin is from the HOME team's side: +6.5 is the home team by 6.5.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from . import analytics, lines, predictions
 from .models import Game, Season, same_team
 
 
 # ---- how much of the models to believe --------------------------------------------
-_WEIGHT_CACHE: dict[tuple, tuple[float, predictions.WeightFit | None]] = {}
+#: The stored data the replays were made from -> each week's replay, and the
+#: fits already worked out from them (keyed by the week they were for).
+_WEIGHT_CACHE: dict[tuple, tuple[list, dict]] = {}
 
 
-def model_weight(season: Season | None) -> tuple[float, predictions.WeightFit | None]:
+def model_weight(season: Season | None, before: int | None = None) -> tuple[float, predictions.WeightFit | None]:
     """(weight to use, the fit behind it) - fitted to this season once it can be.
 
+    `before` fits on the weeks before that one only, and that is how every
+    week is priced (context): with what was known going into it. So a week's
+    chances don't move when its own games are played - its odds stay locked
+    from the first kickoff (oddslock.py) - and the record grades each week
+    without hindsight: week 5's picks are judged with the weight week 5 had,
+    not one fitted on week 5's own results.
+
     Replaying every stored week at every weight is the slow part of pricing,
-    so it is remembered until the stored predictions, the fetched lines or
-    the results change.
+    so each week's replay is remembered until the stored predictions, the
+    fetched lines or the results change; fitting from them is quick.
     """
     if season is None:
         return predictions.CONSENSUS_WEIGHT, None
@@ -54,21 +64,76 @@ def model_weight(season: Season | None) -> tuple[float, predictions.WeightFit | 
         (n, sum(1 for g in w.games if g.played)) for n, w in season.weeks.items()
     ))
     key = (id(season), results, predictions.store_stamp(), odds.stamp())
-    found = _WEIGHT_CACHE.get(key)
-    if found is not None:
-        return found
-    weeks = []
-    for number, stored in predictions.stored_weeks().items():
-        week = season.weeks.get(number)
-        if week is None or not stored:
-            continue
-        if any(g.played for g in week.games):
-            weeks.append((number, list(week.games), stored))
-    fit = predictions.fit_weight(weeks) if weeks else None
-    answer = (fit.weight if fit else predictions.CONSENSUS_WEIGHT, fit)
-    _WEIGHT_CACHE.clear()
-    _WEIGHT_CACHE[key] = answer
-    return answer
+    kept = _WEIGHT_CACHE.get(key)
+    if kept is None:
+        replays = []
+        for number, stored in predictions.stored_weeks().items():
+            week = season.weeks.get(number)
+            if week is None or not stored:
+                continue
+            if any(g.played for g in week.games):
+                replays.append(predictions.replay_week(number, list(week.games), stored))
+        kept = (replays, {})
+        _WEIGHT_CACHE.clear()
+        _WEIGHT_CACHE[key] = kept
+    replays, fits = kept
+    if before not in fits:
+        used = [r for r in replays if before is None or r.number < before]
+        fit = predictions.fit_from(used) if used else None
+        fits[before] = (fit.weight if fit else predictions.CONSENSUS_WEIGHT, fit)
+    return fits[before]
+
+
+#: The weight each week was priced with, kept by "YEAR-WEEK" (store kind).
+HELD_KIND = "weights"
+
+
+def week_weight(season: Season | None, week: int) -> tuple[float, predictions.WeightFit | None]:
+    """The weight a week is priced with (context).
+
+    While the week is open it is fitted on the weeks before it, and noted
+    down whenever it changes. From the week's first kickoff (oddslock.py) the
+    last one noted stands, so nothing that comes in afterwards - not even a
+    result for an earlier week from a pick sheet loaded late - moves the
+    week's chances. A week first priced after its kickoff is held at what it
+    is priced with then.
+    """
+    if season is None or not week:
+        return model_weight(season, before=week or None)
+    from . import oddslock, results, store
+    key = f"{results.season_year(season)}-{week}"
+    try:
+        held = store.get(HELD_KIND, key)
+    except Exception:  # noqa: BLE001 - pricing never fails over the note
+        held = None
+    if oddslock.locked_for(season, week):
+        found = _held(held)
+        if found is not None:
+            return found
+    weight, fit = model_weight(season, before=week)
+    noted = {"weight": weight, "fit": None}
+    if fit is not None:
+        noted["fit"] = {**asdict(fit), "weeks": list(fit.weeks)}
+    if noted != held:
+        try:
+            store.put(HELD_KIND, key, noted)
+        except Exception:  # noqa: BLE001 - priced all the same; held next time
+            pass
+    return weight, fit
+
+
+def _held(raw: object) -> tuple[float, predictions.WeightFit | None] | None:
+    if not isinstance(raw, dict) or not isinstance(raw.get("weight"), (int, float)):
+        return None
+    fit = raw.get("fit")
+    if isinstance(fit, dict):
+        try:
+            fit = predictions.WeightFit(**{**fit, "weeks": tuple(fit.get("weeks") or ())})
+        except TypeError:
+            fit = None
+    else:
+        fit = None
+    return float(raw["weight"]), fit
 
 
 # ---- a week's context ------------------------------------------------------------------
@@ -95,11 +160,11 @@ def context(
     """The week's stored predictions, matched to its slate."""
     if forecasts is None:
         forecasts, _ = predictions.load(week)
+    # priced on the weeks before it, and held from its first kickoff
+    weight, fit = week_weight(season, week)
     if not forecasts:
-        weight, fit = model_weight(season)
         return Context(week, {}, 0.0, 0.0, weight, fit)
     found = predictions.match_games(sorted(games, key=lambda g: g.index), forecasts)
-    weight, fit = model_weight(season)
     return Context(
         week=week,
         forecasts=dict(found.by_game),

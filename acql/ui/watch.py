@@ -22,6 +22,7 @@ Three things make that trickier than it sounds, and each has a rule here:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -35,6 +36,12 @@ SETTLE_MS = 1500
 POLL_MS = 60_000
 
 Snapshot = dict[str, tuple[int, int]]      # path -> (modified ns, size)
+
+#: Folders that hold far more than the pool's files - Downloads - where only
+#: a pick sheet or a predictions file counts (the two the dashboard reads
+#: from there), so it doesn't reload for every other spreadsheet that lands.
+NARROW: set[str] = set()
+POOL_FILE = re.compile(r"^\s*(picks|nflpredictions)", re.IGNORECASE)
 
 
 def is_watched(path: Path) -> bool:
@@ -59,12 +66,13 @@ def snapshot(folders: Iterable[Path]) -> Snapshot:
     """
     seen: Snapshot = {}
     for folder in folders:
+        narrow = str(Path(folder)) in NARROW
         try:
             entries = list(Path(folder).iterdir())
         except OSError:
             continue
         for entry in entries:
-            if not is_watched(entry):
+            if not is_watched(entry) or (narrow and not POOL_FILE.match(entry.name)):
                 continue
             try:
                 info = entry.stat()

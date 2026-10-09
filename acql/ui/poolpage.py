@@ -14,6 +14,7 @@ the same code as the dashboard's own pages, so the two always agree.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import time
@@ -613,10 +614,23 @@ def _recent_sheet(sheet, imported: float | None = None, now: float | None = None
     return when is not None and now - when <= RECENT_SHEET_DAYS * 86400
 
 
+def _from_sheets(season: Season) -> Season:
+    """The season as the pick sheets and the files have it: without the
+    weeks the dashboard set up itself from the NFL's fixtures, which have
+    nobody's picks in them. The page goes on showing what it always has."""
+    extra = set(getattr(season, "fixture_weeks", ()) or ())
+    if not extra:
+        return season
+    view = copy.copy(season)
+    view.weeks = {n: w for n, w in season.weeks.items() if n not in extra}
+    return view
+
+
 def snapshot(season: Season, *, generated: str | None = None, strict: bool = False) -> dict:
     """Everything the pool page shows, worked out from the season. `strict`
     (publishing) lets a store that can't be read stop the build rather than
     put the site up without its announcement and past seasons."""
+    season = _from_sheets(season)
     weeks = finished_weeks(season)
     latest = max(weeks, default=0)
     # The standings the files give (places, wins, Big Loser points) are as
