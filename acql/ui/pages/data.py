@@ -1,4 +1,5 @@
-"""Files, conflicts, and the weekly editor that writes back to Excel."""
+"""Files, where each week's results came from, conflicts, and - while a
+workbook is still loaded - the editor that writes back to it."""
 
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -16,14 +18,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import picks, predictions, store, updater
+from ... import picks, predictions, results, store, updater
 from ..editor import WeekEditor
 from ..widgets import Banner, Card, TableModel, make_table, section
-from .base import INSTALL_UPDATE, SELF_CHECK, UNDO_UPDATE, Page
+from .base import CHECK_RESULTS, CHECK_UPDATES, INSTALL_UPDATE, KEEPING, SELF_CHECK, UNDO_UPDATE, UPDATE_SETTINGS, Page
 
 FILE_HEADERS = ["File", "Type", "Week", "Updated", "What it gave", "Folder", "Status"]
-CONFLICT_HEADERS = ["Player", "Field", "stats.xls (used)", "Workbook", "Note"]
+CONFLICT_HEADERS = ["Player", "Field", "stats.xls (used)", "Other count", "Note"]
 WEEKLY_HEADERS = ["Week", "Kind", "From", "What is in it", "Status"]
+RESULTS_HEADERS = ["Week", "Games", "Results from", "Status"]
 
 SOURCE_KINDS = {
     "stats": "Standings export",
@@ -56,7 +59,7 @@ class DataPage(Page):
     """
 
     title = "Data & Update"
-    subtitle = "What is loaded, what disagrees, entering results, and updating the app"
+    subtitle = "What is loaded, where the results came from, what disagrees, and updating the app"
     icon = "\N{CARD INDEX DIVIDERS}"
     #: This is where folders get added, so it must work before any data does.
     needs_data = False
@@ -84,6 +87,12 @@ class DataPage(Page):
             "current code is backed up first and put back if anything goes wrong."
         )
         self.update_btn.clicked.connect(lambda: self.action_requested.emit(INSTALL_UPDATE))
+        self.check_updates_btn = QPushButton("Check for updates")
+        self.check_updates_btn.setToolTip("Look in the dashboard's GitHub repository for a newer version now")
+        self.check_updates_btn.clicked.connect(lambda: self.action_requested.emit(CHECK_UPDATES))
+        self.update_settings_btn = QPushButton("Updates from GitHub\u2026")
+        self.update_settings_btn.setToolTip("Where new versions come from: the repository and its token")
+        self.update_settings_btn.clicked.connect(lambda: self.action_requested.emit(UPDATE_SETTINGS))
         self.undo_btn = QPushButton("Undo last update")
         self.undo_btn.setToolTip("Put back the code from before the last update")
         self.undo_btn.clicked.connect(lambda: self.action_requested.emit(UNDO_UPDATE))
@@ -98,21 +107,70 @@ class DataPage(Page):
         self.backup_btn.clicked.connect(self._backup_now)
         self.backups_btn = QPushButton("Open backups")
         self.backups_btn.clicked.connect(self._open_backups)
-        for button in (self.update_btn, self.undo_btn, self.check_btn,
-                       self.backup_btn, self.backups_btn):
+        for button in (self.check_updates_btn, self.update_btn, self.undo_btn, self.update_settings_btn,
+                       self.check_btn, self.backup_btn, self.backups_btn):
             app_buttons.addWidget(button)
         app_buttons.addStretch(1)
         self.app_card.body().addLayout(app_buttons)
         self.layout_.addWidget(self.app_card)
 
-        # ---- editor ----
-        self.editor_card = Card("Enter this week's results")
+        # ---- keeping the website current with nobody here (keeping.py) ----
+        self.keep_card = Card("Keeping the website up to date by itself")
+        self.keep_note = QLabel(
+            "The website updates itself when results come in or a new pick sheet lands "
+            "in the folder - but only while the dashboard is running. Turn these on and "
+            "it runs out of sight from the moment the computer starts, so the site keeps "
+            "up on a Sunday whether or not anyone opens it. The computer still has to be "
+            "on and awake."
+        )
+        self.keep_note.setObjectName("StatDetail")
+        self.keep_note.setWordWrap(True)
+        self.keep_card.add(self.keep_note)
+        self.tray_box = QCheckBox("Keep running in the tray when the window is closed")
+        self.startup_box = QCheckBox("Start with Windows, in the tray")
+        self.keep_status = QLabel("")
+        self.keep_status.setObjectName("Muted")
+        self.keep_status.setWordWrap(True)
+        for widget in (self.tray_box, self.startup_box, self.keep_status):
+            self.keep_card.add(widget)
+        self.tray_box.toggled.connect(self._tray_toggled)
+        self.startup_box.toggled.connect(self._startup_toggled)
+        self.layout_.addWidget(self.keep_card)
+        self._show_keeping()
+
+        # ---- where the results come from ----
+        self.results_card = Card("Results")
+        self.results_note = QLabel(
+            "Every week is built from the commissioner's pick sheet: the games, "
+            "the pool's lines and everyone's picks. Results come from his graded "
+            "copy of the sheet when you've downloaded it, and otherwise from "
+            "ESPN's final scores with the pool's lines applied \u2014 the "
+            "dashboard looks every few minutes while games are on. stats.xls "
+            "stays the official word on the standings."
+        )
+        self.results_note.setObjectName("StatDetail")
+        self.results_note.setWordWrap(True)
+        self.results_card.add(self.results_note)
+        self.results_box = QVBoxLayout()
+        self.results_card.body().addLayout(self.results_box)
+        results_row = QHBoxLayout()
+        self.results_btn = QPushButton("Check for results now")
+        self.results_btn.setToolTip("Ask ESPN about every week that isn't finished, then reload")
+        self.results_btn.clicked.connect(lambda: self.action_requested.emit(CHECK_RESULTS))
+        results_row.addWidget(self.results_btn)
+        results_row.addStretch(1)
+        self.results_card.body().addLayout(results_row)
+        self.layout_.addWidget(self.results_card)
+        self.results_table: QWidget | None = None
+
+        # ---- editor (only while a workbook is still loaded) ----
+        self.editor_card = Card("The workbook")
         self.editor_note = QLabel(
-            "The workbook's only input cells are a week's matchups, results, "
-            "picks, big-loser picks and suicide picks \u2014 every win total, "
-            "rank, payout and the whole Dashboard sheet is an Excel formula "
-            "fed by them. Edit those here and Excel recalculates the rest. "
-            "A timestamped backup is taken before each save, and a change set "
+            "Your ACQL Dashboard workbook is still being read for the weeks it "
+            "has results in. It isn't needed any more \u2014 the pick sheets "
+            "and the results do its job \u2014 so take it out of the folder "
+            "whenever you like. Until then, anything typed here is kept: a "
+            "timestamped backup is taken before each save, and a change set "
             "that would touch a formula is refused whole."
         )
         self.editor_note.setObjectName("StatDetail")
@@ -138,7 +196,7 @@ class DataPage(Page):
 
         buttons = QHBoxLayout()
         self.add_folder_btn = QPushButton("Add a folder\u2026")
-        self.add_folder_btn.setToolTip("Watch another folder for stats.xls and the workbook")
+        self.add_folder_btn.setToolTip("Watch another folder for pick sheets and stats.xls")
         self.add_folder_btn.clicked.connect(self._add_folder)
         self.reload_btn = QPushButton("Rescan now")
         self.reload_btn.setObjectName("Primary")
@@ -163,7 +221,7 @@ class DataPage(Page):
         # listing above says nothing about them. Without this the only way to
         # find out which sheets the app is actually holding was to read the
         # numbers and work backwards.
-        self.weekly_card = Card("Pick sheets and predictions")
+        self.weekly_card = Card("Pick sheets, graded copies and predictions")
         self.weekly_note = QLabel(
             "Everything the app is holding for a particular week, whatever "
             "folder it came from. A sheet from another pool is named here "
@@ -233,6 +291,7 @@ class DataPage(Page):
             return
         words = {
             "forecasts": "weeks of predictions", "picks": "pick sheets",
+            "graded": "graded copies", "results": "weeks of results",
             "spreads": "weeks of typed spreads", "cards": "saved cards",
             "odds": "fetched-lines records", "settings": "settings",
         }
@@ -254,6 +313,46 @@ class DataPage(Page):
             f"{held}. A copy is kept every day in {store.BACKUP_FOLDER}\\ "
             f"(latest {latest}); the last {store.KEEP_BACKUPS} are kept."
         )
+
+    # ---- keeping up by itself ---------------------------------------------
+    def _show_keeping(self) -> None:
+        from .. import keeping
+        self._keeping_quiet = True
+        try:
+            available = keeping.tray_available()
+            self.tray_box.setChecked(keeping.tray_wanted())
+            self.startup_box.setChecked(keeping.startup_enabled())
+            self.tray_box.setEnabled(available)
+            self.startup_box.setEnabled(available)
+            self.keep_status.setText("" if available else
+                                     "This computer has no tray to run in, so these are off.")
+        finally:
+            self._keeping_quiet = False
+
+    def _tray_toggled(self, on: bool) -> None:
+        from .. import keeping
+        if self._keeping_quiet:
+            return
+        keeping.set_tray_wanted(on)
+        if not on and keeping.startup_enabled():
+            # Starting with Windows means starting in the tray: one goes with the other.
+            keeping.set_startup(False)
+        self.action_requested.emit(KEEPING)
+        self._show_keeping()
+        self.keep_status.setText("Closing the window now leaves the dashboard in the tray, by the clock."
+                                 if on else "Closing the window quits the dashboard again.")
+
+    def _startup_toggled(self, on: bool) -> None:
+        from .. import keeping
+        if self._keeping_quiet:
+            return
+        why = keeping.set_startup(on)
+        if on and not why:
+            keeping.set_tray_wanted(True)
+            self.action_requested.emit(KEEPING)
+        self._show_keeping()
+        self.keep_status.setText(why or ("It starts in the tray when Windows does." if on
+                                         else "It won't start with Windows any more."))
 
     def _backup_now(self) -> None:
         target = store.backup_folder() / f"acql-manual-{time.strftime('%Y%m%d-%H%M%S')}.db"
@@ -286,9 +385,16 @@ class DataPage(Page):
             return
 
         self.banner.show_messages(s.warnings)
+        self._refresh_results(s)
         self._refresh_files(s)
         self._refresh_weekly(s)
         self._refresh_conflicts(s)
+        self.editor_card.setVisible(getattr(s, "workbook_path", None) is not None)
+        try:
+            from ...repository import workbook_note
+            self.editor_note.setText(workbook_note(s))
+        except Exception:  # noqa: BLE001 - the wording it was built with stays
+            pass
         self.editor.set_season(s)
 
     def _refresh_folders(self, settings) -> None:
@@ -300,15 +406,15 @@ class DataPage(Page):
             ]
             self.folders_label.setText(
                 "\n".join(lines)
-                + "\n\nDrop the updated ACQL Dashboard.xlsx, the week's pick "
-                "sheets or a predictions CSV into any of these. They are read "
-                "as soon as they land or are saved – Rescan now is only "
-                "for when you want to force it."
+                + "\n\nDrop the week's pick sheet, stats.xls or a predictions CSV "
+                "into any of these (pick sheets are found in Downloads too). They "
+                "are read as soon as they land or are saved – Rescan now is "
+                "only for when you want to force it."
             )
         else:
             self.folders_label.setText(
                 "No folders are being watched yet. Use \u201cAdd a folder\u2026\u201d "
-                "to point the app at the place you keep stats.xls and the workbook."
+                "to point the app at the place you keep the pick sheets and stats.xls."
             )
 
     @staticmethod
@@ -389,6 +495,66 @@ class DataPage(Page):
         view, _ = make_table(model, stretch_column=5, row_height=ROW_HEIGHT, fit_rows=MAX_TABLE_ROWS)
         self.files_table = self._swap_table(self.files_box, self.files_table, view)
 
+    def _refresh_results(self, s) -> None:
+        """Each week: how many games are decided, and who said so."""
+        year = results.season_year(s)
+        rows, tones = [], {}
+        for number in sorted(s.weeks, reverse=True):
+            week = s.weeks[number]
+            games = sorted(week.games, key=lambda g: g.index)
+            if not games:
+                continue
+            played = [g for g in games if g.played]
+            where: dict[str, int] = {}
+            for game in played:
+                name = game.result_from or "workbook"
+                where[name] = where.get(name, 0) + 1
+            if len(where) == 1:
+                came = next(iter(where))
+            else:
+                came = " \u00b7 ".join(
+                    f"{name} {n}" for name, n in sorted(where.items(), key=lambda kv: -kv[1]))
+            left = len(games) - len(played)
+            if not left:
+                status = "Final"
+            else:
+                status = f"{left} still to finish" if played else "Not started"
+                kept = results.load(year, number)
+                ahead = [score.kickoff for g in games if not g.played
+                         for score in [results.find(kept, g.away, g.home)[0]]
+                         if score is not None and score.kickoff and score.kickoff > time.time()]
+                if ahead:
+                    status += f" \u00b7 next kickoff {self._clock(min(ahead))}"
+                checked = results.checked_at(year, number)
+                if checked:
+                    status += f" \u00b7 ESPN checked {self._ago(checked)}"
+            rows.append([number, f"{len(played)} of {len(games)} decided", came or "\u2013", status])
+            tones[(len(rows) - 1, 3)] = "good" if not left else ""
+        if not rows:
+            self.results_card.hide()
+            return
+        self.results_card.show()
+        model = TableModel(RESULTS_HEADERS, rows, palette=self.palette, numeric_columns={0}, tones=tones)
+        view, _ = make_table(model, stretch_column=3, row_height=ROW_HEIGHT, fit_rows=MAX_TABLE_ROWS)
+        self.results_table = self._swap_table(self.results_box, self.results_table, view)
+
+    @staticmethod
+    def _clock(stamp: float) -> str:
+        """"Sun 12:00 PM" in the computer's own time."""
+        at = time.localtime(stamp)
+        return f"{time.strftime('%a', at)} {at.tm_hour % 12 or 12}:{at.tm_min:02d} {'AM' if at.tm_hour < 12 else 'PM'}"
+
+    @staticmethod
+    def _ago(stamp: float) -> str:
+        age = max(0.0, time.time() - stamp)
+        if age < 90:
+            return "just now"
+        if age < 3600:
+            return f"{int(age // 60)} min ago"
+        if age < 86400:
+            return f"{int(age // 3600)} hr ago"
+        return time.strftime("%a %d %b", time.localtime(stamp))
+
     def _refresh_weekly(self, s) -> None:
         """Pick sheets and prediction files, whichever folder they came from."""
         rows, tones = [], {}
@@ -414,13 +580,23 @@ class DataPage(Page):
             ]
             stranger = roster and len(ours) < max(2, 0.4 * len(coaches))
             rows.append([
-                number, "Pick sheet", Path(sheet.source).name or "\u2013",
+                number, "Graded sheet" if sheet.graded else "Pick sheet",
+                Path(sheet.source).name or "\u2013",
                 f"{len(coaches)} coach{'' if len(coaches) == 1 else 'es'}"
                 + (f", {len(ours)} in this pool" if roster and len(ours) != len(coaches)
                    else ""),
                 "Another pool's" if stranger else "In use",
             ])
             tones[(len(rows) - 1, 4)] = "bad" if stranger else "good"
+            copy = picks.load_graded(number) if not sheet.graded and not stranger else None
+            if copy is not None:
+                graded_games = sum(1 for g in copy.games if g.credited)
+                rows.append([
+                    number, "Graded copy", Path(copy.source).name or "\u2013",
+                    f"{graded_games} of {len(copy.games)} games graded",
+                    "In use" if graded_games else "Nothing graded yet",
+                ])
+                tones[(len(rows) - 1, 4)] = "good" if graded_games else ""
 
         for number, stored in sorted(predictions.stored_weeks().items()):
             _, where = predictions.load(number)
@@ -459,7 +635,7 @@ class DataPage(Page):
         self.conflicts_note.setText(
             f"stats.xls is treated as authoritative. {n} "
             f"{'disagreement was' if n == 1 else 'disagreements were'} found "
-            "\u2014 worth checking in the workbook."
+            "\u2014 worth a look."
         )
         rows = [
             [c.player, c.field, str(c.authoritative), str(c.other), c.note]

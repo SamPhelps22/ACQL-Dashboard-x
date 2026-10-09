@@ -602,9 +602,14 @@ def week_in_name(path: str | Path) -> int | None:
     return int(found.group(1)) if found else None
 
 
+#: The folders the dashboard watches, as the last load named them
+#: (repository.py), so files are looked for wherever the season was read from.
+WATCHED: list[Path] = []
+
+
 def search_folders(workbook: str | Path | None = None) -> list[Path]:
     """Where a downloaded predictions file is likely to be sitting."""
-    folders = [ROOT, ROOT / "predictions", Path.home() / "Downloads"]
+    folders = [ROOT, ROOT / "predictions", Path.home() / "Downloads"] + list(WATCHED)
     if workbook:
         folders.insert(0, Path(workbook).parent)
     seen, out = set(), []
@@ -806,15 +811,20 @@ def refresh_from_disk(
     week: int,
     workbook: str | Path | None = None,
     slate: list[Game] | None = None,
+    *,
+    locked: bool = False,
 ) -> tuple[list[Forecast], str, bool]:
     """Load a week's predictions, picking up a newly downloaded file.
 
     Returns (forecasts, where they came from, whether a new file was read).
     A file only replaces what is stored when it is a different file or a
     newer copy of it, so dropping this week's download into the workbook's
-    folder - or leaving it in Downloads - is the whole of the work.
+    folder - or leaving it in Downloads - is the whole of the work. A week
+    whose odds have locked (oddslock.py) keeps what it had.
     """
     kept, source = load(week)
+    if locked:
+        return kept, source, False
     found = find_file(week, workbook, slate)
     if found is None:
         return kept, source, False
@@ -936,6 +946,61 @@ def _scored(game: Game, pick: str) -> bool | None:
     return " ".join(pick.split()).casefold() == " ".join(winner.split()).casefold()
 
 
+@dataclass(frozen=True)
+class WeekReplay:
+    """One week's graded picks replayed at every weight: what a fit adds up."""
+
+    number: int
+    games: int                          # picks scored
+    hits: dict[float, int]              # weight -> picks right
+    surprise: dict[float, float]        # weight -> total surprise
+
+
+def replay_week(number: int, games: list[Game], forecasts: list["Forecast"],
+                default: float = CONSENSUS_WEIGHT) -> WeekReplay:
+    """Every graded pick of one week, re-picked at each weight and scored."""
+    from . import analytics                     # local: analytics is the scorer,
+                                                # and this keeps the import one-way
+
+    steps = fit_steps(default)
+    hits = {w: 0 for w in steps}
+    surprise = {w: 0.0 for w in steps}
+    if not games or not forecasts:
+        return WeekReplay(number, 0, hits, surprise)
+    lean = home_lean(forecasts)
+    typical = typical_disagreement(forecasts)
+    found = match_games(sorted(games, key=lambda g: g.index), forecasts).by_game
+    by_index = {g.index: g for g in games}
+    scored = 0
+    for index, forecast in found.items():
+        game = by_index.get(index)
+        if game is None or not str(getattr(game, "winner", "") or "").strip():
+            continue
+        counted_this = False
+        for weight in steps:
+            margin = home_margin(
+                game, forecast, forecast.expected(weight, lean, typical)
+            )
+            if margin is None:
+                continue
+            sd = math.hypot(
+                analytics.SPREAD_SD, forecast.extra_spread(weight, typical)
+            )
+            guess = analytics.predict_margin(game, margin, sd=sd, source="fit")
+            if guess is None:
+                continue
+            right = _scored(game, guess.pick)
+            if right is None:
+                continue
+            counted_this = True
+            chance = min(max(guess.chance, 1e-6), 1 - 1e-6)
+            hits[weight] += int(right)
+            surprise[weight] -= math.log(chance if right else 1 - chance)
+        if counted_this:
+            scored += 1
+    return WeekReplay(number, scored, hits, surprise)
+
+
 def fit_weight(
     weeks: list[tuple[int, list[Game], list[Forecast]]],
     *,
@@ -958,50 +1023,36 @@ def fit_weight(
     The default wins ties, and wins anything close, so a season of noise
     cannot talk the app out of a number that has a reason behind it.
     """
-    from . import analytics                     # local: analytics is the scorer,
-                                                # and this keeps the import one-way
+    return fit_from(
+        [replay_week(number, games, forecasts, default) for number, games, forecasts in weeks],
+        default=default, minimum=minimum,
+    )
 
+
+def fit_from(
+    replays: list[WeekReplay],
+    *,
+    default: float = CONSENSUS_WEIGHT,
+    minimum: int = MIN_FIT_GAMES,
+) -> WeightFit:
+    """The weight the replayed weeks call for (fit_weight, from its parts).
+
+    Kept apart so the replay - the slow part - is done once a week and any
+    run of weeks can be fitted from it: every week is priced on the weeks
+    before it (pricing.model_weight).
+    """
     steps = fit_steps(default)
     tally = {w: [0, 0.0] for w in steps}        # weight -> [hits, total surprise]
     used: list[int] = []
     counted = 0
-    for number, games, forecasts in weeks:
-        if not games or not forecasts:
+    for week in replays:
+        if not week.games:
             continue
-        lean = home_lean(forecasts)
-        typical = typical_disagreement(forecasts)
-        found = match_games(sorted(games, key=lambda g: g.index), forecasts).by_game
-        by_index = {g.index: g for g in games}
-        scored_here = 0
-        for index, forecast in found.items():
-            game = by_index.get(index)
-            if game is None or not str(getattr(game, "winner", "") or "").strip():
-                continue
-            counted_this = False
-            for weight in steps:
-                margin = home_margin(
-                    game, forecast, forecast.expected(weight, lean, typical)
-                )
-                if margin is None:
-                    continue
-                sd = math.hypot(
-                    analytics.SPREAD_SD, forecast.extra_spread(weight, typical)
-                )
-                guess = analytics.predict_margin(game, margin, sd=sd, source="fit")
-                if guess is None:
-                    continue
-                right = _scored(game, guess.pick)
-                if right is None:
-                    continue
-                counted_this = True
-                chance = min(max(guess.chance, 1e-6), 1 - 1e-6)
-                tally[weight][0] += int(right)
-                tally[weight][1] -= math.log(chance if right else 1 - chance)
-            if counted_this:
-                counted += 1
-                scored_here += 1
-        if scored_here:
-            used.append(number)
+        counted += week.games
+        used.append(week.number)
+        for weight in steps:
+            tally[weight][0] += week.hits.get(weight, 0)
+            tally[weight][1] += week.surprise.get(weight, 0.0)
 
     if not counted:
         return WeightFit(default, default, default, 0, (), 0, 0, 0.0, 0.0, False)

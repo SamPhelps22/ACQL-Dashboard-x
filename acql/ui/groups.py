@@ -11,7 +11,7 @@ are four looks at one season. Grouped the way the week is actually lived:
     Side Pools   Big Loser and the suicide pool
     Player       one coach's season
     Insights     the pool's habits and luck
-    The Model    how accurate it is, and whether to follow it
+    Deadeye      the model: how accurate it is, and whether to follow it
     Data         what is loaded, and entering results
 
 Each page is unchanged inside; a group only adds a row of tabs above them.

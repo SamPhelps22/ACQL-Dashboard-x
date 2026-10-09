@@ -92,9 +92,17 @@ def _grid(path: str | Path) -> list[list[str]]:
     names = book.sheet_names()
     sheet = book.sheet_by_name("picks" if "picks" in names else names[0])
     return [
-        [str(sheet.cell_value(r, c)).strip() for c in range(sheet.ncols)]
+        [_text(sheet.cell_value(r, c)) for c in range(sheet.ncols)]
         for r in range(sheet.nrows)
     ]
+
+
+def _text(value: object) -> str:
+    """A cell as the sheet shows it. The old format hands every number back
+    as a float, so a Big Loser marked 1 would read "1.0" and go uncounted."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
 
 
 def _cell(rows: list[list[str]], row: int, col: int) -> str:
@@ -112,6 +120,9 @@ class GamePicks:
     home: str
     note: str                       # the pool's line, as written on the sheet
     picks: dict[str, str] = field(default_factory=dict)     # coach -> team picked
+    #: On a graded sheet, the side the commissioner credited - the one whose
+    #: picks were left standing. "" on a raw sheet, or a game not yet graded.
+    credited: str = ""
 
     @property
     def counted(self) -> int:
@@ -139,6 +150,9 @@ class WeekPicks:
     #: Read from the scored sheet: the sides are rebuilt, but a correct Big
     #: Loser is only a "1", so the Big Loser shares are not to be trusted.
     graded: bool = False
+    #: On a graded sheet, each coach's [total, regular wins] as the
+    #: commissioner scored them, from the columns left of the name.
+    scores: dict[str, list[int]] = field(default_factory=dict)
 
     @property
     def coaches(self) -> list[str]:
@@ -249,21 +263,38 @@ def _pairs(games) -> set[frozenset]:
     return out
 
 
+def _season_slate(season: Season, number: int) -> set[frozenset]:
+    """This season's games in week `number`, from whatever knows them: the
+    workbook's week, else the NFL's own fixtures as the scoreboard listed
+    them (results.py), else the schedule the app carries for its season."""
+    week = season.weeks.get(number)
+    if week is not None and getattr(week, "source", None) is not None and week.games:
+        return _pairs(week.games)
+    from . import results, schedule
+    year = results.season_year(season)
+    listed = {frozenset((s.away, s.home)) for s in results.load(year, number)}
+    if listed:
+        return listed
+    if getattr(schedule, "SCHEDULE_YEAR", None) == year:
+        return {frozenset((team_code(a), team_code(h))) for a, h in schedule.pairings(number)
+                if team_code(a) and team_code(h)}
+    return set()
+
+
 def from_other_season(season: Season, number: int, sheet: WeekPicks) -> bool:
     """Whether a stored sheet is another season's week `number`."""
+    theirs = _pairs(sheet.games)
+    if not theirs:
+        return False
+    ours = _season_slate(season, number)
+    if ours:
+        return len(theirs & ours) < SAME_SEASON * len(theirs)
     owned = {
         n: w for n, w in season.weeks.items()
         if getattr(w, "source", None) is not None and w.games
     }
     if not owned:
         return False            # nothing of this season's to compare with yet
-    theirs = _pairs(sheet.games)
-    week = owned.get(number)
-    if week is not None:
-        ours = _pairs(week.games)
-        if not theirs or not ours:
-            return False
-        return len(theirs & ours) < SAME_SEASON * len(theirs)
     return number > max(owned) + 1
 
 
@@ -274,11 +305,17 @@ def other_season_weeks() -> set[int]:
 
 def forget_weeks(numbers) -> None:
     """Remove stored sheets for good - used to clear out another season's."""
+    from . import store as db
     store = dict(_read_store())
     changed = False
     for number in numbers:
         if store.pop(str(number), None) is not None:
             changed = True
+        try:
+            if db.get(GRADED_KIND, str(number), None) is not None:
+                db.delete(GRADED_KIND, str(number))
+        except db.StoreError:
+            pass
     if changed:
         _write_store(store)
     _OTHER_SEASON.difference_update(numbers)
@@ -322,6 +359,7 @@ def read_file(path: str | Path) -> WeekPicks:
     picks: dict[int, dict[str, str]] = {col: {} for col, *_ in games}
     loser_picks: dict[str, list[str]] = {}
     suicide: dict[str, str] = {}
+    scores: dict[str, list[int]] = {}
     name_col = _name_column(rows, min(col for col, *_ in games))
     graded = name_col > 1 and _scores_to_the_left(rows, name_col)
     coaches: list[str] = []
@@ -339,6 +377,11 @@ def read_file(path: str | Path) -> WeekPicks:
         if not any(team_code(team) for team in chosen.values()) and not scored:
             continue
         coaches.append(name)
+        if graded:
+            # total first, then regular wins, when there is room for both
+            got = [_whole(_cell(rows, number, col)) for col in range(1, min(name_col, 3))]
+            if got and got[0] is not None:
+                scores[name] = [got[0], got[1] if len(got) > 1 and got[1] is not None else got[0]]
         for col, team in chosen.items():
             if team:
                 picks[col][name] = team
@@ -350,17 +393,27 @@ def read_file(path: str | Path) -> WeekPicks:
             if pick:
                 suicide[name] = pick
 
+    credited: dict[int, str] = {}
     if graded:
         for col, away, home, _note in games:
-            _ungrade(picks[col], away, home, coaches)
+            credited[col] = _ungrade(picks[col], away, home, coaches)
     return WeekPicks(
         week=week,
-        games=[GamePicks(away, home, note, picks[col]) for col, away, home, note in games],
+        games=[GamePicks(away, home, note, picks[col], credited.get(col, ""))
+               for col, away, home, note in games],
         losers=loser_picks,
         suicide=suicide,
         source=str(path),
         graded=graded,
+        scores=scores,
     )
+
+
+def _whole(text: str) -> int | None:
+    try:
+        return int(round(float(str(text).strip())))
+    except (TypeError, ValueError):
+        return None
 
 
 def _name_column(rows: list[list[str]], first_game: int) -> int:
@@ -390,23 +443,26 @@ def _scores_to_the_left(rows: list[list[str]], name_col: int) -> bool:
     return total > 0 and numbers >= 0.8 * total
 
 
-def _ungrade(picks: dict[str, str], away: str, home: str, coaches: list[str]) -> None:
-    """Put back the wrong picks a graded sheet deleted, for one game.
+def _ungrade(picks: dict[str, str], away: str, home: str, coaches: list[str]) -> str:
+    """Put back the wrong picks a graded sheet deleted, for one game, and
+    return the side the commissioner credited (as the sheet writes it).
 
     Only the side the pool credited is left standing, so every coach with
     no pick here had the other side. A game still showing both sides has not
-    been graded (it hadn't been played) and is left as it is.
+    been graded (it hadn't been played) and is left as it is; so is one with
+    no picks left at all, which can't say which side that was.
     """
     shown = Counter(team_code(team) for team in picks.values() if team_code(team))
     if len(shown) != 1:
-        return
+        return ""
     credited = next(iter(shown))
     other = away if team_code(home) == credited else home if team_code(away) == credited else ""
     if not other:
-        return
+        return ""
     for name in coaches:
         if not team_code(picks.get(name, "")):
             picks[name] = other
+    return home if other == away else away
 
 
 def summary(week: WeekPicks) -> str:
@@ -436,6 +492,7 @@ class Graded:
     checked: list[int] = field(default_factory=list)     # weeks compared against the sheet
     disagreements: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)    # line notes that couldn't be read
 
     @property
     def touched(self) -> list[int]:
@@ -492,8 +549,20 @@ def _sync_players(season: Season, week: Week, source: str) -> None:
         person.sources.add(tag)
         if not scored:
             continue
-        person.weekly_wins[week.number] = line.total_wins
-        person.weekly_regular[week.number] = line.regular_wins
+        # stats.xls's own score for the week stays: it is the pool's
+        # official number, and a difference is reported, not written over.
+        if week.number in getattr(person, "official_weeks", ()):
+            pass
+        elif week.number in getattr(season, "provisional_weeks", ()):
+            # a week the season holds out as in progress stays held out
+            person.provisional_wins[week.number] = line.total_wins
+        else:
+            person.weekly_wins[week.number] = line.total_wins
+            person.weekly_regular[week.number] = line.regular_wins
+            if line.big_loser_wins:
+                person.weekly_big_loser[week.number] = line.big_loser_wins
+            else:
+                person.weekly_big_loser.pop(week.number, None)
         if line.suicide_pick:
             person.suicide_picks[week.number] = line.suicide_pick
 
@@ -632,38 +701,211 @@ def _coach_key(season: Season, key_for=None):
     return resolve
 
 
+#: What the commissioner writes in the suicide column once a coach is out.
+OUT_MARKERS = {"dead", "out", "x", "eliminated", "knocked out"}
+
+
+def _same_side(a: str, b: str) -> bool:
+    """Two results naming the same side ("Tie" only matches "Tie")."""
+    ca, cb = team_code(a), team_code(b)
+    if ca or cb:
+        return ca == cb
+    return " ".join(str(a).split()).casefold() == " ".join(str(b).split()).casefold()
+
+
+def _stored_results(season: Season):
+    """The scores kept for each week, by week number (nothing is fetched)."""
+    from . import results
+    year = results.season_year(season)
+    return lambda number: results.load(year, number)
+
+
+def _shared(a: WeekPicks, b: WeekPicks) -> float:
+    """How much of sheet a's pool is on sheet b: the share of a's coaches b names."""
+    ours = {_plain(name) for name in a.coaches}
+    theirs = {_plain(name) for name in b.coaches}
+    return len(ours & theirs) / len(ours) if ours else 0.0
+
+
+def _graded_copy(season: Season, number: int, card: WeekPicks, given: WeekPicks | None) -> WeekPicks | None:
+    """The commissioner's graded copy of this week of this season, if any -
+    never another season's, and never another pool's grading of the same
+    NFL week (which knows nothing of this pool's lines)."""
+    graded = given if given is not None and given.graded else load_graded(number)
+    if graded is None:
+        return None
+    ours, theirs = _pairs(card.games), _pairs(graded.games)
+    if not theirs or len(ours & theirs) < SAME_SEASON * max(len(theirs), 1):
+        return None             # another season's week
+    if _shared(card, graded) < POOL_SHARE:
+        return None             # another pool's
+    if from_other_season(season, number, graded):
+        return None
+    return graded
+
+
+def _unanimous(*sheet_games) -> bool:
+    """Whether every coach took the same side of a game, on the first of
+    these sheets that shows any picks for it. On a graded copy such a game
+    looks the same graded or not - everyone's pick still standing - so the
+    copy can't say whether it has been played."""
+    for found in sheet_games:
+        if found is None:
+            continue
+        sides = {team_code(team) for team in found.picks.values() if team_code(team)}
+        if sides:
+            return len(sides) == 1
+    return False
+
+
+def _attach_lines(week: Week, sheet: WeekPicks, out: "Graded") -> None:
+    """The pool's line on every game the slate has none for, from the note
+    the sheet carries above it. A note that can't be read is said, not guessed."""
+    from . import lines
+    for game in week.games:
+        if game.line is not None:
+            continue
+        found = sheet.game_for(game.away, game.home)
+        if found is None:
+            continue
+        line, problem = lines.line_from_note(found.note, game.away, game.home)
+        if line is not None:
+            game.line_favourite, game.line = line
+        elif problem:
+            out.problems.append(
+                f"Week {week.number}, {game.label}: {problem} - the game is graded "
+                f"without a line until the sheet says it plainly"
+            )
+
+
+def _apply_results(week: Week, card: WeekPicks, graded: WeekPicks | None, scores: list,
+                   out: "Graded", *, owned: bool) -> None:
+    """Results onto the week's games: the commissioner's grading first, then
+    the final score with the pool's line. A week the workbook owns keeps its
+    own result row; the other two only check it."""
+    from . import results
+    for game in week.games:
+        official = ""
+        if graded is not None:
+            found = graded.game_for(game.away, game.home)
+            if (found is not None and found.credited
+                    and not _unanimous(card.game_for(game.away, game.home), found)):
+                official = game.home if team_code(found.credited) == team_code(game.home) else game.away
+        score, _ = results.find(scores, game.away, game.home)
+        final = None
+        if score is not None and score.final:
+            final = results.points(game, score)
+            if final is not None:
+                game.home_points, game.away_points = final
+        computed = results.credited(game, *final) if final is not None else ""
+        label = f"week {week.number} game {game.index} ({game.label})"
+        if owned:
+            if not _decided(game):
+                continue
+            game.result_from = game.result_from or "workbook"
+            if official and not _same_side(official, game.winner):
+                out.disagreements.append(
+                    f"{label}: the result row says {game.winner}, but the graded "
+                    f"sheet credits {official} - one of the two is wrong")
+            elif computed and not official and not _same_side(computed, game.winner):
+                out.disagreements.append(
+                    f"{label}: the result row says {game.winner}, but the final score "
+                    f"({_score_text(game)}) with the pool's line gives {computed}")
+            continue
+        if official:
+            game.winner, game.result_from = official, "graded sheet"
+            if computed and not _same_side(computed, official):
+                out.disagreements.append(
+                    f"{label}: the graded sheet credits {official}, but the final score "
+                    f"({_score_text(game)}) with the pool's line gives {computed} - "
+                    f"the graded sheet was kept")
+        elif computed:
+            game.winner, game.result_from = computed, "ESPN"
+        elif game.result_from in ("ESPN", "graded sheet"):
+            game.winner, game.result_from = "", ""     # no longer known: say so
+
+
+def _score_text(game: Game) -> str:
+    from .predictions import display_team
+    return (f"{display_team(game.away)} {game.away_points}, "
+            f"{display_team(game.home)} {game.home_points}")
+
+
+def _mark(cell: object) -> str:
+    """A Big Loser cell: the team, or "1" once it came in (however a
+    spreadsheet wrote the 1 - "1.0" from an old .xls stored before)."""
+    text = str(cell or "").strip()
+    return "1" if NUMBER.match(text) and float(text) == 1 else text
+
+
+def _loser_slots(week: Week, card: list[str], marks: list[str] | None,
+                 listed: set[str], marked_games: set[str],
+                 ) -> tuple[list[str], list[str], int, list[str]]:
+    """(the three cells as the workbook would hold them, the teams, the
+    points, the teams counted that the graded copy left unmarked).
+
+    A cell holds "1" once its team has come in, as the commissioner marks
+    it. A "1" on his graded copy counts. Otherwise the final score decides
+    (beaten by 15 or more), and failing a score, the standings export's
+    list of the week's Big Losers. A graded copy can be a snapshot taken
+    part-way through grading, so a team the score says came in counts even
+    where the copy hasn't marked it yet - and is named, so it can be checked.
+    """
+    from . import results
+    cells, teams, hits, unmarked = [], [], 0, []
+    for slot in range(3):
+        name = _mark(card[slot]) if slot < len(card) and card[slot] else ""
+        mark = _mark(marks[slot]) if marks and slot < len(marks) and marks[slot] else ""
+        hit = name == "1" or mark == "1"
+        if team_code(name):
+            teams.append(name)
+            if not hit:
+                game = next((g for g in week.games
+                             if team_code(name) in (team_code(g.home), team_code(g.away))), None)
+                by = results.lost_by(game, name) if game is not None else None
+                if by is not None:
+                    hit = _decided(game) and by >= results.BLOWOUT
+                    if hit and marks is not None and team_code(name) in marked_games:
+                        unmarked.append(team_code(name))
+                elif team_code(name) in listed:
+                    hit = True
+        if hit:
+            hits += 1
+        cells.append("1" if hit else name)
+    return cells, teams, hits, unmarked
+
+
 def attach(
     season: Season,
     sheets: dict[int, WeekPicks] | None = None,
     *,
     key_for=None,
+    results_for=None,
 ) -> Graded:
-    """Put the pool's raw pick sheets into a season, without overwriting it.
+    """Put the pool's pick sheets into a season: every week the workbook
+    hasn't scored is built and graded from them.
 
-    Three things happen, and only ever these three:
+    * A week the workbook has nothing for - or has, but with no results in
+      it - is built from the sheet: the slate, the pool's lines from the
+      notes above the games, everyone's picks, Big Losers and suicide picks,
+      graded against the results. That is the week nobody types in by hand.
+    * The results come from the commissioner's graded copy of the sheet when
+      it has been downloaded, and otherwise from the final scores the
+      dashboard fetched (results.py), with the pool's line applied.
+    * A week the workbook has scored is left exactly as it is, and checked:
+      against the graded copy, and against the final scores. Anywhere they
+      disagree is reported rather than corrected.
 
-    * A week the workbook has nothing for is built from the sheet - the
-      slate, everyone's picks, and their scores against whatever results
-      are known. That is the week you no longer have to paste in by hand.
-    * A week the workbook has, but with no coaches on it, has them filled in.
-    * A week the workbook has already scored is left exactly as it is, and
-      the sheet is used to check it. Anywhere the two disagree is reported
-      rather than corrected, because the workbook is what the pool settles
-      on and a difference is worth looking at by eye.
-
-    A sheet that is not this pool's is left alone entirely. Pick sheets are
-    downloaded one file at a time into the same folder, and they are not all
-    from the same pool; one whose names are strangers is another pool's week
-    and has no business creating a week here.
-
-    Big-loser points are not computed: a big loser has to lose by more than
-    14 and the workbook records who won, not by how much.
+    A sheet that is not this pool's, or not this season's, is left alone.
+    `results_for(week)` gives a week's fetched scores; by default the ones
+    already kept (nothing is fetched here).
     """
     out = Graded()
     key_of = _coach_key(season, key_for)
     everything = sheets or load_all(every_season=True)
     if sheets is None:
         _OTHER_SEASON.clear()
+    scores_for = results_for or _stored_results(season)
     for number, sheet in sorted(everything.items()):
         if from_other_season(season, number, sheet):
             out.other_season.append(number)
@@ -675,7 +917,7 @@ def attach(
                 f"week {number} - so it was left out"
             )
             continue
-        if not belongs_here(season, sheet):
+        if sheet.coaches and not belongs_here(season, sheet):
             out.notes.append(
                 f"week {number}: {Path(sheet.source).name or 'that sheet'} is "
                 f"another pool's - hardly any of its names are in this one, so "
@@ -683,86 +925,122 @@ def attach(
             )
             out.strangers.append(number)
             continue
+        # The card is the sheet as it went out; a graded copy handed in on
+        # its own is the card only when no other sheet for the week is kept.
+        card = sheet
+        if sheets is not None and sheet.graded:
+            kept = load(number)
+            if kept is not None and not kept.graded and _pairs(kept.games) & _pairs(sheet.games):
+                card = kept
+        graded = _graded_copy(season, number, card, sheet)
+
         week = season.weeks.get(number)
         fresh = week is None
         if fresh:
             week = Week(number=number)
             season.weeks[number] = week
+        # The workbook owns a week once it has a result in it. One with only
+        # the matchups typed in is still the sheet's to score.
+        owned = getattr(week, "source", None) is not None and any(_decided(g) for g in week.games)
         if not week.games:
             week.games = [
                 Game(index=index, home=game.home, away=game.away)
-                for index, game in enumerate(sheet.games, start=1)
+                for index, game in enumerate(card.games, start=1)
             ]
             out.notes.append(
-                f"week {number}: the slate came from {Path(sheet.source).name or 'a pick sheet'}"
+                f"week {number}: the slate came from {Path(card.source).name or 'a pick sheet'}"
             )
-        scores = grade_week(week, sheet)
-        # A week that came from a pick sheet rather than the workbook is
-        # re-graded every time, so results arriving later are picked up. A
-        # week the workbook owns is never touched.
-        from_workbook = getattr(week, "source", None) is not None
-        if not week.lines or not from_workbook:
-            week.lines.clear()
-            outsiders = 0
-            for coach in sheet.coaches:
-                key = key_of(coach)
-                if not key:
-                    # On this sheet but not in this pool. Their picks still
-                    # count towards what the crowd did - that is read from the
-                    # sheet itself - but they are not given a coach's row.
-                    outsiders += 1
-                    continue
-                line = PlayerWeek(player=coach, week=number)
-                line.suicide_pick = sheet.suicide.get(coach, "")
-                line.big_loser_picks = [t for t in sheet.losers.get(coach, []) if t]
-                for game in week.games:
-                    found = sheet.game_for(game.away, game.home)
-                    if found is None:
-                        continue
-                    team = found.picks.get(coach, "")
-                    if team and _decided(game) and team_code(team) == team_code(game.winner):
-                        line.correct_picks[game.index] = team
-                line.regular_wins = line.total_wins = scores.get(coach, 0)
-                week.lines[key] = line
-            _sync_players(season, week, Path(sheet.source).name)
-            if outsiders:
-                one = outsiders == 1
-                out.notes.append(
-                    f"week {number}: {outsiders} name{'' if one else 's'} on "
-                    f"{Path(sheet.source).name or 'the sheet'} "
-                    f"{'is' if one else 'are'} not in this pool and "
-                    f"{'was' if one else 'were'} left out of the standings"
-                )
-            (out.built if fresh else out.filled).append(number)
+        _attach_lines(week, card, out)
+        try:
+            scores = list(scores_for(number) or [])
+        except Exception:  # noqa: BLE001 - a week with no results is still a week
+            scores = []
+        _apply_results(week, card, graded, scores, out, owned=owned)
+        if owned:
+            out.checked.append(number)
+            continue
+        if not card.coaches:
+            # A blank sheet: the games, the line games and the results, and
+            # nobody's picks yet - whatever the week already has stays.
+            if not week.lines:
+                season.fixture_weeks.append(number)
+            (out.built if fresh or getattr(week, "source", None) is None else out.filled).append(number)
             continue
 
-        out.checked.append(number)
-        # The comparison is done game by game rather than player by player.
-        # One wrong cell in the result row makes every single coach's total
-        # disagree, which as a list of thirty-five names says nothing; as one
-        # line naming the game, it says exactly what to go and fix.
-        for game in week.games:
-            if not _decided(game):
+        listed = {team_code(t) for t in season.big_losers_by_week.get(number, []) if team_code(t)}
+        # The games the graded copy has graded, and whether that is all of them
+        # (a copy downloaded before Monday night hasn't the late game in it).
+        marked_games: set[str] = set()
+        unanimous = False
+        if graded is not None:
+            for found in graded.games:
+                if _unanimous(card.game_for(found.away, found.home), found):
+                    unanimous = True        # can't tell whether the copy graded it
+                elif found.credited:
+                    marked_games |= {team_code(found.home), team_code(found.away)}
+        complete = (graded is not None and not unanimous
+                    and all(found.credited for found in graded.games))
+        week.lines.clear()
+        outsiders = 0
+        differ = []
+        overruled: Counter = Counter()
+        for coach in card.coaches:
+            key = key_of(coach)
+            if not key:
+                # On this sheet but not in this pool. Their picks still
+                # count towards what the crowd did - that is read from the
+                # sheet itself - but they are not given a coach's row.
+                outsiders += 1
                 continue
-            kept = Counter(
-                team_code(line.correct_picks[game.index])
-                for line in week.lines.values()
-                if game.index in line.correct_picks
-                and team_code(line.correct_picks[game.index])
-            )
-            if not kept:
-                continue
-            winner = team_code(game.winner)
-            if winner in kept:
-                continue
-            # Every pick the commissioner kept names a team other than the
-            # one in the result row: the two disagree about who won.
-            named, held = kept.most_common(1)[0]
+            line = PlayerWeek(player=coach, week=number)
+            for game in week.games:
+                found = card.game_for(game.away, game.home)
+                team = found.picks.get(coach, "") if found is not None else ""
+                if team and _decided(game) and team_code(team) == team_code(game.winner):
+                    line.correct_picks[game.index] = team
+            marks = graded.losers.get(coach) if graded is not None else None
+            cells, teams, hits, unmarked = _loser_slots(
+                week, card.losers.get(coach, []), marks, listed, marked_games)
+            line.big_loser_raw, line.big_loser_picks, line.big_loser_wins = cells, teams, hits
+            overruled.update(unmarked)
+            line.regular_wins = len(line.correct_picks)
+            line.total_wins = line.regular_wins + hits
+            pick = str(card.suicide.get(coach, "") or "").strip()
+            if pick.casefold() in OUT_MARKERS:
+                line.suicide_out = True
+            else:
+                line.suicide_pick = pick
+            if complete and coach in graded.scores:
+                total, regular = graded.scores[coach]
+                if (total, regular) != (line.total_wins, line.regular_wins):
+                    differ.append(f"{coach} {total} on the sheet, {line.total_wins} here")
+            week.lines[key] = line
+        for code, cards in sorted(overruled.items()):
+            game = next((g for g in week.games if code in (team_code(g.home), team_code(g.away))), None)
+            from . import results
+            by = results.lost_by(game, code) if game is not None else None
             out.disagreements.append(
-                f"week {number} game {game.index} ({game.away} @ {game.home}): "
-                f"the result row says {game.winner}, but all {held} picks left "
-                f"standing name {DISPLAY.get(named, named)} - one of the two is wrong"
+                f"week {number}: {DISPLAY.get(code, code)} lost by {by} - a Big Loser by the "
+                f"pool's rule - but the graded sheet doesn't mark it on "
+                f"{cards} card{'' if cards == 1 else 's'}. Counted here; the standings "
+                f"export has the final word"
             )
+        if differ:
+            out.disagreements.append(
+                f"week {number}: the graded sheet's totals differ from the dashboard's "
+                f"for {len(differ)} coach{'' if len(differ) == 1 else 'es'} ("
+                + "; ".join(differ[:3]) + (" ..." if len(differ) > 3 else "") + ")"
+            )
+        _sync_players(season, week, Path(card.source).name)
+        if outsiders:
+            one = outsiders == 1
+            out.notes.append(
+                f"week {number}: {outsiders} name{'' if one else 's'} on "
+                f"{Path(card.source).name or 'the sheet'} "
+                f"{'is' if one else 'are'} not in this pool and "
+                f"{'was' if one else 'were'} left out of the standings"
+            )
+        (out.built if fresh or getattr(week, "source", None) is None else out.filled).append(number)
     _rank_players(season, sheet_only(season))
     return out
 
@@ -794,17 +1072,106 @@ def _write_store(mapping: dict) -> None:
         pass
 
 
+#: The graded copy of each week, kept beside the sheet as it went out.
+GRADED_KIND = "graded"
+#: Which pick sheet files have been read, and as of when (path -> mtime).
+FILES_KIND = "picks-files"
+#: Stored sheets carry the side each graded game was credited to from this
+#: format on; an older stored graded sheet is read again from its file.
+FORMAT = 2
+
+
+def _entry(week: WeekPicks) -> dict:
+    return {
+        "source": week.source,
+        "imported": time.time(),
+        "games": [asdict(game) for game in week.games],
+        "losers": week.losers,
+        "suicide": week.suicide,
+        "graded": week.graded,
+        "scores": week.scores,
+        "v": FORMAT,
+    }
+
+
+def _same_slate(entry: object, week: WeekPicks) -> bool:
+    """Whether a stored sheet is the same week of the same season as this one."""
+    if not isinstance(entry, dict):
+        return False
+    theirs = _pairs(
+        GamePicks(away=str(row.get("away", "")), home=str(row.get("home", "")), note="")
+        for row in entry.get("games") or [] if isinstance(row, dict)
+    )
+    ours = _pairs(week.games)
+    return bool(theirs) and len(theirs & ours) >= SAME_SEASON * max(len(ours), 1)
+
+
+def _roster(besides: int) -> set[str]:
+    """Every coach named on the kept cards of the other weeks - the pool, as
+    far as its sheets say."""
+    names: set[str] = set()
+    for key, entry in _read_store().items():
+        if key == str(besides) or not isinstance(entry, dict):
+            continue
+        for row in entry.get("games") or []:
+            if isinstance(row, dict):
+                names |= {_plain(n) for n in (row.get("picks") or {})}
+    return names
+
+
+def _ours(sheet: WeekPicks, besides: int) -> float | None:
+    """How much of a sheet is this pool, by the other weeks' cards (None: too
+    few kept to say)."""
+    roster = _roster(besides)
+    names = {_plain(n) for n in sheet.coaches}
+    if len(roster) < MIN_ROSTER or not names:
+        return None
+    return len(names & roster) / len(names)
+
+
+def _has_picks(entry: object) -> bool:
+    """Whether a kept sheet has anybody's picks on it."""
+    return isinstance(entry, dict) and any(
+        isinstance(row, dict) and row.get("picks") for row in entry.get("games") or [])
+
+
+def _keeps_place(held: object, week: WeekPicks) -> bool:
+    """Whether a kept sheet for the same week should stay where it is rather
+    than give way to this one: same season, and this one is another pool's
+    (its coaches aren't the ones on the other weeks' cards) while it isn't."""
+    if not isinstance(held, dict) or not _same_slate(held, week):
+        return False
+    new = _ours(week, week.week)
+    old = _from_entry(week.week, held)
+    old_share = _ours(old, week.week) if old is not None else None
+    return new is not None and old_share is not None and new < POOL_SHARE <= old_share
+
+
 def save(week: WeekPicks) -> None:
+    """Keep a sheet. The sheet as it went out is the week's card; a graded
+    copy is kept beside it rather than over it, because grading writes "1"
+    over every Big Loser that came in and the team is gone. A graded copy is
+    the card only for a week with no other sheet of this season's. Another
+    pool's sheet for the same week - Downloads holds them too - never takes
+    the place of this pool's."""
     from . import store
+    entry = _entry(week)
     try:
-        store.put("picks", str(week.week), {
-            "source": week.source,
-            "imported": time.time(),
-            "games": [asdict(game) for game in week.games],
-            "losers": week.losers,
-            "suicide": week.suicide,
-            "graded": week.graded,
-        })
+        held = _read_store().get(str(week.week))
+        if week.graded:
+            card = (_from_entry(week.week, held)
+                    if isinstance(held, dict) and not held.get("graded") and _same_slate(held, week)
+                    else None)
+            if card is not None and _shared(card, week) < POOL_SHARE:
+                pass            # another pool's grading of the same NFL week
+            elif not _keeps_place(store.get(GRADED_KIND, str(week.week), None), week):
+                store.put(GRADED_KIND, str(week.week), entry)
+            if card is None and not _keeps_place(held, week):
+                store.put("picks", str(week.week), entry)
+        elif not week.coaches and _has_picks(held) and _same_slate(held, week):
+            pass                # the blank sheet came after the full one
+        elif not _keeps_place(held, week):
+            store.put("picks", str(week.week), entry)
     except store.StoreError:
         pass
     # A sheet saved now is this season's until the next load says otherwise.
@@ -820,10 +1187,7 @@ def imported_at(week: int) -> float | None:
         return None
 
 
-def load(week: int, *, every_season: bool = False) -> WeekPicks | None:
-    if week in _OTHER_SEASON and not every_season:
-        return None
-    entry = _read_store().get(str(week))
+def _from_entry(week: int, entry: object) -> WeekPicks | None:
     if not isinstance(entry, dict):
         return None
     games = []
@@ -832,34 +1196,75 @@ def load(week: int, *, every_season: bool = False) -> WeekPicks | None:
             games.append(GamePicks(
                 away=str(row.get("away", "")), home=str(row.get("home", "")),
                 note=str(row.get("note", "")), picks=dict(row.get("picks") or {}),
+                credited=str(row.get("credited", "") or ""),
             ))
     if not games:
         return None
+    scores = {}
+    for name, pair in (entry.get("scores") or {}).items():
+        if isinstance(pair, (list, tuple)) and pair and all(isinstance(v, int) for v in pair):
+            scores[str(name)] = list(pair)
     return WeekPicks(
         week=week, games=games,
         losers={k: list(v) for k, v in (entry.get("losers") or {}).items()},
         suicide=dict(entry.get("suicide") or {}),
         source=str(entry.get("source", "")),
         graded=bool(entry.get("graded", False)),
+        scores=scores,
     )
 
 
-def search_folders(workbook: str | Path | None = None) -> list[Path]:
-    """Where a downloaded pick sheet is likely to be."""
+def load(week: int, *, every_season: bool = False) -> WeekPicks | None:
+    """The week's card: the sheet as it went out, or the graded copy when
+    that is all there is."""
+    if week in _OTHER_SEASON and not every_season:
+        return None
+    return _from_entry(week, _read_store().get(str(week)))
+
+
+def load_graded(week: int) -> WeekPicks | None:
+    """The commissioner's graded copy of a week, if one has been read."""
+    from . import store
+    try:
+        entry = store.get(GRADED_KIND, str(week), None)
+    except store.StoreError:
+        return None
+    return _from_entry(week, entry)
+
+
+def search_folders(workbook: str | Path | None = None, extra=None) -> list[Path]:
+    """Where a downloaded pick sheet is likely to be: the usual places, the
+    workbook's folder, and the folders the dashboard watches."""
     from .predictions import search_folders as folders
-    return folders(workbook)
+    out = folders(workbook)
+    seen = set(out)
+    for folder in extra or ():
+        try:
+            resolved = Path(folder).expanduser().resolve()
+        except OSError:
+            continue
+        if resolved not in seen and resolved.is_dir():
+            seen.add(resolved)
+            out.append(resolved)
+    return out
 
 
-def find_files(workbook: str | Path | None = None) -> list[Path]:
+def find_files(workbook: str | Path | None = None, extra=None) -> list[Path]:
     """Every pick sheet in the usual folders, newest first.
 
     The file name carries a number that is not the week, so the week has to
     be read out of each one; they are all offered and the caller sorts it out.
     """
     found: list[tuple[float, Path]] = []
-    for folder in search_folders(workbook):
+    for folder in search_folders(workbook, extra):
         for pattern in ("picks*.xls", "picks*.xlsx", "*picks*.xls", "*picks*.xlsx"):
-            for path in folder.glob(pattern):
+            try:
+                hits = list(folder.glob(pattern))
+            except OSError:
+                continue
+            for path in hits:
+                if path.name.startswith(("~$", ".")):
+                    continue
                 try:
                     found.append((path.stat().st_mtime, path))
                 except OSError:
@@ -872,28 +1277,51 @@ def find_files(workbook: str | Path | None = None) -> list[Path]:
     return out
 
 
-def refresh_from_disk(workbook: str | Path | None = None) -> list[int]:
-    """Read any pick sheet that isn't stored yet. Returns the weeks read."""
-    store = _read_store()
+def _files_read() -> dict[str, float]:
+    from . import store
+    try:
+        raw = store.items(FILES_KIND)
+    except store.StoreError:
+        return {}
+    return {k: float(v) for k, v in raw.items() if isinstance(v, (int, float))}
+
+
+def _mark_read(path: Path, when: float) -> None:
+    from . import store
+    try:
+        store.put(FILES_KIND, str(path), when)
+    except store.StoreError:
+        pass
+
+
+def refresh_from_disk(workbook: str | Path | None = None, extra=None) -> list[int]:
+    """Read any pick sheet not read before (or changed since). Returns the weeks read.
+
+    Oldest first, so when two files are the same week - a second download,
+    or the graded copy - the newest is the last word. Each file is read once:
+    the next load only looks at what is new or has changed.
+    """
+    if extra is not None:
+        from . import predictions
+        predictions.WATCHED[:] = [Path(folder) for folder in extra]
+    done = _files_read()
     added = []
-    for path in find_files(workbook):
+    for path in reversed(find_files(workbook, extra)):
         try:
             when = path.stat().st_mtime
         except OSError:
             continue
-        # Skip a file that has already been read, unless it has changed.
-        already = [
-            entry for entry in store.values()
-            if isinstance(entry, dict) and entry.get("source") == str(path)
-            and float(entry.get("imported") or 0) >= when
-        ]
-        if already:
+        if done.get(str(path), -1.0) >= when:
             continue
         try:
             week = read_file(path)
-        except (Unreadable, OSError, ValueError):
+        except Exception:  # noqa: BLE001 - one bad file must not stop the rest
+            # Not a pick sheet, not a spreadsheet at all, or not yet a whole
+            # one (still downloading): noted, so it isn't opened again on
+            # every load until it changes - and the other files still are.
+            _mark_read(path, when)
             continue
         save(week)
-        store = _read_store()
+        _mark_read(path, when)
         added.append(week.week)
     return sorted(set(added))

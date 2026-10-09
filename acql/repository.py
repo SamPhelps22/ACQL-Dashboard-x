@@ -3,9 +3,13 @@
 Merge policy, per the pool's own conventions:
 
   * stats.xls is authoritative for standings (position, W/L, PCT, GB, net
-    points) and is the only source for the Big Loser and Suicide pools.
-  * The workbook supplies what stats.xls does not carry: the game slates,
-    individual picks, and the Winnings sheet.
+    points, every week's score) and for the Big Loser and Suicide pools.
+  * The commissioner's pick sheets supply what stats.xls does not carry:
+    the game slates, the pool's lines and every coach's picks. Results come
+    from his graded copy of the sheet, or from the final scores the
+    dashboard fetches itself (results.py) with the pool's lines applied.
+  * The ACQL Dashboard workbook is optional. Any week it has results for
+    is its own and is left as it typed it; the sheets only check it.
   * Where both describe the same number and disagree, the stats.xls value is
     kept and the disagreement is recorded as a Conflict rather than discarded,
     so data-entry slips surface instead of hiding.
@@ -19,8 +23,8 @@ import re
 from pathlib import Path
 
 from .config import Settings
-from .models import Conflict, Player, Season, SourceFile
-from . import analytics
+from .models import Conflict, Game, Player, Season, SourceFile, Week
+from . import analytics, lines, picks, results
 from .names import AliasTable
 from .predictions import team_code
 from .sources import discover, parse_stats, parse_workbook
@@ -31,8 +35,15 @@ from .sources import discover, parse_stats, parse_workbook
 TEAM_NAME_LENGTH = 3
 
 
-def load_season(settings: Settings, aliases: AliasTable | None = None) -> Season:
-    """Discover, parse and merge every source into a single Season."""
+def load_season(settings: Settings, aliases: AliasTable | None = None, *,
+                online: bool = True, force: bool = False, fetcher=None,
+                now: float | None = None) -> Season:
+    """Discover, parse and merge every source into a single Season.
+
+    `online` lets the load ask ESPN for results it doesn't have yet
+    (results.py), and `force` asks about every unfinished week whatever the
+    time; `fetcher` stands in for the scoreboard in tests.
+    """
     aliases = aliases or AliasTable.load()
     sources = discover(settings.search_paths())
     season = Season(buy_in=settings.buy_in, sources=sources)
@@ -48,7 +59,8 @@ def load_season(settings: Settings, aliases: AliasTable | None = None) -> Season
     # They are not worth a warning: the loader reads pick sheets from the
     # same folders on its own, and the Data page lists each file and what it
     # was used for. Saying so on every load only buried the notes that matter.
-    misread = [s for s in readable if s.kind == "stats" and _looks_like_picks(s.path)]
+    # A pick sheet saved as .xlsx is taken for a workbook the same way.
+    misread = [s for s in readable if s.kind in ("stats", "workbook") and _looks_like_picks(s.path)]
     readable = [s for s in readable if s not in misread]
 
     stats_files = sorted(
@@ -80,6 +92,9 @@ def load_season(settings: Settings, aliases: AliasTable | None = None) -> Season
         season.current_week = latest_stats["week"] or season.current_week
         season.max_regular_points = latest_stats["max_regular"]
         season.max_big_loser_points = latest_stats["max_big_loser"]
+    # The weeks stats.xls scored are the pool's official ones.
+    for person in players.values():
+        person.official_weeks = set(person.weekly_wins)
 
     # Snapshot the authoritative numbers before the workbook is layered on,
     # so any disagreement can be reported.
@@ -114,6 +129,12 @@ def load_season(settings: Settings, aliases: AliasTable | None = None) -> Season
     season.players = players
     _merge_duplicates(season)
     _drop_phantoms(season)
+    # Pool lines the workbook keeps in notes its parser doesn't read.
+    try:
+        season.warnings.extend(lines.attach_from_workbook(season))
+    except Exception as exc:  # noqa: BLE001 - a note is a warning, not a failed load
+        season.warnings.append(f"Couldn't read the pool lines: {exc}")
+    _take_pick_sheets(season, settings, aliases, online=online, force=force, fetcher=fetcher, now=now)
     season.conflicts = _reconcile(season, authoritative)
     _fill_week_lines(season)
     _fill_player_weeks(season)
@@ -129,8 +150,55 @@ def load_season(settings: Settings, aliases: AliasTable | None = None) -> Season
         season.current_week = played[-1] if played else 0
 
     _split_provisional(season)
-    _resolve_suicide_pool(season)
+    _resolve_suicide_pool(season, (latest_stats or {}).get("week") or 0)
+    _rank_weeks(season)
     return season
+
+
+def workbook_note(season) -> str:
+    """What the old workbook is still used for - and that nothing needs typing
+    into it any more, and why typing results into it gets in the way."""
+    typed = sorted(
+        n for n, w in season.weeks.items()
+        if getattr(w, "source", None) is not None
+        and any(g.played and getattr(g, "result_from", "") in ("", "workbook") for g in w.games)
+    )
+    if len(typed) > 1:
+        which = "weeks " + ", ".join(str(n) for n in typed[:-1]) + f" and {typed[-1]}"
+    else:
+        which = f"week {typed[0]}" if typed else ""
+    return (
+        "Nothing needs typing into your ACQL Dashboard workbook any more. Each week is set up "
+        "from the NFL's schedule - put the pool's line games in on This Week \u203a Every game "
+        "\u203a Line games\u2026 (or drop in the commissioner's sheet) - and the results come in "
+        "from ESPN as the games finish. "
+        + (f"The results typed into it for {which} are still used. " if which else "")
+        + "A week with results typed in here stays as typed and ESPN's aren't used for it, so "
+        "leave the rest blank. The workbook does no harm left in the folder."
+    )
+
+
+def _rank_weeks(season: Season) -> None:
+    """Each coach's place in each week, counted from the scores the pages show.
+
+    The workbook keeps a rank column, but it was worked out from its own
+    scores - which stats.xls may since have corrected (a coach typed in with
+    nothing, say, who really had 8) - and a week built from a pick sheet has
+    none at all. So every week's places are counted again from the week's
+    totals; coaches level on the week share a place.
+    """
+    for number, week in season.weeks.items():
+        totals = sorted((line.total_wins for line in week.lines.values() if line.total_wins), reverse=True)
+        place = {score: totals.index(score) + 1 for score in set(totals)}
+        for key, line in week.lines.items():
+            line.rank = place.get(line.total_wins) if line.total_wins else None
+            person = season.players.get(key)
+            if person is None:
+                continue
+            if line.rank:
+                person.weekly_rank[number] = line.rank
+            else:
+                person.weekly_rank.pop(number, None)
 
 
 #: A file whose name begins like this is the commissioner's raw pick sheet.
@@ -142,6 +210,158 @@ PICKS_NAME = re.compile(r"^\s*picks\b", re.IGNORECASE)
 
 def _looks_like_picks(path: Path) -> bool:
     return bool(PICKS_NAME.match(Path(path).stem))
+
+
+def _sheet_folders(settings: Settings) -> list[Path]:
+    """Where pick sheets are looked for beyond the usual places: every
+    watched folder and the app's own data folder."""
+    from .config import DATA_DIR
+    folders = [Path(p) for p in settings.search_paths()]
+    folders.append(Path(DATA_DIR))
+    return folders
+
+
+def _take_pick_sheets(season: Season, settings: Settings, aliases: AliasTable, *,
+                      online: bool, force: bool, fetcher, now: float | None) -> None:
+    """Every week the pick sheets can give, graded against the results.
+
+    New sheets in the folders are read in; the scoreboard is asked about any
+    week still being played (only when online); then each week is built
+    from its sheet. Nothing here can fail the load - a problem is a warning.
+    """
+    try:
+        picks.refresh_from_disk(season.workbook_path, _sheet_folders(settings))
+    except Exception as exc:  # noqa: BLE001
+        season.warnings.append(f"Couldn't read the pool's pick sheets: {exc}")
+    year = results.season_year(season, now)
+    season.results_year = year
+    if season.title in ("", "ACQL"):
+        season.title = f"ACQL {year}"
+    if online:
+        weeks = set(picks.load_all(every_season=True))
+        # a workbook week with no results in it is the sheet's to score
+        weeks |= {
+            n for n, w in season.weeks.items()
+            if not any(str(g.winner or "").strip() for g in w.games)
+        }
+        # this week and next, sheet or not: their first kickoffs lock the odds,
+        # and the dashboard sets them up itself until a sheet arrives
+        weeks |= set(results.calendar_weeks(year, now)) | set(lines.pool_line_weeks(year))
+        try:
+            got, problems = results.refresh(year, weeks, now=now, force=force, fetcher=fetcher)
+        except Exception as exc:  # noqa: BLE001
+            got, problems = [], [f"Couldn't check for results: {exc}"]
+        season.results_fetched = got
+        season.warnings.extend(problems)
+    try:
+        graded = picks.attach(season, key_for=aliases.key,
+                              results_for=lambda number: results.load(year, number))
+    except Exception as exc:  # noqa: BLE001
+        season.warnings.append(f"Couldn't build the weeks from the pick sheets: {exc}")
+        return
+    season.sheet_weeks = sorted(set(graded.built) | set(graded.filled))
+    if graded.other_season:
+        season.warnings.append(
+            "Stored pick sheets from another season were ignored ("
+            + ", ".join(f"week {n}" for n in graded.other_season)
+            + "). Their games are not this season's - clear them from "
+            "Data & Update."
+        )
+    season.warnings.extend(graded.problems)
+    season.warnings.extend(graded.disagreements)
+    try:
+        season.warnings.extend(_weeks_without_sheets(season, year, now))
+    except Exception as exc:  # noqa: BLE001 - a week not set up is a warning
+        season.warnings.append(f"Couldn't set up the weeks without a pick sheet: {exc}")
+
+
+def _weeks_without_sheets(season: Season, year: int, now: float | None) -> list[str]:
+    """Set up the weeks no pick sheet has built - so nothing has to be typed
+    into the workbook.
+
+    The week being played and the next one by the calendar, any week given
+    line games on Next Week, and any workbook week with no results in it
+    get their games from the NFL's own fixtures (the scoreboard as last
+    read, else the schedule), the line games typed in on Next Week, and
+    every result the scoreboard has. So This Week has a card to make before
+    the commissioner's sheet goes out, and the results are in as the games
+    finish. Nobody's picks are in such a week until the sheet arrives and
+    builds it properly.
+
+    A week the workbook has results in stays the workbook's, and a week a
+    sheet built keeps the sheet's lines; a line game typed in here that
+    differs from them is pointed out. Returns those notes.
+    """
+    notes: list[str] = []
+    sheets = set(season.sheet_weeks)
+    wanted = set(results.calendar_weeks(year, now)) | set(lines.pool_line_weeks(year))
+    wanted |= {n for n, w in season.weeks.items() if w.games and n not in sheets}
+    for number in sorted(n for n in wanted if 1 <= n <= 18):
+        typed = lines.pool_lines(year, number)
+        week = season.weeks.get(number)
+        if number in sheets:
+            notes += _line_differences(week, typed, "the pick sheet")
+            continue
+        if (week is not None and getattr(week, "source", None) is not None
+                and any(g.played for g in week.games)):
+            notes += _line_differences(week, typed, "the workbook")
+            continue
+        kept = results.load(year, number)
+        if week is None or not week.games:
+            games = _fixtures(year, number, kept)
+            if not games:
+                continue
+            week = season.weeks.get(number) or Week(number=number)
+            week.games = games
+            season.weeks[number] = week
+            season.fixture_weeks.append(number)
+        if typed:
+            lines.apply_pool_lines(week, typed)
+        for game in week.games:
+            results.apply(game, kept)
+    return notes
+
+
+def _fixtures(year: int, number: int, kept: list) -> list[Game]:
+    """A week's games from the scoreboard as last read (first kickoff first),
+    else from the schedule when it is this season's."""
+    from . import schedule
+    from .predictions import DISPLAY
+
+    def name(code: str) -> str:
+        return DISPLAY.get(code.lower(), code)
+
+    listed = sorted((s for s in kept if s.away and s.home),
+                    key=lambda s: (s.kickoff or 0, s.home))
+    if listed:
+        return [Game(index, name(s.home), name(s.away)) for index, s in enumerate(listed, start=1)]
+    if getattr(schedule, "SCHEDULE_YEAR", None) == year:
+        return schedule.slate(number)
+    return []
+
+
+def _line_differences(week, typed: dict, where: str) -> list[str]:
+    """A line game typed in on Next Week that the week's own source says
+    otherwise about - that source's line is the one used."""
+    from .predictions import DISPLAY, team_code
+    if week is None or not typed:
+        return []
+    out = []
+    for game in week.games:
+        found = typed.get(frozenset((team_code(game.away), team_code(game.home))))
+        if found is None:
+            continue
+        fav, points = found
+        theirs = ((team_code(game.line_favourite), float(game.line))
+                  if game.line is not None and game.line_favourite else None)
+        if theirs != (fav, points):
+            said = (f"{DISPLAY.get(theirs[0], theirs[0])} by {theirs[1]:g}" if theirs
+                    else "no line")
+            out.append(
+                f"Week {week.number}, {game.label}: the line game typed in here is "
+                f"{DISPLAY.get(fav, fav)} by {points:g}, but {where} has {said} - "
+                f"{where}'s is used")
+    return out
 
 
 def _same_person(display: str) -> str:
@@ -202,10 +422,15 @@ def _merge_duplicates(season: Season) -> None:
             extra = season.players.pop(other, None)
             if extra is None:
                 continue
+            official = set(getattr(extra, "official_weeks", ())) - set(getattr(main, "official_weeks", ()))
             for field in weekly:
                 target = getattr(main, field)
                 for week, value in getattr(extra, field).items():
-                    target.setdefault(week, value)
+                    if week in official and field in ("weekly_wins", "weekly_regular", "weekly_big_loser"):
+                        target[week] = value            # the export's number is the official one
+                    else:
+                        target.setdefault(week, value)
+            main.official_weeks = set(getattr(main, "official_weeks", ())) | official
             for field in totals:
                 if not getattr(main, field) and getattr(extra, field):
                     setattr(main, field, getattr(extra, field))
@@ -264,7 +489,7 @@ def _drop_phantoms(season: Season) -> None:
             week.lines.pop(key, None)
 
 
-def _resolve_suicide_pool(season: Season) -> None:
+def _resolve_suicide_pool(season: Season, stats_week: int | None = None) -> None:
     """Decide who is still alive from the most recent week that says so.
 
     stats.xls lists survivors as of the week it covers. The workbook's suicide
@@ -279,19 +504,31 @@ def _resolve_suicide_pool(season: Season) -> None:
     if not weeks_with_data:
         return
     latest = weeks_with_data[-1]
-    if latest <= season.current_week:
+    covered = season.current_week if stats_week is None else stats_week
+    if covered and latest <= covered:
         # stats.xls already covers this week and stays authoritative.
         return
+    week = season.weeks[latest]
     for key, person in season.players.items():
-        line = season.weeks[latest].lines.get(key)
+        line = week.lines.get(key)
         if line is None:
             continue
         if line.suicide_out:
+            # DEAD on this week's sheet: out the week before, at the latest.
             person.suicide_alive = False
             if person.suicide_out_week is None:
-                person.suicide_out_week = latest
+                person.suicide_out_week = max(latest - 1, 1)
         elif line.suicide_pick:
-            person.suicide_alive = True
+            # In this week; out of it if the pick has already lost.
+            game = next(
+                (g for g in week.games if g.played
+                 and team_code(line.suicide_pick) in (team_code(g.home), team_code(g.away))),
+                None,
+            )
+            lost = game is not None and team_code(game.winner) != team_code(line.suicide_pick)
+            person.suicide_alive = not lost
+            if lost and person.suicide_out_week is None:
+                person.suicide_out_week = latest
 
 
 def _split_provisional(season: Season) -> None:
@@ -306,7 +543,9 @@ def _split_provisional(season: Season) -> None:
     cutoff = season.current_week
     if not cutoff:
         return
-    provisional = sorted(w for w in season.weeks if w > cutoff)
+    # A week with nobody's picks in it yet (set up from the fixtures) has no
+    # scores to hold out.
+    provisional = sorted(w for w in season.weeks if w > cutoff and season.weeks[w].lines)
     if not provisional:
         return
     season.provisional_weeks = provisional
@@ -330,15 +569,22 @@ def _reconcile(season: Season, authoritative: dict) -> list[Conflict]:
     """Compare workbook-derived numbers against the authoritative snapshot."""
     conflicts: list[Conflict] = []
     for key, person in season.players.items():
-        snapshot = authoritative.get(key)
-        if not snapshot:
+        snapshot = authoritative.get(key) or {}
+        # The export's own weeks, under whichever spelling the coach ended up.
+        official_weeks = {
+            w: person.weekly_wins[w] for w in getattr(person, "official_weeks", ()) if w in person.weekly_wins
+        }
+        official_weeks = official_weeks or dict(snapshot.get("weekly_wins", {}))
+        if not official_weeks:
             continue
-        for week, line in (
-            (w, wk.lines.get(key)) for w, wk in season.weeks.items()
-        ):
+        for week, wk in season.weeks.items():
+            line = wk.lines.get(key)
             if line is None or not line.total_wins:
                 continue
-            official = snapshot["weekly_wins"].get(week)
+            # A week still being played can't agree with a finished count yet.
+            if wk.source is None and not all(g.played for g in wk.games):
+                continue
+            official = official_weeks.get(week)
             if official is None or official == line.total_wins:
                 continue
             conflicts.append(
@@ -347,7 +593,8 @@ def _reconcile(season: Season, authoritative: dict) -> list[Conflict]:
                     field=f"week {week} wins",
                     authoritative=official,
                     other=line.total_wins,
-                    note="stats.xls kept; workbook differs",
+                    note="stats.xls kept; the workbook differs" if wk.source is not None
+                    else "stats.xls kept; the pick sheet and results give this",
                 )
             )
     conflicts.sort(key=lambda c: (c.player.lower(), c.field))
@@ -414,15 +661,18 @@ def _fill_player_weeks(season: Season) -> None:
 def _coverage_warnings(season: Season, sources: list[SourceFile]) -> list[str]:
     """Flag players who appear in only one source, so nobody vanishes quietly."""
     warnings: list[str] = []
-    if not sources:
+    if not sources and not getattr(season, "sheet_weeks", None):
         warnings.append(
-            "No spreadsheets found. Drop this week's stats.xls and "
-            "ACQL Dashboard.xlsx into the data/ folder, then press Refresh."
+            "No spreadsheets found. Drop this week's pick sheet and stats.xls "
+            "into the data folder - they are read as soon as they land."
         )
         return warnings
 
     have_stats = any(s.kind == "stats" and not s.error for s in sources)
-    have_workbook = any(s.kind == "workbook" and not s.error for s in sources)
+    have_workbook = any(
+        s.kind == "workbook" and not s.error and not _looks_like_picks(s.path) for s in sources
+    )
+    have_sheets = bool(getattr(season, "sheet_weeks", None))
     if have_stats and have_workbook:
         lonely = [
             p.display
@@ -438,7 +688,15 @@ def _coverage_warnings(season: Season, sources: list[SourceFile]) -> list[str]:
                 "Add a mapping in aliases.json if these are the same person."
             )
     if not have_stats:
-        warnings.append("No stats.xls found - standings, Big Loser and Suicide pools are unavailable.")
-    if not have_workbook:
-        warnings.append("No ACQL Dashboard.xlsx found - game slates and picks are unavailable.")
+        warnings.append(
+            "No stats.xls found - the standings below are the dashboard's own count "
+            "from the pick sheets and the results, not the pool's official table."
+            if have_sheets else
+            "No stats.xls found - standings, Big Loser and Suicide pools are unavailable."
+        )
+    if not have_workbook and not have_sheets:
+        warnings.append(
+            "No pick sheets yet - drop the week's picks file (the one the commissioner "
+            "sends) into the data folder or Downloads, and the week builds itself."
+        )
     return warnings

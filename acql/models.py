@@ -38,6 +38,12 @@ class Game:
     # to the favourite (analytics.line_need). None for a straight-up game.
     line: float | None = None
     line_favourite: str = ""        # the favourite's name as the slate spells it
+    # The final score, when the dashboard fetched it (results.py), with home
+    # being this slate's home team. None when the result was typed in.
+    home_points: int | None = None
+    away_points: int | None = None
+    #: Where the result came from: "workbook", "graded sheet" or "ESPN".
+    result_from: str = ""
 
     @property
     def line_underdog(self) -> str:
@@ -182,6 +188,10 @@ class Player:
     suicide_out_week: int | None = None
 
     sources: set[str] = field(default_factory=set)
+    #: Weeks whose scores came from stats.xls. They are the pool's official
+    #: numbers, and a score the dashboard works out for itself never
+    #: replaces them - a difference is reported instead.
+    official_weeks: set[int] = field(default_factory=set)
 
     # ---- derived season statistics -------------------------------------
     @property
@@ -288,6 +298,16 @@ class Season:  # noqa: D101
     computed_winnings: list[int] = field(default_factory=list)
     # True when the season Won/Paid/Net totals were worked out here too.
     computed_totals: bool = False
+    #: The NFL season results were looked up for (results.py), the weeks the
+    #: scoreboard was asked about on this load, and the weeks built from the
+    #: pool's pick sheets rather than the workbook.
+    results_year: int = 0
+    results_fetched: list[int] = field(default_factory=list)
+    sheet_weeks: list[int] = field(default_factory=list)
+    #: Weeks the dashboard set up itself from the NFL's fixtures, before any
+    #: pick sheet: the games, the line games typed in here, and the results.
+    #: Nobody's picks are in them yet.
+    fixture_weeks: list[int] = field(default_factory=list)
 
     # ---- convenience accessors -----------------------------------------
     def ordered_players(self) -> list[Player]:

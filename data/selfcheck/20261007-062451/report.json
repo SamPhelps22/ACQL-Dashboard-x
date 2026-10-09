@@ -1,0 +1,235 @@
+{
+ "environment": {
+  "version": "2.12.1",
+  "python": "3.13.3",
+  "qt": "PySide6 6.11.2 / Qt 6.11.2",
+  "os": "Windows-11-10.0.26200-SP0",
+  "screen": "1536x960 at 1.25x",
+  "window": "1536x889",
+  "theme": "dark",
+  "data_folder": "C:\\Users\\sam52\\OneDrive\\Documents\\Code x\\data",
+  "memory": {
+   "cards": 1,
+   "forecasts": 5,
+   "history": 1,
+   "meta": 6,
+   "odds": 4,
+   "picks": 11,
+   "picks-files": 13,
+   "results": 13,
+   "settings": 3,
+   "spreads": 5,
+   "weights": 5
+  },
+  "players": 35,
+  "weeks": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "warnings": [
+   "Stored pick sheets from another season were ignored (week 8, week 10, week 11, week 13, week 15, week 16, week 17). Their games are not this season's - clear them from Data & Update.",
+   "Week 5 is not covered by the latest stats.xls (which reports through week 4), so it is shown as in-progress and left out of season averages."
+  ]
+ },
+ "pages": [
+  {
+   "group": "Season",
+   "tab": "Overview",
+   "title": "Overview",
+   "ms": 192,
+   "state": "content",
+   "image": "01-season-overview.png",
+   "width": 1648,
+   "height": 1963,
+   "problems": []
+  },
+  {
+   "group": "Season",
+   "tab": "Standings",
+   "title": "Standings",
+   "ms": 274,
+   "state": "content",
+   "image": "02-season-standings.png",
+   "width": 1648,
+   "height": 3094,
+   "problems": []
+  },
+  {
+   "group": "Season",
+   "tab": "Winnings",
+   "title": "Winnings",
+   "ms": 99,
+   "state": "content",
+   "image": "03-season-winnings.png",
+   "width": 1648,
+   "height": 2958,
+   "problems": []
+  },
+  {
+   "group": "Season",
+   "tab": "Projections",
+   "title": "Projections",
+   "ms": 274,
+   "state": "content",
+   "image": "04-season-projections.png",
+   "width": 1648,
+   "height": 2324,
+   "problems": []
+  },
+  {
+   "group": "Season",
+   "tab": "Charts",
+   "title": "Charts",
+   "ms": 660,
+   "state": "content",
+   "image": "05-season-charts.png",
+   "width": 1648,
+   "height": 3023,
+   "problems": []
+  },
+  {
+   "group": "This Week",
+   "tab": "Your card",
+   "title": "This Week",
+   "ms": 10,
+   "state": "content",
+   "image": "06-this-week-your-card.png",
+   "width": 1648,
+   "height": 2316,
+   "problems": []
+  },
+  {
+   "group": "This Week",
+   "tab": "Every game",
+   "title": "Every Game",
+   "ms": 5,
+   "state": "content",
+   "image": "07-this-week-every-game.png",
+   "width": 1648,
+   "height": 2390,
+   "problems": []
+  },
+  {
+   "group": "Results",
+   "tab": "Results",
+   "title": "Results",
+   "ms": 104,
+   "state": "content",
+   "image": "08-results-results.png",
+   "width": 1648,
+   "height": 2400,
+   "problems": []
+  },
+  {
+   "group": "Side Pools",
+   "tab": "Side pools",
+   "title": "Side Pools",
+   "ms": 89,
+   "state": "content",
+   "image": "09-side-pools-side-pools.png",
+   "width": 1648,
+   "height": 2334,
+   "problems": []
+  },
+  {
+   "group": "Player",
+   "tab": "Player",
+   "title": "Player",
+   "ms": 55,
+   "state": "content",
+   "image": "10-player-player.png",
+   "width": 1648,
+   "height": 1361,
+   "problems": []
+  },
+  {
+   "group": "Insights",
+   "tab": "The pool",
+   "title": "The Pool",
+   "ms": 651,
+   "state": "content",
+   "image": "11-insights-the-pool.png",
+   "width": 1648,
+   "height": 3508,
+   "problems": []
+  },
+  {
+   "group": "Deadeye",
+   "tab": "Report card",
+   "title": "Report Card",
+   "ms": 436,
+   "state": "content",
+   "image": "12-deadeye-report-card.png",
+   "width": 1648,
+   "height": 2201,
+   "problems": []
+  },
+  {
+   "group": "Deadeye",
+   "tab": "Details",
+   "title": "Deadeye, in detail",
+   "ms": 10,
+   "state": "content",
+   "image": "13-deadeye-details.png",
+   "width": 1648,
+   "height": 3240,
+   "problems": []
+  },
+  {
+   "group": "Data & Update",
+   "tab": "Data",
+   "title": "Data & Update",
+   "ms": 11,
+   "state": "content",
+   "image": "14-data---update-data.png",
+   "width": 1648,
+   "height": 3230,
+   "problems": []
+  }
+ ],
+ "checks": [
+  {
+   "name": "Win chances by the spread",
+   "ok": true,
+   "detail": "3 61.2%, 7 74.3%, 10 81.8%"
+  },
+  {
+   "name": "The pool's line rule",
+   "ok": true,
+   "detail": "7-point favourite against a pool line of 8: 44.9%"
+  },
+  {
+   "name": "The app's database",
+   "ok": true,
+   "detail": "save, replace, read and delete on a scratch database"
+  },
+  {
+   "name": "Pricing a game",
+   "ok": true,
+   "detail": "market 6.5 + models -> 7.60; a typed 3 wins -> 4.10; no file -> -2.5"
+  },
+  {
+   "name": "The win-the-week planner",
+   "ok": true,
+   "detail": "finishes first 6.2% against 2.8% straight"
+  },
+  {
+   "name": "The suicide pool rules",
+   "ok": true,
+   "detail": "6-point favourite 71%, 10-point favourite under a line 47%"
+  },
+  {
+   "name": "Finishing first, ties shared",
+   "ok": true,
+   "detail": "a lone card always wins; a two-way tie pays half"
+  },
+  {
+   "name": "The updater",
+   "ok": true,
+   "detail": "version order and update file names"
+  }
+ ]
+}

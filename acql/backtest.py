@@ -36,7 +36,7 @@ The pool's rules, as used
 
 Run `python -m acql.backtest` from the project folder to replay it again
 (with a new season's scores added to the CSV, say); the app shows the
-stored results on The Model > Report card and Details.
+stored results on Deadeye > Report card and Details.
 """
 
 from __future__ import annotations

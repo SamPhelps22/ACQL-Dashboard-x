@@ -1,0 +1,36 @@
+ACQL Dashboard self-check - Wednesday 07 October 2026, 06:25
+Version 2.12.1 · Python 3.13.3 · PySide6 6.11.2 / Qt 6.11.2
+Windows-11-10.0.26200-SP0 · screen 1536x960 at 1.25x · window 1536x889 · dark theme
+35 players · weeks [1, 2, 3, 4, 5]
+Memory: {'cards': 1, 'forecasts': 5, 'history': 1, 'meta': 6, 'odds': 4, 'picks': 11, 'picks-files': 13, 'results': 13, 'settings': 3, 'spreads': 5, 'weights': 5}
+
+14 pages, 0 thing(s) to look at
+
+OK Season > Overview  (content, 192 ms, 1648x1963)
+OK Season > Standings  (content, 274 ms, 1648x3094)
+OK Season > Winnings  (content, 99 ms, 1648x2958)
+OK Season > Projections  (content, 274 ms, 1648x2324)
+OK Season > Charts  (content, 660 ms, 1648x3023)
+OK This Week > Your card  (content, 10 ms, 1648x2316)
+OK This Week > Every game  (content, 5 ms, 1648x2390)
+OK Results > Results  (content, 104 ms, 1648x2400)
+OK Side Pools > Side pools  (content, 89 ms, 1648x2334)
+OK Player > Player  (content, 55 ms, 1648x1361)
+OK Insights > The pool  (content, 651 ms, 1648x3508)
+OK Deadeye > Report card  (content, 436 ms, 1648x2201)
+OK Deadeye > Details  (content, 10 ms, 1648x3240)
+OK Data & Update > Data  (content, 11 ms, 1648x3230)
+
+The sums behind the pages:
+OK Win chances by the spread: 3 61.2%, 7 74.3%, 10 81.8%
+OK The pool's line rule: 7-point favourite against a pool line of 8: 44.9%
+OK The app's database: save, replace, read and delete on a scratch database
+OK Pricing a game: market 6.5 + models -> 7.60; a typed 3 wins -> 4.10; no file -> -2.5
+OK The win-the-week planner: finishes first 6.2% against 2.8% straight
+OK The suicide pool rules: 6-point favourite 71%, 10-point favourite under a line 47%
+OK Finishing first, ties shared: a lone card always wins; a two-way tie pays half
+OK The updater: version order and update file names
+
+Warnings from loading:
+  - Stored pick sheets from another season were ignored (week 8, week 10, week 11, week 13, week 15, week 16, week 17). Their games are not this season's - clear them from Data & Update.
+  - Week 5 is not covered by the latest stats.xls (which reports through week 4), so it is shown as in-progress and left out of season averages.

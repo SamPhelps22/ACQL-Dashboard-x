@@ -293,7 +293,8 @@ main {
 .view { display: grid; gap: 30px; }
 .view > * { min-width: 0; }
 .pagehead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 16px; }
-.pagehead h1 { font-size: 40px; }
+.pagehead h1 { font-size: 40px; position: relative; padding-bottom: 10px; }
+.pagehead h1::after { content: ""; position: absolute; left: 0; bottom: 0; width: 44px; height: 4px; border-radius: 2px; background: var(--gold); }
 .cols { display: grid; gap: 30px; }
 .cols > * { min-width: 0; display: grid; gap: 30px; align-content: start; }
 @media (min-width: 960px) {
@@ -370,6 +371,21 @@ main {
 .hero .stat .v { font: 800 30px/1 var(--display); color: var(--onair-ink); }
 .hero .stat .k { font-size: 13px; color: var(--onair-muted); }
 .hero .btn { justify-self: start; margin-top: 6px; }
+.hero-main { display: grid; gap: 6px; min-width: 0; align-content: center; position: relative; z-index: 1; }
+.hero-side { min-width: 0; position: relative; z-index: 1; }
+/* the hero's numbers: a 2 x 2 scoreboard, beside the headline on a wide screen */
+.hero.sided .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin-top: 12px; border-top: 1px solid var(--onair-rule); }
+.hero.sided .stat { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--onair-rule); align-content: start; }
+.hero.sided .stat:nth-child(even) { padding-left: 14px; border-left: 1px solid var(--onair-rule); }
+.hero.sided .stat .v { font-size: 36px; letter-spacing: 0.01em; }
+.hero.sided .stat .k { margin-top: 3px; line-height: 1.25; }
+.hero .stat.money.up .v { color: #5fd391; }
+@media (min-width: 900px) {
+  .hero.sided { grid-template-columns: minmax(0, 1fr) minmax(250px, 320px); column-gap: 44px; align-items: center; padding: 24px 72px 26px 28px; }
+  .hero.sided .stats { margin-top: 0; background: var(--onair-2); border: 1px solid var(--onair-rule); border-radius: 4px; padding: 2px 18px; }
+  .hero.sided .stat:nth-last-child(-n+2) { border-bottom: 0; }
+  .hero.sided .stat .v { font-size: 42px; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .hero.enter { animation: wipe 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
   @keyframes wipe {
@@ -511,18 +527,109 @@ td.game, td.winner { white-space: normal; }
 .live-status { color: var(--muted); font-size: 14px; }
 .live-status.bad { color: var(--bad); }
 .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 6px; vertical-align: 1px; }
-.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
-.gcard { background: var(--surface); border: 1px solid var(--rule); border-top: 3px solid var(--rule); border-radius: 4px; padding: 9px 12px 10px; display: grid; gap: 5px; }
-.gcard.in { border-top-color: var(--live); }
-.gcard.post { border-top-color: var(--ink-2); }
-.gcard .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
-.gcard .row .pts { font: 800 20px/1 var(--display); color: var(--muted); }
-.gcard .row.credit .pts { color: var(--ink); }
-.gcard .row.credit .team b::after { content: " \2713"; color: var(--good); }
-.gcard .team b { font-weight: 600; }
-.gcard .when { color: var(--muted); font: 700 12px/1.2 var(--body); }
+/* ---- a game, as a scoreboard card ------------------------------------------------- */
+.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; }
+.gcard {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 14px 11px;
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(13, 27, 44, 0.06);
+  grid-template-columns: minmax(0, 1fr);
+}
+.gcard > * { min-width: 0; }
+.gcard::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--rule); }
+.gcard.in::before { background: var(--live); }
+.gcard.post::before { background: var(--ink-2); }
+.gcard.rz::before { height: 6px; }
+.gcard .top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 20px; }
+.gcard .when { color: var(--muted); font: 700 12px/1.2 var(--body); letter-spacing: 0.02em; text-transform: uppercase; }
 .gcard .when.in { color: var(--live); }
+.gcard .when .dot-live { width: 7px; height: 7px; margin-right: 5px; }
+.gcard .tv { margin-left: auto; color: var(--muted); font: 700 11px/1 var(--body); letter-spacing: 0.04em; border: 1px solid var(--rule); border-radius: 3px; padding: 3px 5px; }
+.gcard .rztag, .bug.rz .state::after { background: var(--live); color: #fff; font: 800 11px/1 var(--display); letter-spacing: 0.06em; padding: 3px 5px 2px; border-radius: 2px; }
+.gcard .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-variant-numeric: tabular-nums; }
+.gcard .row .team { min-width: 0; gap: 9px; }
+.gcard .row .team b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 20px/1.1 var(--display); letter-spacing: 0.01em; }
+.gcard .row.credit .team::after { content: "\2713"; flex: none; margin-left: -3px; color: var(--good); font: 700 16px/1 var(--body); }
+.gcard .row .pts { font: 800 32px/1 var(--display); color: var(--ink); min-width: 1.6ch; text-align: right; }
+.gcard .row.lost .pts { color: var(--muted); }
+.gcard .row .rec { color: var(--muted); font: 600 13px/1 var(--body); }
+.gcard .row.picked .tb { box-shadow: inset 3px 0 0 var(--c2, rgba(255,255,255,0.4)), 0 0 0 2px var(--surface), 0 0 0 4px var(--gold); }
+.gcard .play { margin: 0; font-size: 13px; line-height: 1.35; color: var(--ink-2); border-left: 2px solid var(--rule); padding-left: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gcard .down { font: 700 15px/1.2 var(--body); color: var(--ink); }
+.gcard.rz .down { color: var(--live); }
+.gcard .gline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; border-top: 1px solid var(--rule); padding-top: 8px; margin-top: 1px; }
+.gcard .line { color: var(--muted); font-size: 12px; font-weight: 600; }
+.gcard .stand { font: 700 12px/1.2 var(--body); padding: 3px 8px; border-radius: 99px; background: var(--raised); color: var(--ink-2); }
+.gcard .stand.good { background: var(--turf-soft); color: var(--good); }
+.gcard .stand.warn { background: var(--gold-soft); color: var(--gold-text); }
+.gcard .chance { display: grid; grid-template-columns: auto minmax(30px, 1fr) auto; align-items: center; gap: 8px; font: 700 12px/1 var(--body); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gcard .chance .p.fav { color: var(--ink); }
+.gcard .chance .track { display: flex; gap: 2px; height: 8px; }
+.gcard .chance .track i { display: block; height: 100%; border-radius: 2px; background: var(--context); min-width: 2px; }
+.gcard .chance .track i.fav { background: var(--ink-2); }
+.gcard .chance .track i.mine { background: var(--gold); }
 .gcard .meta { color: var(--muted); font-size: 12px; }
+.gcard .you { color: var(--gold-text); font-weight: 600; }
+/* the strip of field: end zones, the red zone, the line of scrimmage, the line to gain, the ball */
+.field {
+  position: relative;
+  height: 24px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.3) 0 1px, transparent 1px 8.3333%), #2f7b4d;
+}
+.field .ez { position: absolute; top: 0; bottom: 0; width: 8.3333%; display: grid; place-items: center; background: #1e5434; color: rgba(255, 255, 255, 0.9); font: 800 9px/1 var(--display); letter-spacing: 0.04em; }
+.field .ez.l { left: 0; }
+.field .ez.r { right: 0; }
+.field .zone { position: absolute; top: 0; bottom: 0; background: rgba(255, 90, 70, 0.32); }
+.field .los { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #62b0ff; }
+.field .gain { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #ffd60a; }
+.field .fball { position: absolute; top: 50%; width: 15px; height: 9px; margin: -4.5px 0 0 -7.5px; border-radius: 50%; background: #8d4f22; box-shadow: 0 0 0 1.5px #fff; }
+.field .fball::after { content: ""; position: absolute; top: 50%; margin-top: -4px; border: 4px solid transparent; }
+.field .fball.right::after { left: 100%; margin-left: 3px; border-left: 6px solid #fff; border-right-width: 0; }
+.field .fball.left::after { right: 100%; margin-right: 3px; border-right: 6px solid #fff; border-left-width: 0; }
+/* the ball: who has it */
+.ball { flex: none; display: inline-block; width: 13px; height: 8px; border-radius: 50%; background: #9a5b2a; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6); }
+.bug.rz .state::after { content: "RZ"; margin-left: 6px; font-size: 10px; padding: 2px 4px 1px; vertical-align: 1px; }
+/* the week board: the chance of winning, and the money if it ended now */
+.weekboard .odds { display: grid; justify-items: end; gap: 4px; font-variant-numeric: tabular-nums; }
+.weekboard .odds b { font: 800 18px/1 var(--display); }
+.weekboard .odds .cash { font: 700 12px/1 var(--body); padding: 3px 7px; border-radius: 99px; background: var(--raised); }
+.weekboard .odds .cash.up { background: var(--turf-soft); }
+.weekboard .hdr .odds { gap: 1px; }
+.weekboard .r.lead .pos { color: var(--gold-text); }
+.weekboard .hdr .odds span { font: 600 12px var(--body); color: var(--muted); padding: 0; background: none; }
+/* a coach's week in four numbers */
+.minis { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
+.mini-fig { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; }
+.mini-fig .v { font: 800 28px/1 var(--display); font-variant-numeric: tabular-nums; }
+.mini-fig .k { font-size: 12px; color: var(--muted); line-height: 1.25; }
+.mini-fig.money.up .v { color: var(--good); }
+/* the rooting guide: what to root for, and what it does to the chance of the week */
+.roots { display: grid; }
+.root { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 3px; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+.root:last-child { border-bottom: 0; }
+.root .team { grid-column: 1; grid-row: 1; min-width: 0; gap: 9px; align-items: flex-start; }
+.root .team .tb { flex: none; }
+.root .team b { font: 700 19px/1.15 var(--display); letter-spacing: 0.01em; padding-top: 3px; }
+.root .swing { grid-column: 2; grid-row: 1 / span 2; align-self: center; font: 800 26px/1 var(--display); color: var(--good); font-variant-numeric: tabular-nums; }
+.root .meta { grid-column: 1; grid-row: 2; color: var(--muted); font-size: 13px; padding-left: 53px; }
+.root .jump { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 9px; padding-left: 53px; color: var(--ink-2); font-size: 13px; }
+.root .mini { flex: none; position: relative; width: 72px; height: 8px; border-radius: 4px; background: var(--rule); overflow: hidden; }
+.root .mini i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.root .mini i.so { background: var(--gold); }
+.root .mini i.not { background: var(--ink-2); }
+@media (max-width: 420px) { .root .meta, .root .jump { padding-left: 0; } }
+.cash.up { color: var(--good); }
+.cash.down { color: var(--muted); }
+.cash.flat { color: var(--muted); }
 .final-banner { background: var(--gold-soft); border-left: 5px solid var(--gold); padding: 12px 16px; display: grid; gap: 2px; }
 .final-banner b { font-family: var(--display); font-size: 26px; font-weight: 800; }
 .final-banner .btn { justify-self: start; margin-top: 6px; }
@@ -618,7 +725,7 @@ td.gone, span.gone { color: var(--muted); }
 .upset .how { color: var(--ink-2); font-size: 14px; grid-column: 1 / -1; }
 
 /* ---- head-to-head: the tale of the tape ------------------------------------------- */
-.vs { display: grid; grid-template-columns: minmax(0, 14em) auto minmax(0, 14em) auto; align-items: center; gap: 8px; }
+.vs { display: grid; grid-template-columns: minmax(0, 14em) auto minmax(0, 14em) auto; align-items: center; justify-content: start; gap: 8px; }
 .vs select { border: 1px solid var(--rule); background: var(--surface); border-radius: 6px; padding: 7px 8px; width: 100%; min-width: 0; font-weight: 600; }
 .vs .and { font: 800 18px var(--display); color: var(--muted); }
 @media (max-width: 720px) { .vs { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; width: 100%; } }
@@ -1199,9 +1306,11 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
       var got = {};
       (json.events || []).forEach(function (ev) {
         var comp = (ev.competitions || [])[0] || {};
-        var teams = {};
+        var teams = {}, rec = {};
         (comp.competitors || []).forEach(function (c) {
-          teams[c.homeAway] = { code: code(c.team && c.team.abbreviation), score: Number(c.score || 0) };
+          var team = code(c.team && c.team.abbreviation), r = recordOf(c);
+          teams[c.homeAway] = { code: team, score: Number(c.score || 0) };
+          if (team && r) rec[team] = r;
         });
         if (!teams.home || !teams.away) return;
         var status = comp.status || ev.status || {};
@@ -1221,11 +1330,14 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
         if (!isNaN(start)) live.kick[key] = start;
         // Postponed or cancelled: ESPN calls it over, but nothing was decided.
         var off = st.state === "post" && st.completed === false;
+        var field = !off && st.state === "in" ? fieldOf(comp) : {};
         got[key] = {
           home: teams.home.code, away: teams.away.code,
           hs: off ? 0 : teams.home.score, as: off ? 0 : teams.away.score,
           state: off ? "pre" : st.state || "pre", off: off, detail: st.shortDetail || st.detail || (off ? "Postponed" : ""),
-          period: Number(status.period || 0), clock: Number(status.clock || 0)
+          period: Number(status.period || 0), clock: Number(status.clock || 0),
+          poss: field.poss || "", down: field.down || "", rz: !!field.rz, play: field.play || "", spot: field.spot || "",
+          tv: tvOf(comp), rec: rec
         };
       });
       live.scores = got;
@@ -1240,6 +1352,44 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
       schedule();                          // first, so the page says how often it now looks
       if (!updateBar) render({ quiet: true });
     });
+  }
+  // ESPN's words, tidied: single spaces, nothing at either end.
+  function words(v) { return v == null ? "" : String(v).replace(/\s+/g, " ").trim(); }
+  // Who has the ball, where, and what just happened - read only while a game
+  // is on. Anything odd in it is left out: it never costs the scores.
+  function fieldOf(comp) {
+    try {
+      var sit = comp.situation;
+      if (!sit || typeof sit !== "object") return {};
+      var holder = words(sit.possession), poss = "";
+      (comp.competitors || []).forEach(function (c) {
+        if (holder && (words(c.id) === holder || words(c.team && c.team.id) === holder)) poss = code(c.team && c.team.abbreviation);
+      });
+      var play = sit.lastPlay && typeof sit.lastPlay === "object" ? words(sit.lastPlay.text) : "";
+      return { poss: poss, down: words(sit.downDistanceText || sit.shortDownDistanceText), rz: sit.isRedZone === true,
+        play: play.length > 160 ? play.slice(0, 159) + "…" : play, spot: words(sit.possessionText) };
+    } catch (e) { return {}; }
+  }
+  // A team's record, "3-1", from one side of a game.
+  function recordOf(c) {
+    try {
+      var rs = (c && c.records) || [];
+      for (var i = 0; i < rs.length; i++) {
+        var kind = String((rs[i] && (rs[i].type || rs[i].name)) || "");
+        if (kind === "total" || kind === "overall") return words(rs[i].summary);
+      }
+    } catch (e) { /* no record, then */ }
+    return "";
+  }
+  // The TV network(s) showing a game: "CBS", "FOX / NFLN".
+  function tvOf(comp) {
+    var out = [];
+    function add(n) { n = words(n); if (n && out.indexOf(n) < 0) out.push(n); }
+    try {
+      (comp.broadcasts || []).forEach(function (b) { ((b && b.names) || []).forEach(add); });
+      if (!out.length) (comp.geoBroadcasts || []).forEach(function (b) { add(b && b.media && b.media.shortName); });
+    } catch (e) { /* no TV, then */ }
+    return out.slice(0, 2).join(" / ");
   }
   // Whether what's on screen follows the scores.
   function followsScores() {
@@ -1387,7 +1537,8 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
   // is heading: the current margin plus the line's share of the time left,
   // narrowing as the clock runs down. Pre-game it is the line itself; with no
   // line known, the pool's line, or even. 13.5 points either side over a
-  // full game is how far NFL results land from the line.
+  // full game is how far NFL results land from the line. A game level at the
+  // end goes to overtime, as the dashboard has it.
   var FULL_SD = 13.5, SIMS = 4000;
   function rng(seed) {                     // small, seeded: same data, same numbers
     return function () {
@@ -1422,11 +1573,19 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     var p = d * t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
     return z > 0 ? 1 - p : p;
   }
+  // A game level at the end of regulation goes to overtime, which settles
+  // all but about one in twenty - by a field goal as often as not.
+  var OT_TIE = 0.05, OT_MARGIN = 3;
   // Chance the home margin finishes at k or more (scores are whole numbers,
-  // as in the Win % simulation, which rounds each drawn margin).
+  // as in the Win % simulation, which rounds each drawn margin), overtime
+  // taken into account.
   function atLeast(o, k) {
     if (o.fixed != null) return o.fixed >= k ? 1 : 0;
-    return 1 - phi((k - 0.5 - o.mean) / o.sd);
+    var p = 1 - phi((k - 0.5 - o.mean) / o.sd);
+    var settled = (phi((0.5 - o.mean) / o.sd) - phi((-0.5 - o.mean) / o.sd)) * (1 - OT_TIE) / 2;
+    if (k > 0 && k <= OT_MARGIN) p += settled;          // won by 3 in overtime: now it reaches k
+    else if (k <= 0 && k > -OT_MARGIN) p -= settled;    // lost by 3 in overtime: now it falls short
+    return Math.min(1, Math.max(0, p));
   }
   // Chance a team loses by 15 or more - a Big Loser point.
   function blownChance(x, team) {
@@ -1469,13 +1628,22 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     var coaches = L.coaches, n = coaches.length;
     var wins = new Array(n).fill(0);
     var open = plan.map(function (pl, i) { return pl.fixed == null ? i : -1; }).filter(function (i) { return i >= 0; });
-    // per open game, per side: [sims where it went that way, and each coach's wins among them]
-    var split = open.map(function () { return { h: [0, new Array(n).fill(0)], a: [0, new Array(n).fill(0)] }; });
+    // Per open game, each way it can go - home credited (h), away credited
+    // (a), neither (n: level with no line), the home side losing by 15 or
+    // more (hb), the away side (ab) - the sims where it went that way, and
+    // each coach's wins among them.
+    function way() { return [0, new Array(n).fill(0)]; }
+    var split = open.map(function () { return { h: way(), a: way(), n: way(), hb: way(), ab: way() }; });
+    var went = new Array(open.length);
     var margins = new Array(games.length), totals = new Array(n);
     for (var s = 0; s < SIMS; s++) {
       for (var i = 0; i < games.length; i++) {
         var pl = plan[i];
         margins[i] = pl.fixed != null ? pl.fixed : Math.round(pl.mean + pl.sd * normal());
+        if (pl.fixed == null && margins[i] === 0) {   // level after regulation: overtime
+          var ot = rand();
+          margins[i] = ot < OT_TIE ? 0 : ot < (1 + OT_TIE) / 2 ? OT_MARGIN : -OT_MARGIN;
+        }
       }
       var best = -1;
       for (var c = 0; c < n; c++) {
@@ -1497,28 +1665,113 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
       var top = 0;
       for (c = 0; c < n; c++) if (totals[c] === best) top++;
       for (var o = 0; o < open.length; o++) {
-        var sd = creditOf(games[open[o]].g, margins[open[o]]) === "h" ? "h" : "a";
-        split[o][sd][0]++;
+        var m = margins[open[o]], sp = split[o];
+        went[o] = creditOf(games[open[o]].g, m) || "n";
+        sp[went[o]][0]++;
+        if (m <= -15) sp.hb[0]++;
+        else if (m >= 15) sp.ab[0]++;
       }
       for (c = 0; c < n; c++) {
         if (totals[c] !== best) continue;
         var share = 1 / top;
         wins[c] += share;
         for (o = 0; o < open.length; o++) {
-          var sd2 = creditOf(games[open[o]].g, margins[open[o]]) === "h" ? "h" : "a";
-          split[o][sd2][1][c] += share;
+          var m2 = margins[open[o]], sp2 = split[o];
+          sp2[went[o]][1][c] += share;
+          if (m2 <= -15) sp2.hb[1][c] += share;
+          else if (m2 >= 15) sp2.ab[1][c] += share;
         }
       }
     }
     var chance = {};
     coaches.forEach(function (co, c) { chance[co.name] = wins[c] / SIMS; });
-    var sim = { chance: chance, open: open, split: split };
+    var sim = { chance: chance, open: open, split: split, wins: wins, sims: SIMS };
     simCache = { key: key, sim: sim };
     return sim;
   }
   function pct(v) { return v >= 0.995 ? "99%+" : v > 0 && v < 0.005 ? "<1%" : Math.round(v * 100) + "%"; }
   function liveDetail(x) { return x && x.sc && x.sc.detail ? x.sc.detail : ""; }
   function upDown(margin) { return margin > 0 ? "up " + margin : margin < 0 ? "down " + (-margin) : "level"; }
+
+  // ---- what to root for, and what the week would pay -----------------------------
+  // The results still to come that move a coach's chance of the week most:
+  // who is credited in each game still to finish, and their own Big Losers
+  // losing by 15 or more. Each comes with the coach's chance if it happens,
+  // if it doesn't, and how often it happens in the play-outs. A result seen
+  // fewer than 40 times in 4,000 says too little to go on.
+  var ROOT_FLOOR = 40;
+  function rootsFor(t, sim, name) {
+    var L = DATA.live, c = -1;
+    L.coaches.forEach(function (co, i) { if (co.name === name) c = i; });
+    if (c < 0 || !sim.wins) return [];
+    var out = [], all = sim.wins[c];
+    sim.open.forEach(function (gi, o) {
+      var x = t.games[gi], g = x.g, sp = sim.split[o];
+      if (sp.h[0] >= ROOT_FLOOR && sp.a[0] >= ROOT_FLOOR) {
+        var ifH = sp.h[1][c] / sp.h[0], ifA = sp.a[1][c] / sp.a[0], home = ifH >= ifA;
+        out.push({ kind: "pick", x: x, team: home ? g.hc : g.ac, other: home ? g.ac : g.hc,
+          ifSo: Math.max(ifH, ifA), ifNot: Math.min(ifH, ifA), likely: (home ? sp.h[0] : sp.a[0]) / sim.sims });
+      }
+      L.coaches[c].bl.forEach(function (team) {
+        if (team !== g.hc && team !== g.ac) return;
+        var b = team === g.hc ? sp.hb : sp.ab, rest = sim.sims - b[0];
+        if (b[0] < ROOT_FLOOR || rest < ROOT_FLOOR) return;
+        out.push({ kind: "loser", x: x, team: team, other: team === g.hc ? g.ac : g.hc,
+          ifSo: b[1][c] / b[0], ifNot: (all - b[1][c]) / rest, likely: b[0] / sim.sims });
+      });
+    });
+    out.forEach(function (r) { r.swing = r.ifSo - r.ifNot; });
+    // a Big Loser that would hurt (it costs a pick of theirs more) is covered by that game's own line
+    out = out.filter(function (r) { return r.kind === "pick" || r.swing > 0; });
+    out.sort(function (a, b) { return b.swing - a.swing; });
+    return out;
+  }
+  // The result in words, with the pool's line in it: "Buffalo to win by 9 or
+  // more", "the Chargers to stay within 8", "Atlanta to lose by 15 or more".
+  function rootPhrase(r) {
+    var g = r.x.g, name = teamName(r.x, r.team);
+    if (r.kind === "loser") return name + " to lose by 15 or more";
+    if (g.line != null && g.fav) {
+      var need = Math.ceil(g.line - 1e-9);
+      if (r.team === g.fav) return name + (need > 1 ? " to win by " + need + " or more" : " to win");
+      return name + (need > 1 ? " to stay within " + (need - 1) : " to win or tie");
+    }
+    return name + " to win";
+  }
+  // What the week would pay each card if it ended as it stands, by the pool's
+  // rule: the best card collects a dollar a game from every card behind it,
+  // and cards level at the top split it.
+  function moneyNow(t) {
+    var out = {}, best = null, pot = 0, top = 0;
+    t.rows.forEach(function (r) { if (best == null || r.now > best) best = r.now; });
+    t.rows.forEach(function (r) { pot += best - r.now; if (r.now === best) top++; });
+    t.rows.forEach(function (r) { out[r.c.name] = r.now === best ? (pot ? pot / top : 0) : r.now - best; });
+    return out;
+  }
+  // The week's pot: what every card behind pays the best card, or cards.
+  function pot(pay) { return Object.keys(pay).reduce(function (a, k) { return a + Math.max(0, pay[k]); }, 0); }
+  // "+$23.50", "−$4", "$0"
+  function cash(v) {
+    if (v == null) return "";
+    var r = Math.round(v * 100) / 100;
+    if (!r) return "$0";
+    var a = Math.abs(r);
+    return (r > 0 ? "+" : "−") + "$" + (a % 1 ? a.toFixed(2) : String(a));
+  }
+  function cashTone(v) { return v > 0.004 ? "up" : v < -0.004 ? "down" : "flat"; }
+  // Where the pool's line stands in a game under way or over: "Buffalo +7,
+  // 2 short of the 8.5", "Buffalo +10, covering the 8.5", "Detroit leads by 3".
+  function standingText(x) {
+    if (x.state === "pre" || x.hs == null || x.as == null) return "";
+    var g = x.g, margin = x.hs - x.as, over = x.state === "post";
+    if (g.line != null && g.fav) {
+      var by = g.fav === g.hc ? margin : -margin, need = Math.ceil(g.line - 1e-9), name = teamName(x, g.fav);
+      if (by >= need) return name + " +" + by + ", " + (over ? "covered" : "covering") + " the " + g.line;
+      if (by > 0 || !over) return name + (by > 0 ? " +" + by : by < 0 ? " −" + (-by) : " level") + ", " + (need - by) + " short of the " + g.line;
+    }
+    if (!margin) return over ? "Tied" : "Level";
+    return teamName(x, margin > 0 ? g.hc : g.ac) + (over ? " won by " : " leads by ") + Math.abs(margin);
+  }
 
   // ---- after new scores: swings, and the viewer's chance over time -------------------
   var swings = [];          // what changed while this page was open, newest first
@@ -1698,14 +1951,17 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     var g = x.g;
     var st = x.state === "in" ? (liveDetail(x) || "Live") : x.state === "post" ? "Final"
       : x.sc && x.sc.off ? liveDetail(x) : x.kick ? kickText(x.kick) : "Not started";
+    var sc = x.sc || {}, on = x.state === "in";
     function side(team, pts) {
       var mark = x.credit === team ? " credited" : "";
-      return [el("span", { class: "side" + mark }, [badge(team)]),
+      return [el("span", { class: "side" + mark }, [badge(team),
+          on && sc.poss === team ? el("span", { class: "ball", role: "img", "aria-label": "has the ball" }) : null]),
         el("span", { class: "pts" + mark, text: x.state === "pre" || pts == null ? "" : String(pts) })];
     }
     var lined = g.line != null && g.fav;
-    return el("div", { class: "bug" + (x.state === "in" ? " in" : ""), role: "listitem",
-      title: g.a + " at " + g.h + (lined ? ", pool line " + teamName(x, g.fav) + " by " + g.line : "") },
+    return el("div", { class: "bug" + (on ? " in" : "") + (on && sc.rz ? " rz" : ""), role: "listitem",
+      title: g.a + " at " + g.h + (lined ? ", pool line " + teamName(x, g.fav) + " by " + g.line : "") +
+        (on && sc.down ? ". " + sc.down + (sc.rz ? ", in the red zone" : "") : "") },
       [el("span", { class: "state", text: st })]
         .concat(side(g.ac, x.as), side(g.hc, x.hs)));
   }
@@ -1970,23 +2226,31 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
   function outIn(week) {
     return DATA.players.filter(function (p) { return p.suicide.out === week; }).length;
   }
-  function heroRecap(w) {
-    var alive = aliveNames().length;
+  // A week's story as the lower third: on the home page the latest week (its
+  // headline the page's h1), on Weeks any week.
+  function heroRecap(w, onWeeks) {
+    var alive = onWeeks && w.suicide && w.suicide.left != null ? w.suicide.left : aliveNames().length;
     var out = outIn(w.week);
-    return el("section", { class: "hero", "aria-label": "Week " + w.week }, [
-      el("span", { class: "kicker" }, [el("span", { text: "Week " + w.week + " in the books" })]),
-      el("h1", { text: headline(w) }),
-      el("p", { class: "deck", text: story(w) }),
-      el("div", { class: "stats" }, [
-        stat(String(w.top), "winning score"),
-        stat(w.average.toFixed(1), "pool average"),
-        stat(String(alive), out ? "left in the suicide pool, " + out + " out" : "left in the suicide pool"),
-        stat(String(w.scores.reduce(function (a, s) { return a + (s.big_loser || 0); }, 0)), "Big Loser points")
-      ])
+    return hero("Week " + w.week, [
+      el("span", { class: "kicker" }, [el("span", { text: onWeeks ? "Week " + w.week : "Week " + w.week + " in the books" })]),
+      el(onWeeks ? "h2" : "h1", { text: headline(w) }),
+      el("p", { class: "deck", text: story(w) })
+    ], [
+      stat(String(w.top), "winning score"),
+      stat(w.average.toFixed(1), "pool average"),
+      stat(String(alive), out ? "left in the suicide pool, " + out + " out" : "left in the suicide pool"),
+      stat(String(w.scores.reduce(function (a, s) { return a + (s.big_loser || 0); }, 0)), "Big Loser points")
     ]);
   }
-  function stat(value, label) {
-    return el("div", { class: "stat" }, [el("span", { class: "v", text: value }), el("span", { class: "k", text: label })]);
+  // The lower third: the one loud thing on a page. Its numbers sit in a
+  // panel beside the headline on a wide screen, under it on a phone.
+  function hero(label, main, stats, cls) {
+    return el("section", { class: "hero" + (stats ? " sided" : "") + (cls ? " " + cls : ""), "aria-label": label }, [
+      el("div", { class: "hero-main" }, main),
+      stats ? el("div", { class: "hero-side" }, [el("div", { class: "stats" }, stats)]) : null]);
+  }
+  function stat(value, label, tone) {
+    return el("div", { class: "stat" + (tone ? " " + tone : "") }, [el("span", { class: "v", text: value }), el("span", { class: "k", text: label })]);
   }
 
   // ---- results in: the recap -----------------------------------------------------------
@@ -2124,16 +2388,23 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     var L = DATA.live;
     var next = nextKickoff();
     var w = weekData(DATA.through_week);
-    var hero = el("section", { class: "hero", "aria-label": "Week " + L.week }, [
+    var lined = L.games.filter(function (g) { return g.line != null && g.fav; }).length;
+    var losers = L.coaches.reduce(function (a, c) { return a + c.bl.length; }, 0);
+    var top = hero("Week " + L.week, [
       el("span", { class: "kicker" }, [el("span", { text: "Week " + L.week + ": the picks are in" })]),
       el("h1", {}, next ? ["Kickoff ", el("span", { "data-until": String(next.at), text: untilText(next.at) })] : ["Week " + L.week + " is set"]),
       el("p", { class: "deck" }, [plural(L.coaches.length, "card") + " in. " + aliveNames().length + " still alive in the suicide pool." +
         (next ? " " + next.g.a + " at " + next.g.h + " starts it." : "")]),
       hasMe() && L.coaches.some(function (c) { return isMe(c.name); })
         ? el("button", { class: "btn onair", type: "button", text: "Your card for week " + L.week, onclick: function () { go("me"); } }) : null
+    ], [
+      stat(String(L.coaches.length), "cards in"),
+      stat(String(L.games.length), lined ? "games, " + lined + " with a pool line" : "games"),
+      stat(String(aliveNames().length), "still in the suicide pool"),
+      stat(String(losers), "Big Loser picks")
     ]);
     return [
-      hero,
+      top,
       el("div", { class: "cols" }, [
         el("div", {}, [splitsCard(t), limbCard(t)]),
         el("div", {}, [weekSuicideCard(t), weekLosersCard(t), w ? lastWeekModule(w) : null])
@@ -2156,21 +2427,36 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     var mine = t.rows.filter(function (r) { return isMe(r.c.name); })[0];
     var next = nextKickoff();
     var place = mine ? 1 + t.rows.filter(function (o) { return o.now > mine.now; }).length : 0;
-    var hero = el("section", { class: "hero", "aria-label": "Week " + L.week + " live" }, [
+    var pay = moneyNow(t);
+    var behind = mine ? top - mine.now : 0;
+    var stats = mine ? [
+      stat(String(mine.now), "your score now"),
+      stat(ordinal(place), "of " + t.rows.length + " right now"),
+      stat(pct(sim.chance[state.me] || 0), "chance to win the week"),
+      stat(cash(pay[state.me]), "if it ended now", "money " + cashTone(pay[state.me]))
+    ] : [
+      stat(String(top), "the best score now"),
+      stat(String(on), on === 1 ? "game on now" : "games on now"),
+      stat(String(finals), "of " + t.games.length + " final"),
+      stat(String(t.games.length - on - finals), "still to play")
+    ];
+    var top_ = hero("Week " + L.week + " live", [
       el("span", { class: "kicker" }, [on ? el("span", { class: "live-tag", text: "LIVE" }) : null,
         el("span", { text: "Week " + L.week + (on ? ": " + plural(on, "game") + " on, " : ": ") + finals + " of " + t.games.length + " final" })]),
       el("h1", { text: leaders.length > 3 ? cap(count(leaders.length, "coach", "coaches")) + " share the lead on " + top
         : listNames(leaders, 3) + (leaders.length > 1 ? " lead" : " leads") + " the week with " + top }),
-      mine ? el("p", { class: "deck" }, ["You: ", el("b", { text: mine.now + " now, " + ordinal(place) }), ", " + pct(sim.chance[state.me] || 0) + " to win the week."])
+      mine ? el("p", { class: "deck", text: (!behind ? (leaders.length > 1 ? "You share the lead" : "You lead the week") : "You’re " + behind + " behind the lead") +
+          (mine.left ? ", with " + plural(mine.left, "pick") + " still to play." : ".") })
         : el("p", { class: "deck", text: hasMe() ? "No card from " + state.me + " on this week’s sheet." : "Pick your name to follow your own card." }),
       next ? el("p", { class: "deck" }, ["Next kickoff ", el("span", { "data-until": String(next.at), text: untilText(next.at) }), ": " + next.g.a + " at " + next.g.h + "."]) : null,
       el("button", { class: "btn onair", type: "button", text: "Every card, live", onclick: function () { go("live"); } })
-    ]);
+    ], stats, "onair-live");
     return [
-      hero,
+      top_,
       el("div", { class: "cols" }, [
         el("div", {}, [
-          module("The week so far", "now, and the chance of winning it", [weekBoard(t, sim, 8), moreLink("Every card", "live")], { "data-card": "board" }),
+          module("The week so far", "if it ended now", [weekBoard(t, sim, 8), moreLink("Every card", "live")], { "data-card": "board" }),
+          onNowModule(t),
           rootingCard(t, sim),
           swingCard(t, sim)
         ]),
@@ -2184,16 +2470,29 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     var L = DATA.live, sim = simulate(t);
     var top = t.rows.length ? t.rows[0].now : 0;
     var winners = t.rows.filter(function (r) { return r.now === top; }).map(function (r) { return r.c.name; });
-    var hero = el("section", { class: "hero", "aria-label": "Week " + L.week + " final" }, [
+    var mine = t.rows.filter(function (r) { return isMe(r.c.name); })[0];
+    var pay = moneyNow(t);
+    var average = t.rows.length ? t.rows.reduce(function (a, r) { return a + r.now; }, 0) / t.rows.length : 0;
+    var top_ = hero("Week " + L.week + " final", [
       el("span", { class: "kicker" }, [el("span", { text: "Week " + L.week + " is over" })]),
       el("h1", { text: winners.length > 2 ? cap(count(winners.length, "coach", "coaches")) + " share week " + L.week + " on " + top
         : listNames(winners, 2) + (winners.length > 1 ? " win" : " wins") + " week " + L.week + " with " + top }),
       el("p", { class: "deck", text: "From the final scores with the pool’s lines applied - the official table follows once the week is entered." })
+    ], mine ? [
+      stat(String(mine.now), "your score"),
+      stat(ordinal(1 + t.rows.filter(function (o) { return o.now > mine.now; }).length), "of " + t.rows.length),
+      stat(cash(pay[mine.c.name]), "for the week", "money " + cashTone(pay[mine.c.name])),
+      stat(String(top), "the winning score")
+    ] : [
+      stat(String(top), "the winning score"),
+      stat(average.toFixed(1), "the pool’s average"),
+      stat(cash(pot(pay)), winners.length > 1 ? "to the winners" : "to the winner", "money up"),
+      stat(String(t.rows.length), "cards")
     ]);
     return [
-      hero,
+      top_,
       el("div", { class: "cols" }, [
-        el("div", {}, [module("Final", "week " + L.week, [weekBoard(t, sim, 10), moreLink("Every card", "live")], { "data-card": "board" })]),
+        el("div", {}, [module("Final", "week " + L.week + ", from the scores", [weekBoard(t, sim, 10), moreLink("Every card", "live")], { "data-card": "board" })]),
         el("div", {}, [weekSuicideCard(t), weekLosersCard(t)])
       ])
     ];
@@ -2441,10 +2740,18 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
       var sx = tallyGame(t, c.sui);
       rows.push(line("", "Suicide pick", teamName(sx, c.sui), survivalState(sx, c.sui)));
     }
-    var bits = [right + " right", wrong + " wrong", open + " still to finish"];
-    if (row && row.bl) bits.push(plural(row.bl, "Big Loser point"));
-    return module("Week " + L.week + " card", (row ? row.now + " now, " : "") + pct(chance) + " to win the week", [
-      el("p", { class: "race-sum", text: bits.join(" · ") + (live.error ? "" : live.fetched ? " · scores at " + clock(live.fetched) : " · fetching scores…") }),
+    var started = t.games.some(function (x) { return x.state !== "pre"; });
+    var m = started ? moneyNow(t)[name] : null;
+    function mini(v, k, tone) {
+      return el("div", { class: "mini-fig" + (tone ? " " + tone : "") }, [el("span", { class: "v", text: v }), el("span", { class: "k", text: k })]);
+    }
+    return module("Week " + L.week + " card", live.error ? null : live.fetched ? "scores at " + clock(live.fetched) : "fetching scores…", [
+      el("div", { class: "minis" }, [
+        mini(String(row ? row.now : 0), row && row.bl ? "now, with " + plural(row.bl, "Big Loser point") : "now"),
+        mini(pct(chance), "to win the week"),
+        started ? mini(cash(m), weekOver(t) ? "for the week" : "if it ended now", "money " + cashTone(m)) : null,
+        mini(right + "–" + wrong, open ? "right–wrong, " + open + " still to finish" : "right–wrong")
+      ]),
       live.error ? el("p", { class: "live-status bad", text: live.error }) : null,
       el("div", { class: "box week-card" }, [el("table", {}, [
         el("thead", {}, [el("tr", {}, [el("th", { text: "Game" }), el("th", { text: "Pick" }), el("th", { text: "How it stands" })])]),
@@ -2452,43 +2759,58 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     ], { "data-card": "week-card" });
   }
 
-  // Who a coach should cheer for in the games still to finish.
-  function rootingCard(t, sim) {
+  // Who a coach should cheer for in the games still to finish, the pool's
+  // lines and their own Big Losers in it. With `fixed` it is that coach's
+  // own (on their page); without, a chooser picks whose.
+  function rootingCard(t, sim, fixed) {
     var L = DATA.live;
-    var whom = state.root || state.me;
+    var whom = fixed || state.root || state.me;
     var all = L.coaches.map(function (c) { return c.name; });
-    var me = all.indexOf(whom);
-    var picker = el("select", { id: "root-for", "aria-label": "Rooting guide for", class: "filter", style: "max-width:14em",
+    var picker = fixed ? null : el("select", { id: "root-for", "aria-label": "Rooting guide for", class: "filter", style: "max-width:14em",
       onchange: function (e) { state.root = e.target.value; render(); } },
       [el("option", { value: "", text: "Choose a coach…" })].concat(all.slice().sort(function (a, b) { return a.localeCompare(b); }).map(function (n) {
         return el("option", { value: n, text: n, selected: n === whom });
       })));
-    if (me < 0) return module("Rooting guide", picker, [
+    if (all.indexOf(whom) < 0) return fixed ? null : module("Rooting guide", picker, [
       el("p", { class: "note", text: "Choose a coach to see who they should cheer for in the games still to finish." })], { "data-card": "rooting" });
+    if (fixed && !sim.open.length) return null;
+    var you = isMe(whom);
     var mine = sim.chance[whom] || 0;
-    var rows = sim.open.map(function (gi, o) {
-      var g = t.games[gi].g, sp = sim.split[o];
-      var ifH = sp.h[0] ? sp.h[1][me] / sp.h[0] : null, ifA = sp.a[0] ? sp.a[1][me] / sp.a[0] : null;
-      if (ifH == null || ifA == null) return null;
-      var diff = ifH - ifA;
-      return { g: g, team: diff >= 0 ? g.hc : g.ac, other: diff >= 0 ? g.ac : g.hc, gain: Math.abs(diff),
-        withIt: diff >= 0 ? ifH : ifA, without: diff >= 0 ? ifA : ifH };
-    }).filter(Boolean).sort(function (a, b) { return b.gain - a.gain; });
-    var matters = rows.filter(function (r) { return r.gain >= 0.01; });
-    var shrug = rows.filter(function (r) { return r.gain < 0.01; });
-    return module("Rooting guide for " + whom, picker, [
-      el("p", { class: "race-sum" }, [el("b", { text: pct(mine) }), " to win the week."]),
+    var roots = rootsFor(t, sim, whom);
+    var matters = roots.filter(function (r) { return r.swing >= 0.01; });
+    var shrug = roots.filter(function (r) { return r.kind === "pick" && r.swing < 0.01; });
+    function where(x) {
+      if (x.state === "in") return x.g.ac.toUpperCase() + " " + x.as + ", " + x.g.hc.toUpperCase() + " " + x.hs + " · " + liveDetail(x);
+      return x.g.ac.toUpperCase() + " @ " + x.g.hc.toUpperCase() + (x.kick ? " · " + kickText(x.kick) : "");
+    }
+    var title = !fixed ? "Rooting guide for " + whom : you ? "What to root for" : "What " + whom + " needs";
+    return module(title, fixed ? pct(mine) + " to win the week" : picker, [
+      fixed ? null : el("p", { class: "race-sum" }, [el("b", { text: pct(mine) }), " to win the week."]),
       mine <= 0 && t.games.some(function (x) { return x.state !== "post"; })
         ? el("p", { class: "note", text: "No way to finish top this week any more - but the season total still counts." }) : null,
-      matters.length ? el("div", { class: "rows" }, matters.slice(0, 8).map(function (r) {
-        return el("div", { class: "r", style: "grid-template-columns: 52px minmax(0,1fr)" }, [
-          el("span", { class: "big", style: "font-size:20px", text: "+" + Math.round(r.gain * 100) + "%" }),
-          el("span", {}, [el("span", { class: "team" }, [badge(r.team), el("b", { text: "Root for " + teamFull(r.team) })]),
-            el("span", { class: "meta", style: "display:block", text: "over " + teamFull(r.other) + " · " + pct(r.withIt) + " if they’re credited, " + pct(r.without) + " if not" })])
+      matters.length ? el("div", { class: "roots" }, matters.slice(0, 8).map(function (r) {
+        return el("div", { class: "r root" + (r.x.state === "in" ? " on" : "") }, [
+          el("span", { class: "team" }, [badge(r.team, true), el("b", { text: rootPhrase(r) })]),
+          el("span", { class: "swing", title: (you ? "Your" : whom + "’s") + " chance of winning the week: " + pct(r.ifNot) + " if not, " + pct(r.ifSo) + " if so",
+            text: "+" + Math.round(r.swing * 100) + "%" }),
+          el("span", { class: "meta" }, [r.x.state === "in" ? el("span", { class: "dot-live", title: "On now" }) : null,
+            where(r.x) + (r.kind === "loser" ? " · " + (you ? "your" : "a") + " Big Loser" : "")]),
+          el("span", { class: "jump" }, [el("span", { class: "mini", "aria-hidden": "true" }, [
+              el("i", { class: "so", style: "width:" + Math.round(100 * r.ifSo) + "%" }),
+              el("i", { class: "not", style: "width:" + Math.round(100 * r.ifNot) + "%" })]),
+            el("span", { text: pct(r.ifSo) + " to win the week if so, " + pct(r.ifNot) + " if not · it happens " + pct(r.likely) + " of the time" })])
         ]);
-      })) : el("p", { class: "note", text: "None of the games still going changes much for " + (isMe(whom) ? "you" : whom) + " now." }),
-      shrug.length ? el("p", { class: "note", text: "Doesn’t matter: " + shrug.map(function (r) { return r.g.ac.toUpperCase() + "–" + r.g.hc.toUpperCase(); }).join(", ") }) : null
-    ], { "data-card": "rooting" });
+      })) : el("p", { class: "note", text: "None of the games still to finish changes much for " + (you ? "you" : whom) + " now." }),
+      shrug.length ? el("p", { class: "note", text: "Doesn’t matter: " + shrug.map(function (r) { return r.x.g.ac.toUpperCase() + "–" + r.x.g.hc.toUpperCase(); }).join(", ") }) : null
+    ], { "data-card": fixed ? "rooting-own" : "rooting" });
+  }
+  // The rooting guide on a coach's own page, while there's a game left to root for.
+  function rootingFor(name) {
+    var L = DATA.live;
+    if (!hasLive() || !L.coaches.some(function (c) { return c.name === name; })) return null;
+    var t = liveTally();
+    if (weekOver(t)) return null;
+    return rootingCard(t, simulate(t), name);
   }
 
   // The games still to finish that move the week most.
@@ -2525,22 +2847,143 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     }))], { "data-card": "feed" });
   }
 
-  // The week so far, best first, with each coach's chance of winning it.
+  // The week so far, best first, with each coach's chance of winning it and
+  // what the week would pay them if it ended now.
   function weekBoard(t, sim, limit) {
-    var place = {};
+    var place = {}, pay = moneyNow(t), over = weekOver(t);
     t.rows.forEach(function (r) { place[r.c.name] = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length; });
     var shown = t.rows.slice(0, limit);
     var mine = t.rows.filter(function (r) { return isMe(r.c.name); })[0];
     if (mine && shown.indexOf(mine) < 0) shown.push(mine);
-    return el("div", { class: "rows standrows" }, shown.map(function (r) {
-      return el("div", { class: "r" + (isMe(r.c.name) ? " me" : "") , style: "grid-template-columns: 30px minmax(0,1fr) auto 56px" }, [
+    return el("div", { class: "rows standrows weekboard" }, [el("div", { class: "r hdr", "aria-hidden": "true", style: "grid-template-columns: 30px minmax(0,1fr) auto 66px" }, [
+      el("span", {}), el("span", { text: "Coach" }), el("span", { class: "big", text: "Now" }),
+      el("span", { class: "odds" }, [el("span", { text: "Win %" }), el("span", { text: over ? "Pays" : "$ now" })])])].concat(shown.map(function (r) {
+      var m = pay[r.c.name];
+      return el("div", { class: "r" + (isMe(r.c.name) ? " me" : "") + (place[r.c.name] === 1 && r.now > 0 ? " lead" : ""), style: "grid-template-columns: 30px minmax(0,1fr) auto 66px" }, [
         el("span", { class: "pos", text: String(place[r.c.name]) }),
         el("span", { class: "name" }, [who(r.c.name), isMe(r.c.name) ? el("span", { class: "youtag", text: "YOU" }) : null,
           el("span", { class: "meta", style: "display:block", text: r.final + " final · " + r.left + " to play" + (r.bl ? " · " + plural(r.bl, "Big Loser point") : "") })]),
         el("span", { class: "big", text: String(r.now) }),
-        el("span", { class: "num", style: "text-align:right;font-weight:600", text: pct(sim.chance[r.c.name] || 0) })
+        el("span", { class: "odds num" }, [el("b", { text: pct(sim.chance[r.c.name] || 0) }),
+          el("span", { class: "cash " + cashTone(m), title: (over ? "What the week pays: " : "If it ended now: ") + cash(m), text: cash(m) })])
       ]);
-    }));
+    })));
+  }
+
+  // ---- one game, as it stands ---------------------------------------------------------
+  // A scoreboard card: the clock and the TV, the score, who has the ball and
+  // where (a strip of field with the line to gain), the last play, where the
+  // pool's line stands, each side's chance of being credited, and how the
+  // pool picked it - the viewer's own pick, Big Loser and suicide pick named.
+  function gameCard(x) {
+    var L = DATA.live, g = x.g, sc = x.sc || {}, gi = L.games.indexOf(g);
+    var on = x.state === "in", over = x.state === "post", lined = g.line != null && g.fav;
+    var count = {};
+    L.coaches.forEach(function (c) { var pk = c.picks[gi]; if (pk) count[pk] = (count[pk] || 0) + 1; });
+    var me = L.coaches.filter(function (c) { return isMe(c.name); })[0], mine = [];
+    function row(team, name, score, other) {
+      var ball = on && sc.poss === team, rec = !on && !over && sc.rec ? sc.rec[team] : "";
+      return el("div", { class: "row" + (x.credit && x.credit === team ? " credit" : "") + (ball ? " poss" : "") +
+          (over && score != null && other != null && score < other ? " lost" : "") + (me && me.picks[gi] === team ? " picked" : "") }, [
+        el("span", { class: "team" }, [badge(team, true), el("b", { text: name }),
+          ball ? el("span", { class: "ball", role: "img", "aria-label": "has the ball", title: "Has the ball" }) : null]),
+        rec ? el("span", { class: "rec", text: rec }) : el("span", { class: "pts", text: score == null ? "" : String(score) })]);
+    }
+    var when = sc.off ? sc.detail || "Postponed" : x.state === "pre" && x.kick ? kickText(x.kick) : liveDetail(x) || (x.kick ? kickText(x.kick) : "Not started");
+    var stand = standing(x);
+    if (me) {
+      if (me.picks[gi]) mine.push("you: " + me.picks[gi].toUpperCase() + (over ? (x.credit === me.picks[gi] ? " ✓" : " ✗") : ""));
+      me.bl.forEach(function (team) {
+        if (team !== g.hc && team !== g.ac) return;
+        var lost = over && x.hs != null ? (team === g.hc ? x.as - x.hs : x.hs - x.as) : null;
+        mine.push("your Big Loser: " + team.toUpperCase() + (lost == null ? "" : lost >= 15 ? " ✓" : " ✗"));
+      });
+      var p = player(me.name);
+      if (me.sui && p && p.suicide.alive && (me.sui === g.hc || me.sui === g.ac)) {
+        mine.push("your suicide pick: " + me.sui.toUpperCase() + (over ? (x.credit === me.sui ? " ✓" : " ✗") : ""));
+      }
+    }
+    var spot = on ? spotOf(x) : null;
+    return el("div", { class: "gcard" + (on ? " in" : over ? " post" : " pre") + (on && sc.rz ? " rz" : ""), "data-game": g.ac + "@" + g.hc }, [
+      el("div", { class: "top" }, [el("span", { class: "when" + (on ? " in" : "") }, [on ? el("span", { class: "dot-live" }) : null, when]),
+        on && sc.rz ? el("span", { class: "rztag", text: "RED ZONE" }) : null,
+        sc.tv && !over ? el("span", { class: "tv", text: sc.tv }) : null]),
+      row(g.ac, g.a, x.state === "pre" ? null : x.as, x.hs),
+      row(g.hc, g.h, x.state === "pre" ? null : x.hs, x.as),
+      spot ? fieldStrip(x, spot) : null,
+      on && sc.down ? el("span", { class: "down", text: sc.down }) : null,
+      on && sc.play ? el("p", { class: "play", text: sc.play }) : null,
+      el("div", { class: "gline" }, [el("span", { class: "line", text: lined ? "Pool line: " + teamName(x, g.fav) + " by " + g.line : "Straight up" }),
+        stand.text ? el("span", { class: "stand " + stand.tone, text: stand.text }) : null]),
+      over ? null : chanceBar(x, me ? me.picks[gi] : ""),
+      el("span", { class: "meta" }, [(count[g.ac] || 0) + " on " + g.ac.toUpperCase() + " · " + (count[g.hc] || 0) + " on " + g.hc.toUpperCase(),
+        mine.length ? el("span", { class: "you", text: " · " + mine.join(" · ") }) : null])
+    ]);
+  }
+  // Where the ball is: yards from the away side's goal line (the left of the
+  // strip), the way the team with it is going, and the line to gain. Read
+  // from ESPN's "LAC 23", or the down's "at LAC 23"; nothing when neither says.
+  function spotOf(x) {
+    var sc = x.sc || {}, g = x.g, said = sc.spot || "", down = sc.down || "", yard = null;
+    var m = /^([A-Za-z]{2,3})\s+(\d{1,2})$/.exec(said) || /\bat ([A-Za-z]{2,3})\s+(\d{1,2})$/.exec(down);
+    if (m) {
+      var side = code(m[1]), y = Number(m[2]);
+      if (y <= 50) yard = side === g.ac ? y : side === g.hc ? 100 - y : null;
+    } else if (/^(\w+\s+)?50$/.test(said) || /\bat 50$/.test(down)) yard = 50;
+    if (yard == null) return null;
+    var dir = sc.poss === g.ac ? 1 : sc.poss === g.hc ? -1 : 0;
+    var togo = Number((/&\s*(\d{1,2})\b/.exec(down) || [])[1]);
+    var gain = !dir ? null : /&\s*goal/i.test(down) ? (dir > 0 ? 100 : 0) : togo ? Math.max(0, Math.min(100, yard + dir * togo)) : null;
+    return { yard: yard, dir: dir, gain: gain };
+  }
+  // The strip of field: end zones lettered, the red zone shaded when they're
+  // in it, the line of scrimmage (blue), the line to gain (yellow), the ball.
+  function fieldStrip(x, spot) {
+    var g = x.g, sc = x.sc || {};
+    function at(yard) { return ((10 + yard) / 1.2).toFixed(2) + "%"; }
+    return el("div", { class: "field", "aria-hidden": "true" }, [
+      el("span", { class: "ez l", text: g.ac.toUpperCase() }),
+      el("span", { class: "ez r", text: g.hc.toUpperCase() }),
+      sc.rz && spot.dir ? el("span", { class: "zone", style: "left:" + at(spot.dir > 0 ? 80 : 0) + ";width:" + (20 / 1.2).toFixed(2) + "%" }) : null,
+      spot.gain != null ? el("span", { class: "gain", style: "left:" + at(spot.gain) }) : null,
+      el("span", { class: "los", style: "left:" + at(spot.yard) }),
+      el("span", { class: "fball" + (spot.dir > 0 ? " right" : spot.dir < 0 ? " left" : ""), style: "left:" + at(spot.yard) })
+    ]);
+  }
+  // Where the pool's line stands, and how that reads: covering (good), short
+  // of it (warn), or just the score.
+  function standing(x) {
+    var text = standingText(x);
+    if (!text) return { text: "", tone: "" };
+    var g = x.g;
+    if (g.line != null && g.fav) {
+      if (/cover/.test(text)) return { text: text, tone: "good" };
+      if (/short of/.test(text)) return { text: text, tone: "warn" };
+    }
+    return { text: text, tone: "plain" };
+  }
+  // Each side's chance of being credited with the game, the pool's line
+  // applied: the likelier side darker, the viewer's own pick in gold.
+  function chanceBar(x, pick) {
+    var g = x.g, pa = creditChance(x, g.ac), ph = creditChance(x, g.hc), all = pa + ph || 1;
+    var wa = Math.round(100 * pa / all);
+    function seg(team, width, fav) {
+      return el("i", { class: (fav ? "fav" : "") + (pick === team ? " mine" : ""), style: "width:" + width + "%" });
+    }
+    return el("div", { class: "chance", role: "img",
+      "aria-label": "Chance of being credited: " + teamName(x, g.ac) + " " + pct(pa) + ", " + teamName(x, g.hc) + " " + pct(ph) }, [
+      el("span", { class: "p" + (pa >= ph ? " fav" : ""), text: g.ac.toUpperCase() + " " + pct(pa) }),
+      el("span", { class: "track" }, [seg(g.ac, wa, pa >= ph), seg(g.hc, 100 - wa, ph > pa)]),
+      el("span", { class: "p" + (ph > pa ? " fav" : ""), text: pct(ph) + " " + g.hc.toUpperCase() })
+    ]);
+  }
+  // The games on now, as cards; nothing when none are.
+  function onNowModule(t) {
+    var on = t.games.filter(function (x) { return x.state === "in"; });
+    if (!on.length) return null;
+    return module("On now", plural(on.length, "game"), [el("div", { class: "games" }, on.map(gameCard)),
+      el("p", { class: "note", text: "The bar under a game is each side’s chance of being credited with it, the pool’s line applied." })],
+      { "data-card": "on-now" });
   }
   function finalBanner(t, withLink) {
     var top = t.rows.length ? t.rows[0].now : 0;
@@ -2567,35 +3010,29 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     if (!live.fetched && !live.error && !live.busy) fetchScores();
     var t = liveTally();
     var sim = simulate(t);
-    var cards = el("div", { class: "games" }, t.games.map(function (x) {
-      var g = x.g, sc = x.sc, share = { home: 0, away: 0 };
-      L.coaches.forEach(function (c) { var pk = c.picks[L.games.indexOf(g)]; if (pk === g.hc) share.home++; else if (pk === g.ac) share.away++; });
-      function row(name, codeOf_, score, n) {
-        return el("div", { class: "row" + (x.credit && x.credit === codeOf_ ? " credit" : "") }, [
-          el("span", { class: "team" }, [badge(codeOf_), el("b", { text: name })]),
-          el("span", { class: "pts", text: score == null ? n + " picked" : String(score) })]);
-      }
-      return el("div", { class: "gcard" + (x.state === "in" ? " in" : x.state === "post" ? " post" : "") }, [
-        el("span", { class: "when" + (x.state === "in" ? " in" : ""), text: sc ? sc.detail : x.kick ? kickText(x.kick) : "Not started" }),
-        row(g.a, g.ac, x.state === "pre" ? null : x.as, share.away),
-        row(g.h, g.hc, x.state === "pre" ? null : x.hs, share.home),
-        el("span", { class: "meta", text: (g.line != null && g.fav ? "Pool line: " + (g.fav === g.hc ? g.h : g.a) + " by " + g.line + " · " : "") +
-          share.away + " on " + g.ac.toUpperCase() + ", " + share.home + " on " + g.hc.toUpperCase() })
-      ]);
-    }));
+    var pay = moneyNow(t), started = t.games.some(function (x) { return x.state !== "pre"; });
+    // the games not on now: the next kickoffs first, then the ones over
+    var later = t.games.filter(function (x) { return x.state === "pre"; }).sort(function (a, b) {
+      return (a.sc && a.sc.off ? 1 : 0) - (b.sc && b.sc.off ? 1 : 0) || (a.kick || Infinity) - (b.kick || Infinity);
+    });
+    var done = t.games.filter(function (x) { return x.state === "post"; });
     var head = [el("th", { class: "n", text: "#" }), el("th", { class: "stick-b", text: "Coach" }),
-      el("th", { class: "n", text: "Now" }), el("th", { class: "n", text: "Win %" }), el("th", { class: "n hide-narrow", text: "Final" }),
+      el("th", { class: "n", text: "Now" }), el("th", { class: "n", text: "Win %" }),
+      el("th", { class: "n", text: weekOver(t) ? "Pays" : "$ now", title: weekOver(t) ? "What the week pays" : "Money if it ended now" }),
+      el("th", { class: "n hide-narrow", text: "Final" }),
       el("th", { class: "n hide-narrow", text: "Left" }), el("th", { class: "n", text: "BL" }),
-      el("th", { class: "n", text: "Season" }), el("th", { text: "Suicide" })];
+      el("th", { class: "n", text: "Season" }), el("th", { "data-col": "suicide", text: "Suicide" })];
     t.games.forEach(function (x) { head.push(el("th", { class: "gk", text: x.g.ac.toUpperCase() + " @ " + x.g.hc.toUpperCase() })); });
     var body = t.rows.map(function (r) {
       var place = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length;
       var suiText = { pending: r.c.sui.toUpperCase(), safe: r.c.sui.toUpperCase() + " ✓", ahead: r.c.sui.toUpperCase() + " ahead",
         behind: r.c.sui.toUpperCase() + " behind", level: r.c.sui.toUpperCase() + " level", out: r.c.sui.toUpperCase() + " ✗ out" }[r.sui] || "–";
+      var m = pay[r.c.name];
       var cells = [el("td", { class: "n place num", text: String(place) }),
         el("td", { class: "coach stick-b" }, [who(r.c.name)]),
         el("td", { class: "n total num", text: String(r.now) }),
         el("td", { class: "n num", text: pct(sim.chance[r.c.name] || 0) }),
+        el("td", { class: "n num cash " + (started ? cashTone(m) : "flat"), text: started ? cash(m) : "–" }),
         el("td", { class: "n num hide-narrow", text: String(r.final) }),
         el("td", { class: "n num hide-narrow", text: String(r.left) }),
         el("td", { class: "n num", text: r.bl ? String(r.bl) : "–" }),
@@ -2611,15 +3048,17 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     });
     return el("div", { class: "view", "data-view": "live" }, [
       el("div", { class: "pagehead" }, [el("h1", { text: "Week " + L.week + ", as it happens" }), liveStatus(t)]),
-      fold("live:how", "How the live numbers work", [el("p", { class: "note", text: "Now counts every pick that would be right if the scores stayed as they are, with the pool’s lines applied, plus Big Loser teams losing by 15 or more. Win % is each coach’s chance of the best week, from the scores, the clock and the betting lines. Final counts only finished games. Season adds Now to each coach’s wins so far." })], "howto"),
+      fold("live:how", "How the live numbers work", [el("p", { class: "note", text: "Now counts every pick that would be right if the scores stayed as they are, with the pool’s lines applied, plus Big Loser teams losing by 15 or more. Win % is each coach’s chance of the best week, from the scores, the clock and the betting lines. $ now is what the week would pay if it ended as it stands: the best card collects a dollar a game from every card behind it, and cards level at the top split it. Final counts only finished games. Season adds Now to each coach’s wins so far." })], "howto"),
       weekOver(t) ? finalBanner(t, false) : null,
+      onNowModule(t),
       el("div", { class: "cols" }, [
-        el("div", {}, [rootingCard(t, sim), weekOver(t) ? null : swingCard(t, sim)]),
+        el("div", {}, weekOver(t) ? [] : [rootingCard(t, sim), swingCard(t, sim)]),
         el("div", {}, [swingsFeed(), limbCard(t)])
       ]),
       twoUp([weekLosersCard(t), weekSuicideCard(t)]),
       module("Every card", "tap a name for their week", [scroller(el("table", { id: "live-table" }, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, body)]))]),
-      module("The games", null, [cards]),
+      later.length ? module("Still to play", plural(later.length, "game"), [el("div", { class: "games" }, later.map(gameCard))], { "data-card": "to-play" }) : null,
+      done.length ? module("Final", plural(done.length, "game"), [el("div", { class: "games" }, done.map(gameCard))], { "data-card": "finals" }) : null,
       el("div", {}, [el("button", { class: "btn", type: "button", text: "Refresh scores now", onclick: function () { fetchScores(); } })])
     ]);
   }
@@ -2933,8 +3372,7 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     ]));
     return el("div", { class: "view", "data-view": "weeks" }, [
       el("div", { class: "pagehead" }, [el("h1", { text: "Week " + w.week }), picker]),
-      el("section", { class: "hero" }, [el("span", { class: "kicker", text: "Week " + w.week }), el("h2", { text: headline(w) }),
-        el("p", { class: "deck", text: story(w) })]),
+      heroRecap(w, true),
       el("div", { class: "cols" }, [el("div", {}, [awards, upsets]), el("div", {}, [soCloseCard(w)])]),
       module("Scoreboard", plural(w.scores.length, "coach", "coaches"), [scores]),
       module("Results", plural(w.results.length, "game"), [results])
@@ -3202,6 +3640,7 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     return el("div", { class: "view", "data-view": mine ? "me" : "coach" }, [
       head,
       week,
+      week ? rootingFor(p.name) : null,
       chance,
       el("div", { class: "cols" }, [
         el("div", {}, [trendModule(p), profileModule(p)]),

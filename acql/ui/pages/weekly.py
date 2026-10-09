@@ -17,12 +17,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import mailer, picks
+from ... import ghost, mailer, picks
 from ...predictions import display_team
 from ...models import Week
 from ..charts import BarChart, HistogramChart
 from .. import recap
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ...version import MODEL_NAME
 from .base import POOL_EXTRAS, POOL_PAGE, Page
 
 SLATE_HEADERS = [
@@ -35,9 +36,21 @@ EASY_RATE = 0.75      # most of the pool got it - not a trap
 TRAP_RATE = 0.30      # most of the pool missed it
 
 
+def _ordinal(n: int) -> str:
+    return "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+
+
 def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
+
+
+def _score(game) -> str:
+    """"  (29-28)", the final score away-home, when the dashboard has it."""
+    away, home = getattr(game, "away_points", None), getattr(game, "home_points", None)
+    if away is None or home is None:
+        return ""
+    return f"  ({away}\u2013{home})"
 
 class WeeklyPage(Page):
     title = "Results"
@@ -89,7 +102,7 @@ class WeeklyPage(Page):
         self.pool_btn = QPushButton("\N{GLOBE WITH MERIDIANS}  Pool page")
         self.pool_btn.setToolTip(
             "Put this week on the pool's website - standings, the week, the "
-            "side pools, history. Nothing about your card or the model goes on "
+            f"side pools, history. Nothing about your card or {MODEL_NAME}'s goes on "
             "it. The first time, it walks you through setting the website up; "
             "after that it also updates by itself when new results load."
         )
@@ -184,6 +197,10 @@ class WeeklyPage(Page):
         for week in self._weeks:
             if week in season.provisional_weeks:
                 suffix = "  (in progress)"
+            elif not season.weeks[week].lines:
+                # its games (and maybe results), nobody's picks: set up from
+                # the fixtures, or typed into the workbook without them
+                suffix = "  (no pick sheet yet)"
             elif not season.weeks[week].scored:
                 suffix = "  (not played)"
             else:
@@ -208,7 +225,7 @@ class WeeklyPage(Page):
         if season is None:
             return
         if not self._weeks:
-            self._show_empty("No week sheets found in the workbook.")
+            self._show_empty("No weeks yet - drop the week's pick sheet in the data folder.")
             return
         week = season.weeks.get(self.week_picker.currentData())
         if week is None:
@@ -418,7 +435,7 @@ class WeeklyPage(Page):
                 game.index,
                 game.label,
                 f"{display_team(game.line_favourite)} by {line:g}" if line is not None else self.NO_VALUE,
-                display_team(game.winner) or self.NO_VALUE,
+                (display_team(game.winner) + _score(game)) if game.played else self.NO_VALUE,
                 took,
                 correct,
                 self.pct(rate) if game.played or correct else self.NO_VALUE,
@@ -474,6 +491,11 @@ class WeeklyPage(Page):
         return f"{display_team(best)} {self.pct(share, 0)}", share
 
     def _render_traps(self, week: Week) -> None:
+        if not week.lines:
+            # set up from the fixtures: results, but nobody's picks to count
+            self.trap_chart.empty("Nobody's picks yet - the pick sheet isn't in")
+            self.trap_card.set_title("Hardest games - fewest correct picks")
+            return
         entrants = len(week.lines) or 1
         scored = [
             (game, week.correct_count(game.index))
@@ -507,7 +529,7 @@ class WeeklyPage(Page):
             xlabel=f"Players correct (of {entrants})",
             colors=colors,
             tooltips=[
-                f"{game.label}\nWinner: {display_team(game.winner) or 'not entered'}\n"
+                f"{game.label}\nCredited: {(display_team(game.winner) + _score(game)) if game.played else 'not decided yet'}\n"
                 f"{count} of {entrants} correct ({self.pct(count / entrants, 0)})"
                 for game, count in shown
             ],
@@ -519,7 +541,8 @@ class WeeklyPage(Page):
         if not scores:
             self.clear_layout(self.board_box)
             self.board_table = None
-            note = QLabel("This week has not been scored yet.")
+            note = QLabel("This week has not been scored yet." if week.lines else
+                          "Nobody's picks yet - the commissioner's pick sheet isn't in.")
             note.setObjectName("Muted")
             self.board_box.addWidget(note)
             return
@@ -542,17 +565,38 @@ class WeeklyPage(Page):
             if line.total_wins == top:
                 tones[(r, 2)] = "good"
 
+        sort_values = {
+            0: [line.rank or rank for (_, line), rank in zip(scores, ranks)],
+            2: [line.total_wins for _, line in scores],
+            3: [line.regular_wins for _, line in scores],
+            4: [line.big_loser_wins for _, line in scores],
+        }
+        tooltips = {}
+        try:
+            shade = ghost.week_score(season, week.number)
+        except Exception:  # noqa: BLE001 - the board goes up without it
+            shade = None
+        if shade is not None:
+            # Deadeye's card as a ghost: where it would have finished, never placed
+            r = len(rows)
+            rows.append([self.NO_VALUE, ghost.LABEL, shade.total, shade.regular, shade.losers, self.NO_VALUE])
+            for column in range(len(BOARD_HEADERS)):
+                tones[(r, column)] = "muted"
+            level = f", level with {shade.tied}" if shade.tied else ""
+            tooltips[(r, 1)] = (
+                f"Would have finished {shade.place}{_ordinal(shade.place)} of {shade.entrants + 1}{level}."
+                + ("" if shade.losers_known else "\nA Big Loser game has no final score kept, so it isn't counted.")
+                + ("\nIts card was rebuilt afterwards from the stored lines." if shade.rebuilt else "")
+                + f"\n{MODEL_NAME}'s card, scored like a coach's: shown for comparison, never placed or paid.")
+            for column, value in ((0, shade.place - 0.5), (2, shade.total), (3, shade.regular), (4, shade.losers)):
+                sort_values[column].append(value)
         model = TableModel(
             BOARD_HEADERS, rows,
             palette=self.palette,
             numeric_columns={0, 2, 3, 4},
-            sort_values={
-                0: [line.rank or rank for (_, line), rank in zip(scores, ranks)],
-                2: [line.total_wins for _, line in scores],
-                3: [line.regular_wins for _, line in scores],
-                4: [line.big_loser_wins for _, line in scores],
-            },
+            sort_values=sort_values,
             tones=tones,
+            tooltips=tooltips,
             bold_columns={1},
         )
         view, _ = make_table(

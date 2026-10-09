@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import ROOT
-from .models import Game, Season
+from .models import Game, Season, Week
 
 LINE_ROW = 8
 FIRST_GAME_COL = 6        # column F holds game 1
@@ -83,6 +83,64 @@ def names_team(abbr: str, name: str) -> bool:
     """Whether a slate name ("Los Angeles Rams", "philadelphia") is that team."""
     n = _norm(name)
     return bool(n) and any(n == w or n.startswith(w) or w in n for w in TEAMS.get(abbr, ()))
+
+
+# ---- the line straight off the pick sheet -------------------------------------
+# The pick sheet carries the same note on its second row, written by hand:
+# "(det by 8)", "(cincy by 8)", "(SF -3.5)". Anything without a number in it
+# ("|", "TNF", "London") is not a line and says nothing.
+SHEET_NOTE = re.compile(r"([A-Za-z0-9][A-Za-z0-9.']*)\s*(?:by|-)\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+#: What a commissioner might write for a team that is neither its code nor its name.
+NOTE_WORDS = {
+    "cincy": "cin", "cinci": "cin", "philly": "phi", "jags": "jax", "pats": "ne",
+    "bucs": "tb", "niners": "sf", "9ers": "sf", "wash": "was", "commies": "was",
+    "skins": "was", "az": "ari", "zona": "ari", "cards": "ari", "hawks": "sea",
+    "fins": "mia", "phins": "mia", "pack": "gb", "bolts": "lac", "vegas": "lv",
+    "nyg": "nyg", "nyj": "nyj", "gmen": "nyg", "boys": "dal", "dawgs": "cle",
+    "noles": "no", "aints": "no", "bengels": "cin", "steelers": "pit",
+}
+
+
+def _match(word: str, name: str) -> int:
+    """How surely a word from a line note means the team a slate name is:
+    2 for its code or a name for it ("hou", "jags"), 1 for the start of one
+    ("cincy", "phil"), 0 for neither. Only the team's present names count:
+    "hou" is Houston, never the Tennessee that was once the Houston Oilers."""
+    from .predictions import team_code
+    code = team_code(name)
+    if not code:
+        return 0
+    w = re.sub(r"[.']", "", word.casefold())
+    if not w:
+        return 0
+    if NOTE_WORDS.get(w) == code or team_code(w) == code:
+        return 2
+    former = FORMER_NAMES.get(code, ())
+    spellings = tuple(s for s in TEAMS.get(code, ()) if s not in former) + (code,)
+    if len(w) >= 3 and any(s.startswith(w) or any(part.startswith(w) for part in s.split()) for s in spellings):
+        return 1
+    # "cincy", "philly": the code and then more
+    return 1 if len(code) == 3 and len(w) > 3 and w.startswith(code) else 0
+
+
+def line_from_note(note: object, away: str, home: str) -> tuple[tuple[str, float] | None, str]:
+    """((favourite as the slate writes it, points), problem) from a sheet's note.
+
+    No line and no problem for a note that holds no number. A note with a
+    number that names neither team (or both) comes back as a problem to show,
+    never as a guess - a line on the wrong side would credit the wrong team.
+    """
+    text = str(note or "").strip()
+    if not re.search(r"\d", text):
+        return None, ""
+    found = SHEET_NOTE.search(text)
+    if not found:
+        return None, f"can't read the line {text!r}"
+    word, points = found.group(1), float(found.group(2))
+    home_hit, away_hit = _match(word, home), _match(word, away)
+    if home_hit == away_hit:
+        return None, f"{text!r} doesn't say which of {away} and {home} is the favourite"
+    return ((home if home_hit > away_hit else away), points), ""
 
 
 def read_notes(path: Path) -> dict[int, dict[int, object]]:
@@ -163,21 +221,48 @@ def _game_key(game: Game) -> str:
     return f"{_norm(game.away)}@{_norm(game.home)}"
 
 
+def _same_game(match: object, game: Game) -> bool:
+    """Whether a kept "away@home" is this game, whichever way round."""
+    from .predictions import team_code
+    away, _, home = str(match or "").partition("@")
+    a, h = team_code(away), team_code(home)
+    return bool(a and h) and {a, h} == {team_code(game.away), team_code(game.home)}
+
+
 def load_spreads(week: int, games: list[Game]) -> dict[int, Spread]:
+    """The spreads typed in for a week's games. Each is found again by its
+    two teams, so it stays with its game when the week is numbered again (a
+    week set up from the fixtures gets the commissioner's order once his
+    sheet arrives) or has home and away the other way round."""
     from . import store
+    from .predictions import team_code
     saved = store.get("spreads", str(week), {})
     if not isinstance(saved, dict):
         return {}
-    out = {}
+    where = {}
     for game in games:
-        entry = saved.get(str(game.index))
-        if (
-            isinstance(entry, dict)
-            and entry.get("match") == _game_key(game)
-            and entry.get("favourite") in ("home", "away")
-            and isinstance(entry.get("points"), (int, float))
-        ):
-            out[game.index] = Spread(entry["favourite"], float(entry["points"]))
+        a, h = team_code(game.away), team_code(game.home)
+        if a and h:
+            where[frozenset((a, h))] = (game, a)
+    out = {}
+    for index, entry in saved.items():
+        if not (isinstance(entry, dict) and entry.get("favourite") in ("home", "away")
+                and isinstance(entry.get("points"), (int, float))):
+            continue
+        away, _, home = str(entry.get("match", "")).partition("@")
+        a, h = team_code(away), team_code(home)
+        found = where.get(frozenset((a, h))) if a and h else None
+        if found is None:
+            # kept before teams could be read from it: only its own game
+            game = next((g for g in games if str(g.index) == str(index)), None)
+            if game is None or entry.get("match") != _game_key(game):
+                continue
+            found = (game, team_code(game.away))
+        game, game_away = found
+        side = entry["favourite"]
+        if a and game_away != a:
+            side = "home" if side == "away" else "away"
+        out[game.index] = Spread(side, float(entry["points"]))
     return out
 
 
@@ -185,6 +270,10 @@ def save_spread(week: int, game: Game, spread: Spread | None) -> None:
     """Store or clear one game's spread, leaving every other entry alone."""
     from . import store
     week_entries = dict(store.get("spreads", str(week), {}) or {})
+    # the game's own entry, whatever number it was kept under
+    for index, entry in list(week_entries.items()):
+        if isinstance(entry, dict) and _same_game(entry.get("match"), game):
+            week_entries.pop(index)
     if spread is None:
         week_entries.pop(str(game.index), None)
     else:
@@ -198,6 +287,135 @@ def save_spread(week: int, game: Game, spread: Spread | None) -> None:
             store.delete("spreads", str(week))
     except store.StoreError:
         pass
+
+
+# ---- the pool's line games, typed in on the Next Week page ------------------
+#: Store kind: the week's line games as the dashboard was told them, by
+#: "YEAR-WEEK", for the days before the commissioner's pick sheet says them.
+POOL_KIND = "pool-lines"
+#: "(kc by 10)", "Chiefs -10", "Green Bay by 3.5" - a team, then the points.
+POOL_LINE = re.compile(r"^\W*(.+?)\s*(?:\bby\b|-)\s*(\d+(?:\.\d+)?)\W*$", re.IGNORECASE)
+
+
+def _pair(away: object, home: object) -> frozenset:
+    from .predictions import team_code
+    return frozenset((team_code(away), team_code(home)))
+
+
+def pool_lines(year: int, week: int) -> dict[frozenset, tuple[str, float]]:
+    """{the two teams' codes: (favourite's code, points)} as typed in."""
+    from . import store
+    try:
+        raw = store.get(POOL_KIND, f"{year}-{week}", [])
+    except store.StoreError:
+        return {}
+    out = {}
+    for row in raw if isinstance(raw, list) else []:
+        if not isinstance(row, dict):
+            continue
+        teams, fav, points = row.get("teams"), row.get("favourite"), row.get("points")
+        if (isinstance(teams, list) and len(teams) == 2 and fav in teams
+                and isinstance(points, (int, float)) and points > 0):
+            out[frozenset(teams)] = (str(fav), float(points))
+    return out
+
+
+def save_pool_lines(year: int, week: int, found: dict[frozenset, tuple[str, float]]) -> None:
+    """Keep the week's line games - all of them: what isn't listed is straight up."""
+    from . import store
+    rows = [{"teams": sorted(pair), "favourite": fav, "points": points}
+            for pair, (fav, points) in sorted(found.items(), key=lambda kv: sorted(kv[0]))]
+    if rows:
+        store.put(POOL_KIND, f"{year}-{week}", rows)
+    else:
+        store.delete(POOL_KIND, f"{year}-{week}")
+
+
+def pool_line_weeks(year: int) -> list[int]:
+    """The weeks of a season with line games typed in."""
+    from . import store
+    try:
+        keys = store.items(POOL_KIND)
+    except store.StoreError:
+        return []
+    out = []
+    for key in keys:
+        found = re.fullmatch(r"(\d{4})-(\d{1,2})", str(key))
+        if found and int(found.group(1)) == int(year):
+            out.append(int(found.group(2)))
+    return sorted(out)
+
+
+def _team_in(phrase: str, games: list[Game]) -> tuple[Game | None, str, str]:
+    """(the game, the team as the slate writes it, a problem) for the words in
+    front of a line: a code, a name, a nickname, or the start of one."""
+    from .predictions import team_code
+    words = phrase.strip(" ()[]:,.")
+    code = team_code(words) or NOTE_WORDS.get(re.sub(r"[.']", "", words.casefold()), "")
+    hits = []
+    for game in games:
+        for side in (game.away, game.home):
+            if code and team_code(side) == code:
+                hits.append((2, game, side))
+            elif not code:
+                strength = max((_match(word, side) for word in words.split()), default=0)
+                if strength:
+                    hits.append((strength, game, side))
+    if not hits:
+        return None, "", (f"{words!r} isn't playing this week" if code
+                          else f"can't tell which team {words!r} is")
+    best = max(h[0] for h in hits)
+    top = [h for h in hits if h[0] == best]
+    if len({team_code(h[2]) for h in top}) > 1:
+        return None, "", f"{words!r} could be {' or '.join(sorted({h[2] for h in top}))}"
+    return top[0][1], top[0][2], ""
+
+
+def parse_pool_lines(text: str, games: list[Game]) -> tuple[dict[frozenset, tuple[str, float]], list[str]]:
+    """The week's line games from typed or pasted text, one a line (or split
+    by commas): "(kc by 10)", "Chiefs -10", "Green Bay by 3.5". Returns
+    ({pair: (favourite code, points)}, what couldn't be read)."""
+    from .predictions import team_code
+    found: dict[frozenset, tuple[str, float]] = {}
+    problems: list[str] = []
+    for chunk in re.split(r"[\n;,]+", text or ""):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        match = POOL_LINE.match(chunk)
+        if not match:
+            problems.append(f"can't read {chunk!r} - write it like (kc by 10)")
+            continue
+        game, side, problem = _team_in(match.group(1), games)
+        if game is None:
+            problems.append(problem)
+            continue
+        points = float(match.group(2))
+        if not 0 < points <= 40:
+            problems.append(f"{chunk!r}: {points:g} points isn't a line")
+            continue
+        found[_pair(game.away, game.home)] = (team_code(side), points)
+    return found, problems
+
+
+def pool_lines_text(year: int, week: int) -> str:
+    """The week's line games as the sheet writes them, one a line."""
+    return "\n".join(f"({fav} by {points:g})" for fav, points in
+                     sorted(pool_lines(year, week).values()))
+
+
+def apply_pool_lines(week: Week, typed: dict[frozenset, tuple[str, float]]) -> None:
+    """Put typed line games on a week's games, and take the line off any game
+    not among them: the list is the whole week's."""
+    from .predictions import team_code
+    for game in week.games:
+        found = typed.get(_pair(game.away, game.home))
+        if found is None:
+            game.line, game.line_favourite = None, ""
+            continue
+        fav, points = found
+        game.line_favourite = game.home if team_code(game.home) == fav else game.away
+        game.line = points
 
 
 # ---- reading a block of odds pasted from a website -------------------------

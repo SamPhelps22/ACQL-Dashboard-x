@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import analytics, cards
 from .models import Season
+from .version import MODEL_NAME
 
 #: The model's card against this pool's real cards in weeks before this
 #: season's were kept - written from the pool's own past sheets.
@@ -332,7 +333,7 @@ def _verdict(report: Report) -> None:
         reasons.append(long_run)
 
     if weeks < JUDGE_FROM_WEEKS:
-        report.headline = "Follow the model's card."
+        report.headline = f"Follow {MODEL_NAME}'s card."
         report.tone = "good"
         reasons.append(
             f"{weeks} {'week is' if weeks == 1 else 'weeks are'} too few to judge by: "
@@ -341,7 +342,7 @@ def _verdict(report: Report) -> None:
             if weeks else "No graded weeks yet this season, so the long run carries the verdict."
         )
     elif lead is not None and lead >= CLEAR_LEAD:
-        report.headline = "Follow the model's card."
+        report.headline = f"Follow {MODEL_NAME}'s card."
         report.tone = "good"
     elif lead is not None and lead <= -(CLEAR_LEAD + 1):
         report.headline = f"{coach}'s own calls are working - keep them, but pick your spots."
@@ -349,7 +350,7 @@ def _verdict(report: Report) -> None:
         reasons.append("Over a whole season the lines usually win, so go against them only "
                        "where you know something they don't.")
     else:
-        report.headline = "Follow the model's card - it's close this season."
+        report.headline = f"Follow {MODEL_NAME}'s card - it's close this season."
         report.tone = "good"
         reasons.append("When it's this close, the long run is the better guide.")
     report.reasons = reasons
