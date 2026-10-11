@@ -16,15 +16,15 @@ from matplotlib.patches import Ellipse, FancyBboxPatch, PathPatch
 from matplotlib.path import Path as MplPath
 
 WIDTH, HEIGHT = 1200, 630
-# The website's night colours: the on-air navy, the pool's green and gold.
-GROUND = "#0b1624"
-SURFACE = "#12243a"
-RULE = "#1f3550"
-INK = "#eef3f8"
-MUTED = "#93a4b8"
-FIELD = "#45c486"
-GOLD = "#f0b43c"
-GOLD_SOFT = "#2b2413"
+# The website's night colours: the logo's black, the pool's green and gold.
+GROUND = "#0a0d0b"
+SURFACE = "#131815"
+RULE = "#263029"
+INK = "#f1f4f1"
+MUTED = "#98a39a"
+FIELD = "#4cc486"
+GOLD = "#f2b83a"
+GOLD_SOFT = "#2b2411"
 
 # ---- the crest ---------------------------------------------------------------------
 # The league's crest: an armchair with a football on its seat, on a shield.
@@ -136,8 +136,15 @@ def render(data: dict) -> bytes:
             t.set_fontsize(max(size * room / wide, size * 0.5))
         return t
 
-    # masthead: the crest, then the wordmark
-    crest(ax, lambda x, y: (64 + x * 0.82, 40 + y * 0.82), 0.82 * 0.9, flipped=True)
+    # masthead: the league's logo (the drawn crest without it), then the wordmark
+    from . import brand
+    logo = brand.image(220)
+    if logo is not None:
+        ax.imshow(logo, extent=(50, 154, 142, 38), aspect="auto", interpolation="lanczos", zorder=3)
+        ax.set_xlim(0, WIDTH)
+        ax.set_ylim(HEIGHT, 0)
+    else:
+        crest(ax, lambda x, y: (64 + x * 0.82, 40 + y * 0.82), 0.82 * 0.9, flipped=True)
     brand = ax.text(162, 52, "ACQL", fontsize=54, color=INK, fontweight="bold", va="top")
     # the year goes just after the word, wherever the font makes it end
     end = ax.transData.inverted().transform(brand.get_window_extent(renderer).corners()[-1])[0]

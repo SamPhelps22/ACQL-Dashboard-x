@@ -845,14 +845,15 @@ SITE = "__SITE__"               # the website's address, filled in on upload
 PREVIEW = "preview.png"         # the link-preview picture, next to the page
 MANIFEST = "manifest.webmanifest"
 ICONS = {512: "icon-512.png", 192: "icon-192.png", 180: "apple-touch-icon.png"}
-THEME = "#0d1b2c"               # the on-air navy of the site's top bar
+THEME = "#0a0c0b"               # the on-air black of the site's top bar - the logo's own
 
 
 def app_files() -> dict[str, bytes]:
     """What a phone needs to save the site to its home screen like an app:
     the icons and the little file that names them. Uploaded beside the page."""
-    from . import previewcard
-    files = {name: previewcard.icon(size) for size, name in ICONS.items()}
+    from . import brand, previewcard
+    # The league's logo when it is there (brand.py); the drawn crest otherwise.
+    files = {name: brand.icon(size) or previewcard.icon(size) for size, name in ICONS.items()}
     manifest = {
         "name": "ACQL - Arm Chair Quarterback League",
         "short_name": "ACQL",
@@ -860,7 +861,7 @@ def app_files() -> dict[str, bytes]:
         "start_url": "./",
         "scope": "./",
         "display": "standalone",
-        "background_color": "#07111d",
+        "background_color": "#0a0d0b",
         "theme_color": THEME,
         "icons": [
             {"src": ICONS[192], "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
@@ -951,7 +952,10 @@ def page_html(season: Season, *, generated: str | None = None) -> str:
 def _hosted_page(data: dict) -> str:
     import html as _html
     data["hosted"] = "web"
-    fragment = TEMPLATE.read_text(encoding="utf-8").replace("__POOL_DATA__", to_json(data))
+    from . import brand
+    fragment = (TEMPLATE.read_text(encoding="utf-8")
+                .replace("__POOL_LOGO__", brand.data_uri())
+                .replace("__POOL_DATA__", to_json(data)))
     head, body = fragment.split('<div id="app"', 1)
     year = siteextras.season_year(data["generated"])      # January is still last autumn's season
     version = f"{data['through_week']}-" + "".join(ch for ch in data["generated"] if ch.isdigit())
