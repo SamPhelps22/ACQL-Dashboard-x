@@ -40,16 +40,23 @@ LOCK_FILE = Path(DATA_DIR) / "headless.lock"
 
 #: The week ahead's lines are refreshed this often...
 LINES_EVERY = 12 * 3600
-#: ...and this often on the day its odds lock.
+#: ...this often on the day its odds lock...
 LINES_EVERY_LOCK_DAY = 2 * 3600
+#: ...and this often in the last two hours before the pool's deadline, when
+#: the late injury news lands.
+LINES_EVERY_LAST_HOURS = 20 * 60
+LAST_HOURS = 2 * 3600
+#: The predictions file is looked for no more often than this.
+PREDICTIONS_EVERY = 3600
 #: Lines aren't posted much further ahead than this.
 LINES_AHEAD = 6 * 86400
 #: A refresh that failed isn't tried again for this long.
-LINES_RETRY = 30 * 60
+LINES_RETRY = 15 * 60
 #: The computer models' predictions, as The Prediction Tracker publishes them.
 PREDICTIONS_URL = "https://www.thepredictiontracker.com/nflpredictions.csv"
-#: The Odds API's free plan is 500 requests a month: this many are left for
-#: pressing Update lines by hand.
+#: The Odds API's free plan is 500 requests a month, and a fetch of spreads,
+#: moneylines and totals is three: this many are left for pressing Update
+#: lines by hand.
 ODDS_RESERVE = 40
 
 
@@ -122,7 +129,8 @@ def _lines_due(now: float | None = None) -> int | None:
         tried = 0.0
     if now - tried < LINES_RETRY:
         return None
-    every = LINES_EVERY_LOCK_DAY if to_lock < 86400 else LINES_EVERY
+    every = (LINES_EVERY_LAST_HOURS if to_lock <= LAST_HOURS
+             else LINES_EVERY_LOCK_DAY if to_lock < 86400 else LINES_EVERY)
     return week if now - predictions.market_time(week) >= every else None
 
 
@@ -130,6 +138,13 @@ def _download_predictions(season, week: int) -> None:
     """The Prediction Tracker's file, kept only when it is this week's games."""
     import tempfile
     import urllib.request
+    from . import store
+    try:
+        if time.time() - float(store.get("headless", "predictions_tried", 0) or 0) < PREDICTIONS_EVERY:
+            return
+        store.put("headless", "predictions_tried", time.time())
+    except store.StoreError:
+        pass
     found = season.weeks.get(week)
     games = sorted(found.games, key=lambda g: g.index) if found else []
     if not games:

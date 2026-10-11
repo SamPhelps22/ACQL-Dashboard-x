@@ -835,8 +835,8 @@ class BriefingPage(Page):
         locked = self._locked(week)
         self.lines_button.setEnabled(not locked and self._fetcher is None)
         self.lines_button.setToolTip(
-            "The odds locked at the week's first kickoff - the lines stay as they were then"
-            if locked else "Fetch the latest lines from the books (The Odds API)"
+            "The odds locked when the pool's cards were due - the lines stay as they were then"
+            if locked else "Fetch the latest spreads, moneylines and totals from the books (The Odds API)"
         )
         if locked:
             say(oddslock.note(self.season, week))

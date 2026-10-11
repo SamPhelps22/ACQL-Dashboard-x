@@ -5,10 +5,12 @@ person can check at a glance - each one for the pick, against it, or just
 worth knowing:
 
     Betting line     the market's number, and what it says about the pool's question
+    Pool line        a big favourite whose pool line isn't posted yet
     Line move        where the line opened and where it is now
     Computer models  how many of the published models side with the pick
     Form             each team's record and scoring margin this season
     Rest             a short week or a bye, when the two teams differ
+    Scoring          the over/under, when it stands out from the slate
     The pool         how much of the pool is expected on the same side
     You              your own record picking these teams this season
     Track record     how Deadeye's picks at this confidence have done
@@ -41,6 +43,11 @@ FORM_GAP = 3.0
 REST_GAP = 2
 #: A Big Loser chance this high on the other side is worth mentioning.
 BLOWOUT = 0.15
+#: An over/under this far from the slate's middle is worth mentioning.
+TOTAL_GAP = 4.0
+#: The commissioner usually puts a line on a favourite of about this size or
+#: bigger (the same figure the long replay uses, backtest.LINED_FROM).
+LINE_LIKELY = 6.5
 
 
 def strength(chance: float) -> str:
@@ -155,9 +162,15 @@ def _market(game: Game, pick: str, pick_home: bool, forecast) -> Signal | None:
         return None
     team = game.home if pick_home else game.away
     outright = luck._home_win(margin) if pick_home else 1 - luck._home_win(margin)
+    # the moneyline is the market's own answer to "who wins": used when it is in
+    money = pricing.market_win(game, forecast)
+    if money is not None:
+        outright = money if pick_home else 1 - money
     credited = luck.credited_chance(game, margin, team)
     if credited is None:
         return None
+    if game.line is None and money is not None:
+        credited = outright
     verdict = FOR if credited > 0.5 else AGAINST if credited < 0.5 else INFO
     if game.line is not None and game.line_favourite:
         favourite = display_team(game.line_favourite)
@@ -166,9 +179,39 @@ def _market(game: Game, pick: str, pick_home: bool, forecast) -> Signal | None:
             f"{pick} is credited {credited:.0%} of the time"
             + (f" ({outright:.0%} to win outright)." if outright != credited else ".")
         )
+    elif money is not None:
+        detail = f"The moneyline makes {pick} {outright:.0%} to win outright."
     else:
         detail = f"The market makes {pick} {outright:.0%} to win outright."
     return Signal("Betting line", verdict, _spread(margin, game), detail)
+
+
+def _line_coming(game: Game, forecast, lines_posted: bool) -> Signal | None:
+    """A big favourite in a week whose pool lines aren't in yet: the pick is
+    priced straight up for now, and usually isn't once the line is posted."""
+    if lines_posted or game.line is not None or forecast is None:
+        return None
+    margin = pricing.market_margin(game, forecast)
+    if margin is None or abs(margin) < LINE_LIKELY:
+        return None
+    favourite = display_team(game.home if margin > 0 else game.away)
+    return Signal(
+        "Pool line", AGAINST, "not posted yet - expect one",
+        f"{favourite} is favoured by {abs(margin):g}, and favourites this big usually get a pool line. "
+        f"Priced straight up for now: enter the line on Every game when it is posted - the pick often changes.",
+    )
+
+
+def _scoring(forecast, typical: float) -> Signal | None:
+    """The over/under, when this game stands out from the rest of the slate."""
+    total = getattr(forecast, "total", None)
+    if not total or not typical or abs(total - typical) < TOTAL_GAP:
+        return None
+    if total > typical:
+        return Signal("Scoring", INFO, f"over/under {total:g} - high for this slate ({typical:g})",
+                      "More points means wider margins: an upset and a blowout are both a little likelier.")
+    return Signal("Scoring", INFO, f"over/under {total:g} - low for this slate ({typical:g})",
+                  "Fewer points means closer games: a big favourite is a little less likely to run away with it.")
 
 
 def _move(game: Game, pick: str, pick_home: bool, forecast) -> Signal | None:
@@ -312,6 +355,7 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
     loser_chance = {team_code(b.team): b.chance for b in pricing.big_loser_candidates(prices)
                     if team_code(b.team)}
     chosen = {team_code(b.team) for b in brief.losers}
+    lines_posted = any(g.line is not None for g in games)
 
     out = []
     for choice in brief.choices:
@@ -323,11 +367,13 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
         forecast = ctx.forecasts.get(game.index)
         signals = [
             _market(game, choice.pick, pick_home, forecast),
+            _line_coming(game, forecast, lines_posted),
             _move(game, choice.pick, pick_home, forecast),
             _models(game, choice.pick, pick_home, forecast),
             _form(pick_code, other_code, choice.pick, choice.other, form),
             _rest(choice.pick, choice.other, pick_code, other_code,
                   _kickoff(year, brief.week, game), form),
+            _scoring(forecast, ctx.typical_total),
             _crowd(choice),
             _yours(spots, choice.pick, choice.other),
             _track(choice.chance, bands),

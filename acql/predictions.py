@@ -233,6 +233,10 @@ class Forecast:
     low: float | None = None
     high: float | None = None
     neutral: bool = False
+    #: From the fetched lines (odds.py), never the file: the moneylines' chance
+    #: the home side wins outright, and the over/under.
+    market_win: float | None = None
+    total: float | None = None
 
     @property
     def road_code(self) -> str:

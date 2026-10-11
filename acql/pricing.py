@@ -198,6 +198,8 @@ class Context:
     #: When the newest market number arrived - a typed spread older than this
     #: has been overtaken by the market and gives way to it.
     market_at: float = 0.0
+    #: The slate's middle over/under, which each game's own is read against.
+    typical_total: float = 0.0
 
 
 def context(
@@ -214,7 +216,9 @@ def context(
     if not forecasts:
         return Context(week, {}, 0.0, 0.0, weight, fit)
     found = predictions.match_games(sorted(games, key=lambda g: g.index), forecasts)
+    totals = sorted(f.total for f in found.by_game.values() if f.total)
     return Context(
+        typical_total=totals[len(totals) // 2] if totals else 0.0,
         market_at=predictions.market_time(week),
         week=week,
         forecasts=dict(found.by_game),
@@ -245,6 +249,48 @@ def market_margin(game: Game, forecast: predictions.Forecast | None) -> float | 
         return None
     value = forecast.market if forecast.market is not None else forecast.opening
     return predictions.home_margin(game, forecast, value)
+
+
+#: The moneyline is only believed while it is this close (points) to the
+#: spread beside it; further off and one of the two is stale or the wrong
+#: way round, and the spread - the number the rest of the app shows - stands.
+MONEYLINE_REACH = 2.5
+#: How much a game's over/under widens or narrows its spread of results. Over
+#: 3,951 games (2011-2025) margins ran 6% wider in the highest-scoring third
+#: of games than the lowest: about the quarter power of the totals' ratio.
+TOTAL_POWER = 0.25
+TOTAL_LIMITS = (0.94, 1.07)
+
+
+def market_win(game: Game, forecast: predictions.Forecast | None) -> float | None:
+    """The moneylines' chance this game's home side wins outright."""
+    chance = getattr(forecast, "market_win", None)
+    if forecast is None or chance is None:
+        return None
+    return chance if predictions.team_code(game.home) == forecast.home_code else 1 - chance
+
+
+def _anchor(game: Game, forecast: predictions.Forecast | None, base: float) -> float:
+    """The market's number to build on. A straight-up game is a question
+    about winning, and the moneyline is the market's own answer to it - so
+    there the margin that wins that often is used; a line game is about a
+    margin, and keeps the spread."""
+    if game.line is not None:
+        return base
+    chance = market_win(game, forecast)
+    if chance is None:
+        return base
+    implied = analytics.spread_for_win_chance(chance)
+    return implied if abs(implied - base) <= MONEYLINE_REACH else base
+
+
+def _total_factor(forecast: predictions.Forecast | None, ctx: Context) -> float:
+    """How much wider (or narrower) this game's results run for its over/under."""
+    total = getattr(forecast, "total", None)
+    if not total or not ctx.typical_total:
+        return 1.0
+    low, high = TOTAL_LIMITS
+    return min(high, max(low, (total / ctx.typical_total) ** TOTAL_POWER))
 
 
 def model_edge(game: Game, ctx: Context) -> float | None:
@@ -311,14 +357,17 @@ def price(game: Game, ctx: Context, spread: lines.Spread | None = None,
     if base is None:
         return Price(game, None, analytics.SPREAD_SD, "Vegas", None, None, typed, spread, overruled)
 
+    # What the market says to build on, and how widely this game's results run.
+    anchor = base if typed else _anchor(game, forecast, base)
+    wider = _total_factor(forecast, ctx)
     edge = model_edge(game, ctx)
     if edge is None or forecast is None:
-        return Price(game, base, analytics.SPREAD_SD, "Vegas", base, None, typed, spread, overruled)
+        return Price(game, anchor, analytics.SPREAD_SD * wider, "Vegas", base, None, typed, spread, overruled)
     # Not a flat share: a game the models can't agree on gets less of their
     # opinion, judged against how much they disagree this week.
     share = forecast.model_weight(ctx.weight, ctx.typical)
-    sd = math.hypot(analytics.SPREAD_SD, forecast.extra_spread(ctx.weight, ctx.typical))
-    return Price(game, base + share * edge, sd, "market + models", base, edge, typed, spread, overruled)
+    sd = math.hypot(analytics.SPREAD_SD, forecast.extra_spread(ctx.weight, ctx.typical)) * wider
+    return Price(game, anchor + share * edge, sd, "market + models", base, edge, typed, spread, overruled)
 
 
 def stored_spread(week: int, game: Game) -> lines.Spread | None:

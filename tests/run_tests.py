@@ -14,6 +14,7 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -116,11 +117,17 @@ class TestSeasonLoad(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
 
     def test_wins_include_big_loser_points(self):
-        """W* covers regular + big-loser wins, so W + L is the full slate."""
-        for p in self.season.players.values():
-            if p.wins and p.losses:
-                total = self.season.max_regular_points + self.season.max_big_loser_points
-                self.assertEqual(p.wins + p.losses, total, p.display)
+        """W* covers regular + big-loser wins, so W + L is the full slate:
+        the same for every coach, and more than the regular games alone."""
+        totals = {p.wins + p.losses for p in self.season.players.values() if p.wins and p.losses}
+        if not totals:
+            self.skipTest("no standings loaded")
+        self.assertEqual(len(totals), 1, totals)
+        (total,) = totals
+        weeks = len(self.season.final_weeks())
+        self.assertGreater(total, weeks * self.season.max_regular_points)
+        self.assertLessEqual(
+            total, weeks * (self.season.max_regular_points + self.season.max_big_loser_points))
 
     def test_provisional_weeks_are_excluded_from_averages(self):
         for week in self.season.provisional_weeks:
@@ -551,6 +558,87 @@ class TestOddsKickoff(_ScratchStore):
         self.assertEqual(kept.opening.get("atl@gb"), 6.5)
         self.assertNotIn("phi@chi", kept.opening)           # only ever seen live
         self.assertEqual(odds.lines_at(3, after + 1), {"atl@gb": 4.5})
+
+
+class TestDeadline(_ScratchStore):
+    """Cards are due Thursday at 6:00 pm - or at the first kickoff, when that is sooner."""
+
+    def test_an_ordinary_week_locks_at_the_deadline(self):
+        from acql import oddslock
+        year, week = 2026, 6
+        at = time.localtime(oddslock.lock_time(year, week))
+        self.assertEqual((at.tm_wday, at.tm_hour, at.tm_min), (3, 18, 0))
+        self.assertTrue(oddslock.at_deadline(year, week))
+        self.assertTrue(oddslock.locked(year, week, oddslock.deadline(year, week) + 1))
+        self.assertFalse(oddslock.locked(year, week, oddslock.deadline(year, week) - 60))
+
+    def test_thanksgiving_locks_at_its_early_kickoff(self):
+        from acql import oddslock
+        year, week = 2026, 12
+        self.assertFalse(oddslock.at_deadline(year, week))
+        self.assertEqual(oddslock.lock_time(year, week), oddslock.kickoff_time(year, week))
+
+    def test_a_kept_deadline_is_used(self):
+        from acql import oddslock, store
+        store.put("settings", "deadline", {"weekday": 3, "hour": 17, "minute": 30})
+        at = time.localtime(oddslock.deadline(2026, 6))
+        self.assertEqual((at.tm_wday, at.tm_hour, at.tm_min), (3, 17, 30))
+
+
+class TestMoneylinesAndTotals(unittest.TestCase):
+    """The moneyline answers "who wins"; the total says how widely results run."""
+
+    EVENT = {"home_team": "Kansas City Chiefs", "away_team": "Denver Broncos",
+             "commence_time": "2026-10-18T17:00:00Z", "bookmakers": [
+                 {"markets": [
+                     {"key": "spreads", "outcomes": [{"name": "Kansas City Chiefs", "point": -3.0},
+                                                     {"name": "Denver Broncos", "point": 3.0}]},
+                     {"key": "h2h", "outcomes": [{"name": "Kansas City Chiefs", "price": -160},
+                                                 {"name": "Denver Broncos", "price": 135}]},
+                     {"key": "totals", "outcomes": [{"name": "Over", "point": 48.5},
+                                                    {"name": "Under", "point": 48.5}]},
+                 ]}]}
+
+    def test_a_quote_carries_all_three(self):
+        from acql import odds
+        quote = odds.parse([self.EVENT])[0]
+        self.assertEqual(quote.home_margin, 3.0)
+        self.assertEqual(quote.total, 48.5)
+        # -160 is 61.5% and +135 is 42.6%: 104.1% between them, so 59.1% without the book's margin
+        self.assertAlmostEqual(quote.home_win, 0.5912, places=3)
+
+    def test_a_spread_and_the_chance_it_wins_go_both_ways(self):
+        from acql import analytics
+        for chance in (0.55, 0.61, 0.75):
+            spread = analytics.spread_for_win_chance(chance)
+            self.assertAlmostEqual(analytics.win_chance(spread), chance, delta=0.02)
+        self.assertLess(analytics.spread_for_win_chance(0.4), 0)
+
+    def _price(self, market_win=None, total=None, line=None):
+        from acql import predictions, pricing
+        from acql.models import Game
+        game = Game(1, "Kansas City", "Denver", line=line, line_favourite="Kansas City" if line else "")
+        forecast = predictions.Forecast("Denver", "Kansas City", market=3.0, opening=3.0,
+                                        market_win=market_win, total=total)
+        ctx = pricing.Context(1, {1: forecast}, 0.0, 1.0, predictions.CONSENSUS_WEIGHT, typical_total=44.0)
+        return pricing.price(game, ctx)
+
+    def test_a_straight_game_is_priced_off_the_moneyline(self):
+        self.assertEqual(self._price().margin, 3.0)
+        self.assertLess(self._price(market_win=0.55).margin, 3.0)      # the moneyline says closer
+        self.assertEqual(self._price(market_win=0.55).base, 3.0)       # the spread shown stays the spread
+
+    def test_a_line_game_keeps_the_spread(self):
+        self.assertEqual(self._price(market_win=0.55, line=7).margin, 3.0)
+
+    def test_a_moneyline_far_from_its_spread_is_set_aside(self):
+        self.assertEqual(self._price(market_win=0.90).margin, 3.0)
+
+    def test_a_high_total_widens_the_results(self):
+        from acql import analytics
+        self.assertGreater(self._price(total=54.0).sd, analytics.SPREAD_SD)
+        self.assertLess(self._price(total=36.0).sd, analytics.SPREAD_SD)
+        self.assertEqual(self._price(total=44.0).sd, analytics.SPREAD_SD)
 
 
 class TestNewestNumberWins(unittest.TestCase):

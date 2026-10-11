@@ -1,4 +1,9 @@
-"""The odds lock: each week's numbers stop moving when its first game kicks off.
+"""The odds lock: each week's numbers stop moving when the pool's cards are due.
+
+Cards are due at the commissioner's deadline - Thursday, 6:00 pm on this
+computer's clock - or at the week's first kickoff when that comes sooner
+(Thanksgiving, a Wednesday opener). A line that moves after that can't change
+a card already handed in, so it doesn't change Deadeye's either.
 
 From then on the week's betting lines, the chances built on them and
 Deadeye's card stay as they stood: no fetched line, newer predictions file or
@@ -22,6 +27,11 @@ import calendar
 import time
 from datetime import date, timedelta
 
+#: When the pool's cards are due, on this computer's own clock: the weekday
+#: (Monday is 0, so Thursday is 3), the hour and the minute. The commissioner's
+#: usual deadline; a different one can be kept in the database under
+#: settings / deadline as {"weekday": 3, "hour": 18, "minute": 0}.
+DEADLINE = (3, 18, 0)
 #: When a week's first game usually starts, Eastern time: Thursday night.
 USUAL_KICKOFF = (20, 15)
 #: Thanksgiving's first game, Eastern time.
@@ -83,14 +93,48 @@ def first_kickoff(year: int, week: int) -> float | None:
     return min(times) if times else None
 
 
-def lock_time(year: int, week: int) -> float:
-    """When a week's odds lock (seconds since 1970): its first kickoff."""
+def deadline_clock() -> tuple[int, int, int]:
+    """(weekday, hour, minute) the cards are due: the one kept, or the usual."""
+    try:
+        from . import store
+        kept = store.get("settings", "deadline", None)
+        if isinstance(kept, dict):
+            weekday = int(kept.get("weekday", DEADLINE[0]))
+            hour, minute = int(kept.get("hour", DEADLINE[1])), int(kept.get("minute", DEADLINE[2]))
+            if 0 <= weekday <= 6 and 0 <= hour <= 23 and 0 <= minute <= 59:
+                return weekday, hour, minute
+    except Exception:  # noqa: BLE001 - an unreadable setting is the usual deadline
+        pass
+    return DEADLINE
+
+
+def deadline(year: int, week: int) -> float:
+    """When a week's cards are due (seconds since 1970), on this computer's clock."""
+    from . import results
+    weekday, hour, minute = deadline_clock()
+    day = results.wednesday(year, week) + timedelta(days=(weekday - 2) % 7)   # Wednesday is 2
+    return time.mktime((day.year, day.month, day.day, hour, minute, 0, 0, 0, -1))
+
+
+def kickoff_time(year: int, week: int) -> float:
+    """The week's first kickoff: the scoreboard's, or the usual one until it is read."""
     found = first_kickoff(year, week)
     return found if found is not None else usual_kickoff(year, week)
 
 
+def at_deadline(year: int, week: int) -> bool:
+    """Whether the week locks at the pool's deadline rather than at a kickoff before it."""
+    return deadline(year, week) <= kickoff_time(year, week)
+
+
+def lock_time(year: int, week: int) -> float:
+    """When a week's odds lock (seconds since 1970): the pool's deadline, or
+    the first kickoff when that comes sooner."""
+    return min(deadline(year, week), kickoff_time(year, week))
+
+
 def locked(year: int, week: int, now: float | None = None) -> bool:
-    """Whether a week's first game has kicked off."""
+    """Whether a week's cards are in: past the deadline, or the first kickoff."""
     if not year or not week:
         return False
     return (time.time() if now is None else now) >= lock_time(year, week)
@@ -127,7 +171,7 @@ def note(season, week: int, now: float | None = None) -> str:
         return ""
     year = results.season_year(season, now)
     if locked(year, week, now):
-        return (f"Week {week}'s odds locked at the first kickoff ({when(year, week)}): the lines, "
+        return (f"Week {week}'s odds locked at {_what(year, week)} ({when(year, week)}): the lines, "
                 f"the chances and {MODEL_NAME}'s card stay as they were then.")
     return (f"Week {week}'s odds are locked - a game has a result in, so the lines, the "
             f"chances and {MODEL_NAME}'s card stay as they are.")
@@ -140,7 +184,8 @@ def badge(season, week: int, now: float | None = None) -> str:
         return ""
     year = results.season_year(season, now)
     if locked(year, week, now):
-        return f"\N{LOCK} odds locked at kickoff, {when(year, week)}"
+        return (f"\N{LOCK} odds locked at {'the deadline' if at_deadline(year, week) else 'kickoff'}, "
+                f"{when(year, week)}")
     return "\N{LOCK} odds locked - a game has a result in"
 
 
@@ -150,10 +195,27 @@ def coming(season, week: int, now: float | None = None) -> str:
     if not week or locked_for(season, week, now):
         return ""
     year = results.season_year(season, now)
+    left = _left(lock_time(year, week) - (time.time() if now is None else now))
+    if at_deadline(year, week):
+        return f"Cards are due {when(year, week)} ({left}) - the odds lock then."
     if first_kickoff(year, week) is not None:
         usual = ""
     elif results.unreachable_since(now) is not None:
         usual = " (the usual time - the NFL's schedule can't be reached right now, so it can't be checked)"
     else:
         usual = " (the usual time - the schedule isn't in yet)"
-    return f"Odds lock at the first kickoff, {when(year, week)}{usual}."
+    return f"Odds lock at the first kickoff, {when(year, week)}{usual} ({left})."
+
+
+def _what(year: int, week: int) -> str:
+    return "the pool's deadline" if at_deadline(year, week) else "the first kickoff"
+
+
+def _left(seconds: float) -> str:
+    """"in 2 days", "in 3 h 20 min", "in 12 min"."""
+    minutes = max(0, int(seconds // 60))
+    if minutes >= 2 * 1440:
+        return f"in {minutes // 1440} days"
+    if minutes >= 60:
+        return f"in {minutes // 60} h {minutes % 60:02d} min"
+    return f"in {minutes} min"

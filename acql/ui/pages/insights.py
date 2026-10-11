@@ -348,17 +348,18 @@ class InsightsPage(Page):
             self.habits_note.setText("")
             return
         learned = crowd.model(season)
-        weeks = learned.weeks
+        weeks = sorted({o.week for o in obs})
         self.habits_card.set_title(
             f"How this pool picks - learned from {len(obs)} games over "
             f"{len(weeks)} week{'s' if len(weeks) != 1 else ''}"
+            + (f", and {learned.older} from older seasons' sheets" if learned.older else "")
         )
         lines = learned.habits()
         self.habits_label.setText(
             "<br>".join(f"\u2022 {line}" for line in lines) if lines
             else "Nothing stands out yet - this pool picks like a typical one."
         )
-        tested = crowd.check(obs)
+        tested = crowd.check(obs, crowd.older_sheets(season))
         using = learned.games >= crowd.MINIMUM_GAMES
         note = (
             "The win-the-week card plans against these habits"

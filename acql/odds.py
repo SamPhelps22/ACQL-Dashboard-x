@@ -6,14 +6,18 @@ sixteen spreads a week is a chore, and a line typed on Tuesday is stale by
 Sunday: the market moves on injury news, and a quarterback ruled out on
 Friday can move a game four or five points.
 
-This fetches the current NFL spreads from The Odds API (the-odds-api.com),
-which has a free plan of 500 requests a month - one press of "Update lines"
-is one request, so that is several a day all season.
+This fetches the current NFL lines from The Odds API (the-odds-api.com) -
+the spread, the moneyline and the total for every game. Its free plan is 500
+requests a month and each of those three counts as one, so a press of
+"Update lines" is three: about five a day all season.
 
 What is kept, per week, in the app's database (store.py):
 
     opening    the first number seen for each game
     latest     the most recent one, the median over every bookmaker quoted
+    win        the home side's chance of winning outright, from the moneylines
+               (each book's two prices with its margin taken out, then the median)
+    total      the points the books expect the two teams to score between them
     history    each update's numbers, so a card can be compared with the
                lines it was made on
 
@@ -106,6 +110,8 @@ class Quote:
     kickoff: str         # ISO time, UTC
     home_margin: float   # median over the books, home team's side
     books: int
+    home_win: float | None = None    # the moneylines' chance the home side wins outright
+    total: float | None = None       # the over/under
 
     @property
     def key(self) -> str:
@@ -137,21 +143,42 @@ def parse(events: object) -> list[Quote]:
         home, away = team_code(event.get("home_team")), team_code(event.get("away_team"))
         if not home or not away:
             continue
-        margins = []
+        margins, wins, totals = [], [], []
         for book in event.get("bookmakers") or []:
             for market in (book or {}).get("markets") or []:
-                if (market or {}).get("key") != "spreads":
-                    continue
-                for outcome in market.get("outcomes") or []:
-                    point = outcome.get("point")
-                    if team_code(outcome.get("name")) == home and isinstance(point, (int, float)):
-                        margins.append(-float(point))
+                kind, outcomes = (market or {}).get("key"), (market or {}).get("outcomes") or []
+                if kind == "spreads":
+                    for outcome in outcomes:
+                        point = outcome.get("point")
+                        if team_code(outcome.get("name")) == home and isinstance(point, (int, float)):
+                            margins.append(-float(point))
+                elif kind == "h2h":
+                    # a book's two prices add up to more than 100%: its margin
+                    # comes out before its opinion is counted
+                    implied = {team_code(o.get("name")): _implied(o.get("price")) for o in outcomes}
+                    ours, theirs = implied.get(home), implied.get(away)
+                    if ours and theirs:
+                        wins.append(ours / (ours + theirs))
+                elif kind == "totals":
+                    for outcome in outcomes:
+                        point = outcome.get("point")
+                        if str(outcome.get("name", "")).casefold() == "over" and isinstance(point, (int, float)):
+                            totals.append(float(point))
         if margins:
             out.append(Quote(
                 away=away, home=home, kickoff=str(event.get("commence_time", "")),
                 home_margin=round(statistics.median(margins), 2), books=len(margins),
+                home_win=round(statistics.median(wins), 4) if wins else None,
+                total=round(statistics.median(totals), 1) if totals else None,
             ))
     return out
+
+
+def _implied(price: object) -> float | None:
+    """The chance an American price implies: -150 is 60%, +130 is 43.5%."""
+    if not isinstance(price, (int, float)) or not price:
+        return None
+    return -price / (-price + 100) if price < 0 else 100 / (price + 100)
 
 
 def fetch(key: str, *, opener=None) -> tuple[list[Quote], int | None]:
@@ -159,7 +186,7 @@ def fetch(key: str, *, opener=None) -> tuple[list[Quote], int | None]:
     if not key:
         raise OddsError("No Odds API key yet - add one under the ⚙ button.")
     query = urllib.parse.urlencode({
-        "apiKey": key, "regions": "us", "markets": "spreads",
+        "apiKey": key, "regions": "us", "markets": "spreads,h2h,totals",
         "oddsFormat": "american", "dateFormat": "iso",
     })
     request = urllib.request.Request(f"{API_URL}?{query}", headers={"User-Agent": "ACQL-Dashboard"})
@@ -266,6 +293,10 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
         entry["opening"].setdefault(key, q.home_margin)
         entry["latest"][key] = q.home_margin
         lines[key] = q.home_margin
+        if q.home_win is not None:
+            entry.setdefault("win", {})[key] = q.home_win
+        if q.total is not None:
+            entry.setdefault("total", {})[key] = q.total
         away, home = key.split("@")
         if before is not None and abs(before - q.home_margin) >= 0.5:
             result.moved.append((display_matchup(away, home), float(before), q.home_margin))
@@ -291,6 +322,8 @@ class Stored:
     opening: dict[str, float]
     latest: dict[str, float]
     history: list[tuple[float, dict[str, float]]]
+    win: dict[str, float] = field(default_factory=dict)      # home side's chance to win outright
+    total: dict[str, float] = field(default_factory=dict)    # the over/under
 
 
 def stored(week: int) -> Stored | None:
@@ -326,7 +359,11 @@ def stored(week: int) -> Stored | None:
             opening.pop(key, None)
     if not latest:
         return None
-    return Stored(at=float(entry.get("at", 0)), opening=opening, latest=latest, history=history)
+    return Stored(
+        at=float(entry.get("at", 0)), opening=opening, latest=latest, history=history,
+        win={k: float(v) for k, v in (entry.get("win") or {}).items() if k in latest},
+        total={k: float(v) for k, v in (entry.get("total") or {}).items() if k in latest},
+    )
 
 
 def _entry_lines(entry: dict, key: str) -> list[tuple[float, float]]:
@@ -374,6 +411,9 @@ def overlay(week: int, forecasts: list, imported: float) -> list:
                 f.market if f.market is not None else found.opening.get(key)
             )
             f = replace(f, market=found.latest[key], opening=opening)
+        if key in found.latest:
+            # the moneyline and the total only ever come from here
+            f = replace(f, market_win=found.win.get(key), total=found.total.get(key))
         out.append(f)
     for key, margin in found.latest.items():
         if key in seen:
@@ -382,6 +422,7 @@ def overlay(week: int, forecasts: list, imported: float) -> list:
         out.append(Forecast(
             road=DISPLAY.get(away, away), home=DISPLAY.get(home, home),
             market=margin, opening=found.opening.get(key, margin),
+            market_win=found.win.get(key), total=found.total.get(key),
         ))
     return out
 

@@ -45,7 +45,11 @@ EFFECTIVE_COACHES = 12
 #: Larger is more sceptical. Team effects are the most sceptical: a team
 #: appears once a week, and one week tells you little about it.
 PENALTY = {"chalk": 3.0, "spread": 3.0, "home": 3.0, "gap": 3.0, "last": 3.0}
-TEAM_PENALTY = 6.0
+#: Was 6: with five weeks of sheets that let the team leanings chase noise,
+#: and the model predicted a week it hadn't seen worse than no model at all
+#: (10.1% off a game against 9.4%). At 24, with the older seasons' sheets
+#: read too, it is level overall (9.5%) and ahead on line games (7.3% v 8.2%).
+TEAM_PENALTY = 24.0
 FEATURES = ("chalk", "spread", "home", "gap", "last")
 
 
@@ -97,6 +101,7 @@ class CrowdModel:
     teams: dict[str, float] = field(default_factory=dict)   # team code -> lean
     games: int = 0
     weeks: list[int] = field(default_factory=list)
+    older: int = 0          # how many of those games came off older seasons' sheets
 
     def share_on_favourite(self, sit: Situation) -> float:
         z = _logit(usual_share(sit))
@@ -159,6 +164,12 @@ class Observation:
     on_favourite: float       # share of the pool that took the favourite
     counted: int
     week: int
+    #: How much of a sheet's evidence this counts for: 1 for this season's,
+    #: less for an older season's (PAST_WEIGHT).
+    weight: float = 1.0
+    #: Whether it says anything about particular teams. An older season's
+    #: doesn't: who the pool backed two years ago was about those teams then.
+    teams: bool = True
 
 
 def _won_last(season: Season, week: int) -> dict[str, float]:
@@ -225,12 +236,98 @@ def observations(season: Season, market=None, sheets=None) -> list[Observation]:
     return out
 
 
+# ---- older seasons' sheets ------------------------------------------------------
+#: An older season's sheet counts for this much of one from this season. Its
+#: betting lines aren't kept, so a rating model stands in for them, and a
+#: pool's habits drift as coaches come and go.
+PAST_WEIGHT = 0.5
+#: A stored sheet is an older week's when this share of its games are that week's.
+PAST_MATCH = 0.8
+#: An older sheet with fewer coaches than this was read before the pool had picked.
+PAST_COACHES = 20
+
+_PAST: dict[tuple, list[Observation]] = {}
+
+
+def _rated_weeks() -> dict[tuple[int, int], list]:
+    """(season, week) -> its games, each priced by the backtest's rating model
+    from the games before it - the stand-in for a line nobody kept."""
+    from . import backtest
+    rated, _ = backtest.rate(backtest.load_games())
+    out: dict[tuple[int, int], list] = {}
+    for game in rated:
+        out.setdefault((game.season, game.week), []).append(game)
+    return out
+
+
+def past_observations(this_year: int = 0) -> list[Observation]:
+    """What the stored sheets of other seasons show about how this pool picks.
+
+    A pick sheet says "week 8" and nothing about the year, so each stored
+    sheet is matched to the season and week whose games it lists. Sheets of
+    `this_year` are left out - they are read with their real lines
+    (observations) - and so is any sheet taken before most of the pool had
+    picked. The pool's own line comes off the sheet's note; the market's
+    number is the rating model's.
+    """
+    from . import lines
+    key = (picks._store_stamp(), this_year)
+    if key in _PAST:
+        return _PAST[key]
+    try:
+        weeks = _rated_weeks()
+    except Exception:  # noqa: BLE001 - no scores file: nothing older to learn from
+        return []
+    pairs = {where: {frozenset((predictions.team_code(g.home), predictions.team_code(g.away))): g
+                     for g in games} for where, games in weeks.items()}
+    out: list[Observation] = []
+    for sheet in picks.load_all(every_season=True).values():
+        if len(sheet.coaches) < PAST_COACHES or not sheet.games:
+            continue
+        mine = [frozenset((predictions.team_code(g.home), predictions.team_code(g.away))) for g in sheet.games]
+        where, hits = max(((w, sum(1 for m in mine if m in found)) for w, found in pairs.items()),
+                          key=lambda item: item[1], default=(None, 0))
+        if where is None or hits < PAST_MATCH * len(mine) or where[0] == this_year:
+            continue
+        season, week = where
+        last = {}
+        for g in weeks.get((season, week - 1), []):
+            if g.margin:
+                last[predictions.team_code(g.home)] = 1.0 if g.margin > 0 else 0.0
+                last[predictions.team_code(g.away)] = 0.0 if g.margin > 0 else 1.0
+        for row, pair in zip(sheet.games, mine):
+            hist = pairs[where].get(pair)
+            if hist is None or row.counted < 5:
+                continue
+            home_code = predictions.team_code(row.home)
+            margin = hist.rated if predictions.team_code(hist.home) == home_code else -hist.rated
+            found, _problem = lines.line_from_note(row.note, row.away, row.home)
+            if found is not None:
+                fav_home = predictions.team_code(found[0]) == home_code
+                line = float(found[1])
+            else:
+                fav_home, line = margin >= 0, None
+            favourite, underdog = (row.home, row.away) if fav_home else (row.away, row.home)
+            sit = Situation(
+                favourite=favourite, underdog=underdog,
+                points=margin if fav_home else -margin, fav_home=fav_home, line=line,
+                fav_won_last=last.get(predictions.team_code(favourite)),
+                dog_won_last=last.get(predictions.team_code(underdog)),
+            )
+            share = row.share_on(favourite)
+            out.append(Observation(sit, share or 0.0, row.counted, season * 100 + week,
+                                   weight=PAST_WEIGHT, teams=False))
+    _PAST.clear()
+    _PAST[key] = out
+    return out
+
+
 def fit(obs: list[Observation]) -> CrowdModel:
     """The pool's habits, from what it actually did."""
     if not obs:
         return CrowdModel()
     teams = sorted({
-        c for o in obs
+        c for o in obs if o.teams
         for c in (predictions.team_code(o.situation.favourite),
                   predictions.team_code(o.situation.underdog)) if c
     })
@@ -245,13 +342,13 @@ def fit(obs: list[Observation]) -> CrowdModel:
             X[r, index[name]] = value
         fav = predictions.team_code(o.situation.favourite)
         dog = predictions.team_code(o.situation.underdog)
-        if fav:
+        if fav and o.teams:
             X[r, index[f"team:{fav}"]] += 1.0
-        if dog:
+        if dog and o.teams:
             X[r, index[f"team:{dog}"]] -= 1.0
         offset[r] = _logit(usual_share(o.situation))
         y[r] = o.on_favourite
-        n[r] = min(o.counted, EFFECTIVE_COACHES)
+        n[r] = min(o.counted, EFFECTIVE_COACHES) * o.weight
     penalty = np.diag([PENALTY.get(c, TEAM_PENALTY) for c in cols])
 
     beta = np.zeros(len(cols))
@@ -271,6 +368,7 @@ def fit(obs: list[Observation]) -> CrowdModel:
         teams={c[5:]: float(beta[index[c]]) for c in cols if c.startswith("team:")},
         games=len(obs),
         weeks=sorted({o.week for o in obs}),
+        older=sum(1 for o in obs if o.week >= 1000),
     )
 
 
@@ -281,15 +379,26 @@ _CACHE: dict[tuple, CrowdModel] = {}
 def model(season: Season) -> CrowdModel:
     """The pool's habits as of the sheets stored now; remembered per season."""
     sheets = picks.load_all()
-    from . import odds
+    from . import odds, results
     key = (id(season), tuple(sorted(sheets)), picks._store_stamp(),
            predictions.store_stamp(), odds.stamp())
     found = _CACHE.get(key)
     if found is None:
         _CACHE.clear()
-        found = fit(observations(season, sheets=sheets))
+        # this season's sheets against their real lines, and what older
+        # seasons' sheets show about the pool's habits (not its teams)
+        found = fit(observations(season, sheets=sheets) + older_sheets(season))
         _CACHE[key] = found
     return found
+
+
+def older_sheets(season: Season) -> list[Observation]:
+    """Older seasons' stored sheets, as evidence for this season's model."""
+    from . import results
+    try:
+        return past_observations(results.season_year(season))
+    except Exception:  # noqa: BLE001 - the model stands on this season's sheets alone
+        return []
 
 
 #: Games of evidence before the learned habits replace the usual curve.
@@ -309,19 +418,21 @@ def guess(season: Season, week: int, game: Game, home_margin: float, pick: str) 
     return learned.share_on(situation(season, week, game, home_margin), pick)
 
 
-def check(obs: list[Observation]) -> dict[str, float] | None:
+def check(obs: list[Observation], extra: list[Observation] | None = None) -> dict[str, float] | None:
     """How well it predicts a week it has not seen, against the usual curve.
 
-    Each week is predicted from the others only. Returns the average miss,
-    in share of the pool, for both - the honest measure of whether learning
-    the pool's habits beats assuming a typical pool.
+    Each of this season's weeks is predicted from the others only - and from
+    `extra`, the older seasons' sheets, which are never the week being
+    guessed. Returns the average miss, in share of the pool, for both - the
+    honest measure of whether learning the pool's habits beats assuming a
+    typical pool.
     """
     weeks = sorted({o.week for o in obs})
     if len(weeks) < 2:
         return None
     learned, usual, count = 0.0, 0.0, 0
     for held in weeks:
-        m = fit([o for o in obs if o.week != held])
+        m = fit([o for o in obs if o.week != held] + list(extra or []))
         for o in obs:
             if o.week != held:
                 continue

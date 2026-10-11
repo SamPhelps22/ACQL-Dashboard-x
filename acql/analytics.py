@@ -493,6 +493,22 @@ def win_chance(spread: float) -> float:
     return cover_chance(spread, 1)
 
 
+def spread_for_win_chance(chance: float) -> float:
+    """The spread at which a team simply wins this often - win_chance, the
+    other way round. Negative for an underdog."""
+    chance = min(max(float(chance), 0.03), 0.97)
+    if chance < 0.5:
+        return -spread_for_win_chance(1 - chance)
+    low, high = 0.0, 30.0
+    for _ in range(30):
+        mid = (low + high) / 2
+        if win_chance(mid) < chance:
+            low = mid
+        else:
+            high = mid
+    return round((low + high) / 2, 1)
+
+
 def line_threshold(spread: float, most: int = 30, sd: float = SPREAD_SD) -> int:
     """The biggest whole-number pool line the favourite is still worth taking at.
 
