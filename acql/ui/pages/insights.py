@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import statistics
+from collections import Counter
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
-from ... import analytics, crowd, luck, picks, predictions
+from ... import analytics, crowd, luck, patterns, picks, predictions
+from ...predictions import display_team
 
-from ..charts import DivergingBarChart, HeatmapChart, LineChart, ScatterChart
+from ..charts import BarChart, DivergingBarChart, HeatmapChart, LineChart, ScatterChart
 from ..widgets import Card, StatTile, section, tile_grid
 from .base import Page
 
@@ -25,6 +27,11 @@ CROWD_QUADRANTS = (
     "Contrarian and winning", "Chalky and winning",
     "Contrarian and losing", "Chalky and losing",
 )
+CHAOS_TITLE = "Chaos rating - how wild each week was against the lines"
+MOVE_TITLE = "Who beat the line move"
+SPOTS_TITLE = "Blind spots across the pool"
+#: A team needs this many of the pool's picks before its record is quoted.
+TEAM_PICKS = 20
 QUADRANTS = ("Strong and steady", "Strong but streaky", "Steady, but short", "Feast or famine")
 
 
@@ -101,6 +108,42 @@ class InsightsPage(Page):
         self.luck_card.add(self.luck_note)
         self.layout_.addWidget(self.luck_card)
 
+        # How surprising each week was, and the pool's season weighed by it.
+        self.chaos_card = Card(CHAOS_TITLE)
+        self.chaos_chart = BarChart(self.palette, height=3.0)
+        self.chaos_card.add(self.chaos_chart, 1)
+        self.chaos_note = QLabel("")
+        self.chaos_note.setObjectName("Muted")
+        self.chaos_note.setWordWrap(True)
+        self.chaos_card.add(self.chaos_note)
+        self.layout_.addWidget(self.chaos_card)
+
+        # Picks on the side the market moved toward before kickoff: skill
+        # that shows before a ball is thrown.
+        self.move_card = Card(MOVE_TITLE)
+        self.move_chart = DivergingBarChart(self.palette, height=4.4)
+        self.move_card.add(self.move_chart, 1)
+        self.move_note = QLabel("")
+        self.move_note.setObjectName("Muted")
+        self.move_note.setWordWrap(True)
+        self.move_card.add(self.move_note)
+        self.layout_.addWidget(self.move_card)
+
+        self.spots_card = Card(SPOTS_TITLE)
+        self.spots_label = QLabel("")
+        self.spots_label.setWordWrap(True)
+        self.spots_label.setTextFormat(Qt.TextFormat.RichText)
+        self.spots_card.add(self.spots_label)
+        self.spots_note = QLabel(
+            "Each coach's own blind spots and strong suits are on the Player page. "
+            "Every split there is measured against how the rest of the pool did in "
+            "the same games, so a hard week or a trap line counts against nobody."
+        )
+        self.spots_note.setObjectName("Muted")
+        self.spots_note.setWordWrap(True)
+        self.spots_card.add(self.spots_note)
+        self.layout_.addWidget(self.spots_card)
+
         self.h2h_card = Card("Head to head")
         self.h2h_chart = HeatmapChart(self.palette, height=6.0)
         self.h2h_card.add(self.h2h_chart, 1)
@@ -116,7 +159,7 @@ class InsightsPage(Page):
 
     def restyle(self) -> None:
         for chart in (self.form_chart, self.weeks_chart, self.crowd_chart,
-                      self.h2h_chart, self.luck_chart):
+                      self.h2h_chart, self.luck_chart, self.chaos_chart, self.move_chart):
             chart.set_palette(self.palette)
         self.refresh_now()
 
@@ -137,6 +180,120 @@ class InsightsPage(Page):
         self._update_crowd_chart(season)
         self._update_habits(season)
         self._update_luck(season)
+        report = patterns.report(season)
+        self._update_chaos(report)
+        self._update_moves(report)
+        self._update_spots(report)
+
+    # ---- chaos, line moves, blind spots (patterns.py) --------------------------
+    def _update_chaos(self, report: patterns.Report) -> None:
+        weeks = report.chaos
+        if not weeks:
+            self.chaos_card.set_title(CHAOS_TITLE)
+            self.chaos_chart.empty("Appears once a week is final and has its betting lines")
+            self.chaos_note.setText("")
+            return
+        ramp = self.palette.sequential
+        self.chaos_chart.plot(
+            [f"Week {c.week}  \u00b7  {c.label}" for c in weeks],
+            [c.rating for c in weeks],
+            xlabel="Chaos rating: 0 every favourite came in, 10 a week like it comes once in years",
+            colors=[ramp[min(len(ramp) - 1, int(c.rating / 10 * len(ramp)))] for c in weeks],
+            value_format="{:.1f}",
+            tooltips=[
+                f"Week {c.week}: {c.rating:.1f} - {c.label}\n"
+                f"{_plural(c.upsets, 'upset')}, the lines expected {c.expected:.1f}\n"
+                + (f"Biggest upset: {c.biggest_text}\n" if c.biggest else "")
+                + f"The pool averaged {c.pool_average:.1f}"
+                for c in weeks
+            ],
+        )
+        wild = max(weeks, key=lambda c: (c.rating, c.week))
+        text = (
+            f"Wildest so far: week {wild.week}, {wild.rating:.1f} - {_plural(wild.upsets, 'upset')} "
+            f"where the lines expected {wild.expected:.1f}"
+        )
+        if wild.biggest:
+            text += f"; the biggest, {wild.biggest_text}"
+        text += f". The pool averaged {wild.pool_average:.1f} that week."
+        climbers = sorted(report.adjusted, key=lambda a: (a.rank - a.actual_rank, a.name))
+        if climbers and climbers[0].actual_rank - climbers[0].rank >= 2:
+            up = climbers[0]
+            text += (
+                f" With every week weighed by how hard it was, {up.name} climbs most: "
+                f"{self.ordinal(up.actual_rank)} as scored, {self.ordinal(up.rank)} adjusted."
+            )
+        storm = [a for a in report.adjusted if a.wild is not None]
+        if storm:
+            best = max(storm, key=lambda a: (a.wild, a.name))
+            text += f" Best in wild weeks: {best.name}, {best.wild:+.1f} a week against the pool."
+        self.chaos_card.set_title(f"{CHAOS_TITLE} - {_plural(len(weeks), 'week')} rated")
+        self.chaos_note.setText(text)
+
+    def _update_moves(self, report: patterns.Report) -> None:
+        moves = report.moves
+        if not moves:
+            self.move_card.set_title(MOVE_TITLE)
+            self.move_chart.empty("Appears once a graded week has a predictions file - it holds the opening lines")
+            self.move_note.setText("")
+            return
+        shown = moves if len(moves) <= 2 * LUCK_EACH_END else moves[:LUCK_EACH_END] + moves[-LUCK_EACH_END:]
+        most = max(m.moved for m in moves)
+        self.move_card.set_title(
+            f"{MOVE_TITLE} - {_plural(most, 'game')} where the line moved {patterns.MIN_MOVE:g}+ points"
+            + ("" if len(shown) == len(moves) else f" (best and worst {LUCK_EACH_END})")
+        )
+        self.move_chart.plot(
+            [m.name for m in shown],
+            [m.gained for m in shown],
+            xlabel="Wins of value gained between the opening line and kickoff",
+            value_format=lambda v: f"{v:+.2f}",
+            tooltips=[
+                f"{m.name}\nOn the side the line moved toward {m.with_move} of {m.moved} times\n"
+                f"{m.came_in} of those came in\n"
+                f"{m.points:+.1f} points of movement toward their picks"
+                for m in shown
+            ],
+        )
+        steam = report.steam
+        text = (
+            "Between the opening line and kickoff the market moves on injury news and money. "
+            "Picks that keep landing on the side it moved toward read the games the way the "
+            "market came to - decided before a ball is thrown, so it is skill, not luck. "
+            "Each bar is the win chance its picks gained between the two lines, added up."
+        )
+        if steam.games:
+            text += (
+                f" When a line moved {patterns.STEAM_MOVE:g}+ points, the side it moved to came in "
+                f"{steam.came_in} of {steam.games} times."
+            )
+        self.move_note.setText(text)
+
+    def _update_spots(self, report: patterns.Report) -> None:
+        teams = [t for t in report.teams if t.picks >= TEAM_PICKS]
+        if not report.spots or not teams:
+            self.spots_label.setText("Appears once a week has results and its picks.")
+            return
+        worst, best = teams[:3], teams[::-1][:3]
+        shared_blind = Counter(s.label for b in report.spots.values() for s in b.worst).most_common(1)
+        shared_strong = Counter(s.label for b in report.spots.values() for s in b.best).most_common(1)
+        rows = [
+            "<b>Teams the pool reads worst:</b> " + ", ".join(f"{t.label} {t.record}" for t in worst),
+            "<b>...and best:</b> " + ", ".join(f"{t.label} {t.record}" for t in best),
+        ]
+        total = len(report.spots)
+        if shared_blind:
+            label, count = shared_blind[0]
+            rows.append(f"<b>The most shared blind spot:</b> {label[:1].lower()}{label[1:]} - {count} of {total} coaches")
+        if shared_strong:
+            label, count = shared_strong[0]
+            rows.append(f"<b>The most shared strong suit:</b> {label[:1].lower()}{label[1:]} - {count} of {total} coaches")
+        self.spots_label.setText("<br>".join(f"\u2022 {row}" for row in rows))
+
+    @staticmethod
+    def ordinal(n: int) -> str:
+        suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        return f"{n}{suffix}"
 
     def _update_luck(self, season) -> None:
         lines = luck.season_luck(season)

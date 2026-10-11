@@ -737,6 +737,21 @@ def _with_odds(week: int, games: list[Forecast], imported: object) -> list[Forec
         return games
 
 
+def market_time(week: int) -> float:
+    """When the newest market number for a week arrived: the predictions file
+    read in, or the latest fetched line, whichever is later (0 if neither)."""
+    entry = _read_store().get(str(week))
+    when = float(entry.get("imported") or 0.0) if isinstance(entry, dict) else 0.0
+    try:
+        from . import odds
+        found = odds.stored(week)
+        if found is not None:
+            when = max(when, float(found.at or 0.0))
+    except Exception:  # noqa: BLE001 - a broken odds store leaves the file's time
+        pass
+    return when
+
+
 def load(week: int) -> tuple[list[Forecast], str]:
     """(forecasts, where they came from) for a week, or ([], "").
 

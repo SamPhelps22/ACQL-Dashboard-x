@@ -10,6 +10,7 @@ the biggest pool line the favourite would still be worth backing at.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -215,6 +216,7 @@ class NextWeekPage(Page):
     def build(self) -> None:
         self._games: list[Game] = []
         self._typed: dict[int, bool] = {}
+        self._typed_at: dict[int, float | None] = {}
         self._typical = 0.0
         self._weight = predictions.CONSENSUS_WEIGHT
         self._fitted: predictions.WeightFit | None = None
@@ -484,6 +486,9 @@ class NextWeekPage(Page):
         # supplied. A typed number is a statement about the line and is what
         # the odds are then worked out from.
         self._typed = {index: True for index in spreads}
+        # When each was typed: one older than the market's newest number
+        # gives way to it (pricing.price).
+        self._typed_at = {index: s.at for index, s in spreads.items()}
         self.paste_note.hide()
 
         dogs, decided = analytics.underdog_record(season)
@@ -765,6 +770,7 @@ class NextWeekPage(Page):
             self._week_number, game, lines.Spread(side, points) if side else None
         )
         self._typed[game.index] = side is not None
+        self._typed_at[game.index] = time.time()
         self._render_row(row)
         self._update_tiles()
         self._show_big_losers()
@@ -786,7 +792,7 @@ class NextWeekPage(Page):
         if side is None:
             return None
         game = self._games[row]
-        spread = lines.Spread(side, points)
+        spread = lines.Spread(side, points, getattr(self, "_typed_at", {}).get(game.index))
         return pricing.price(game, self._ctx, spread, typed=bool(self._typed.get(game.index)))
 
     def _margin(self, row: int) -> tuple[float | None, float, str, float]:
@@ -1362,6 +1368,8 @@ class NextWeekPage(Page):
                     self._week_number, game,
                     lines.Spread(spread.favourite, abs(spread.points)),
                 )
+                self._typed[game.index] = True
+                self._typed_at[game.index] = time.time()
         finally:
             self._loading = False
         for row in range(len(self._games)):
@@ -1376,6 +1384,7 @@ class NextWeekPage(Page):
         if self._locked_now():
             return                # the week's odds are locked
         self._typed = {}
+        self._typed_at = {}
         self._loading = True
         try:
             for row, game in enumerate(self._games):

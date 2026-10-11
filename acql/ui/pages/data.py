@@ -290,13 +290,15 @@ class DataPage(Page):
             self.app_label.setText(f"<b>ACQL Dashboard {VERSION}</b> \u00b7 {exc}")
             return
         words = {
-            "forecasts": "weeks of predictions", "picks": "pick sheets",
-            "graded": "graded copies", "results": "weeks of results",
-            "spreads": "weeks of typed spreads", "cards": "saved cards",
-            "odds": "fetched-lines records", "settings": "settings",
+            "forecasts": ("week of predictions", "weeks of predictions"),
+            "picks": ("pick sheet", "pick sheets"), "graded": ("graded copy", "graded copies"),
+            "results": ("week of results", "weeks of results"),
+            "spreads": ("week of typed spreads", "weeks of typed spreads"),
+            "cards": ("set of saved cards", "sets of saved cards"),
+            "odds": ("fetched-lines record", "fetched-lines records"), "settings": ("setting", "settings"),
         }
         held = ", ".join(
-            f"{counts[k]} {words[k]}" for k in words if counts.get(k)
+            f"{counts[k]} {words[k][0] if counts[k] == 1 else words[k][1]}" for k in words if counts.get(k)
         ) or "nothing yet"
         backups = sorted(store.backup_folder().glob("acql-????-??-??.db"))
         latest = backups[-1].stem.replace("acql-", "") if backups else "none yet"

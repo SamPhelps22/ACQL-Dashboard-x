@@ -112,6 +112,15 @@ class Quote:
         return f"{self.away}@{self.home}"
 
 
+def _moment(iso: object) -> float | None:
+    """Seconds since 1970 from the API's ISO time, or None if it isn't one."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
 def parse(events: object) -> list[Quote]:
     """The API's reply as one Quote per game.
 
@@ -230,6 +239,10 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
 
     A pair that meets twice in a season (division games) is matched to the
     earliest kickoff on the board, which is the one this week.
+
+    A game already under way is left out: the API quotes it live, and a
+    line taken from the score at half-time (Green Bay -17.5 while trailing)
+    is not a line anyone picked against.
     """
     from .predictions import display_matchup
 
@@ -239,6 +252,9 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
     for q in quotes:
         if q.key in wanted and (q.key not in best or q.kickoff < best[q.key].kickoff):
             best[q.key] = q
+    started = {k for k, q in best.items() if (_moment(q.kickoff) or now + 1) <= now}
+    for key in started:
+        del best[key]
 
     store = _read()
     weeks = store.setdefault("weeks", {})
@@ -254,7 +270,7 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
         if before is not None and abs(before - q.home_margin) >= 0.5:
             result.moved.append((display_matchup(away, home), float(before), q.home_margin))
     result.matched = len(best)
-    result.missing = [display_matchup(*k.split("@")) for k in sorted(wanted - set(best))]
+    result.missing = [display_matchup(*k.split("@")) for k in sorted(wanted - set(best) - started)]
     if lines:
         entry["at"] = now
         entry.setdefault("kickoff", {}).update({k: q.kickoff for k, q in best.items()})
@@ -278,19 +294,48 @@ class Stored:
 
 
 def stored(week: int) -> Stored | None:
+    """The week's lines as kept - without any taken after a game kicked off.
+
+    Before `update` left started games out, an update pressed during
+    Thursday night's game kept that game's live line as both its opening
+    and its latest. Those are dropped here, so a game's latest is the last
+    line seen before its kickoff, and a game only ever seen live has none
+    (the predictions file's own number stands).
+    """
     entry = (_read().get("weeks") or {}).get(str(week))
     if not isinstance(entry, dict) or not entry.get("latest"):
         return None
+    kickoffs = {k: _moment(v) for k, v in (entry.get("kickoff") or {}).items()}
+    pregame = lambda key, at: kickoffs.get(key) is None or at < kickoffs[key]
     history = [
-        (float(h.get("at", 0)), {k: float(v) for k, v in (h.get("lines") or {}).items()})
+        (at, {k: float(v) for k, v in (h.get("lines") or {}).items() if pregame(k, at)})
         for h in entry.get("history") or [] if isinstance(h, dict)
+        for at in [float(h.get("at", 0))]
     ]
-    return Stored(
-        at=float(entry.get("at", 0)),
-        opening={k: float(v) for k, v in entry.get("opening", {}).items()},
-        latest={k: float(v) for k, v in entry.get("latest", {}).items()},
-        history=history,
-    )
+    opening = {k: float(v) for k, v in entry.get("opening", {}).items()}
+    latest = {k: float(v) for k, v in entry.get("latest", {}).items()}
+    for key, kickoff in kickoffs.items():
+        seen = [at for at, _ in _entry_lines(entry, key)]
+        if kickoff is None or not seen or max(seen) < kickoff:
+            continue                    # never fetched after it started
+        before = [lines[key] for _, lines in history if key in lines]
+        if before:
+            latest[key] = before[-1]
+        else:
+            latest.pop(key, None)
+            opening.pop(key, None)
+    if not latest:
+        return None
+    return Stored(at=float(entry.get("at", 0)), opening=opening, latest=latest, history=history)
+
+
+def _entry_lines(entry: dict, key: str) -> list[tuple[float, float]]:
+    """(when, line) for every update of the week that quoted this game."""
+    return [
+        (float(h.get("at", 0)), float(h["lines"][key]))
+        for h in entry.get("history") or []
+        if isinstance(h, dict) and key in (h.get("lines") or {})
+    ]
 
 
 def lines_at(week: int, when: float) -> dict[str, float]:

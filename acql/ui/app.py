@@ -143,7 +143,7 @@ def failure_summary(trace: str) -> str:
     return lines_[-1].strip() if lines_ else "Unknown error"
 
 
-from .workers import Loader, ResultsCheck  # noqa: E402 - here so tests can stand them in
+from .workers import Loader, ResultsCheck, TimelineFetch  # noqa: E402 - here so tests can stand them in
 from .palette import Command, CommandPalette  # noqa: E402
 
 
@@ -683,6 +683,7 @@ class MainWindow(QMainWindow):
             return
         if self._loader is not None and self._loader.isRunning():
             return
+        self._fetch_timelines()
         running = getattr(self, "_results_worker", None)
         if running is not None and running.isRunning():
             return
@@ -699,6 +700,43 @@ class MainWindow(QMainWindow):
         worker.finished.connect(self._results_worker_finished)
         self._results_worker = worker
         worker.start()
+
+    # ---- the website's replay of each week: finished games' scoring plays --------
+    _timeline_worker = None
+
+    def _fetch_timelines(self) -> None:
+        """Now and then, a few finished games' scoring plays (timeline.py) -
+        and the website brought up to date once some arrive."""
+        season = self.season
+        year = getattr(season, "results_year", 0) or 0
+        if season is None or not year:
+            return
+        running = self._timeline_worker
+        if running is not None and running.isRunning():
+            return
+        weeks = sorted(n for n, w in season.weeks.items() if w.games and all(g.played for g in w.games))
+        try:
+            from .. import timeline
+            if not weeks or not timeline.due(year, weeks):
+                return
+        except Exception as exc:  # noqa: BLE001
+            write_log(f"replay check failed: {exc!r}")
+            return
+        worker = TimelineFetch(year, weeks)
+        worker.fetched.connect(self._timelines_fetched)
+        worker.finished.connect(self._timeline_worker_finished)
+        self._timeline_worker = worker
+        worker.start()
+
+    def _timelines_fetched(self, kept: int) -> None:
+        if kept and not self._closing:
+            self.update_site()
+
+    def _timeline_worker_finished(self) -> None:
+        worker = self._timeline_worker
+        if worker is not None and not worker.isRunning():
+            self._timeline_worker = None
+            worker.deleteLater()
 
     def _results_found(self, changed: bool) -> None:
         if changed and not self._closing:

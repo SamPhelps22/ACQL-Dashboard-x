@@ -36,13 +36,15 @@ from .base import LIVE_CHECK, LIVE_CHECK_NOW, Page
 #: Shared with the Report card and Deadeye's details, so every page knows who you are.
 ME_KEY = "insights/me"
 CARD_COLUMNS = 3
+#: A game card needs about this much width; narrower windows get fewer columns.
+CARD_MIN_WIDTH = 430
 ROOTS_SHOWN = 5
 LOSERS_SHOWN = 8
 BOARD_HEADERS = ["#", "Coach", "Now", "Games", "Big L.", "Banked", "Can reach", "To win", "If it ended now"]
 
 
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
+def _plural(count: int, word: str, many: str = "") -> str:
+    return f"{count} {word if count == 1 else (many or word + 's')}"
 
 
 def _ordinal(n: int) -> str:
@@ -261,14 +263,15 @@ class GameCard(QFrame):
         if home_n + away_n:
             side = GD.HOME if home_n >= away_n else GD.AWAY
             most = max(home_n, away_n)
-            pool = QLabel(f"Pool {most / (home_n + away_n):.0%} {display_team(st.team(side))}")
+            pool = QLabel(f"The pool: {most / (home_n + away_n):.0%} on {display_team(st.team(side))}")
             pool.setObjectName("GameMeta")
             pool.setToolTip(f"{home_n} on {display_team(st.game.home)}, {away_n} on {display_team(st.game.away)}")
-            picks.addStretch(1)
-            picks.addWidget(pool)
         else:
-            picks.addStretch(1)
+            pool = None
+        picks.addStretch(1)
         layout.addLayout(picks)
+        if pool is not None:
+            layout.addWidget(pool)
 
         # down and distance, and the last play
         if st.state == "in" and (st.situation or st.last_play):
@@ -313,6 +316,7 @@ class GameDayPage(Page):
 
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
+        self._placed: dict = {}         # each game grid: (grid, its cards, the columns they're laid in)
         self._board: GD.Board | None = None
         self._week = 0
         self._user_week = False
@@ -498,6 +502,7 @@ class GameDayPage(Page):
         for card, grid in ((self.live_card, self.live_grid), (self.next_card, self.next_grid),
                            (self.final_card, self.final_grid)):
             self.clear_layout(grid)
+            self._placed.pop(id(grid), None)
             card.hide()
         self.clear_layout(self.root_box)
         self.root_card.hide()
@@ -656,13 +661,41 @@ class GameDayPage(Page):
     def _render_games(self, card: Card, grid: QGridLayout, states: list[GD.GameNow], bd: GD.Board,
                       you: GD.Card | None, ghost: GD.Card | None, title: str) -> None:
         self.clear_layout(grid)
+        self._placed.pop(id(grid), None)
         if not states:
             card.hide()
             return
         card.show()
         card.set_title(title)
-        for i, st in enumerate(states):
-            grid.addWidget(GameCard(st, bd, self.palette, you, ghost), i // CARD_COLUMNS, i % CARD_COLUMNS)
+        cards = [GameCard(st, bd, self.palette, you, ghost) for st in states]
+        self._placed[id(grid)] = (grid, cards, 0)
+        self._place(grid)
+
+    def _columns(self) -> int:
+        """As many card columns as the page's width takes, up to three."""
+        try:
+            width = int(self.width())
+        except (TypeError, ValueError):
+            return CARD_COLUMNS
+        return max(1, min(CARD_COLUMNS, width // CARD_MIN_WIDTH)) if width > 0 else CARD_COLUMNS
+
+    def _place(self, grid: QGridLayout) -> None:
+        grid_, cards, laid = self._placed.get(id(grid), (grid, [], 0))
+        columns = self._columns()
+        if laid == columns:
+            return
+        for card in cards:
+            grid.removeWidget(card)
+        for column in range(CARD_COLUMNS):
+            grid.setColumnStretch(column, 1 if column < columns else 0)
+        for i, card in enumerate(cards):
+            grid.addWidget(card, i // columns, i % columns)
+        self._placed[id(grid)] = (grid, cards, columns)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().resizeEvent(event)
+        for grid, _cards, _laid in list(self._placed.values()):
+            self._place(grid)
 
     # ---- everyone ---------------------------------------------------------------
     def _render_board(self, bd: GD.Board) -> None:
@@ -770,7 +803,7 @@ class GameDayPage(Page):
                 row.addWidget(text, 1)
                 self.side_box.addLayout(row)
         if survivors:
-            heading = QLabel(f"Suicide pool - {_plural(len([s for s in survivors if s.status != 'out']), 'coach')} still standing")
+            heading = QLabel(f"Suicide pool - {_plural(len([s for s in survivors if s.status != 'out']), 'coach', 'coaches')} still standing")
             heading.setObjectName("CardTitle")
             self.side_box.addWidget(heading)
             words = {"safe": ("SAFE", "good"), "winning": ("WINNING", "good"), "losing": ("LOSING", "bad"),

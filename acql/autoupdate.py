@@ -1,4 +1,4 @@
-"""Updates from the project's private GitHub repository, found by themselves.
+"""Updates from the project's GitHub repository, found by themselves.
 
 Each release puts two files in the repository's updates/ folder:
 latest.json (the version, the zip's name, its SHA-256, the notes) and the
@@ -8,9 +8,9 @@ the release made, and hands it to the installer the "Install update" button
 uses - the current code is backed up first and put back if the new version
 won't start.
 
-Reading a private repository needs a token: the website's own (made with
-access to this repository too), or one just for updates. Nothing here
-knows about Qt.
+It is asked with a token: the website's own (any token can read a public
+repository; a private one needs it given access), or one just for updates.
+Nothing here knows about Qt.
 """
 
 from __future__ import annotations
@@ -28,7 +28,8 @@ API = "https://api.github.com"
 TIMEOUT = 30
 FOLDER = "updates"
 MANIFEST = "latest.json"
-DEFAULT_REPO = "acql-dashboard"
+#: Where the project lives: github.com/<the website's user>/ACQL-Dashboard-x.
+DEFAULT_REPO = "ACQL-Dashboard-x"
 #: How often it looks by itself.
 EVERY_S = 12 * 3600
 
@@ -118,7 +119,13 @@ def _get(settings: UpdateSettings, path: str, *, opener=None) -> bytes:
         if exc.code == 401:
             raise UpdateCheckError("GitHub didn't accept the token for updates - it may have expired. "
                                    "Make a new one and enter it under Updates from GitHub.") from exc
-        if exc.code in (403, 404):
+        if exc.code == 404:
+            raise UpdateCheckError(
+                f"Nothing to update from in {where} yet: it has no {path}. A release puts it "
+                "there. (If the repository is private, the token also needs read access to "
+                "its Contents.)"
+            ) from exc
+        if exc.code == 403:
             raise UpdateCheckError(
                 f"GitHub won't show {where} to this token. Give the token read access to that "
                 "repository's Contents (or enter one that has it under Updates from GitHub)."

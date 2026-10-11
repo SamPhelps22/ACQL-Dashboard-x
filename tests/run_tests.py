@@ -494,6 +494,160 @@ class TestEditorState(unittest.TestCase):
         self.assertTrue([c for c in after if c[0] == "matchup"])
 
 
+class _ScratchStore(unittest.TestCase):
+    """Each test on its own empty database, so nothing real is read or written."""
+
+    def setUp(self):
+        from acql import store
+        self.folder = Path(tempfile.mkdtemp(prefix="acql-test-"))
+        self.previous = store._OVERRIDE
+        store.use(self.folder / "test.db")
+        # A new database brings in the old JSON files beside the real one;
+        # these tests start from nothing.
+        for kind in ("odds", "forecasts", "picks"):
+            store.delete(kind)
+
+    def tearDown(self):
+        from acql import store
+        store.use(self.previous)
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+
+class TestOddsKickoff(_ScratchStore):
+    """A line fetched once a game is under way is a live line, not one anyone picked against."""
+
+    KICKOFF = 1_790_000_000.0
+
+    def _iso(self, when):
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(when, timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def test_a_started_game_is_left_out_of_an_update(self):
+        from acql import odds
+        quotes = [
+            odds.Quote("atl", "gb", self._iso(self.KICKOFF), -17.5, 5),          # under way
+            odds.Quote("phi", "chi", self._iso(self.KICKOFF + 86400), 4.5, 5),   # tomorrow
+        ]
+        done = odds.update(3, quotes, [("atl", "gb"), ("phi", "chi")], now=self.KICKOFF + 3 * 3600)
+        kept = odds.stored(3)
+        self.assertEqual(kept.latest, {"phi@chi": 4.5})
+        self.assertNotIn("Atlanta @ Green Bay", " ".join(done.missing))
+
+    def test_a_line_kept_after_kickoff_is_set_aside(self):
+        from acql import odds
+        before, after = self.KICKOFF - 3600, self.KICKOFF + 3 * 3600
+        odds._write({"weeks": {"3": {
+            "opening": {"atl@gb": 6.5, "phi@chi": -17.0},
+            "latest": {"atl@gb": -17.5, "phi@chi": -17.0},
+            "kickoff": {"atl@gb": self._iso(self.KICKOFF), "phi@chi": self._iso(self.KICKOFF)},
+            "history": [
+                {"at": before, "lines": {"atl@gb": 4.5}},
+                {"at": after, "lines": {"atl@gb": -17.5, "phi@chi": -17.0}},
+            ],
+            "at": after,
+        }}})
+        kept = odds.stored(3)
+        self.assertEqual(kept.latest, {"atl@gb": 4.5})      # the last line before kickoff
+        self.assertEqual(kept.opening.get("atl@gb"), 6.5)
+        self.assertNotIn("phi@chi", kept.opening)           # only ever seen live
+        self.assertEqual(odds.lines_at(3, after + 1), {"atl@gb": 4.5})
+
+
+class TestNewestNumberWins(unittest.TestCase):
+    """A spread typed before the latest line gives way to it; one typed since wins."""
+
+    def _price(self, typed_at):
+        from acql import lines, predictions, pricing
+        from acql.models import Game
+        game = Game(1, "Kansas City", "Denver")
+        forecast = predictions.Forecast("Denver", "Kansas City", market=6.5, opening=5.5)
+        ctx = pricing.Context(1, {1: forecast}, 0.0, 1.0, predictions.CONSENSUS_WEIGHT, market_at=1000.0)
+        return pricing.price(game, ctx, lines.Spread("home", 2.5, typed_at), typed=True)
+
+    def test_an_older_typed_spread_gives_way_to_the_market(self):
+        stale = self._price(500.0)
+        self.assertEqual(stale.base, 6.5)
+        self.assertTrue(stale.overruled)
+
+    def test_a_spread_typed_since_the_latest_line_wins(self):
+        fresh = self._price(2000.0)
+        self.assertEqual(fresh.base, 2.5)
+        self.assertFalse(fresh.overruled)
+
+    def test_a_number_being_typed_now_wins(self):
+        self.assertEqual(self._price(None).base, 2.5)
+
+
+class TestPatterns(_ScratchStore):
+    """Blind spots, the line move and chaos, on a small made-up pool."""
+
+    MATCHUPS = [("Atlanta", "Green Bay"), ("Philadelphia", "Chicago"), ("Dallas", "New York Giants"),
+                ("Denver", "Kansas City"), ("Seattle", "Washington"), ("Detroit", "Carolina"),
+                ("Miami", "Buffalo"), ("Houston", "Tennessee")]
+
+    def _season(self, home_wins=8):
+        from acql.models import Game, PlayerWeek, Week
+        games = [Game(i, home=h, away=a, winner=h if i <= home_wins else a)
+                 for i, (a, h) in enumerate(self.MATCHUPS, 1)]
+        week = Week(1, games=games)
+        season = Season()
+        # Four coaches take every home team; "contra" takes every road team.
+        for key in ("a", "b", "c", "d", "contra"):
+            season.players[key] = Player(key=key, display=key.title())
+            side = (lambda g: g.away) if key == "contra" else (lambda g: g.home)
+            week.lines[key] = PlayerWeek(key, 1, correct_picks={g.index: side(g) for g in games})
+        season.weeks[1] = week
+        return season
+
+    def _market(self, home_margin=7.0, opening=None):
+        from acql import patterns
+        return {1: {i: patterns.Market(opening, home_margin) for i in range(1, 9)}}
+
+    def test_a_graded_line_puts_the_misses_back(self):
+        from acql import patterns
+        season = self._season(home_wins=6)
+        line = season.weeks[1].lines["a"]
+        line.correct_picks = {i: t for i, t in line.correct_picks.items() if i <= 6}   # graded: misses wiped
+        card = patterns.week_cards(season, 1)["a"]
+        self.assertEqual(len(card), 8)
+        self.assertEqual(sum(p.right for p in card), 6)
+        self.assertEqual({p.side for p in card if not p.right}, {"home"})   # the side the road team beat
+
+    def test_blind_spots_are_measured_against_the_same_games(self):
+        from acql import patterns
+        season = self._season(home_wins=6)
+        spots = patterns.blind_spots(season, market=self._market())
+        # The rest of the pool (three on the home side, one on the road) went
+        # 3 in 4 on the six home wins and 1 in 4 on the two road wins.
+        self.assertAlmostEqual(spots["a"].overall.expected, 6 * 0.75 + 2 * 0.25)
+        self.assertAlmostEqual(spots["a"].overall.gap, 1.0)
+        self.assertEqual(spots["a"].worst, [])
+        contra = spots["contra"]
+        self.assertEqual(contra.overall.record, "2-6")
+        self.assertAlmostEqual(contra.overall.field_rate, 6 / 8)
+
+    def test_the_line_move_credits_the_side_it_moved_to(self):
+        from acql import patterns
+        season = self._season()
+        moves = {m.key: m for m in patterns.line_moves(season, market=self._market(7.0, opening=3.0))}
+        self.assertEqual((moves["a"].with_move, moves["a"].moved), (8, 8))
+        self.assertGreater(moves["a"].gained, 0)
+        self.assertEqual(moves["contra"].with_move, 0)
+        self.assertLess(moves["contra"].gained, 0)
+        # No opening line, no move to read.
+        self.assertEqual(patterns.line_moves(season, market=self._market(7.0)), [])
+
+    def test_chaos_rates_a_chalk_week_low_and_a_week_of_upsets_high(self):
+        from acql import patterns
+        calm = patterns.week_chaos(self._season(home_wins=8), 1, self._market())
+        wild = patterns.week_chaos(self._season(home_wins=0), 1, self._market())
+        self.assertLess(calm.rating, 2.0)
+        self.assertEqual((calm.label, calm.upsets), ("Chalk", 0))
+        self.assertGreater(wild.rating, 9.0)
+        self.assertEqual((wild.label, wild.upsets), ("Chaos", 8))
+        self.assertIn(" over ", wild.biggest_text)
+
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")

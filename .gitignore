@@ -22,3 +22,8 @@ data/*.xlsm
 .DS_Store
 Thumbs.db
 ~$*
+
+# Written by the scheduled job (acql/headless.py) and the self-check as they run
+data/headless.lock
+data/selfcheck/
+predictions/

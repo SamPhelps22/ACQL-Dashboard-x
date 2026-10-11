@@ -59,11 +59,12 @@ def model_weight(season: Season | None, before: int | None = None) -> tuple[floa
     """
     if season is None:
         return predictions.CONSENSUS_WEIGHT, None
-    from . import odds
-    results = tuple(sorted(
-        (n, sum(1 for g in w.games if g.played)) for n, w in season.weeks.items()
-    ))
-    key = (id(season), results, predictions.store_stamp(), odds.stamp())
+    key = _weight_key(season)
+    if key not in _WEIGHT_CACHE:
+        # fitted before, on exactly these results, predictions and lines: kept in the database
+        held = _kept_fit(key, before)
+        if held is not None:
+            return held
     kept = _WEIGHT_CACHE.get(key)
     if kept is None:
         replays = []
@@ -81,7 +82,52 @@ def model_weight(season: Season | None, before: int | None = None) -> tuple[floa
         used = [r for r in replays if before is None or r.number < before]
         fit = predictions.fit_from(used) if used else None
         fits[before] = (fit.weight if fit else predictions.CONSENSUS_WEIGHT, fit)
+        _keep_fit(key, before, *fits[before])
     return fits[before]
+
+
+#: Fits kept in the database, so a fresh start or a reload doesn't replay
+#: the season again when nothing it rests on has changed.
+FITS_KIND = "weight-fits"
+
+
+def _weight_key(season: Season) -> str:
+    """What a fit rests on: every result of every week with stored
+    predictions, the predictions themselves and the fetched lines."""
+    import hashlib
+    from . import odds
+    played = []
+    for number in sorted(season.weeks):
+        for g in sorted(season.weeks[number].games, key=lambda g: g.index):
+            if g.played:
+                played.append((number, g.index, g.home, g.away, g.winner, g.line, g.line_favourite,
+                               g.home_points, g.away_points))
+    from .version import VERSION
+    text = repr((VERSION, played, predictions.store_stamp(), odds.stamp()))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def _kept_fit(key: str, before: int | None) -> tuple[float, predictions.WeightFit | None] | None:
+    from . import store
+    try:
+        kept = store.get(FITS_KIND, key)
+    except Exception:  # noqa: BLE001 - worked out afresh
+        return None
+    if not isinstance(kept, dict):
+        return None
+    return _held(kept.get(str(before)))
+
+
+def _keep_fit(key: str, before: int | None, weight: float, fit) -> None:
+    from . import store
+    try:
+        kept = store.get(FITS_KIND, key)
+        kept = dict(kept) if isinstance(kept, dict) else {}
+        kept[str(before)] = {"weight": weight,
+                             "fit": {**asdict(fit), "weeks": list(fit.weeks)} if fit is not None else None}
+        store.replace(FITS_KIND, {key: kept})      # only the latest basis is worth keeping
+    except Exception:  # noqa: BLE001 - a fit not kept is worked out again next time
+        pass
 
 
 #: The weight each week was priced with, kept by "YEAR-WEEK" (store kind).
@@ -149,6 +195,9 @@ class Context:
     fitted: predictions.WeightFit | None = None
     missing: tuple[str, ...] = ()
     flipped: tuple[int, ...] = ()
+    #: When the newest market number arrived - a typed spread older than this
+    #: has been overtaken by the market and gives way to it.
+    market_at: float = 0.0
 
 
 def context(
@@ -166,6 +215,7 @@ def context(
         return Context(week, {}, 0.0, 0.0, weight, fit)
     found = predictions.match_games(sorted(games, key=lambda g: g.index), forecasts)
     return Context(
+        market_at=predictions.market_time(week),
         week=week,
         forecasts=dict(found.by_game),
         lean=predictions.home_lean(forecasts),
@@ -217,6 +267,9 @@ class Price:
     edge: float | None           # the models' own disagreement, home side
     typed: bool                  # the base was typed in by hand
     spread: lines.Spread | None  # the number shown in the Spread box
+    #: A number was typed for this game, but the market has moved on since,
+    #: so the market's was used instead.
+    overruled: bool = False
 
     @property
     def priced(self) -> bool:
@@ -238,6 +291,15 @@ def price(game: Game, ctx: Context, spread: lines.Spread | None = None,
     forecast = ctx.forecasts.get(game.index)
     if spread is None and not typed:
         spread = opening_spread(game, forecast)
+    # The newest number wins. A spread typed before the latest predictions
+    # file or fetched line is a statement about a line that has since moved:
+    # pricing off it put stale numbers - days old - above the market's own.
+    overruled = bool(
+        typed and spread is not None and spread.at is not None
+        and spread.at < ctx.market_at and market_margin(game, forecast) is not None
+    )
+    if overruled:
+        typed = False
 
     base: float | None = None
     if typed and spread is not None and spread.favourite in ("home", "away"):
@@ -247,16 +309,16 @@ def price(game: Game, ctx: Context, spread: lines.Spread | None = None,
         if base is None and spread is not None and spread.favourite in ("home", "away"):
             base = spread.points if spread.favourite == "home" else -spread.points
     if base is None:
-        return Price(game, None, analytics.SPREAD_SD, "Vegas", None, None, typed, spread)
+        return Price(game, None, analytics.SPREAD_SD, "Vegas", None, None, typed, spread, overruled)
 
     edge = model_edge(game, ctx)
     if edge is None or forecast is None:
-        return Price(game, base, analytics.SPREAD_SD, "Vegas", base, None, typed, spread)
+        return Price(game, base, analytics.SPREAD_SD, "Vegas", base, None, typed, spread, overruled)
     # Not a flat share: a game the models can't agree on gets less of their
     # opinion, judged against how much they disagree this week.
     share = forecast.model_weight(ctx.weight, ctx.typical)
     sd = math.hypot(analytics.SPREAD_SD, forecast.extra_spread(ctx.weight, ctx.typical))
-    return Price(game, base + share * edge, sd, "market + models", base, edge, typed, spread)
+    return Price(game, base + share * edge, sd, "market + models", base, edge, typed, spread, overruled)
 
 
 def stored_spread(week: int, game: Game) -> lines.Spread | None:

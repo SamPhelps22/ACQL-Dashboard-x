@@ -58,7 +58,7 @@ def check(window, *, by_hand: bool = False) -> None:
         if by_hand:
             QMessageBox.information(
                 window, "Check for updates",
-                "Updates come from the dashboard's private GitHub repository, which needs "
+                "Updates come from the dashboard's GitHub repository, which needs "
                 "its name and a token that can read it. Set them up next.")
             edit_settings(window)
         return
@@ -134,9 +134,9 @@ def edit_settings(window) -> bool:
     dialog.setWindowTitle("Updates from GitHub")
     layout = QVBoxLayout(dialog)
     intro = QLabel(
-        "New versions are published to the dashboard's private GitHub repository. "
-        "Leave the token blank to use the website's - then on GitHub give that token "
-        "read access to this repository's Contents too.")
+        "New versions are published to the dashboard's GitHub repository. "
+        "Leave the token blank to use the website's - it can read a public repository "
+        "as it is; a private one needs that token given read access to its Contents too.")
     intro.setWordWrap(True)
     layout.addWidget(intro)
     form = QFormLayout()

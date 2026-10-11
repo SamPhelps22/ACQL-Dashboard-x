@@ -15,13 +15,14 @@ import time
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QVBoxLayout, QWidget,
+    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from ... import briefing, cards, odds, survivor
+from ... import briefing, cards, evidence, odds, survivor
 from ...predictions import display_team
 from ...models import Season
+from ..theme import mix
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
 from ... import oddslock
@@ -33,8 +34,16 @@ HEADERS = ["#", "Game", "Take", "Chance", "Vs pool", "If flipped", "Pool line", 
 FLIP_NOISE = 0.001
 CHANGES_TITLE = "Did anything change?"
 
-CARD_TITLE = "Your card"
+CARD_TITLE = "The card in detail"
 SWING_TITLE = "Where the week is won"
+GLANCE_TITLE = f"{MODEL_NAME}'s card at a glance"
+WHY_TITLE = "Why each pick"
+#: Shared with Game Day and the Report card: who "you" are.
+ME_KEY = "insights/me"
+#: Games across the glance grid.
+GLANCE_COLUMNS = 4
+#: The mark for each kind of signal.
+MARKS = {evidence.FOR: "\u2713", evidence.AGAINST: "\u2717", evidence.INFO: "\u2022"}
 
 
 def _plural(count: int, word: str) -> str:
@@ -183,6 +192,19 @@ class BriefingPage(Page):
         options.addWidget(self.lines_status, 1)
         self.layout_.addLayout(options)
 
+        # Every pick in slate order, big enough to copy straight onto the sheet.
+        self.glance_card = Card(GLANCE_TITLE)
+        self.glance_grid = QGridLayout()
+        self.glance_grid.setHorizontalSpacing(10)
+        self.glance_grid.setVerticalSpacing(10)
+        self.glance_card.body().addLayout(self.glance_grid)
+        self.glance_note = QLabel("")
+        self.glance_note.setObjectName("Muted")
+        self.glance_note.setWordWrap(True)
+        self.glance_note.setTextFormat(Qt.TextFormat.RichText)
+        self.glance_card.add(self.glance_note)
+        self.layout_.addWidget(self.glance_card)
+
         self.tile_expected = StatTile("Expected Wins")
         self.tile_swing = StatTile("Biggest Swing")
         self.tile_pays = StatTile("Chance To Win The Week")
@@ -198,6 +220,18 @@ class BriefingPage(Page):
         self.changes_card.body().addLayout(self.changes_box)
         self.layout_.addWidget(self.changes_card)
         self.changes_card.hide()
+
+        # Every pick and the whole case for it: each signal for it, against
+        # it, or worth knowing (evidence.py).
+        self.why_card = Card(WHY_TITLE)
+        self.why_intro = QLabel("")
+        self.why_intro.setObjectName("Muted")
+        self.why_intro.setWordWrap(True)
+        self.why_card.add(self.why_intro)
+        self.why_box = QVBoxLayout()
+        self.why_box.setSpacing(12)
+        self.why_card.body().addLayout(self.why_box)
+        self.layout_.addWidget(self.why_card)
 
         # The swings go above the card. They are three lines and they are the
         # reason the card looks the way it does, so they are read first.
@@ -267,6 +301,13 @@ class BriefingPage(Page):
         self.copy_button.setEnabled(True)
         self.save_button.setEnabled(not cards.week_started(season, week))
         self._update_changes(week, brief)
+        try:
+            me = QSettings().value(ME_KEY, "") or None
+            cases = evidence.build(season, brief, me)
+        except Exception:  # noqa: BLE001 - the card stands without its reasons
+            cases = []
+        self._update_glance(brief, cases)
+        self._update_why(season, brief, cases)
         self._update_tiles(brief)
         self._update_swings(brief)
         self._update_table(brief)
@@ -378,6 +419,10 @@ class BriefingPage(Page):
         self.save_button.setEnabled(False)
         for tile in self._tiles:
             tile.update_values(self.NO_VALUE, "Nothing priced yet")
+        self.clear_layout(self.glance_grid)
+        self.glance_note.setText("")
+        self.why_intro.setText("")
+        self.clear_layout(self.why_box)
         for box, message in (
             (self.swing_box, "The swings appear once the week is priced."),
             (self.card_box,
@@ -393,12 +438,138 @@ class BriefingPage(Page):
                 box.addWidget(note)
         self.table = None
 
+    # ---- the card at a glance, and why each pick (evidence.py) ------------------
+    def _strength_colour(self, label: str) -> str:
+        p = self.palette
+        return {
+            "Lock": p.good,
+            "Strong": mix(p.good, p.surface, 0.7),
+            "Lean": p.warning,
+        }.get(label, p.ink_muted)
+
+    def _update_glance(self, brief: briefing.Brief, cases: list[evidence.Case]) -> None:
+        self.clear_layout(self.glance_grid)
+        p = self.palette
+        by_index = {c.index: c for c in cases}
+        for n, choice in enumerate(brief.choices):
+            case = by_index.get(choice.index)
+            label = evidence.strength(choice.chance)
+            colour = self._strength_colour(label)
+            chip = QLabel(
+                f"<div style='color:{p.ink_muted}; font-size:11px'>#{choice.index} \u00b7 "
+                f"{choice.matchup}</div>"
+                f"<div style='font-size:19px; font-weight:800; color:{p.ink}'>{choice.pick}</div>"
+                f"<div style='color:{colour}; font-weight:700'>{choice.chance:.0%} \u00b7 {label}"
+                + (f"<span style='color:{p.ink_muted}; font-weight:400'> \u00b7 {case.summary()}</span>"
+                   if case is not None else "")
+                + "</div>"
+            )
+            chip.setTextFormat(Qt.TextFormat.RichText)
+            chip.setToolTip(f"{choice.matchup}: take {choice.pick} - {choice.why}")
+            chip.setStyleSheet(
+                f"QLabel {{ background: {p.raised}; border: 1px solid {p.border}; "
+                f"border-left: 5px solid {colour}; border-radius: 6px; padding: 8px 10px; }}"
+            )
+            self.glance_grid.addWidget(chip, n // GLANCE_COLUMNS, n % GLANCE_COLUMNS)
+        for column in range(GLANCE_COLUMNS):
+            self.glance_grid.setColumnStretch(column, 1)
+        counts = {}
+        for choice in brief.choices:
+            label = evidence.strength(choice.chance)
+            counts[label] = counts.get(label, 0) + 1
+        order = [name for _, name in evidence.STRENGTHS]
+        self.glance_card.set_title(
+            f"{GLANCE_TITLE} - week {brief.week}: {brief.expected:.1f} of "
+            f"{len(brief.choices)} expected right"
+        )
+        self.glance_note.setText(
+            " \u00b7 ".join(
+                f"<span style='color:{self._strength_colour(name)}'><b>{counts[name]}</b> "
+                f"{name.lower()}{'s' if counts[name] != 1 and name != 'Coin flip' else ''}"
+                f"{'s' if counts[name] != 1 and name == 'Coin flip' else ''}</span>"
+                for name in order if counts.get(name)
+            )
+            + f" \u00b7 Lock 75%+, Strong 65%+, Lean 55%+. In slate order, the way the sheet "
+            f"lists the games. Every reason is below."
+        )
+
+    def _update_why(self, season: Season, brief: briefing.Brief, cases: list[evidence.Case]) -> None:
+        self.clear_layout(self.why_box)
+        p = self.palette
+        if not cases:
+            self.why_intro.setText("The reasons appear once the week's lines are in.")
+            return
+        stale = evidence.overruled(season, brief.week)
+        intro = (
+            f"{MARKS[evidence.FOR]} backs the pick \u00b7 {MARKS[evidence.AGAINST]} points the "
+            f"other way \u00b7 {MARKS[evidence.INFO]} worth knowing. The chance is made from "
+            f"the betting line and the computer models; the rest is what they have already "
+            f"weighed, shown so every pick can be checked rather than taken on trust."
+        )
+        if stale:
+            intro += (
+                f" {len(stale)} spread{'s' if len(stale) != 1 else ''} typed on Every game "
+                f"{'are' if len(stale) != 1 else 'is'} older than the latest line, so the "
+                f"line is used: {', '.join(stale[:4])}{'…' if len(stale) > 4 else ''}."
+            )
+        self.why_intro.setText(intro)
+        self.why_card.set_title(f"{WHY_TITLE} - week {brief.week}")
+        tone = {evidence.FOR: p.good, evidence.AGAINST: p.critical, evidence.INFO: p.ink_muted}
+        for case in cases:
+            colour = self._strength_colour(case.strength)
+            block = QFrame()
+            block.setObjectName("PickCase")
+            block.setStyleSheet(
+                f"QFrame#PickCase {{ background: {p.raised}; border: 1px solid {p.border}; "
+                f"border-left: 5px solid {colour}; border-radius: 6px; }}"
+            )
+            body = QVBoxLayout(block)
+            body.setContentsMargins(14, 10, 14, 12)
+            body.setSpacing(6)
+            head = QLabel(
+                f"<span style='color:{p.ink_muted}'>#{case.index} \u00b7 {case.matchup}"
+                + (f" \u00b7 pool line {case.line}" if case.line else "") + "</span><br>"
+                f"<span style='font-size:21px; font-weight:800; color:{p.ink}'>Take {case.pick}</span>"
+                f"&nbsp;&nbsp;<span style='font-size:16px; font-weight:700; color:{colour}'>"
+                f"{case.chance:.0%} \u00b7 {case.strength}</span>"
+                f"&nbsp;&nbsp;<span style='color:{p.ink_muted}'>{case.summary()}</span>"
+            )
+            head.setTextFormat(Qt.TextFormat.RichText)
+            head.setStyleSheet("background: transparent; border: none;")
+            body.addWidget(head)
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(4)
+            for row, signal in enumerate(case.signals):
+                mark = QLabel(MARKS.get(signal.verdict, ""))
+                mark.setStyleSheet(
+                    f"color: {tone.get(signal.verdict, p.ink_muted)}; font-weight: 800; "
+                    f"font-size: 15px; background: transparent; border: none;"
+                )
+                name = QLabel(signal.name)
+                name.setStyleSheet(f"color: {p.ink}; font-weight: 700; background: transparent; border: none;")
+                headline = QLabel(signal.headline)
+                headline.setStyleSheet(f"color: {p.ink}; background: transparent; border: none;")
+                detail = QLabel(signal.detail)
+                detail.setWordWrap(True)
+                detail.setStyleSheet(f"color: {p.ink_muted}; background: transparent; border: none;")
+                for col, widget in enumerate((mark, name, headline, detail)):
+                    widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+                    grid.addWidget(widget, row, col)
+            grid.setColumnMinimumWidth(1, 130)
+            grid.setColumnMinimumWidth(2, 420)
+            grid.setColumnStretch(3, 1)
+            body.addLayout(grid)
+            self.why_box.addWidget(block)
+
     def _update_tiles(self, brief: briefing.Brief) -> None:
+        # The same bands as the glance above it (evidence.STRENGTHS).
+        sure = sum(1 for c in brief.choices if evidence.strength(c.chance) in ("Lock", "Strong"))
+        flips = sum(1 for c in brief.choices if evidence.strength(c.chance) == "Coin flip")
         self.tile_expected.update_values(
             f"{brief.expected:.1f}",
             f"of {_plural(len(brief.choices), 'game')} priced\n"
-            f"{len(brief.strong)} strong, {len(brief.flips)} coin "
-            f"{'flip' if len(brief.flips) == 1 else 'flips'}",
+            f"{sure} strong or better, {flips} coin {'flip' if flips == 1 else 'flips'}",
             "good" if brief.expected >= len(brief.choices) * 0.6 else "",
         )
         self.tile_expected.show_bar(

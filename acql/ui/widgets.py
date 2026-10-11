@@ -467,6 +467,8 @@ class TableModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self._headers)
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):  # noqa: N802
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.ToolTipRole:
+            return self._headers[section]       # the whole label, when a narrow column elides it
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
@@ -576,20 +578,52 @@ def fit_height(view: QAbstractItemView, rows: int, row_height: int, most: int = 
     view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
 
+def fit_widths(natural: dict[int, int], values: dict[int, int], room: int) -> dict[int, int]:
+    """Column widths that fit in `room`, giving way in the order that costs least.
+
+    `natural` is each column's measured width (its header or its widest value,
+    whichever is wider); `values` is what its values alone need. First the
+    widest columns come down to a common width but never below their values,
+    so only header labels elide (they're on the hover) and every number shows
+    whole - "$106.00", never "$106...". Only when the values themselves don't
+    fit does a column go narrower than its values, down to COLUMN_FLOOR.
+    """
+    if sum(natural.values()) <= room or room <= 0:
+        return dict(natural)
+    floor = {c: min(w, max(COLUMN_FLOOR, values.get(c, COLUMN_FLOOR))) for c, w in natural.items()}
+
+    def capped(cap: float, least: dict[int, int]) -> dict[int, int]:
+        return {c: max(least[c], min(w, int(cap))) for c, w in natural.items()}
+
+    least = floor if sum(floor.values()) <= room else {c: min(w, COLUMN_FLOOR) for c, w in natural.items()}
+    # The largest common cap that fits: every column keeps its own width up to
+    # the cap, the wide ones come down to it (and no further than `least`).
+    low, high = 0.0, float(max(natural.values()))
+    for _ in range(24):
+        mid = (low + high) / 2
+        if sum(capped(mid, least).values()) > room:
+            high = mid
+        else:
+            low = mid
+    return capped(low, least)
+
+
 class ColumnFitter(QObject):
     """Keeps a table's columns inside its width, so it never scrolls sideways.
 
     Columns are measured once (see make_table). When the window is too
-    narrow for all of them, the widest are trimmed first - down to a common
-    width, never below COLUMN_FLOOR - and their text is elided, with the
-    full value still in the tooltip or the cell. The sentence column takes
-    whatever is left, and at least STRETCH_FLOOR.
+    narrow for all of them, the widest are trimmed first (fit_widths): header
+    labels elide before any value does, and the full label is on the hover.
+    The sentence column takes whatever is left - at least STRETCH_FLOOR, or
+    just its own values' width when the numbers need the room.
     """
 
-    def __init__(self, view: QAbstractItemView, stretch: int | None) -> None:
+    def __init__(self, view: QAbstractItemView, stretch: int | None,
+                 values: dict[int, int] | None = None) -> None:
         super().__init__(view)
         self.view = view
         self.stretch = stretch
+        self.values = dict(values or {})
         self.natural: list[int] = []
         self.remeasure()
         view.viewport().installEventFilter(self)
@@ -616,21 +650,16 @@ class ColumnFitter(QObject):
             c for c in range(min(header.count(), len(self.natural)))
             if not header.isSectionHidden(c) and c != self.stretch
         ]
-        room = width - (STRETCH_FLOOR if self.stretch is not None else 0)
         want = {c: self.natural[c] for c in shown}
-        if sum(want.values()) > room > 0:
-            # The largest cap that fits: every column keeps its own width
-            # up to the cap, the wide ones are brought down to it.
-            low, high = COLUMN_FLOOR, max(want.values())
-            for _ in range(24):
-                mid = (low + high) / 2
-                if sum(min(w, mid) for w in want.values()) > room:
-                    high = mid
-                else:
-                    low = mid
-            cap = max(COLUMN_FLOOR, int(low))
-            want = {c: min(w, cap) for c, w in want.items()}
-        for c, w in want.items():
+        values = {c: self.values.get(c, COLUMN_FLOOR) for c in shown}
+        room = width
+        if self.stretch is not None:
+            room -= STRETCH_FLOOR
+            # Names need less than the floor: the numbers get the difference.
+            floors = sum(min(w, max(COLUMN_FLOOR, values[c])) for c, w in want.items())
+            if floors > room:
+                room = width - max(COLUMN_FLOOR, min(STRETCH_FLOOR, self.values.get(self.stretch, STRETCH_FLOOR)))
+        for c, w in fit_widths(want, values, room).items():
             if header.sectionSize(c) != w:
                 header.resizeSection(c, w)
 
@@ -685,6 +714,15 @@ def make_table(
         order = Qt.SortOrder.AscendingOrder if ascending else Qt.SortOrder.DescendingOrder
         view.sortByColumn(sort_column, order)
     view.resizeColumnsToContents()
+    # What each column's values alone need (the header label can elide; they can't).
+    values: dict[int, int] = {}
+    for column in range(model.columnCount()):
+        try:
+            need = view.sizeHintForColumn(column)
+        except Exception:  # noqa: BLE001 - measured by header and values together only
+            continue
+        if isinstance(need, int) and need > 0:
+            values[column] = min(need + 8, max_column_width)
     for column in range(model.columnCount()):
         if column != stretch_column and header.sectionSize(column) > max_column_width:
             header.resizeSection(column, max_column_width)
@@ -694,7 +732,7 @@ def make_table(
     if stretch_column is not None and stretch_column < model.columnCount():
         header.setSectionResizeMode(stretch_column, QHeaderView.ResizeMode.Stretch)
     view.setTextElideMode(Qt.TextElideMode.ElideRight)
-    view.column_fitter = ColumnFitter(view, stretch_column)
+    view.column_fitter = ColumnFitter(view, stretch_column, values)
     if fit_rows:
         fit_height(view, model.rowCount(), row_height, fit_rows)
     return view, proxy

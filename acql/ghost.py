@@ -184,7 +184,10 @@ def season_record(season: Season, *, rebuild: bool = True) -> GhostSeason | None
     if cached is not None and cached[0] == rebuild:
         return cached[1]
     weeks = []
-    scored = [n for n in sorted(season.weeks) if season.weeks[n].scored]
+    # The same weeks the coaches' season totals cover: a week still in progress
+    # (stats.xls not yet through it) stays out, as it does for them.
+    final = set(season.final_weeks()) if hasattr(season, "final_weeks") else None
+    scored = [n for n in sorted(season.weeks) if season.weeks[n].scored and (final is None or n in final)]
     for number in scored:
         found = week_score(season, number, rebuild=rebuild)
         if found is not None:

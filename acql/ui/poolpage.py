@@ -20,7 +20,7 @@ import json
 import time
 from pathlib import Path
 
-from .. import analytics, siteextras
+from .. import analytics, patterns, siteextras
 from ..models import Season, same_team
 from ..predictions import DISPLAY, display_team, team_code
 from . import recap
@@ -286,7 +286,10 @@ def _week(season: Season, number: int, *, money_known: bool = True,
     if made is None:
         return None
     sides = _sides(season, number)
+    replay_info, beats = _replay(season, number)
     return {
+        "replay": replay_info,
+        "beats": beats,
         "week": number,
         "entrants": made.entrants,
         "games": made.games,
@@ -312,6 +315,75 @@ def _week(season: Season, number: int, *, money_known: bool = True,
         "scores": _week_scores(season, number),
         "results": _week_games(season, number),
     }
+
+
+def _replay(season: Season, number: int) -> tuple[dict | None, list[dict]]:
+    """The week replayed after every score, and its bad beats - when every
+    game's scoring plays are kept and the replay ends on the pool's scores."""
+    from .. import replay
+    try:
+        made = replay.build(season, number)
+    except Exception:  # noqa: BLE001 - the week goes up without it
+        return None, []
+    if made is None:
+        return None, []
+    data = made.data()
+    info = {"v": replay.fingerprint(data), "data": data, **replay.summary(made)}
+    try:
+        stories = replay.beats(made)
+    except Exception:  # noqa: BLE001
+        stories = []
+    return info, stories
+
+
+def replay_file(number: int) -> str:
+    return f"replay-{int(number)}.json"
+
+
+def _patterns(season: Season, weeks: list[int]) -> tuple[dict, dict]:
+    """Blind spots, the line move and each week's chaos rating (patterns.py),
+    from the finished weeks only: (player key -> theirs, week -> its rating)."""
+    if not weeks:
+        return {}, {}
+    made = patterns.report(season, weeks)
+
+    def split(s: patterns.Split) -> dict:
+        return {"label": s.label, "right": s.right, "picks": s.picks, "field": round(s.field_rate, 3)}
+
+    coaches = {}
+    for key, spots in made.spots.items():
+        low, high = spots.team_extremes()
+        entry = {
+            "overall": split(spots.overall),
+            "blind": [split(s) for s in spots.worst[:4]],
+            "strong": [split(s) for s in spots.best[:4]],
+            "weak_teams": [split(s) for s in low],
+            "best_teams": [split(s) for s in high],
+        }
+        move = made.move_for(key)
+        if move is not None:
+            entry["move"] = {
+                "with": move.with_move, "moved": move.moved, "came_in": move.came_in,
+                "gained": round(move.gained, 2), "rank": made.moves.index(move) + 1,
+                "of": len(made.moves),
+            }
+        adjusted = made.adjusted_for(key)
+        if adjusted is not None:
+            entry["adjusted"] = {
+                "average": round(adjusted.average, 2), "adjusted": round(adjusted.adjusted, 2),
+                "rank": adjusted.rank, "actual": adjusted.actual_rank, "of": len(made.adjusted),
+                "wild": None if adjusted.wild is None else round(adjusted.wild, 2),
+                "calm": None if adjusted.calm is None else round(adjusted.calm, 2),
+            }
+        coaches[key] = entry
+    chaos = {
+        c.week: {
+            "rating": c.rating, "label": c.label, "upsets": c.upsets,
+            "expected": round(c.expected, 1), "games": c.games, "biggest": c.biggest_text,
+        }
+        for c in made.chaos
+    }
+    return coaches, chaos
 
 
 def _money_table(season: Season, weeks: list[int], *, official: bool = True,
@@ -643,6 +715,10 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
     place_before = recap._places(before) if before else {}
     money, money_from = _money_table(season, weeks, official=official)
     suicide = _suicide_status(season, weeks, official=official)
+    try:
+        found, chaos = _patterns(season, weeks)
+    except Exception:  # noqa: BLE001 - the page goes up without them
+        found, chaos = {}, {}
 
     players = []
     for key, player in season.players.items():
@@ -690,6 +766,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
                 "used": [team_code(t) for w, t in sorted(player.suicide_picks.items())
                          if w in weeks and team_code(t)],
             },
+            "patterns": found.get(key),
         })
     players.sort(key=lambda r: (r["place"] if r["place"] is not None else 999, -r["wins"],
                                 r["name"].casefold()))
@@ -736,7 +813,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "teams": {code: display_team(code) for code in sorted(DISPLAY)},
         "team_rank": _team_ranks(latest),
         "weeks": [
-            w for w in (
+            {**w, "chaos": chaos.get(w["week"])} for w in (
                 _week(season, n, money_known=n not in set(getattr(season, "computed_winnings", []) or []),
                       finished=weeks)
                 for n in weeks
@@ -814,9 +891,19 @@ def site(season: Season, *, generated: str | None = None) -> tuple[str, dict[str
         raise ValueError("no finished week to put on the page yet")
     history = data.pop("history", None) or {"champions": [], "seasons": []}
     data["history_url"] = HISTORY_FILE
+    # Each week's replay is its own file, fetched when that week is opened:
+    # a season of them would make the page itself slow to open.
+    replays = {}
+    for week in data["weeks"]:
+        info = week.get("replay")
+        if info and "data" in info:
+            name = replay_file(week["week"])
+            replays[name] = to_json(info.pop("data")).encode("utf-8")
+            info["file"] = name
     page = _hosted_page(data)
     stamp = "".join(ch for ch in data["generated"] if ch.isdigit())
     files = {
+        **replays,
         HISTORY_FILE: to_json(history).encode("utf-8"),
         SERVICE_WORKER: service_worker(stamp).encode("utf-8"),
     }

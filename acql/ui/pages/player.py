@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import analytics, picks
+from ... import analytics, patterns, picks
 from ...models import Player, Season
 from ..charts import BarChart, LineChart, RankChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
@@ -28,6 +28,9 @@ HEADERS = ["Week", "Wins", "Regular", "Big Loser", "Rank", "Suicide pick",
 FORM_TITLE = "Wins by week, against the pool average"
 RECENT_WEEKS = 3
 NO_COMPARISON = "No comparison"
+SPOTS_TITLE = "Blind spots and strong suits"
+#: Of each, at most this many are listed.
+SPOTS_SHOWN = 4
 
 
 def _plural(count: int, word: str) -> str:
@@ -123,6 +126,26 @@ class PlayerPage(Page):
         row.addWidget(self.rank_card, 1, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(row)
 
+        # Where this coach does worse (and better) than the rest of the pool
+        # did in the same games, how they read the line moves, and how their
+        # season looks with each week weighed by how hard it was.
+        self.spots_card = Card(SPOTS_TITLE)
+        spots_row = QHBoxLayout()
+        spots_row.setSpacing(24)
+        self.blind_label = QLabel("")
+        self.strong_label = QLabel("")
+        for label in (self.blind_label, self.strong_label):
+            label.setWordWrap(True)
+            label.setTextFormat(Qt.TextFormat.RichText)
+            label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            spots_row.addWidget(label, 1)
+        self.spots_card.body().addLayout(spots_row)
+        self.spots_note = QLabel("")
+        self.spots_note.setObjectName("Muted")
+        self.spots_note.setWordWrap(True)
+        self.spots_card.add(self.spots_note)
+        self.layout_.addWidget(self.spots_card)
+
         self.table_card = Card("Week by week")
         self.table_box = QVBoxLayout()
         self.table_card.body().addLayout(self.table_box)
@@ -160,6 +183,7 @@ class PlayerPage(Page):
         self._chalk = {
             number: picks.chalk(sheet) for number, sheet in picks.load_all().items()
         }
+        self._report = patterns.report(season)
 
         names = [p.display for p in season.ordered_players()]
         keep = self._wanted or self.picker.currentText()
@@ -266,6 +290,7 @@ class PlayerPage(Page):
         self._update_form_chart(player, rival, weeks)
         self._update_rank_chart(player, rival)
         self._update_table(season, player, weeks)
+        self._update_spots(season, player)
 
     def _rival(self, season: Season, player: Player) -> Player | None:
         name = self.rival_picker.currentData()
@@ -285,6 +310,75 @@ class PlayerPage(Page):
         self.clear_layout(self.table_box)
         self.table = None
         self.table_note.hide()
+        self.blind_label.setText("")
+        self.strong_label.setText("")
+        self.spots_note.setText("")
+
+    def _update_spots(self, season: Season, player: Player) -> None:
+        report = getattr(self, "_report", None)
+        spots = report.spots.get(player.key) if report else None
+        if spots is None:
+            self.spots_card.set_title(SPOTS_TITLE)
+            self.blind_label.setText("Appears once a week has results and this coach's picks.")
+            self.strong_label.setText("")
+            self.spots_note.setText("")
+            return
+
+        def lines(splits: list[patterns.Split]) -> str:
+            return "<br>".join(
+                f"• <b>{s.label}</b> &nbsp;{s.record} ({s.rate:.0%}) &nbsp;·&nbsp; "
+                f"the rest of the pool hit {s.field_rate:.0%} in the same games"
+                for s in splits[:SPOTS_SHOWN]
+            )
+
+        def teams(splits: list[patterns.Split]) -> str:
+            return ", ".join(f"{s.label[:1].lower()}{s.label[1:]} {s.record}" for s in splits)
+
+        worst, best = spots.worst, spots.best
+        self.spots_card.set_title(
+            f"{SPOTS_TITLE} - {spots.overall.record} on every pick, "
+            f"{spots.overall.gap:+.1f} against the pool in the same games"
+        )
+        low, high = spots.team_extremes()
+        self.blind_label.setText(
+            "<b>Blind spots</b><br>" + (lines(worst) or "None so far - nothing stands out.")
+            + (f"<br>Weakest teams: {teams(low)}" if low else "")
+        )
+        self.strong_label.setText(
+            "<b>Strong suits</b><br>" + (lines(best) or "None so far - nothing stands out.")
+            + (f"<br>Best teams: {teams(high)}" if high else "")
+        )
+
+        notes = [
+            f"A blind spot or strong suit has {patterns.MIN_PICKS}+ picks and is "
+            f"{patterns.MIN_GAP:g}+ games off both the rest of the pool in the same games "
+            f"and this coach's own usual - not just where they stand overall."
+        ]
+        move = report.move_for(player.key)
+        if move is not None:
+            place = report.moves.index(move) + 1
+            notes.append(
+                f"Line moves: on the side the line moved toward {move.with_move} of "
+                f"{_plural(move.moved, 'time')} it moved {patterns.MIN_MOVE:g}+ points, "
+                f"worth {move.gained:+.2f} wins between the opening line and kickoff - "
+                f"{self.ordinal(place)} of {len(report.moves)}."
+            )
+        adjusted = report.adjusted_for(player.key)
+        if adjusted is not None:
+            text = (
+                f"Weighed by how hard each week was: {adjusted.adjusted:.1f} a week "
+                f"({self.ordinal(adjusted.rank)}; {self.ordinal(adjusted.actual_rank)} as scored)."
+            )
+            if adjusted.wild is not None:
+                text += f" In wild weeks {adjusted.wild:+.1f} against the pool"
+                text += (f", in calm ones {adjusted.calm:+.1f}." if adjusted.calm is not None else ".")
+            notes.append(text)
+        self.spots_note.setText("  ".join(notes))
+
+    @staticmethod
+    def ordinal(n: int) -> str:
+        suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        return f"{n}{suffix}"
 
     def _update_tiles(self, season: Season, player: Player) -> None:
         move = player.rank_movement or 0

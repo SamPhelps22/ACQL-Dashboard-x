@@ -84,3 +84,24 @@ class ResultsCheck(QThread):
         except Exception as exc:  # noqa: BLE001 - a missed look is no matter
             write_log(f"results check failed: {exc!r}")
             self.found.emit(False)
+
+
+class TimelineFetch(QThread):
+    """Finished games' scoring plays, for the website's replay of each week."""
+
+    fetched = Signal(int)       # how many games' timelines were kept
+
+    def __init__(self, year: int, weeks: list[int]) -> None:
+        super().__init__()
+        self.year, self.weeks = year, list(weeks)
+
+    def run(self) -> None:
+        try:
+            from .. import timeline
+            kept, problems = timeline.refresh(self.year, self.weeks)
+            for problem in problems:
+                write_log(f"replay: {problem}")
+            self.fetched.emit(kept)
+        except Exception as exc:  # noqa: BLE001 - the replay waits for the next look
+            write_log(f"replay timelines failed: {exc!r}")
+            self.fetched.emit(0)

@@ -28,7 +28,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 
 from .models import Game, same_team
@@ -94,6 +94,8 @@ class Score:
     home_record: str = ""
     away_color: str = ""            # "#002244"
     home_color: str = ""
+    #: ESPN's id for the game, which its play-by-play is asked for by (timeline.py).
+    event: str = ""
 
 
 # ---- reading the scoreboard ------------------------------------------------------
@@ -252,6 +254,7 @@ def parse(payload: object) -> list[Score]:
             home_record=_record(sides["home"]),
             away_color=_color(sides["away"].get("team")),
             home_color=_color(sides["home"].get("team")),
+            event=str(event.get("id") or comp.get("id") or ""),
         ))
     return out
 
@@ -319,6 +322,9 @@ def save(year: int, week: int, scores: list[Score], at: float | None = None) -> 
         merged = {frozenset((s.away, s.home)): s for s in scores}
         for pair, score in before.items():
             if score.final:
+                fresh = merged.get(pair)
+                if fresh is not None and fresh.event and not score.event:
+                    score = replace(score, event=fresh.event)   # kept as it was, now with its id
                 merged[pair] = score
     else:
         merged = before         # an answer with nothing in it says nothing

@@ -214,6 +214,9 @@ def attach_from_workbook(season: Season) -> list[str]:
 class Spread:
     favourite: str      # "home" or "away"
     points: float
+    #: When it was typed (seconds since 1970). 0 for one kept before that was
+    #: recorded; None for a number on screen that hasn't been kept yet.
+    at: float | None = None
 
 
 def _game_key(game: Game) -> str:
@@ -262,7 +265,7 @@ def load_spreads(week: int, games: list[Game]) -> dict[int, Spread]:
         side = entry["favourite"]
         if a and game_away != a:
             side = "home" if side == "away" else "away"
-        out[game.index] = Spread(side, float(entry["points"]))
+        out[game.index] = Spread(side, float(entry["points"]), float(entry.get("at") or 0.0))
     return out
 
 
@@ -277,8 +280,10 @@ def save_spread(week: int, game: Game, spread: Spread | None) -> None:
     if spread is None:
         week_entries.pop(str(game.index), None)
     else:
+        import time
         week_entries[str(game.index)] = {
             "match": _game_key(game), "favourite": spread.favourite, "points": spread.points,
+            "at": time.time(),
         }
     try:
         if week_entries:

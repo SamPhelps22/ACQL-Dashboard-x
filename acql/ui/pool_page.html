@@ -763,6 +763,47 @@ td.gone, span.gone { color: var(--muted); }
 .teamrec { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .teamrec .box { gap: 4px; }
 .teamrec .box b { font: 800 22px var(--display); }
+/* the week, replayed: chart, scrubber, then the moment and the standings at it */
+.replay { display: grid; gap: 12px; }
+.chart .day { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .now { stroke: var(--gold); stroke-width: 2.5; }
+.chart .hit.scrub { cursor: ew-resize; }
+.rp-controls { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.rp-controls .btn { min-width: 40px; justify-content: center; }
+.rp-play-btn { min-width: 96px !important; }
+.rp-slider { width: 100%; accent-color: var(--gold); height: 28px; margin: 0; }
+.rp-read { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px; }
+.rp-moment { display: grid; gap: 4px; align-content: start; background: var(--onair); color: var(--onair-ink);
+  border-left: 5px solid var(--gold); border-radius: 4px; padding: 12px 14px; min-height: 96px; align-self: start; }
+.rp-when { font: 700 13px/1 var(--body); letter-spacing: 0.04em; text-transform: uppercase; color: var(--gold); }
+.rp-head { font: 800 22px/1.15 var(--display); font-variant-numeric: tabular-nums; }
+.rp-play { color: var(--onair-muted); font-size: 14px; line-height: 1.35; }
+.rp-standing { display: grid; gap: 6px; align-content: start; }
+.rp-lead { font-weight: 600; }
+.rp-board { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rp-board li { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px 30px; gap: 8px; align-items: center;
+  padding: 4px 6px; border-bottom: 1px solid var(--rule); font-size: 15px; }
+.rp-board li:last-child { border-bottom: 0; }
+.rp-board li.me { background: var(--gold-soft); box-shadow: inset 4px 0 0 var(--gold); }
+.rp-board .pos { color: var(--muted); font: 800 16px/1 var(--display); text-align: right; }
+.rp-board .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.rp-board .tot { font: 800 18px/1 var(--display); text-align: right; }
+.rp-board .mv { font-size: 13px; font-weight: 700; text-align: right; }
+.rp-board .mv.up { color: var(--good); }
+.rp-board .mv.down { color: var(--bad); }
+@media (max-width: 719px) { .rp-read { grid-template-columns: minmax(0, 1fr); } }
+.beat .beat-foot { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-top: 2px; }
+.beat .when { color: var(--muted); font-size: 13px; }
+/* pick twins and nemeses: four people, each a way into the head-to-head */
+.twins { display: grid; gap: 0; }
+.twin { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 12px; text-align: left; width: 100%;
+  background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 2px; cursor: pointer; color: inherit; font: inherit; }
+.twin:hover .nm { text-decoration: underline; text-underline-offset: 2px; }
+.twin .k { grid-column: 1; font: 700 12px/1.2 var(--body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold-text); }
+.twin .nm { grid-column: 1; font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.twin .big { grid-column: 2; grid-row: 1 / span 2; align-self: center; font: 800 28px/1 var(--display); }
+.twin .meta { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+.twins .race-sum { margin-top: 10px; }
 .rival { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .rival:last-child { border-bottom: 0; }
 .rival .gap { font: 800 22px/1 var(--display); text-align: right; }
@@ -3373,7 +3414,8 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     return el("div", { class: "view", "data-view": "weeks" }, [
       el("div", { class: "pagehead" }, [el("h1", { text: "Week " + w.week }), picker]),
       heroRecap(w, true),
-      el("div", { class: "cols" }, [el("div", {}, [awards, upsets]), el("div", {}, [soCloseCard(w)])]),
+      replayModule(w),
+      el("div", { class: "cols" }, [el("div", {}, [chaosModule(w), awards, upsets]), el("div", {}, [beatsModule(w), soCloseCard(w)])]),
       module("Scoreboard", plural(w.scores.length, "coach", "coaches"), [scores]),
       module("Results", plural(w.results.length, "game"), [results])
     ]);
@@ -3549,6 +3591,374 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
     ]);
   }
 
+  // ---- the week, replayed ------------------------------------------------------------
+  // Every kickoff, score and final whistle of a finished week, in order, with
+  // the pool's scores after each - "if it ended there", the live page's rule.
+  // The dashboard works it all out (replay.py); the page only shows it. On the
+  // website each week's is its own small file, fetched when the week is opened.
+  var replays = {};            // week -> { state: "loading" | "ready" | "failed", data }
+  var replayPos = {};          // week -> the frame on screen
+  var replayTimer = null;
+  function replayOf(w) {
+    var info = w && w.replay;
+    if (!info) return null;
+    if (info.data) return { state: "ready", data: info.data };
+    var got = replays[w.week];
+    if (got) return got;
+    got = replays[w.week] = { state: "loading" };
+    if (!info.file || typeof fetch !== "function") { got.state = "failed"; return got; }
+    fetch(info.file + "?v=" + encodeURIComponent(info.v || ""), { cache: "no-cache" }).then(function (r) {
+      if (!r.ok) throw new Error(String(r.status));
+      return r.json();
+    }).then(function (d) {
+      got.state = "ready";
+      got.data = d;
+    }).catch(function () {
+      got.state = "failed";
+    }).then(function () {
+      if (state.view === "weeks" && state.week === w.week) render({ quiet: true });
+    });
+    return got;
+  }
+  var DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
+  function frameTotals(f) {
+    var out = [];
+    for (var i = 0; i < f[8].length; i++) out.push(DIGITS.indexOf(f[8].charAt(i)));
+    return out;
+  }
+  function frameDay(f) { return new Date(f[0] * 1000).toLocaleDateString([], { weekday: "short" }); }
+  function frameTime(f) { var d = new Date(f[0] * 1000); return d.toLocaleDateString([], { weekday: "short" }) + " " + clock(d); }
+  function quarterText(period, clockText) {
+    if (!period) return "";
+    return (period >= 5 ? "OT" : "Q" + period) + (clockText ? " " + clockText : "");
+  }
+  // What happened at a frame, as the readout's two lines.
+  function frameWords(rep, i) {
+    var f = rep.frames[i], g = rep.games[f[1]];
+    var line = g.a + " " + f[3] + " – " + f[4] + " " + g.h;
+    if (f[2] === "k") return { head: "Kickoff: " + g.a + " at " + g.h, play: g.line != null ? "Pool line: " + teamFull(g.fav) + " by " + g.line : "Pool line: straight up" };
+    if (f[2] === "f") return { head: f[7] + ": " + line, play: g.w ? "Credited to " + teamFull(g.w) : "Nobody credited" };
+    if (f[2] === "o") return { head: "The pool’s own scores", play: "Where the week finished on the pool’s sheet." };
+    return { head: line + " · " + quarterText(f[5], f[6]), play: f[7] };
+  }
+  // Each coach's place at a frame (ties share it).
+  function placesAt(totals) {
+    return totals.map(function (v) { return 1 + totals.filter(function (o) { return o > v; }).length; });
+  }
+  function leadersAt(totals) {
+    var top = Math.max.apply(null, totals);
+    var out = [];
+    totals.forEach(function (v, i) { if (v === top) out.push(i); });
+    return out;
+  }
+
+  function replayChart(rep, width, pos, focus) {
+    var H = width < 520 ? 210 : 250, narrow = width < 520;
+    var padL = 34, padR = narrow ? 92 : 128, padT = 12, padB = 26;
+    var frames = rep.frames, n = frames.length;
+    var totals = frames.map(frameTotals);
+    var behind = totals.map(function (t) { var top = Math.max.apply(null, t); return t.map(function (v) { return top - v; }); });
+    var hi = 3;
+    behind.forEach(function (row) { row.forEach(function (v) { if (v > hi) hi = v; }); });
+    hi = Math.min(hi, 12);
+    function X(i) { return padL + (n > 1 ? i * (width - padL - padR) / (n - 1) : 0); }
+    function Y(v) { return padT + Math.min(v, hi) / hi * (H - padT - padB); }
+    var svg = svgEl("svg", { viewBox: "0 0 " + width + " " + H, width: width, height: H, role: "img",
+      "aria-label": "Wins behind the week’s leader after every score" });
+    var grid = svgEl("g", { class: "grid" });
+    ticksFor(0, hi, 3).forEach(function (v) {
+      grid.appendChild(svgEl("line", { x1: padL, x2: width - padR + 8, y1: Y(v), y2: Y(v) }));
+      grid.appendChild(svgEl("text", { x: padL - 6, y: Y(v) + 4, "text-anchor": "end", text: v === 0 ? "lead" : "−" + v }));
+    });
+    svg.appendChild(grid);
+    // the days along the bottom, where each begins
+    var last = "";
+    frames.forEach(function (f, i) {
+      var d = frameDay(f);
+      if (d === last) return;
+      last = d;
+      svg.appendChild(svgEl("line", { class: "day", x1: X(i), x2: X(i), y1: padT, y2: H - padB }));
+      svg.appendChild(svgEl("text", { x: X(i) + 3, y: H - 8, text: d }));
+    });
+    var top = rep.coaches.slice(0, 1).concat(rep.coaches.filter(function (c, i) { return i > 0 && totals[n - 1][i] === totals[n - 1][0]; }));
+    var marked = {};
+    top.forEach(function (c) { marked[c] = "strong"; });
+    (rep.beatsFor || []).forEach(function (c) { if (!marked[c]) marked[c] = "strong"; });
+    if (focus) marked[focus] = "me";
+    function path(ci) {
+      var d = "";
+      behind.forEach(function (row, i) {
+        d += i ? "H" + X(i).toFixed(1) + "V" + Y(row[ci]).toFixed(1) : "M" + X(0).toFixed(1) + " " + Y(row[ci]).toFixed(1);
+      });
+      return d;
+    }
+    var order = { ctx: 0, strong: 1, me: 2 };
+    rep.coaches.map(function (c, ci) { return { c: c, ci: ci, role: marked[c] || "ctx" }; })
+      .sort(function (a, b) { return order[a.role] - order[b.role]; })
+      .forEach(function (ln) { svg.appendChild(svgEl("path", { class: "ln " + ln.role, d: path(ln.ci) })); });
+    // end labels: names that finish level share one; one that would collide is left off
+    var ends = {};
+    rep.coaches.forEach(function (c, ci) {
+      if (!marked[c]) return;
+      var v = behind[n - 1][ci];
+      svg.appendChild(svgEl("circle", { class: "end " + marked[c], cx: X(n - 1), cy: Y(v), r: 4 }));
+      (ends[v] = ends[v] || []).push(c);
+    });
+    var taken = [];
+    Object.keys(ends).map(Number).sort(function (a, b) { return a - b; }).forEach(function (v) {
+      var yy = Y(v), who_ = ends[v];
+      if (taken.some(function (t) { return Math.abs(t - yy) < 14; })) return;
+      taken.push(yy);
+      var mineHere = who_.indexOf(focus) >= 0;
+      var text = who_.length > 1 ? who_[0] + " +" + (who_.length - 1) : who_[0];
+      if (who_.length === 2 && (who_[0] + who_[1]).length < (narrow ? 14 : 24)) text = who_[0] + " & " + who_[1];
+      if (text.length > (narrow ? 14 : 24)) text = text.slice(0, narrow ? 13 : 23) + "…";
+      svg.appendChild(svgEl("text", { class: "lbl" + (mineHere ? " me" : ""), x: X(n - 1) + 8, y: yy + 4, text: text }));
+    });
+    var marker = svgEl("line", { class: "now", x1: X(pos), x2: X(pos), y1: padT - 4, y2: H - padB });
+    svg.appendChild(marker);
+    var hit = svgEl("rect", { class: "hit scrub", x: padL, y: 0, width: Math.max(1, width - padL - padR), height: H });
+    function pick(evt) {
+      var box = svg.getBoundingClientRect();
+      var px = (evt.clientX - box.left) * (width / box.width);
+      var i = Math.round((px - padL) / Math.max(1, width - padL - padR) * (n - 1));
+      return Math.max(0, Math.min(n - 1, i));
+    }
+    var dragging = false;
+    hit.addEventListener("pointerdown", function (e) { dragging = true; replayGo(rep, pick(e)); });
+    hit.addEventListener("pointermove", function (e) { if (dragging) replayGo(rep, pick(e)); });
+    ["pointerup", "pointerleave", "pointercancel"].forEach(function (k) { hit.addEventListener(k, function () { dragging = false; }); });
+    svg.appendChild(hit);
+    rep.moveMarker = function (i) { marker.setAttribute("x1", X(i)); marker.setAttribute("x2", X(i)); };
+    return svg;
+  }
+
+  // Move the replay to frame i: the marker, the slider and the readout, no redraw.
+  function replayGo(rep, i) {
+    i = Math.max(0, Math.min(rep.frames.length - 1, i));
+    replayPos[rep.week] = i;
+    if (rep.moveMarker) rep.moveMarker(i);
+    if (rep.slider && Number(rep.slider.value) !== i) rep.slider.value = String(i);
+    if (rep.fill) rep.fill(i);
+  }
+  function stopReplay() {
+    if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+  }
+
+  function replayModule(w) {
+    var got = replayOf(w);
+    if (!got) return null;
+    var info = w.replay;
+    var aside = plural(info.scores || 0, "score") + " · lead changed hands " + plural(info.lead_changes || 0, "time");
+    if (got.state === "loading") return module("The week, replayed", aside, [el("p", { class: "note", text: "Loading the replay…" })], { "data-card": "replay" });
+    if (got.state === "failed") return module("The week, replayed", aside, [el("p", { class: "note", text: "The replay couldn’t be loaded just now. It’ll be here next time." })], { "data-card": "replay" });
+    var rep = got.data;
+    var n = rep.frames.length;
+    if (!n) return null;
+    rep.beatsFor = (w.beats || []).filter(function (b) { return b.kind === "bad-beat" || b.kind === "front-runner"; }).map(function (b) { return b.who; });
+    var start = replayPos[w.week];
+    if (start == null || start >= n) start = n - 1;
+    replayPos[w.week] = start;
+    var focus = highlighted();
+    var mine = rep.coaches.indexOf(focus);
+
+    var when = el("span", { class: "rp-when" });
+    var head = el("b", { class: "rp-head" });
+    var play = el("span", { class: "rp-play" });
+    var board = el("ol", { class: "rp-board", "aria-live": "polite" });
+    rep.fill = function (i) {
+      var f = rep.frames[i];
+      var words = frameWords(rep, i);
+      when.textContent = frameTime(f);
+      head.textContent = words.head;
+      play.textContent = words.play;
+      var t = frameTotals(f), places = placesAt(t);
+      var before = i ? frameTotals(rep.frames[i - 1]) : t;
+      var order = t.map(function (v, ci) { return ci; }).sort(function (a, b) { return t[b] - t[a] || rep.coaches[a].localeCompare(rep.coaches[b]); });
+      var shown = order.slice(0, 5);
+      if (mine >= 0 && shown.indexOf(mine) < 0) shown.push(mine);
+      board.textContent = "";
+      shown.forEach(function (ci) {
+        var moved = t[ci] - before[ci];
+        board.appendChild(el("li", { class: ci === mine ? "me" : null }, [
+          el("span", { class: "pos", text: (places.filter(function (p) { return p === places[ci]; }).length > 1 ? "T" : "") + places[ci] }),
+          el("span", { class: "nm", text: rep.coaches[ci] }),
+          el("span", { class: "tot num", text: String(t[ci]) }),
+          el("span", { class: "mv " + (moved > 0 ? "up" : moved < 0 ? "down" : ""), text: moved > 0 ? "+" + moved : moved < 0 ? "−" + (-moved) : "" })
+        ]));
+      });
+      var lead = leadersAt(t);
+      rep.leadText.textContent = lead.length === 1 ? "Leading: " + rep.coaches[lead[0]] + " with " + t[lead[0]]
+        : lead.length <= 3 ? "Level at the top on " + t[lead[0]] + ": " + listNames(lead.map(function (ci) { return rep.coaches[ci]; }))
+        : plural(lead.length, "coach", "coaches") + " level at the top on " + t[lead[0]];
+    };
+    rep.leadText = el("span", { class: "rp-lead" });
+    var slider = el("input", { type: "range", min: "0", max: String(n - 1), step: "1", value: String(start), class: "rp-slider",
+      "aria-label": "Move through the week", oninput: function (e) { stopReplay(); replayGo(rep, Number(e.target.value)); } });
+    rep.slider = slider;
+    var playBtn = el("button", { class: "btn rp-play-btn", type: "button", text: "▶ Play" });
+    playBtn.addEventListener("click", function () {
+      if (replayTimer) { stopReplay(); playBtn.textContent = "▶ Play"; return; }
+      var i = replayPos[w.week] >= n - 1 ? 0 : replayPos[w.week];
+      var step = Math.max(35, Math.round(14000 / n));
+      playBtn.textContent = "❚❚ Pause";
+      replayGo(rep, i);
+      replayTimer = setInterval(function () {
+        if (!slider.isConnected) { stopReplay(); return; }
+        i++;
+        replayGo(rep, i);
+        if (i >= n - 1) { stopReplay(); playBtn.textContent = "▶ Play"; }
+      }, step);
+    });
+    function nudge(by) { return function () { stopReplay(); playBtn.textContent = "▶ Play"; replayGo(rep, (replayPos[w.week] || 0) + by); }; }
+    rep.week = w.week;
+    var box = el("div", { class: "replay" }, [
+      chartBox("replay-" + w.week, 230, function (width) { return replayChart(rep, width, replayPos[w.week], focus); }),
+      el("div", { class: "rp-controls" }, [playBtn,
+        el("button", { class: "btn", type: "button", "aria-label": "Back one", text: "‹", onclick: nudge(-1) }),
+        slider,
+        el("button", { class: "btn", type: "button", "aria-label": "On one", text: "›", onclick: nudge(1) })]),
+      el("div", { class: "rp-read" }, [el("div", { class: "rp-moment" }, [when, head, play]),
+        el("div", { class: "rp-standing" }, [rep.leadText, board])]),
+      rep.adjusted && rep.adjusted.length ? el("p", { class: "note", text: "The last step puts in the pool’s own scores for " + listNames(rep.adjusted) + ", whose card the replay only partly knew." }) : null,
+      el("p", { class: "note", text: "Each step is a kickoff, a score or a final whistle; the scores are where the week stood if it had ended there, with the pool’s lines – the live page’s rule. The line is wins behind the leader." })
+    ]);
+    rep.fill(start);
+    return module("The week, replayed", aside, [box], { "data-card": "replay", id: "replay-card" });
+  }
+
+  // ---- bad beats: what only the order of things tells -----------------------------------
+  function beatsModule(w) {
+    var beats = w.beats || [];
+    if (!beats.length) return null;
+    var canWatch = !!w.replay;
+    return module("Bad beats", "and the moments that decided it", beats.map(function (b) {
+      return el("div", { class: "award beat", "data-beat": b.kind }, [
+        el("span", { class: "t", text: b.title }),
+        el("span", { class: "w", text: b.who }),
+        el("span", { class: "why", text: b.detail }),
+        el("span", { class: "beat-foot" }, [b.at ? el("span", { class: "when", text: frameTime([b.at]) }) : null,
+        canWatch && b.frame != null ? el("button", { class: "linkish watch", type: "button", text: "Watch it",
+          onclick: function () {
+            stopReplay();
+            replayPos[w.week] = b.frame;
+            var got = replays[w.week];
+            var rep = got && got.data ? got.data : w.replay && w.replay.data;
+            if (rep && rep.slider && rep.slider.isConnected) replayGo(rep, b.frame);
+            var card = document.getElementById("replay-card");
+            if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+          } }) : null])
+      ]);
+    }), { "data-card": "beats" });
+  }
+
+  // ---- blind spots, the line move and chaos (patterns.py) -----------------------------------
+  // Every split is set against how the rest of the pool did in the same games, so a
+  // hard week or a trap line counts against nobody.
+  function pctText(x) { return Math.round(100 * x) + "%"; }
+  function signed(x, digits) { return (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(digits == null ? 1 : digits); }
+  function spotRecord(s) { return s.right + "–" + (s.picks - s.right); }
+  function firstLower(text) { return text.charAt(0).toLowerCase() + text.slice(1); }
+  function blindSpotsModule(p) {
+    var pt = p.patterns;
+    if (!pt || !pt.overall || !pt.overall.picks) return null;
+    var kids = [];
+    function row(kind, s) {
+      return el("div", { class: "award", "data-spot": kind }, [
+        el("span", { class: "t", text: kind === "blind" ? "Blind spot" : "Strong suit" }),
+        el("span", { class: "w", text: s.label + " · " + spotRecord(s) }),
+        el("span", { class: "why", text: pctText(s.right / s.picks) + " right, where the rest of the pool hit " + pctText(s.field) + " in the same games." })
+      ]);
+    }
+    (pt.blind || []).forEach(function (s) { kids.push(row("blind", s)); });
+    (pt.strong || []).forEach(function (s) { kids.push(row("strong", s)); });
+    if (!kids.length) kids.push(el("p", { class: "note", text: "No blind spot or strong suit stands out yet – " + p.name + " picks about as well as usual everywhere." }));
+    function teamList(list) { return list.map(function (s) { return firstLower(s.label) + " " + spotRecord(s); }).join(", "); }
+    var teams = [];
+    if ((pt.weak_teams || []).length) teams.push("weakest " + teamList(pt.weak_teams));
+    if ((pt.best_teams || []).length) teams.push("best " + teamList(pt.best_teams));
+    if (teams.length) kids.push(el("p", { class: "race-sum", text: "By team: " + teams.join("; ") + "." }));
+    var m = pt.move;
+    if (m && m.moved) kids.push(el("p", { class: "race-sum", text: "The line move: on the side the line moved toward " + m.with + " of " + plural(m.moved, "time") +
+      " it moved a point or more – " + signed(m.gained, 2) + " wins of value between the opening line and kickoff, " + ordinal(m.rank) + " of " + m.of + "." }));
+    var a = pt.adjusted;
+    if (a) {
+      var text = "Weighed by how hard each week was: " + a.adjusted.toFixed(1) + " a week, " + ordinal(a.rank) + " (" + ordinal(a.actual) + " as scored).";
+      if (a.wild != null) text += " In wild weeks " + signed(a.wild) + " against the pool" + (a.calm != null ? ", in calm ones " + signed(a.calm) + "." : ".");
+      kids.push(el("p", { class: "race-sum", text: text }));
+    }
+    kids.push(el("p", { class: "note", text: "Each split is measured against the rest of the pool in the same games, and counts only when it’s off " + p.name + "’s own usual too. The line move is settled before kickoff, so it’s skill rather than luck." }));
+    return module("Blind spots", spotRecord(pt.overall) + " on every pick", kids, { "data-card": "spots" });
+  }
+
+  // How wild a week was against the lines: 0 every favourite came in, 10 once in years.
+  function chaosModule(w) {
+    var c = w.chaos;
+    if (!c) return null;
+    return module("Chaos rating", "week " + w.week, [
+      el("div", { class: "meter" }, [
+        el("div", { class: "top" }, [el("b", { text: c.label }), el("span", { class: "num", text: c.rating.toFixed(1) })]),
+        el("div", { class: "track", role: "img", "aria-label": "Chaos rating " + c.rating.toFixed(1) + " of 10" }, [
+          el("div", { class: "fill", style: "width:" + Math.round(c.rating * 10) + "%" })]),
+        el("span", { class: "why", text: plural(c.upsets, "upset") + " where the lines expected " + c.expected.toFixed(1) + "." +
+          (c.biggest ? " The biggest: " + c.biggest + "." : "") })
+      ]),
+      el("p", { class: "note", text: "Out of 10: how surprising the results were against the betting lines, under the pool’s own line rule. A 7 means seven weeks in ten with these games would have been calmer." })
+    ], { "data-card": "chaos" });
+  }
+
+  // ---- pick twins and nemeses ---------------------------------------------------------------
+  // From every game played: who picks most like this coach and least like them,
+  // and who has had the better of them week for week - and who they've had the
+  // better of. Head-to-head shows any pair in full.
+  var TWIN_MIN_GAMES = 10;
+  function matchups(name) {
+    return names().filter(function (n) { return n !== name; }).map(function (n) {
+      var c = compare(name, n), margin = 0;
+      c.weeks.forEach(function (r) { if (r.a != null && r.b != null) margin += r.a - r.b; });
+      return { name: n, c: c, agree: c.both >= TWIN_MIN_GAMES ? c.agree / c.both : null, net: c.aWeeks - c.bWeeks, margin: margin };
+    });
+  }
+  function twinsModule(p) {
+    var all = matchups(p.name);
+    var known = all.filter(function (m) { return m.agree != null; });
+    if (!known.length) return null;
+    function best(list, better) { return list.slice().sort(better)[0]; }
+    var twin = best(known, function (a, b) { return b.agree - a.agree || b.c.both - a.c.both || a.name.localeCompare(b.name); });
+    var opposite = best(known, function (a, b) { return a.agree - b.agree || b.c.both - a.c.both || a.name.localeCompare(b.name); });
+    var nemesis = best(all.filter(function (m) { return m.net < 0; }), function (a, b) { return a.net - b.net || a.margin - b.margin || a.name.localeCompare(b.name); });
+    var victim = best(all.filter(function (m) { return m.net > 0; }), function (a, b) { return b.net - a.net || b.margin - a.margin || a.name.localeCompare(b.name); });
+    function pct(m) { return Math.round(100 * m.agree) + "%"; }
+    function weeksText(m) {
+      var more = m.margin > 0 ? p.name : m.margin < 0 ? m.name : "";
+      return "Higher score: " + p.name + " " + plural(m.c.aWeeks, "week") + ", " + m.name + " " + m.c.bWeeks +
+        (m.c.level ? ", level " + m.c.level : "") + (more ? " · " + more + " by " + plural(Math.abs(m.margin), "win") + " in all" : "");
+    }
+    function row(kind, label, m, big, meta) {
+      return el("button", { class: "twin", type: "button", "data-twin": kind, title: "Head-to-head: " + p.name + " and " + m.name,
+        onclick: function () { state.a = p.name; state.b = m.name; store(VS_KEY, m.name); go("h2h"); } }, [
+        el("span", { class: "k", text: label }),
+        el("span", { class: "nm", text: m.name }),
+        el("span", { class: "big num", text: big }),
+        el("span", { class: "meta", text: meta })
+      ]);
+    }
+    var kids = [];
+    kids.push(row("twin", "Pick twin", twin, pct(twin), "The same side in " + twin.c.agree + " of " + plural(twin.c.both, "game")));
+    if (opposite && opposite.name !== twin.name) kids.push(row("opposite", "Opposite", opposite, pct(opposite),
+      "The same side in only " + opposite.c.agree + " of " + plural(opposite.c.both, "game")));
+    if (nemesis) kids.push(row("nemesis", "Nemesis", nemesis, nemesis.c.aWeeks + "–" + nemesis.c.bWeeks, weeksText(nemesis)));
+    if (victim) kids.push(row("victim", "Favourite victim", victim, victim.c.aWeeks + "–" + victim.c.bWeeks, weeksText(victim)));
+    var up = all.filter(function (m) { return m.net > 0; }).length, down = all.filter(function (m) { return m.net < 0; }).length;
+    var even = all.length - up - down;
+    var parts = ["the better of " + (up || "none") + (up ? " of " + plural(all.length, "coach", "coaches") : ""),
+      down ? "the worse of " + down : "the worse of nobody"];
+    if (even) parts.push("even with " + even);
+    kids.push(el("p", { class: "race-sum", text: "Week for week, " + p.name + " has had " + parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] + "." }));
+    kids.push(el("p", { class: "note", text: "Tap one for the full head-to-head. Twins from every game played; weeks count Big Loser points." }));
+    return module("Twins and nemeses", null, [el("div", { class: "twins" }, kids)], { "data-card": "twins" });
+  }
+
   // ---- Me: pick your name once, then your page --------------------------------------------
   function meView() {
     if (hasMe()) return coachView(player(state.me));
@@ -3643,8 +4053,8 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
       week ? rootingFor(p.name) : null,
       chance,
       el("div", { class: "cols" }, [
-        el("div", {}, [trendModule(p), profileModule(p)]),
-        el("div", {}, [rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
+        el("div", {}, [trendModule(p), profileModule(p), blindSpotsModule(p)]),
+        el("div", {}, [twinsModule(p), rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
       ]),
       played ? module("Every week", plural(played, "week"), [scroller(el("table", { id: "coach-weeks" }, [el("thead", {}, [el("tr", {}, [
         el("th", { class: "n", text: "Wk" }), el("th", { class: "n", text: "Wins" }),
