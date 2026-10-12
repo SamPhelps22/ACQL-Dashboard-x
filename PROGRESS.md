@@ -5,9 +5,10 @@ backtests on it (phase 2), and the nudge tested over many seasons (phase 3).
 Production (`acql/`) stays unchanged.
 
 **Status (2026-10-12)**
-- Phase 1 was committed as `6ad873f`, phase 2 as `240c3b6`.
-- Phase 3 is built and verified. It is not committed yet, waiting on Sam's
-  approval.
+- Phase 1 was committed as `6ad873f`, phase 2 as `240c3b6`, and phase 3 as
+  `620b46c`.
+- The challengers (`lab/challengers.py`) are built and verified. They are not
+  committed yet, waiting on Sam's approval.
 
 **Decisions**
 - The lab lives in `lab/`, which production never imports. Outputs go to
@@ -44,14 +45,28 @@ Production (`acql/`) stays unchanged.
 - **Found in passing.** Production counts the `linemidweek` market column as a
   model. Not changed, since that needs approval.
 
+**Challengers (`lab/reports/challengers.md`)**
+- Both are fitted on earlier seasons only and tested on 2013–2026, using the
+  same 3,447 graded games as the baselines.
+- **Best single model.** A nudge toward the one model that fitted best (mostly
+  `linedok`, at a weight of 0.18–0.46).
+  - 2,009 right, against 2,026 for the market alone and 2,024 for Deadeye.
+  - Log loss +0.0013 vs the market (−0.0004 to +0.0030 by season).
+- **Learned blend.** A ridge regression on every model's disagreement with
+  the line.
+  - The penalty it chose was mostly very large: it shrinks toward the market.
+  - 2,002 right; log loss +0.0012 vs the market (−0.0007 to +0.0033).
+- Neither beats the market or Deadeye. Against the closing line, both are
+  about 50%.
+- **Conclusion.** These archives carry no usable signal beyond the midweek
+  line, for any of the three ways of using them tried.
+
 **Next (Sam to decide)**
-- Approve committing phase 3.
-- The nudge shows no measurable value over the market across 16 seasons.
-  Options:
-  - leave production as is;
-  - lower the starting weight, which needs approval and a rollback note;
-  - test challengers in the lab (single models, a learned blend) against the
-    same games.
+- Approve committing the challengers.
+- Options for production:
+  - leave it as is (it is no worse than the market);
+  - drop to the market alone, or lower the starting weight. That needs
+    approval and a rollback note.
 - More verified weeks would still help: typed-spread timestamps (a production
   change), or timestamped odds.
 

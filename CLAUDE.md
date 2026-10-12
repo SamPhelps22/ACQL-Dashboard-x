@@ -59,6 +59,7 @@ python -m acql.backtest          # replays history AND overwrites the tracked ac
 python -m lab.history.build      # fetch pinned inputs, build lab/data/history.db, verify, write coverage report
 python -m lab.walkforward        # phase 2 backtests from that dataset -> lab/reports/walkforward.md
 python -m lab.archive_backtest   # phase 3: market vs Deadeye 2010-2026 -> lab/reports/archive_backtest.md
+python -m lab.challengers        # best single model and a learned blend vs both -> lab/reports/challengers.md
 python packaging/build.py        # PyInstaller build into dist/
 ```
 
@@ -68,9 +69,9 @@ GitHub Release, so pushing a `v*` tag is a release.
 
 ## Known state and traps (as of 2026-10-12)
 
-- **Test baseline.** 86 tests run: 39 app tests, plus 47 lab tests from
-  `tests/test_lab_history.py`, `tests/test_lab_walkforward.py` and
-  `tests/test_lab_archive_backtest.py`. 3 app tests already fail with no
+- **Test baseline.** 91 tests run: 39 app tests, plus 52 lab tests from
+  `tests/test_lab_history.py`, `tests/test_lab_walkforward.py`,
+  `tests/test_lab_archive_backtest.py` and `tests/test_lab_challengers.py`. 3 app tests already fail with no
   changes made (`test_big_loser_slots_round_trip`,
   `test_wins_include_big_loser_points`, and, since 2026-10-12,
   `test_stats_file_declares_its_own_week`), and 1 is skipped. Compare results
