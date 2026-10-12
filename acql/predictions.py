@@ -66,7 +66,15 @@ ADVERSE_MOVE = 6.0
 #: no information the average does not, and the average is the least
 #: accurate summary on the sheet. Same for "probability home wins": the same
 #: average through a 14.36-point curve. Neither is used here.
-CONSENSUS_WEIGHT = 0.33
+#:
+#: 0.25 since 2026-10-12, by Sam's choice; it was 0.33 before, and setting
+#: it back to 0.33 reverts the change. Replayed over 4,215 games from 2010
+#: to 2026 (the Model Lab's lab/reports/archive_backtest.md), every share
+#: from 0 to a third scored within noise of the market alone, and beyond
+#: that steadily worse; a quarter keeps a little of the models' opinion
+#: well inside that range. Weeks already locked keep the weight they were
+#: priced with (pricing.week_weight).
+CONSENSUS_WEIGHT = 0.25
 
 #: The weight is scaled by how much this game's models disagree against the
 #: week's own normal, and held between these multiples of it - so a game

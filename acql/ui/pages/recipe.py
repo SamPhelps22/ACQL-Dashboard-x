@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout
 
-from ... import analytics, recipe
+from ... import analytics, predictions, recipe
 from ...places import RECIPE as title_
 from ...version import MODEL_NAME
 from ..charts import LineChart
@@ -261,9 +261,9 @@ class RecipePage(Page):
         self._best_share = None
         if lines:
             best = min(lines, key=lambda s: s.surprise)
-            most = max(lines, key=lambda s: (s.right, -abs(s.share - 0.33)))
+            most = max(lines, key=lambda s: (s.right, -abs(s.share - predictions.CONSENSUS_WEIGHT)))
             self._best_share = best.share
-            in_use = self._sim.in_use if self._sim is not None else 0.33
+            in_use = self._sim.in_use if self._sim is not None else predictions.CONSENSUS_WEIGHT
             at = min(lines, key=lambda s: abs(s.share - in_use))
             none = lines[0]
             self.share_chart.plot(

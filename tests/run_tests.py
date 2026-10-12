@@ -2026,6 +2026,15 @@ class TestRecipe(unittest.TestCase):
         self.assertIn(0.33, steps)
         self.assertEqual(len(recipe.shares(0.45)), 21)                    # already one of the twentieths
 
+    def test_the_starting_weight_is_the_approved_quarter(self):
+        # Sam's choice on 2026-10-12 (0.33 before; see predictions.CONSENSUS_WEIGHT).
+        from acql import predictions, pricing, recipe
+        self.assertEqual(predictions.CONSENSUS_WEIGHT, 0.25)
+        self.assertEqual(pricing.Context(1).weight, 0.25)
+        self.assertIn(0.25, predictions.fit_steps(predictions.CONSENSUS_WEIGHT))
+        self.assertIn(0.25, recipe.shares(predictions.CONSENSUS_WEIGHT))
+        self.assertEqual(pricing.model_weight(None), (0.25, None))      # no season yet: the start
+
     def test_a_flip_is_a_different_side_from_the_one_in_use(self):
         from acql import recipe
         steady = self._nudge(1, {0.0: ("Home 1", 0.60), 0.33: ("Home 1", 0.62), 1.0: ("Home 1", 0.66)}, "Home 1")
