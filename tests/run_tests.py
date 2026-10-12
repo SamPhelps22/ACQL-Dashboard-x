@@ -36,9 +36,25 @@ def find_sources() -> tuple[Path | None, Path | None]:
     for source in discover(Settings().search_paths()):
         if source.kind == "stats" and stats is None:
             stats = source.path
-        elif source.kind == "workbook" and workbook is None:
+        elif source.kind == "workbook" and workbook is None and _is_dashboard(source.path):
             workbook = source.path
     return stats, workbook
+
+
+def _is_dashboard(path: Path) -> bool:
+    """Whether a spreadsheet is the pool's own workbook - the one with a
+    Dashboard sheet, which the write-back tests are about. Another .xlsx in
+    the folder (a standings export saved as one) is read as a workbook too,
+    and those tests would fail on it rather than be skipped."""
+    try:
+        import openpyxl
+        book = openpyxl.load_workbook(path, read_only=True)
+        try:
+            return "Dashboard" in book.sheetnames
+        finally:
+            book.close()
+    except Exception:  # noqa: BLE001 - unreadable is not the workbook
+        return False
 
 
 STATS_PATH, WORKBOOK_PATH = find_sources()
@@ -163,8 +179,11 @@ class TestSeasonLoad(unittest.TestCase):
                 markers = sum(1 for v in line.big_loser_raw if v == "1")
                 if markers:
                     self.assertEqual(markers, line.big_loser_wins, line.player)
-                for pick in line.big_loser_picks:
-                    self.assertIn(pick, line.big_loser_raw)
+                # A team named in the readable view but not in the slots is one
+                # that came in: a week built from the pick sheet knows which
+                # team a "1" was, where the graded workbook only keeps the "1".
+                named = [p for p in line.big_loser_picks if p not in line.big_loser_raw]
+                self.assertLessEqual(len(named), markers, line.player)
 
     def test_suicide_markers_are_not_treated_as_picks(self):
         for p in self.season.players.values():
@@ -641,6 +660,181 @@ class TestMoneylinesAndTotals(unittest.TestCase):
         self.assertEqual(self._price(total=44.0).sd, analytics.SPREAD_SD)
 
 
+class TestInjuries(_ScratchStore):
+    """ESPN's report, kept to the players who matter to this week's game."""
+
+    NOW = 1_791_000_000.0
+
+    def _report(self):
+        from datetime import datetime, timezone
+        stamp = lambda days: datetime.fromtimestamp(self.NOW - days * 86400, timezone.utc).isoformat()
+        def player(name, pos, status, what, days=1):
+            return {"status": status, "date": stamp(days), "details": {"type": what},
+                    "athlete": {"displayName": name, "position": {"abbreviation": pos}}}
+        return {"injuries": [{"displayName": "Baltimore Ravens", "injuries": [
+            player("Lamar Jackson", "QB", "Out", "Ankle"),
+            player("Third String", "QB", "Out", "Coach's Decision"),
+            player("A Receiver", "WR", "Out", "Hamstring"),
+            player("A Corner", "CB", "Questionable", "Knee"),
+            player("Long Gone", "G", "Injured Reserve", "Knee - ACL", days=40),
+            player("Just Hurt", "S", "Injured Reserve", "Calf", days=3),
+            player("Fine Now", "TE", "Active", ""),
+        ]}]}
+
+    def test_only_the_hurt_and_the_recent_are_kept(self):
+        from acql import injuries
+        kept = injuries.parse(self._report(), now=self.NOW)["bal"]
+        self.assertEqual([i["name"] for i in kept], ["Lamar Jackson", "A Receiver", "Just Hurt", "A Corner"])
+
+    def test_the_summary_names_the_quarterback_and_counts_the_rest(self):
+        from acql import injuries, store
+        store.put("injuries", "latest", {"at": self.NOW, "teams": injuries.parse(self._report(), now=self.NOW)})
+        self.assertEqual(injuries.summary("bal"),
+                         "QB Lamar Jackson out (ankle); 2 more out (WR, S); 1 questionable")
+        self.assertEqual(injuries.summary("atl"), "")
+        self.assertTrue(injuries.due(None, self.NOW + 7 * 3600))
+        self.assertFalse(injuries.due(None, self.NOW + 3600))
+        self.assertTrue(injuries.due(3 * 3600, self.NOW + 2 * 3600))      # hourly on deadline day
+
+
+class TestBigLoser(unittest.TestCase):
+    """What a Big Loser pick is worth: the blowout, and how few cards share it."""
+
+    def test_a_pick_everyone_has_gains_less_than_one_few_do(self):
+        from acql import bigloser
+        popular = bigloser.Option("mia", "Miami", "Buffalo", -10.0, 0.36, 0.70)
+        quiet = bigloser.Option("lv", "Las Vegas", "Denver", -5.0, 0.19, 0.16)
+        self.assertGreater(popular.chance, quiet.chance)
+        self.assertGreater(quiet.gain, popular.gain)
+        board = bigloser.Board(6, [popular, quiet])
+        self.assertEqual(board.likeliest[0].code, "mia")
+        self.assertEqual(board.best_gain[0].code, "lv")
+
+    def test_the_pool_s_share_is_counted_off_the_sheet(self):
+        from types import SimpleNamespace
+        from acql import bigloser
+        sheet = SimpleNamespace(losers={"A": ["Miami", "Arizona", "Las Vegas"],
+                                        "B": ["Miami", "Arizona", "Tennessee"]})
+        held, counted = bigloser._held(sheet, {"mia": 0.3, "lv": 0.2, "den": 0.1})
+        self.assertTrue(counted)
+        self.assertEqual(held, {"mia": 1.0, "lv": 0.5, "den": 0.0})
+
+    def test_a_record_is_judged_against_what_its_picks_deserved(self):
+        from acql import bigloser
+        record = bigloser.Record("a", "A", weeks=4, picks=12, hits=3, expected=3.6, priced=12, held=6.0)
+        self.assertAlmostEqual(record.rate, 0.25)
+        self.assertAlmostEqual(record.luck, -0.6)
+        self.assertAlmostEqual(record.crowd, 0.5)
+
+
+class TestSignalScoreboard(unittest.TestCase):
+    """A signal with a wrong-way record keeps its place and loses its vote."""
+
+    def test_a_distrusted_signal_is_shown_but_not_counted(self):
+        from acql import evidence
+        form = evidence.Signal("Form", evidence.FOR, "Dallas 3-1", "Dallas beat Houston.")
+        record = evidence.SignalRecord("Form", games=42, right=15, split=27, split_right=9)
+        shown = evidence._discounted(form, {"Form": record})
+        self.assertEqual(shown.verdict, evidence.INFO)
+        self.assertIn("9 of 27", shown.detail)
+        self.assertEqual(evidence._discounted(form, {}).verdict, evidence.FOR)
+        self.assertAlmostEqual(record.rate, 15 / 42)
+
+    def test_an_empty_season_scores_nothing(self):
+        from acql import evidence, power
+        board = evidence.scoreboard(Season())
+        self.assertEqual([r.games for r in board], [0] * len(evidence.SCORED))
+        self.assertEqual(evidence.distrusted(Season()), {})
+
+
+class TestDeadeyeBigLosers(_ScratchStore):
+    """Deadeye's three Big Losers are part of its card: kept with it, and scored from it."""
+
+    def _brief(self):
+        from types import SimpleNamespace
+        from acql import analytics
+        choice = SimpleNamespace(index=1, pick="Kansas City", other="Denver", chance=0.7, matchup="Denver @ Kansas City",
+                                 home_margin=6.5, turned=False)
+        losers = [analytics.BigLoser("Arizona", "Los Angeles Rams", -10.5, 0.36),
+                  analytics.BigLoser("Washington", "San Francisco", -8.0, 0.28),
+                  analytics.BigLoser("Los Angeles Chargers", "Kansas City", -7.5, 0.27)]
+        return SimpleNamespace(choices=[choice], losers=losers, plan=None, win_odds=None)
+
+    def test_the_kept_card_holds_its_three(self):
+        from acql import cards
+        snap = cards.Snapshot.of(self._brief())
+        self.assertEqual(snap.losers, ["ari", "was", "lac"])
+        self.assertAlmostEqual(snap.loser_chance["ari"], 0.36)
+        cards._put(6, "model", snap)
+        self.assertEqual(cards.model(6).losers, ["ari", "was", "lac"])
+
+    def test_a_card_kept_before_they_were_still_loads(self):
+        from acql import cards
+        old = cards.Snapshot.load({"at": 1.0, "take": {"1": "Dallas"}, "chance": {"1": 0.6}, "label": {"1": "A @ B"}})
+        self.assertEqual(old.losers, [])
+
+    def test_the_ghost_is_scored_on_the_ones_it_kept(self):
+        from acql import cards, ghost
+        from acql.models import Week
+        snap = cards.Snapshot.of(self._brief())
+        self.assertEqual(ghost._losers(Season(), 6, Week(6), snap), ["ari", "was", "lac"])
+
+
+class TestCardEmail(_ScratchStore):
+    """Deadeye's card goes to whoever runs the dashboard - never to the pool's list."""
+
+    def _settings(self):
+        from acql import mailer
+        settings = mailer.MailSettings(sender="me@example.com",
+                                       recipients=["pool-a@example.com", "pool-b@example.com"])
+        settings.sealed_password = "plain:eA=="
+        settings.save()
+        return settings
+
+    def test_it_goes_to_the_sender_and_not_the_recap_list(self):
+        from acql import cardmail
+        settings = self._settings()
+        self.assertEqual(cardmail.recipients(settings), ["me@example.com"])
+        card = cardmail.CardMail(6, "Deadeye week 6: 2 picks", "text", "<p>html</p>")
+        message = cardmail.message(card, settings)
+        self.assertEqual(message["To"], "me@example.com")
+        self.assertNotIn("pool-a", str(message))
+
+    def test_a_kept_address_is_used(self):
+        from acql import cardmail, store
+        settings = self._settings()
+        store.put("settings", "cardmail", {"to": ["phone@example.com", "not an address"]})
+        self.assertEqual(cardmail.recipients(settings), ["phone@example.com"])
+
+    def test_it_says_what_changed_since_the_last_one(self):
+        from acql import cardmail
+        before = {"picks": {"1": ["Dallas", 0.51], "2": ["Chicago", 0.60], "3": ["Miami", 0.57]}}
+        now = {"1": ["Tampa Bay", 0.55], "2": ["Chicago", 0.68], "3": ["Miami", 0.58], "4": ["Denver", 0.61]}
+        games = {"1": "Tampa Bay @ Dallas", "2": "Chicago @ Green Bay", "3": "Cincinnati @ Miami", "4": "Denver @ LAC"}
+        changes = cardmail._changes(now, games, before)
+        self.assertEqual(len(changes), 3)
+        self.assertTrue(changes[0].startswith("Changed: Tampa Bay @ Dallas - now Tampa Bay"))
+        self.assertTrue(changes[1].startswith("Moved: Chicago"))
+        self.assertTrue(changes[2].startswith("New: Denver @ LAC"))
+        self.assertEqual(cardmail._changes(now, games, {}), [])        # a first email has nothing to compare
+
+    def test_sending_keeps_the_card_for_next_time(self):
+        from acql import cardmail
+        self._settings()
+        sent = []
+
+        class Server:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def login(self, user, password): sent.append(("login", user))
+            def send_message(self, message): sent.append(("to", message["To"]))
+
+        card = cardmail.CardMail(6, "Deadeye week 6", "text", "<p>html</p>", picks={"1": ["Seattle", 0.55]})
+        self.assertEqual(cardmail.send(card, smtp_factory=Server), ["me@example.com"])
+        self.assertEqual(sent, [("login", "me@example.com"), ("to", "me@example.com")])
+        self.assertEqual(cardmail._last(6)["picks"], {"1": ["Seattle", 0.55]})
+
+
 class TestNewestNumberWins(unittest.TestCase):
     """A spread typed before the latest line gives way to it; one typed since wins."""
 
@@ -734,6 +928,875 @@ class TestPatterns(_ScratchStore):
         self.assertGreater(wild.rating, 9.0)
         self.assertEqual((wild.label, wild.upsets), ("Chaos", 8))
         self.assertIn(" over ", wild.biggest_text)
+
+
+class TestClosingLines(_ScratchStore):
+    """Each game's line is kept as it moves, and a pick is judged by where its line ended."""
+
+    KICKOFF = 1_790_000_000.0
+
+    def _score(self, spread, state="pre"):
+        from acql import results
+        return results.Score("phi", "chi", state=state, kickoff=self.KICKOFF, home_spread=spread)
+
+    def test_a_line_is_kept_as_stretches_and_never_after_kickoff(self):
+        from acql import closing
+        early, later, last = self.KICKOFF - 3 * 86400, self.KICKOFF - 86400, self.KICKOFF - 3600
+        self.assertEqual(closing.capture(2026, 6, [self._score(3.0)], early), 1)
+        closing.capture(2026, 6, [self._score(3.0)], later)         # the same number: one stretch, longer
+        closing.capture(2026, 6, [self._score(4.5)], last)
+        self.assertEqual(closing.capture(2026, 6, [self._score(9.5, "in")], self.KICKOFF + 3600), 0)
+        self.assertEqual(closing.capture(2026, 6, [self._score(9.5)], self.KICKOFF + 3600), 0)
+        kept = closing.lines(2026, 6)[frozenset(("phi", "chi"))]
+        self.assertEqual(kept["home"], "chi")
+        self.assertEqual(kept["runs"], [(early, later, 3.0), (last, last, 4.5)])
+
+    def test_keeping_the_scores_keeps_the_lines(self):
+        from acql import closing, results
+        results.save(2026, 6, [self._score(3.0)], at=self.KICKOFF - 86400)
+        self.assertEqual(closing.lines(2026, 6)[frozenset(("phi", "chi"))]["runs"][-1][2], 3.0)
+
+    def test_a_pick_is_judged_by_where_its_line_ended(self):
+        from acql import closing
+        toward = closing.PickValue(6, "Philadelphia @ Chicago", "Chicago", 3.0, 4.5, False)
+        away = closing.PickValue(6, "Dallas @ Denver", "Dallas", -2.0, -3.0, False)
+        still = closing.PickValue(6, "Miami @ Buffalo", "Buffalo", 6.5, 6.5, False)
+        two_books = closing.PickValue(6, "Seattle @ Arizona", "Seattle", 1.0, 1.5, True)
+        self.assertEqual([p.verdict for p in (toward, away, still, two_books)], [1, -1, 0, 0])
+        value = closing.Value([toward, away, still, two_books])
+        self.assertEqual((value.toward, value.away, value.weeks), (1, 1, [6]))
+        self.assertAlmostEqual(value.points, (1.5 - 1.0 + 0.0 + 0.5) / 4)
+
+
+class TestWeather(_ScratchStore):
+    """Weather is said only when there is some, and only where there is no roof."""
+
+    KICKOFF = 1_790_010_000.0
+
+    def _opener(self, calls):
+        import io
+        import json
+        hours = [time.strftime("%Y-%m-%dT%H:00", time.gmtime(self.KICKOFF + h * 3600)) for h in range(5)]
+
+        def open_url(request):
+            calls.append(request.full_url)
+            if "geocoding" in request.full_url:
+                body = {"results": [{"latitude": 51.5, "longitude": -0.12, "admin1": "England"}]}
+            else:
+                body = {"hourly": {"time": hours, "temperature_2m": [50, 52, 51, 51, 40],
+                                   "precipitation_probability": [20, 70, 40, 10, 0],
+                                   "wind_speed_10m": [12, 18, 16, 9, 5],
+                                   "wind_gusts_10m": [20, 31, 25, 15, 10]}}
+            return io.BytesIO(json.dumps(body).encode("utf-8"))
+
+        return open_url
+
+    def _slate(self, now):
+        from acql import results
+        results.save(2026, 6, [
+            results.Score("den", "nyj", kickoff=self.KICKOFF, city="London, England", indoor=False),
+            results.Score("ari", "lar", kickoff=self.KICKOFF, city="Inglewood, CA", indoor=True),
+        ], at=now)
+
+    def test_only_the_outdoor_game_is_forecast(self):
+        from acql import weather
+        now, calls = self.KICKOFF - 2 * 86400, []
+        self._slate(now)
+        self.assertTrue(weather.due(2026, 6, now))
+        self.assertEqual(weather.refresh(2026, 6, opener=self._opener(calls), now=now), 1)
+        found = weather.game(2026, 6, "Denver", "New York Jets")
+        self.assertEqual((found.wind, found.gust, found.wet, found.temperature), (18.0, 31.0, 70, 51.0))
+        self.assertTrue(found.notable)
+        self.assertIn("18 mph wind, gusts to 31, 70% chance of rain", found.words())
+        self.assertEqual(weather.game(2026, 6, "New York Jets", "Denver"), found)     # either way round
+        self.assertIsNone(weather.game(2026, 6, "Arizona", "Los Angeles Rams"))
+        self.assertTrue(weather.indoors(2026, 6, "Arizona", "Los Angeles Rams"))
+        self.assertFalse(weather.due(2026, 6, now + 60))
+        self.assertTrue(weather.due(2026, 6, now + weather.EVERY))
+        # The city is looked up once and kept.
+        weather.refresh(2026, 6, opener=self._opener(calls), now=now + weather.EVERY)
+        self.assertEqual(sum("geocoding" in url for url in calls), 1)
+
+    def test_it_is_shown_under_the_pick_and_never_counted(self):
+        from acql import evidence, weather
+        from acql.models import Game
+        now = self.KICKOFF - 2 * 86400
+        self._slate(now)
+        weather.refresh(2026, 6, opener=self._opener([]), now=now)
+        signal = evidence._weather(2026, 6, Game(1, home="New York Jets", away="Denver"))
+        self.assertEqual((signal.name, signal.verdict), ("Weather", evidence.INFO))
+        self.assertTrue(signal.headline.endswith("in London"))
+        self.assertIsNone(evidence._weather(2026, 6, Game(2, home="Los Angeles Rams", away="Arizona")))
+
+    def test_a_calm_day_is_not_worth_a_line(self):
+        from acql import weather
+        self.assertFalse(weather.Forecast(60.0, 5.0, 10.0, 10).notable)
+        self.assertTrue(weather.Forecast(20.0, 5.0, 10.0, 10).notable)       # cold alone is
+        self.assertIn("chance of snow", weather.Forecast(28.0, 5.0, 10.0, 80).words())
+
+
+class TestTeamStrength(unittest.TestCase):
+    """The dashboard's own ratings: from final scores, and only the ones before the week."""
+
+    def _games(self, season=2025):
+        # Dallas beats Miami by 14 every week, home and away.
+        return [(season, w, "dal", "mia", 14.0) if w % 2 else (season, w, "mia", "dal", -14.0)
+                for w in range(1, 9)]
+
+    def test_a_week_is_rated_on_what_came_before_it(self):
+        from acql import backtest, teamstrength
+        rated, starts, final, last = teamstrength._walk(self._games())
+        self.assertEqual((starts[(2025, 1)].teams, starts[(2025, 1)].games), ({}, 0))
+        self.assertEqual(starts[(2025, 3)].games, 2)
+        # The first game was priced level but for the home edge - before it was played.
+        self.assertAlmostEqual(rated[(2025, 1, frozenset(("dal", "mia")))], backtest.HOME_EDGE_START)
+        self.assertGreater(final.teams["dal"], starts[(2025, 3)].teams["dal"])
+        self.assertGreater(starts[(2025, 3)].teams["dal"], 0)
+        self.assertAlmostEqual(final.teams["dal"], -final.teams["mia"])
+        self.assertEqual((final.games, last), (8, 2025))
+
+    def test_a_new_season_starts_part_of_the_way_back_to_average(self):
+        from acql import backtest, teamstrength
+        _rated, starts, _final, last = teamstrength._walk(self._games() + self._games(2026))
+        ended = teamstrength._walk(self._games())[2].teams["dal"]
+        self.assertAlmostEqual(starts[(2026, 1)].teams["dal"], ended * (1 - backtest.PRESEASON_REGRESSION))
+        self.assertEqual(last, 2026)
+
+    def test_a_matchup_is_priced_from_the_home_side(self):
+        from acql import teamstrength
+        strength = teamstrength.Strength({"dal": 3.0, "mia": -3.0}, 2.0, 8)
+        self.assertEqual(strength.margin("Dallas", "Miami"), 8.0)
+        self.assertEqual(strength.margin("Miami", "Dallas"), -4.0)
+        self.assertIsNone(strength.margin("Dallas", "Seattle"))        # a team never seen
+
+
+class TestModelLab(unittest.TestCase):
+    """A challenger takes Deadeye's place only on enough games, and clearly better."""
+
+    def _entry(self, shared, right, deadeye_right, logloss, deadeye_logloss):
+        from acql import modellab
+        return modellab.Entry("Challenger", "", games=shared, right=right, shared=shared,
+                              shared_right=right, deadeye_right=deadeye_right,
+                              shared_logloss=shared * logloss, deadeye_logloss=shared * deadeye_logloss)
+
+    def test_a_good_month_is_not_enough(self):
+        from acql import modellab
+        hot = self._entry(60, 45, 38, 0.60, 0.66)
+        self.assertAlmostEqual(hot.edge, 0.06)
+        self.assertEqual(hot.verdict, f"ahead, 60 of {modellab.ENOUGH_GAMES} games")
+        self.assertIsNone(modellab.Lab([hot], 60, (1, 2, 3, 4)).challenger)
+
+    def test_enough_games_and_clearly_better_earns_the_switch(self):
+        from acql import modellab
+        n = modellab.ENOUGH_GAMES
+        earned = self._entry(n, 100, 96, 0.62, 0.64)
+        close = self._entry(n, 100, 96, 0.635, 0.64)        # better, but not clearly
+        fewer = self._entry(n, 95, 96, 0.62, 0.64)          # sharper chances, fewer winners
+        self.assertEqual(earned.verdict, "has earned the switch")
+        self.assertNotEqual(close.verdict, "has earned the switch")
+        self.assertNotEqual(fewer.verdict, "has earned the switch")
+        self.assertIs(modellab.Lab([close, earned], n, (1,)).challenger, earned)
+
+    def test_the_one_in_service_is_not_its_own_challenger(self):
+        from acql import modellab
+        service = modellab.Entry("Deadeye", "", games=73, right=49, incumbent=True)
+        self.assertEqual((service.verdict, service.edge), ("in service", None))
+        self.assertAlmostEqual(service.rate, 49 / 73)
+        self.assertEqual(modellab._blend(3.0, 7.0, 0.25), 4.0)
+        self.assertIsNone(modellab._blend(None, 7.0, 0.25))
+
+
+class TestPlaces(unittest.TestCase):
+    """A page remembered under its old name still opens where it lives now."""
+
+    def test_every_old_name_leads_to_a_place(self):
+        from acql import places
+        sidebar = [places.SEASON, places.THIS_WEEK, places.GAME_DAY, places.RESULTS, places.SIDE_POOLS,
+                   places.PLAYER, places.INSIGHTS, places.MODEL, places.DATA]
+        self.assertEqual(len(set(sidebar)), len(sidebar))
+        self.assertEqual(set(places.FORMERLY.values()), set(sidebar))
+        self.assertFalse(set(places.FORMERLY) & set(sidebar))          # no old name is a new one
+
+
+class TestTheme(unittest.TestCase):
+    """The dashboard's colours read on their own surfaces; the pool's recap keeps the league's."""
+
+    def test_text_reads_on_every_surface(self):
+        from acql.ui import theme
+        for p in theme.PALETTES.values():
+            self.assertGreaterEqual(theme.contrast(p.ink, p.plane), 12)
+            self.assertGreaterEqual(theme.contrast(p.ink_muted, p.surface), 4.0)
+            self.assertGreaterEqual(theme.contrast(p.brand, p.surface), 4.0)
+            written = "#05070a" if theme._bright(p.accent) else "#ffffff"
+            self.assertGreaterEqual(theme.contrast(written, p.accent), 4.5)    # a primary button's label
+
+    def test_the_recap_keeps_the_league_colours(self):
+        from acql.ui import theme
+        for name, p in theme.PALETTES.items():
+            league = theme.league(p)
+            self.assertEqual(league.name, name)
+            self.assertNotEqual(league.accent, p.accent)
+            self.assertIn(p.accent, theme.stylesheet(p))        # the stylesheet builds, in its own colours
+            self.assertNotIn(league.accent, theme.stylesheet(p))
+
+
+class TestHitsAndMisses(unittest.TestCase):
+    """Deadeye's record cut by confidence and situation, and each miss by its kind."""
+
+    def _game(self, **over):
+        from acql import autopsy
+        made = dict(week=1, index=1, matchup="Miami @ Buffalo", pick="Buffalo", chance=0.70, right=True,
+                    margin=6.0, line=6.5, line_pick="Buffalo", line_right=True, actual=10.0, home_pick=True)
+        made.update(over)
+        return autopsy.Graded(**made)
+
+    def test_a_row_counts_what_its_own_chances_called_for(self):
+        from acql import autopsy
+        games = [self._game(index=i, right=i <= 6, line_right=i <= 6) for i in range(1, 11)]
+        row = autopsy.tally("Every pick", games)
+        self.assertEqual((row.picks, row.right, row.line_right, row.line_games), (10, 6, 6, 10))
+        self.assertAlmostEqual(row.expected, 7.0)
+        self.assertAlmostEqual(row.expected_rate, 0.70)
+        self.assertEqual(row.verdict, "too few to say")          # ten picks prove nothing
+
+    def test_confidence_is_only_called_wrong_on_enough_picks_and_a_real_gap(self):
+        from acql import autopsy
+        cold = autopsy.tally("Lock", [self._game(index=i, chance=0.80, right=i <= 12) for i in range(1, 31)])
+        fair = autopsy.tally("Lock", [self._game(index=i, chance=0.80, right=i <= 23) for i in range(1, 31)])
+        hot = autopsy.tally("Lean", [self._game(index=i, chance=0.56, right=i <= 27) for i in range(1, 31)])
+        self.assertEqual(cold.verdict, "surer than it should be")
+        self.assertEqual(fair.verdict, "as good as it said")
+        self.assertEqual(hot.verdict, "better than it said")
+
+    def test_picks_are_sorted_by_how_sure_it_was(self):
+        from acql import autopsy
+        games = [self._game(index=1, chance=0.80), self._game(index=2, chance=0.66),
+                 self._game(index=3, chance=0.58), self._game(index=4, chance=0.52)]
+        self.assertEqual([(t.name, t.picks) for t in autopsy.tiers(games)],
+                         [("Lock", 1), ("Strong", 1), ("Lean", 1), ("Coin flip", 1)])
+
+    def test_a_miss_is_named_for_what_kind_it_was(self):
+        from acql import autopsy
+        lost = dict(right=False, actual=-4.0)
+        toss_up = self._game(index=1, chance=0.52, **lost)
+        shared = self._game(index=2, line_right=False, **lost)
+        against = self._game(index=3, line_pick="Miami", line_right=True, **lost)
+        no_cover = self._game(index=4, right=False, actual=3.0, pool_line=7.0, pool_favourite="Buffalo",
+                              line_right=False)
+        routed = self._game(index=5, line_right=False, right=False, actual=-20.0)
+        found = {m.game.index: m for m in autopsy.misses([toss_up, shared, against, no_cover, routed, self._game(index=6)])}
+        self.assertEqual({i: m.kind for i, m in found.items()}, {
+            1: autopsy.TOSS_UP, 2: autopsy.SHARED, 3: autopsy.AGAINST, 4: autopsy.COVER, 5: autopsy.SHARED})
+        self.assertEqual([i for i, m in found.items() if m.never_close], [5])
+        self.assertNotIn(6, found)                               # a hit is not a miss
+
+    def test_margin_error_and_runs(self):
+        from acql import autopsy
+        games = [self._game(index=1, margin=6.0, line=7.0, actual=10.0),            # 4 off, the line 3
+                 self._game(index=2, margin=3.0, line=2.0, actual=-3.0, right=False),   # 6 off, the line 5
+                 self._game(index=3, actual=None)]                                    # no score kept
+        error = autopsy.margin_error(games)
+        self.assertEqual((error.games, error.deadeye, error.line), (2, 5.0, 4.0))
+        run = [self._game(index=i, right=r) for i, r in enumerate([True, True, False, True, True, True, False, False], 1)]
+        self.assertEqual(autopsy.streaks(run), (3, 2))
+        self.assertEqual(autopsy.margin_text(-3.0), "lost by 3")
+        self.assertEqual(autopsy.margin_text(6.5), "by 6.5")
+
+    def test_a_cut_with_nothing_to_compare_is_left_out(self):
+        from acql import autopsy
+        games = [self._game(index=i, home_pick=i % 2 == 0) for i in range(1, 9)]
+        titles = [title for title, _rows in autopsy.situations(games)]
+        self.assertIn("Home or road", titles)
+        self.assertNotIn("Favourite or underdog", titles)        # every pick was the favourite
+        self.assertNotIn("Time of season", titles)               # and all in week 1
+
+
+class TestRadar(unittest.TestCase):
+    """How a game could go, read off the same margin the pick is made from."""
+
+    def test_the_spread_of_results_adds_up(self):
+        from acql import analytics, radar
+        win, upset, close, rout = radar._spread_of_results(7.0, analytics.SPREAD_SD)
+        level = analytics.margin_distribution(7.0, analytics.SPREAD_SD)
+        tie = sum(p for d, p in level if d == 0)
+        self.assertAlmostEqual(win + upset + tie, 1.0)
+        self.assertAlmostEqual(win, analytics.win_chance(7.0))
+        self.assertGreater(win, 0.70)
+        # A bigger favourite is upset less, wins big more, and is in fewer close ones.
+        w2, u2, c2, r2 = radar._spread_of_results(13.0, analytics.SPREAD_SD)
+        self.assertTrue(u2 < upset and r2 > rout and c2 < close)
+
+    def test_hard_to_call_runs_from_a_lock_to_a_coin_flip_in_a_gale(self):
+        from acql import radar
+        self.assertEqual(radar.hard_to_call(1.0, 0.0, 0.0, False), 0)
+        self.assertEqual(radar.hard_to_call(0.5, 2 * radar.SPLIT, 3.0, True), 100)
+        calm = radar.hard_to_call(0.60, 0.0, None, False)
+        self.assertEqual(calm, 48)                                # 0.6 x 0.8 of the way to a coin flip
+        self.assertGreater(radar.hard_to_call(0.60, 6.0, 1.5, True), calm)
+        self.assertGreater(radar.hard_to_call(0.52, 0.0, 0.0, False), radar.hard_to_call(0.80, 0.0, 0.0, False))
+
+    def test_the_slate_names_its_extremes(self):
+        from acql import radar
+
+        def shape(index, **over):
+            made = dict(index=index, matchup=f"Game {index}", pick="A", chance=0.6, favourite="A", underdog="B",
+                        margin=3.0, line=3.0, win=0.6, upset=0.39, close=0.27, rout=0.27, gap=0.0, split=0.0,
+                        hard=48.0)
+            made.update(over)
+            return radar.Shape(**made)
+
+        slate = radar.Slate(6, [
+            shape(1, hard=61.0, flags=("a toss-up at 52%",)),
+            shape(2, line=1.5, upset=0.46),                      # likelier, but no real underdog
+            shape(3, line=3.5, upset=0.42),
+            shape(4, rout=0.47, gap=0.4),
+            shape(5, gap=-1.0, hard=30.0, flags=("weather",)),
+        ])
+        self.assertEqual((slate.hardest.index, slate.upset.index, slate.rout.index, slate.edge.index), (1, 3, 4, 5))
+        self.assertEqual(slate.doubts, ["Game 1: a toss-up at 52%", "Game 5: weather"])
+        quiet = radar.Slate(6, [shape(1)])
+        self.assertIsNone(quiet.edge)                            # within half a point of the line everywhere
+        self.assertEqual(radar.Slate(7).doubts, [])
+
+
+class TestBlindSpotsAndFear(_ScratchStore):
+    """Where the record sits under its own chances - and whether this week has games like it."""
+
+    def _game(self, **over):
+        from acql import autopsy
+        made = dict(week=2, index=1, matchup="Miami @ Buffalo", pick="Buffalo", chance=0.65, right=True,
+                    margin=5.0, line=5.5, line_pick="Buffalo", line_right=True, actual=7.0, home_pick=True)
+        made.update(over)
+        return autopsy.Graded(**made)
+
+    def _season(self):
+        # Fine outside the division (16 of 20), poor inside it (4 of 14).
+        outside = [self._game(index=i, right=i <= 16) for i in range(1, 21)]
+        inside = [self._game(index=100 + i, divisional=True, right=i <= 4, actual=7.0 if i <= 4 else -9.0)
+                  for i in range(1, 15)]
+        return outside + inside
+
+    def test_a_game_falls_in_its_situations(self):
+        from acql import autopsy
+        names = autopsy.matching(self._game(divisional=True, night=True, pool_line=7.0))
+        for name in ("The betting favourite", "The line's side", "The home team", "Line 3.5 to 6.5",
+                     "Pool-line games", "Division games", "Night games", "Weeks 1-6"):
+            self.assertIn(name, names)
+        self.assertNotIn("The road team", names)
+
+    def test_the_worst_situation_is_found_and_says_how_sure_it_is(self):
+        from acql import autopsy
+        spots = autopsy.blind_spots(self._season())
+        self.assertEqual(spots[0].name, "Division games")
+        self.assertEqual((spots[0].right, spots[0].picks), (4, 14))
+        self.assertEqual(spots[0].verdict, "too few to say")              # fourteen picks prove nothing
+        self.assertAlmostEqual(spots[0].error, (4 * 2.0 + 10 * 14.0) / 14)
+        self.assertNotIn("Outside the division", [s.name for s in spots])
+        self.assertEqual(autopsy.blind_spots([self._game(index=i) for i in range(1, 40)]), [])
+
+    def test_the_fear_is_a_blind_spot_this_week_has_games_in(self):
+        from acql import autopsy
+        history = self._season()
+        coming = {"Dallas @ Philadelphia": ("Division games", "Night games"), "Denver @ Miami": ("Day games",)}
+        found = autopsy.fear(history, coming)
+        self.assertEqual((found.row.name, found.games), ("Division games", ("Dallas @ Philadelphia",)))
+        self.assertIsNone(autopsy.fear(history, {"Denver @ Miami": ("Day games",)}))
+
+    def test_a_finished_week_is_read_back_as_it_was_written(self):
+        from dataclasses import asdict
+        from acql import autopsy, store
+        game = self._game(pool_line=7.0, pool_favourite="Buffalo", night=True)
+        self.assertIsNone(autopsy.kept(2026, 2))
+        store.put(autopsy.KIND, autopsy._key(2026, 2), {"at": 1.0, "version": "x", "games": [asdict(game)]})
+        self.assertEqual(autopsy.kept(2026, 2), [game])
+
+
+class TestScoutingAndPulse(unittest.TestCase):
+    """A projected score from the margin and the total, and the week's pulse from its games."""
+
+    def test_the_projected_score_splits_the_total_by_the_margin(self):
+        from acql import scouting
+        self.assertEqual(scouting.projected_score(7.0, 45.0), (26, 19))
+        self.assertEqual(scouting.projected_score(-3.0, 41.0), (19, 22))
+        self.assertIsNone(scouting.projected_score(7.0, None))             # no over/under, no score
+        home, away = scouting.projected_score(1.0, 44.0)                   # 22.5-21.5 must not round to a tie
+        self.assertGreater(home, away)
+        self.assertEqual(scouting._ordinal(1), "1st")
+        self.assertEqual(scouting._ordinal(12), "12th")
+        self.assertEqual(scouting._ordinal(23), "23rd")
+
+    def test_the_pulse_is_the_average_game(self):
+        from acql import radar
+
+        def shape(index, hard, chance=0.6):
+            return radar.Shape(index=index, matchup=f"Game {index}", pick="A", chance=chance, favourite="A",
+                               underdog="B", margin=3.0, line=3.0, win=0.6, upset=0.39, close=0.27, rout=0.27,
+                               gap=0.0, split=0.0, hard=hard)
+
+        slate = radar.Slate(6, [shape(1, 60.0, 0.52), shape(2, 40.0), shape(3, 20.0, 0.8)])
+        self.assertEqual((slate.pulse, slate.mood, slate.toss_ups), (40.0, "Ordinary", 1))
+        self.assertEqual(radar.Slate(6, [shape(1, 70.0), shape(2, 60.0)]).mood, "Wide open")
+        self.assertEqual((radar.Slate(7).pulse, radar.Slate(7).mood), (0.0, "Chalk"))
+
+
+class TestContenders(unittest.TestCase):
+    """The Analyst and the Machine: taught on one set of games, asked about another."""
+
+    def _games(self, n=900, seed=3):
+        import numpy as np
+        draw = np.random.default_rng(seed)
+        X = draw.normal(size=(n, 3))
+        # one straight-line input, one that only matters past a threshold, one that is noise
+        y = 4.0 * X[:, 0] + np.where(X[:, 1] > 0.3, 6.0, -2.0) + draw.normal(scale=0.5, size=n)
+        return X, y
+
+    def test_the_regression_finds_the_straight_line(self):
+        import numpy as np
+        from acql import contenders
+        X, y = self._games()
+        mean, spread, weights, constant = contenders.ridge(X, y)
+        guess = ((X - mean) / spread) @ weights + constant
+        self.assertAlmostEqual(float(weights[0] / spread[0]), 4.0, delta=0.3)
+        self.assertLess(abs(float(weights[2])), 0.3)                       # the noise gets next to nothing
+        self.assertLess(float(np.abs(guess - y).mean()), float(np.abs(y - y.mean()).mean()))
+
+    def test_the_trees_find_the_step_the_line_cannot(self):
+        import numpy as np
+        from acql import contenders
+        X, y = self._games()
+        Xt, yt = self._games(seed=4)                                        # games neither was taught on
+        mean, spread, weights, constant = contenders.ridge(X, y)
+        start, trees = contenders.boost(X, y)
+        line = ((Xt - mean) / spread) @ weights + constant
+        boosted = start + contenders.LEARNING_RATE * sum(contenders._leaves(t, Xt) for t in trees)
+        self.assertLess(float(np.abs(boosted - yt).mean()), float(np.abs(line - yt).mean()))
+        one = start + contenders.LEARNING_RATE * sum(contenders._leaf(t, Xt[0]) for t in trees)
+        self.assertAlmostEqual(one, float(boosted[0]))                      # one game at a time agrees
+        again = contenders.boost(X, y)
+        self.assertEqual(again[1], trees)                                   # the same Machine every time
+
+    def test_every_game_is_described_by_the_same_inputs(self):
+        from acql import contenders
+        inputs = contenders._inputs(3.5, 2.0, -1.5, [7.0, -3.0, 10.0], [], 6)
+        self.assertEqual(len(inputs), len(contenders.INPUTS))
+        self.assertEqual(inputs[:3], [3.5, 2.0, -1.5])
+        self.assertAlmostEqual(inputs[3], 14.0 / 3)                         # its last three: all it has played
+        self.assertEqual((inputs[4], inputs[5], inputs[6], inputs[7], inputs[8]), (0.0, 10.0, 0.0, 3.0, 0.0))
+        untaught = contenders.Taught(2026)
+        self.assertEqual(untaught.margins(inputs), (None, None))
+        self.assertEqual(untaught.recent(3), {})
+
+
+class TestGrades(unittest.TestCase):
+    """The report card's letters: one measurement, one yardstick, and no mark without enough to go on."""
+
+    def _report(self, weeks=5, model=10, mine=8, pool=7.5, hits=49, said=47.0):
+        from acql import reportcard
+        report = reportcard.Report(coach="Sam")
+        report.weeks = [reportcard.WeekLine(week=w, games=16, model=model, mine=mine, pool_average=pool, best=12,
+                                            model_place=4, model_tied=0, my_place=12, entrants=35, rebuilt=False)
+                        for w in range(1, weeks + 1)]
+        report.expected, report.graded_picks, report.graded_hits, report.luck = said, 80, hits, 4.3
+        return report
+
+    def _hits(self, right=49, line_right=48, picks=73, deadeye=10.0, line=10.0):
+        from acql import autopsy
+        return autopsy.Report([], autopsy.Row("Every pick", picks, right, 43.0, 17.0, picks, line_right), [], [], [],
+                              autopsy.MarginError(picks, deadeye, line), (0, 0))
+
+    def test_letters_and_steps(self):
+        from acql import grades
+        self.assertEqual((grades.letter(4.3), grades.letter(3.24), grades.letter(0.2)), ("A+", "B+", "F"))
+        self.assertEqual(grades.by_steps(0.0, grades.BY_LINE), "B")              # level with the market
+        self.assertEqual(grades.by_steps(3.0, grades.BY_LINE), "A")
+        self.assertEqual(grades.by_steps(-2.0, grades.BY_LINE), "C+")
+        self.assertEqual([grades.tone(g) for g in ("A-", "B+", "C", "F", "")], ["good", "", "warning", "bad", "muted"])
+
+    def test_the_card_takes_its_place_in_the_field(self):
+        from acql import grades
+        from acql.models import PlayerWeek, Week
+        season = Season()
+        totals = {"ann": 12, "bob": 10, "cy": 10, "di": 7}
+        for key in totals:
+            season.players[key] = Player(key=key, display=key.title())
+        week = Week(1)
+        for key, wins in totals.items():
+            week.lines[key] = PlayerWeek(key, 1, regular_wins=wins)
+        season.weeks[1] = week
+        stand = grades.standing(season, [1], 11, "di")
+        self.assertEqual((stand.rank, stand.of, stand.tied, stand.leader), (2, 5, 0, ("Ann", 12)))
+        self.assertEqual(stand.mine, (5, 7))                                   # the card is ahead of her too
+        self.assertEqual([row[:2] for row in stand.table],
+                         [(1, "Ann"), (2, "Deadeye's card"), (3, "Bob"), (3, "Cy"), (5, "Di")])
+        self.assertAlmostEqual(stand.share, 0.75)
+        self.assertIsNone(grades.standing(Season(), [1], 11, None))
+
+    def test_each_subject_is_marked_against_its_own_yardstick(self):
+        from acql import grades
+        stand = grades.Standing(rank=2, of=36, total=50, leader=("Line-Pony", 51))
+        card = grades.mark(self._report(), self._hits(), None, stand, pool_losers=None)
+        marks = {s.name: s.grade for s in card.subjects}
+        self.assertEqual(marks["Picking games"], "A+")              # ahead of 97% of the pool
+        self.assertEqual(marks["Against the line"], "B+")           # one game up in 73
+        self.assertEqual(marks["Honest chances"], "A")              # two games off, where luck moves it four
+        self.assertEqual(marks["Margins"], "B")                     # no closer than the line, no further
+        self.assertEqual(marks["Against you"], "A")                 # two games a week ahead
+        self.assertEqual(marks["Winning the week"], "A")            # averaged 4th of 36
+        self.assertEqual((marks["Big Losers"], marks["Line movement"]), ("", ""))   # nothing to mark them on
+        self.assertEqual(len(card.marked), 6)
+        self.assertEqual(card.overall, grades.letter(sum(s.points for s in card.marked) / 6))
+        self.assertTrue(card.provisional)
+        self.assertEqual((card.best.name, card.worst.name), ("Picking games", "Margins"))
+
+    def test_a_poor_season_gets_poor_marks_and_a_long_one_is_no_longer_provisional(self):
+        from acql import grades
+        stand = grades.Standing(rank=30, of=36, total=60, leader=("Line-Pony", 90))
+        report = self._report(weeks=9, model=7, mine=8, hits=40, said=50.0)
+        card = grades.mark(report, self._hits(right=44, line_right=48, deadeye=11.0, line=10.0), None, stand)
+        marks = {s.name: s.grade for s in card.subjects}
+        self.assertEqual(marks["Picking games"], "C-")
+        self.assertEqual(marks["Against the line"], "D")            # four games behind the market in 73
+        self.assertEqual(marks["Honest chances"], "D")              # ten games short, where luck moves it four
+        self.assertEqual(marks["Margins"], "D")                     # a point further off than the line
+        self.assertEqual(marks["Against you"], "C")                 # a game a week behind
+        self.assertFalse(card.provisional)
+        self.assertEqual(self._hits(right=40, line_right=48).overall.right, 40)
+        self.assertEqual(grades.mark(report, self._hits(right=40, line_right=48), None, stand).subjects[1].grade, "F")
+        self.assertIn(card.overall, ("C-", "C", "D"))
+
+    def test_nothing_is_marked_without_a_graded_week(self):
+        from acql import grades, reportcard
+        card = grades.mark(reportcard.Report(coach="Sam"))
+        self.assertEqual((card.marked, card.overall, card.points), ([], "", None))
+        self.assertEqual(len(card.subjects), 8)
+        self.assertEqual(card.by_week(), {})
+
+
+class TestModelLabSideBySide(unittest.TestCase):
+    """Two recipes are told apart only by the games they split - and only on games both priced."""
+
+    def _entry(self, name, plays, incumbent=False):
+        from acql import modellab
+        entry = modellab.Entry(name, "", incumbent=incumbent)
+        for (week, index), (chance, hit, winner, lined) in plays.items():
+            loss = -__import__("math").log(chance if hit == (chance > 0.5) else 1 - chance)
+            entry.log[(week, index)] = modellab.Play(week, index, chance, hit, loss, winner, lined)
+            entry.games += 1
+            entry.right += hit
+            entry.logloss += loss
+        return entry
+
+    def _pair(self):
+        # ten games both priced: both right in 4, both wrong in 1, A alone in 4, B alone in 1 - and one only A priced
+        a, b = {}, {}
+        for i in range(1, 11):
+            a[(1, i)] = (0.70, i <= 8, i <= 8, i <= 3)
+            b[(1, i)] = (0.60, i <= 4 or i == 9, i <= 4 or i == 9, i <= 3)
+        a[(2, 1)] = (0.70, True, None, False)
+        return self._entry("A", a), self._entry("B", b)
+
+    def test_the_split_games_are_counted_both_ways(self):
+        from acql import modellab
+        a, b = self._pair()
+        duel = modellab.pair(a, b)
+        self.assertEqual((duel.games, duel.both, duel.neither, duel.first, duel.second), (10, 4, 1, 4, 1))
+        self.assertEqual((duel.split, duel.net), (5, 3))
+        self.assertGreater(duel.edge, 0)                         # A's chances were the better ones too
+        back = modellab.pair(b, a)
+        self.assertEqual((back.first, back.second, back.net), (1, 4, -3))
+        self.assertAlmostEqual(back.edge, -duel.edge)
+        self.assertEqual(modellab.pair(a, modellab.Entry("C", "")).games, 0)
+
+    def test_luck_is_only_asked_about_once_there_are_enough_split_games(self):
+        from acql import modellab
+        self.assertIsNone(modellab.Pair(games=76, first=3, second=2).luck)
+        self.assertEqual(modellab.Pair(games=76, first=3, second=2).reading, "too few split games (5)")
+        even = modellab.Pair(games=76, first=6, second=6)
+        self.assertEqual(even.luck, 1.0)
+        self.assertTrue(even.reading.startswith("within luck"))
+        lopsided = modellab.Pair(games=150, first=9, second=0)
+        self.assertAlmostEqual(lopsided.luck, 2 / 2 ** 9)        # nine split games, all one way
+        self.assertTrue(lopsided.reading.startswith("a real gap"))
+        self.assertAlmostEqual(modellab.Pair(first=8, second=13).luck, 0.3833, places=3)
+        self.assertEqual(modellab.Pair(games=10, both=7, neither=3).reading, "never split")
+
+    def test_winners_and_covering_the_line_are_kept_apart(self):
+        a, _b = self._pair()
+        self.assertEqual(a.winners, (8, 10))                     # the game with no score kept says nothing
+        self.assertEqual(a.lined, (3, 3))
+        self.assertEqual(a.on([(1, 1), (1, 9), (2, 1), (9, 9)]), (2, 3))
+
+    def test_recipes_are_compared_on_the_games_all_of_them_priced(self):
+        from acql import modellab
+        a, b = self._pair()
+        lab = modellab.Lab([a, b], 11, (1, 2), decided=12)
+        self.assertEqual(len(lab.common), 10)
+        self.assertEqual((a.on(lab.common), b.on(lab.common)), ((8, 10), (5, 10)))
+        self.assertIsNone(lab.entry("nobody"))
+
+    def test_chances_are_banded_by_how_sure_it_was_of_its_own_side(self):
+        from acql import modellab
+        entry = self._entry("A", {(1, 1): (0.62, True, True, False), (1, 2): (0.38, False, False, False),
+                                  (1, 3): (0.64, False, False, False), (1, 4): (0.90, True, True, False)})
+        bands = {band.label: band for band in modellab.calibration(entry)}
+        mid = bands["60%-65%"]
+        self.assertEqual(mid.picks, 3)                           # 38% on the home side is 62% on its own
+        self.assertAlmostEqual(mid.said, (0.62 + 0.62 + 0.64) / 3)
+        self.assertAlmostEqual(mid.came, 1 / 3)
+        self.assertEqual((bands["80% and up"].picks, bands["80% and up"].came), (1, 1.0))
+        self.assertEqual(bands["50%-55%"].picks, 0)
+
+    def test_the_front_runner_has_to_have_priced_nearly_the_same_games(self):
+        from acql import modellab
+        service = modellab.Entry("Deadeye", "", games=76, incumbent=True)
+        half = modellab.Entry("Half", "", games=44, shared=44, shared_logloss=44 * 0.62, deadeye_logloss=44 * 0.65)
+        full = modellab.Entry("Full", "", games=76, shared=76, shared_logloss=76 * 0.642, deadeye_logloss=76 * 0.645)
+        behind = modellab.Entry("Behind", "", games=76, shared=76, shared_logloss=76 * 0.66, deadeye_logloss=76 * 0.645)
+        self.assertEqual(modellab.Lab([service, half, full, behind], 76, (1,)).front_runner.name, "Full")
+        self.assertEqual(modellab.Lab([service, half, behind], 76, (1,)).front_runner, None)
+        self.assertIsNone(modellab.Lab([half], 44, (1,)).front_runner)
+
+
+class TestShowcase(unittest.TestCase):
+    """The numbers behind the model's charts, on a small made-up season."""
+
+    def _game(self, n, **over):
+        from acql import autopsy
+        made = dict(week=1 + (n - 1) // 10, index=n, matchup=f"Away {n} @ Home {n}", pick=f"Home {n}",
+                    chance=0.62, right=True, margin=4.0, line=3.5, line_pick=f"Home {n}", line_right=True,
+                    actual=7.0, home_pick=True)
+        made.update(over)
+        return autopsy.Graded(**made)
+
+    def _season(self):
+        # thirty picks: the first twenty mostly right, the last ten mostly wrong
+        games = []
+        for n in range(1, 31):
+            right = n % 4 != 0 if n <= 20 else n % 3 == 0
+            games.append(self._game(n, right=right, line_right=n % 5 != 0,
+                                    chance=0.52 + (n % 4) * 0.06, actual=7.0 if right else -6.0))
+        return games
+
+    def test_the_trajectory_counts_half_a_game_either_way_on_shared_games(self):
+        from acql import showcase
+        games = self._season()
+        base = {(g.week, g.index): g.index % 2 == 0 for g in games}
+        found = showcase.trajectory(games, base)
+        deadeye, line, ratings = found.lines
+        self.assertEqual([l.name for l in found.lines], ["Deadeye", showcase.LINE, showcase.BASELINE])
+        self.assertEqual((deadeye.picks, line.right, ratings.right), (30, 24, 15))
+        self.assertEqual(deadeye.above[:4], [0.5, 1.0, 1.5, 1.0])              # three in, then a miss
+        self.assertAlmostEqual(deadeye.above[-1], deadeye.right - 15)          # hits less half the picks
+        self.assertEqual(found.weeks, [(1, 1), (11, 2), (21, 3)])
+        self.assertEqual(found.labels[0], "Week 1 - Away 1 @ Home 1")
+        # A game one of them had no side in is left out for all three.
+        fewer = showcase.trajectory(games, {k: v for k, v in base.items() if k != (1, 1)})
+        self.assertEqual(fewer.picks, 29)
+        self.assertEqual(len(showcase.trajectory(games).lines), 2)             # no baseline given
+
+    def test_bands_hold_what_it_said_and_what_happened(self):
+        from acql import showcase
+        games = self._season()
+        bands = showcase.buckets(games)
+        self.assertEqual([b.label for b in bands], [label for label, _lo, _hi in showcase.BANDS])
+        self.assertEqual(sum(b.picks for b in bands), 30)
+        first = bands[0]                                                       # the 52% picks: every fourth game
+        self.assertEqual(first.picks, 7)
+        self.assertAlmostEqual(first.said, 0.52)
+        self.assertAlmostEqual(first.luck, (7 * 0.52 * 0.48) ** 0.5 / 7)
+        self.assertTrue(all(b.picks for b in showcase.calibration(games)))     # the empty ones are left out
+        self.assertEqual(showcase.buckets([])[0].rate, 0.0)
+
+    def test_the_matrix_leaves_thin_rows_unshaded(self):
+        from acql import showcase
+        games = self._season() + [self._game(40 + i, home_pick=False, week=3) for i in range(3)]
+        rows = {k.name: k for k in showcase.matrix(games)}
+        self.assertEqual(rows["The home team"].picks, 30)
+        self.assertIsNotNone(rows["The home team"].rate)
+        self.assertAlmostEqual(rows["The home team"].line, 24 / 30)
+        self.assertEqual((rows["The road team"].picks, rows["The road team"].rate), (3, None))   # too few to shade
+        self.assertNotIn("Night games", rows)                                  # no kickoff times: no such row
+
+    def test_margins_runs_and_sizes(self):
+        from acql import showcase
+        games = self._season()
+        points = showcase.scope(games + [self._game(99, actual=None)])
+        self.assertEqual(len(points), 30)                                      # no score, no point
+        self.assertAlmostEqual(points[0].error, 3.0)
+        self.assertEqual(points[0].short, "Home 1, wk 1")
+        self.assertAlmostEqual(showcase.mean_error(points), sum(p.error for p in points) / 30)
+        sizes = dict((label, (mine, line)) for label, mine, line in showcase.miss_sizes(games))
+        self.assertEqual(sum(mine for mine, _line in sizes.values()), 30)
+        self.assertEqual(sizes["0-3"][0], sum(1 for g in games if g.right))    # a hit here is three points off
+        roll = showcase.rolling(games, window=20)
+        self.assertEqual((roll.picks[0], roll.picks[-1], len(roll.rate)), (20, 30, 11))
+        self.assertAlmostEqual(roll.rate[0], 15 / 20)
+        self.assertLess(roll.rate[-1], roll.rate[0])                           # it went cold
+        self.assertEqual(showcase.rolling(games[:5]).picks, [])                # too few for a window
+
+    def test_the_dashboard_starts_on_its_owner(self):
+        from acql import me
+        season = Season()
+        for key, name in (("lp", "Line-Pony"), ("ph", "  phelpy "), ("zn", "Zach N")):
+            season.players[key] = Player(key=key, display=name)
+        self.assertEqual(me.NAME, "Phelpy")
+        self.assertEqual((me.key(season), me.display(season)), ("ph", "  phelpy "))
+        self.assertEqual((me.key(Season()), me.display(Season()), me.key(None)), ("", "", ""))
+
+
+class TestKnownBeforeKickoff(_ScratchStore):
+    """A week is written down while it is open and frozen at the deadline - never with hindsight."""
+
+    LOCK = 1_790_000_000.0
+
+    def _build(self, said):
+        return lambda season, week: {"1": {"pick": said}}
+
+    def test_an_open_week_is_kept_up_to_date_then_frozen(self):
+        from acql import known
+        day = 86400
+        self.assertEqual(known.keep(Season(), 2026, 6, self.LOCK, self.LOCK - 3 * day, self._build("Dallas")), "kept")
+        self.assertEqual(known.kept(2026, 6)["games"]["1"]["pick"], "Dallas")
+        # asked again a minute later: written recently enough
+        self.assertEqual(known.keep(Season(), 2026, 6, self.LOCK, self.LOCK - 3 * day + 60, self._build("Miami")), "fresh")
+        # the next day the news has changed, and so does what is kept
+        self.assertEqual(known.keep(Season(), 2026, 6, self.LOCK, self.LOCK - 2 * day, self._build("Miami")), "kept")
+        # close to the deadline every look is written
+        self.assertEqual(known.keep(Season(), 2026, 6, self.LOCK, self.LOCK - 600, self._build("Denver")), "kept")
+        self.assertEqual(known.keep(Season(), 2026, 6, self.LOCK, self.LOCK - 300, self._build("Buffalo")), "kept")
+        # past the deadline it is frozen as it stood, and nothing rewrites it
+        self.assertEqual(known.keep(Season(), 2026, 6, self.LOCK, self.LOCK + 60, self._build("Hindsight")), "frozen")
+        self.assertEqual(known.keep(Season(), 2026, 6, self.LOCK, self.LOCK + day, self._build("Hindsight")), "closed")
+        kept = known.kept(2026, 6)
+        self.assertEqual((kept["games"]["1"]["pick"], kept["frozen"]), ("Buffalo", True))
+
+    def test_a_week_never_written_is_not_written_after_the_deadline(self):
+        from acql import known
+        self.assertEqual(known.keep(Season(), 2026, 5, self.LOCK, self.LOCK + 60, self._build("Hindsight")), "closed")
+        self.assertIsNone(known.kept(2026, 5))
+        # and a week with nothing priced yet is left for the next look
+        self.assertEqual(known.keep(Season(), 2026, 7, self.LOCK, self.LOCK - 86400, lambda s, w: {}), "fresh")
+        self.assertIsNone(known.kept(2026, 7))
+
+
+class TestKindsOfRecipe(unittest.TestCase):
+    """The market, football alone, and the two together - compared on the same games."""
+
+    def test_the_best_of_each_kind_is_found_on_the_games_all_priced(self):
+        import math
+        from acql import modellab
+
+        def entry(name, kind, chances):
+            made = modellab.Entry(name, "", kind=kind, incumbent=(name == "Deadeye"))
+            for i, (chance, hit) in enumerate(chances, 1):
+                loss = -math.log(chance if hit else 1 - chance)
+                made.log[(1, i)] = modellab.Play(1, i, chance, hit, loss, hit, False)
+                made.games += 1
+                made.right += hit
+            return made
+
+        sure = [(0.7, True), (0.7, True), (0.7, False)]
+        unsure = [(0.55, True), (0.55, True), (0.55, False)]
+        lab = modellab.Lab([entry("Deadeye", modellab.HYBRID, sure), entry("Line", modellab.MARKET, unsure),
+                            entry("Open", modellab.MARKET, sure + [(0.6, True)]),
+                            entry("Ratings", modellab.FOOTBALL, [(0.6, False), (0.6, True), (0.6, False)])], 4, (1,))
+        best = lab.best_of_each_kind()
+        self.assertEqual([(kind, e.name, right, games) for kind, e, right, games in best],
+                         [("Market", "Open", 2, 3), ("Football", "Ratings", 1, 3), ("Hybrid", "Deadeye", 2, 3)])
+        self.assertEqual(modellab.Lab([], 0, ()).best_of_each_kind(), [])
+
+
+class TestMarketFootballHybrid(unittest.TestCase):
+    """A model is scored on winners, on its margins, and on the side it takes against the closing line."""
+
+    def test_a_side_is_only_taken_when_the_model_stands_off_the_line(self):
+        import numpy as np
+        from acql import nflverse
+        #                 covers  loses  too close  push   big cover
+        guess = np.array([6.0,    1.0,   3.2,       5.0,   -2.0])
+        spread = np.array([3.0,   3.0,   3.0,       3.0,    3.0])
+        margin = np.array([10.0,  7.0,   1.0,       3.0,   -4.0])
+        line = nflverse._score("Football", 2025, guess, margin, spread)
+        self.assertEqual((line.bets, line.covers), (3, 2))           # too close and the push are left out
+        self.assertEqual((line.big_bets, line.big_covers), (3, 2))
+        self.assertEqual((line.games, line.winners), (5, 5))         # the winner is a different question
+        self.assertAlmostEqual(line.miss, (4 + 6 + 2.2 + 2 + 2) / 5)
+        self.assertAlmostEqual(line.cover_rate, 2 / 3)
+        market = nflverse._score("Market", 2025, spread, margin, spread)
+        self.assertEqual((market.bets, market.cover_rate), (0, None))    # the line never bets against itself
+
+    def test_seasons_add_up(self):
+        from acql import nflverse
+        lines = [nflverse.Line("Hybrid", 2024, 100, 66, 10.0, 60, 31, 8, 5),
+                 nflverse.Line("Hybrid", 2025, 300, 190, 9.0, 150, 75, 12, 5),
+                 nflverse.Line("Market", 2025, 300, 200, 9.5)]
+        total = nflverse._total("Hybrid", lines)
+        self.assertEqual((total.season, total.games, total.winners, total.bets, total.covers), (0, 400, 256, 210, 106))
+        self.assertAlmostEqual(total.miss, 9.25)                      # weighted by games
+        found = nflverse.Families(lines + [total], {})
+        self.assertEqual(found.seasons, [2024, 2025])
+        self.assertIs(found.of("Hybrid"), total)
+        self.assertIsNone(found.of("Football"))
+
+    def test_form_needs_a_few_games_and_is_a_rate(self):
+        from collections import deque
+        from acql import nflverse
+        # (plays, points added, yards, turnovers) for the team, then the same for its opponent
+        game = (60.0, 6.0, 360.0, 1.0, 50.0, -5.0, 250.0, 2.0)
+        self.assertEqual(nflverse._form(deque([game, game])), (0.0, 0.0, 0.0, 0.0, 0.0, 2))
+        attack, allowed, yards, yards_allowed, turnovers, n = nflverse._form(deque([game] * 4))
+        self.assertEqual((attack, allowed, yards, yards_allowed, turnovers, n), (0.1, -0.1, 6.0, 5.0, -1.0, 4))
+        self.assertEqual(nflverse._team("OAK"), "LV")
+        self.assertEqual(nflverse._team("KC"), "KC")
+
+
+class TestEveryonesPicks(_ScratchStore):
+    """The whole pool's cards for a week, side by side, and how it split on each game."""
+
+    def _season(self):
+        from acql import picks
+        from acql.models import Game, Week
+        season = Season()
+        for key, name in (("phelpy", "Phelpy"), ("ann", "Ann"), ("bob", "Bob")):
+            season.players[key] = Player(key=key, display=name)
+        season.weeks[5] = Week(5, games=[
+            Game(1, home="Dallas", away="Tampa Bay", winner="Dallas", line=9.0, line_favourite="Dallas"),
+            Game(2, home="Green Bay", away="Chicago"),
+        ])
+        sheet = picks.WeekPicks(5, games=[
+            picks.GamePicks("Tampa Bay", "Dallas", "dal by 9", {"Phelpy": "Dallas", "Ann": "Tampa Bay", "Bob": "Dallas"}),
+            picks.GamePicks("Chicago", "Green Bay", "", {"Phelpy": "Chicago", "Ann": "Green Bay", "Bob": "Green Bay"}),
+        ], losers={"Phelpy": ["Miami", "Arizona", "Cleveland"]}, suicide={"Ann": "Detroit"})
+        return season, sheet
+
+    def test_every_card_is_laid_out_and_marked(self):
+        from unittest import mock
+        from acql import everyone
+        season, sheet = self._season()
+        with mock.patch.object(everyone.picks, "load", return_value=sheet):
+            board = everyone.build(season, 5)
+        self.assertTrue(board.from_sheet)
+        self.assertEqual([c.name for c in board.coaches], ["Ann", "Bob", "Phelpy"])
+        first, second = board.games
+        self.assertEqual((first.away, first.home, first.winner, first.line), ("TB", "DAL", "DAL", "Dallas by 9"))
+        self.assertEqual((first.on_away, first.on_home, first.favourite), (1, 2, "DAL"))
+        self.assertEqual((second.winner, second.favourite, second.on_home), ("", "GB", 2))
+        mine = board.coach("phelpy")
+        self.assertEqual(mine.picks, {1: "DAL", 2: "CHI"})
+        self.assertEqual([mine.state(g) for g in board.games], ["right", "open"])
+        self.assertEqual(board.coach("ann").state(first), "wrong")
+        self.assertEqual((mine.right(board.games), mine.with_crowd(board.games)), (1, (1, 2)))
+        self.assertEqual((mine.losers, board.coach("ann").suicide), (("MIA", "ARI", "CLE"), "DET"))
+        self.assertEqual((board.most_popular.index, len(board.decided)), (1, 1))
+        self.assertAlmostEqual(first.share, 2 / 3)
+        self.assertIsNone(board.coach(""))
+
+    def test_a_week_with_nothing_is_an_empty_board(self):
+        from acql import everyone
+        board = everyone.build(Season(), 9)
+        self.assertEqual((board.games, board.coaches, board.most_split), ([], [], None))
+        self.assertEqual(everyone.short("Los Angeles Chargers"), "LAC")
+        self.assertEqual(everyone.short(""), "")
 
 
 def main() -> int:

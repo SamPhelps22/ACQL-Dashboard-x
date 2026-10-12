@@ -59,7 +59,7 @@ class _Standing:
 
 class WinningsPage(Page):
     title = "Winnings"
-    subtitle = "Weekly payouts against each player's buy-in"
+    subtitle = "Who has won what: each week's payouts set against every coach's buy-in"
     icon = "\N{MONEY BAG}"
 
     # ---- build ---------------------------------------------------------

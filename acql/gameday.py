@@ -493,9 +493,13 @@ def cards(season: Season, week: int, states: list[GameNow], you: str = "") -> li
             if side:
                 ghost.picks[st.index] = side
         try:
-            prices = pricing.price_week(season, week, [st.game for st in states])
-            for b in pricing.big_loser_candidates(prices, include_played=True)[:3]:
-                spot = _side_in(states, b.team)
+            # the three on its kept card; the likeliest by the lines for a card kept before they were
+            teams = list(model.losers)
+            if not teams:
+                prices = pricing.price_week(season, week, [st.game for st in states])
+                teams = [b.team for b in pricing.big_loser_candidates(prices, include_played=True)[:3]]
+            for team in teams[:3]:
+                spot = _side_in(states, team)
                 if spot:
                     ghost.losers.append(spot)
         except Exception:  # noqa: BLE001 - its card without Big Losers

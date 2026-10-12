@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders:opsz,wght@10..72,700..900&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap">
 <style id="pool-style">
 /* ACQL - the pool's website. "Sunday broadcast": what's on air (the live
    week, the week's headline) wears the studio navy; everything else is quiet
@@ -1283,6 +1284,108 @@ footer .fbrand img { width: 44px; height: 44px; }
   .podium .p1 .wins { font-size: 40px; }
 }
 @media print { .jumpbar, .totop, .finder-wrap { display: none; } }
+
+/* ==== the future skin ===================================================================
+   The league's own black, gold and green, as a control room rather than a broadcast:
+   squared panels on hairlines with a gold line fading across the top, a squarer
+   display face, small spaced capitals for labels, a lit edge on whatever is current.
+   Sentence case stays for headings and names - capitals are for labels only, so
+   nothing long has to fit a phone in wide letters. */
+:root {
+  --display: "Rajdhani", "Barlow Condensed", "Arial Narrow", sans-serif;
+  --glow: color-mix(in srgb, var(--gold) 58%, transparent);
+  --panel-line: linear-gradient(90deg, var(--gold), color-mix(in srgb, var(--gold) 0%, transparent) 46%);
+  --dots: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #050708; --surface: #0b0f10; --raised: #111719; --rule: #1c2527; --grid: #151c1e;
+    --onair: #030405; --onair-2: #090d0e; --onair-rule: #1c2527; --dots: color-mix(in srgb, var(--ink) 6%, transparent);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #050708; --surface: #0b0f10; --raised: #111719; --rule: #1c2527; --grid: #151c1e;
+  --onair: #030405; --onair-2: #090d0e; --onair-rule: #1c2527; --dots: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+body { background-image: radial-gradient(var(--dots) 1px, transparent 1.3px); background-size: 22px 22px; }
+
+/* type: a squarer face; capitals only where the words are short */
+h1, h2, h3 { font-weight: 700; letter-spacing: 0.012em; line-height: 1.05; }
+.pagehead h1 { text-transform: uppercase; letter-spacing: 0.07em; font-size: clamp(26px, 7vw, 38px); padding-bottom: 12px; }
+.pagehead h1::after { width: 56px; height: 2px; border-radius: 0; box-shadow: 0 0 14px 1px var(--glow); }
+.hero .stat .k, .figure .k, .mini-fig .k, .record .k, .module > .mhead .aside, .bug .state, .gcard .when, .gcard .tv {
+  text-transform: uppercase; letter-spacing: 0.09em; font-size: 11px; font-weight: 600;
+}
+th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+.hero .kicker { text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
+.hero .stat .v, .figure .v, .mini-fig .v, .r .big, td.total, .podium .wins, .bug .pts, .gcard .row .pts { font-weight: 700; letter-spacing: 0.02em; }
+.r .pos { font-weight: 600; }
+
+/* the bar across the top: a lit gold line under it */
+.topbar { border-bottom: 1px solid color-mix(in srgb, var(--gold) 80%, transparent); box-shadow: 0 1px 20px -3px var(--glow), 0 8px 24px rgba(0, 0, 0, 0.22); }
+.wordmark { font-weight: 700; letter-spacing: 0.07em; }
+.weekpill { border-radius: 3px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
+.iconbtn, .mechip, .searchbtn { border-radius: 4px; }
+.initials, .mechip .initials { border-radius: 7px; }
+.desknav a { text-transform: uppercase; letter-spacing: 0.1em; font-size: 14px; font-weight: 600; }
+.desknav a[aria-current="page"] { text-shadow: 0 0 14px var(--glow); }
+
+/* the headline panel: cut corners, a faint grid, the gold edge */
+.hero {
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+  border-left: 0;
+  padding: 20px 22px 22px 24px;
+  background:
+    linear-gradient(var(--gold), var(--gold)) 0 0 / 3px 100% no-repeat,
+    linear-gradient(color-mix(in srgb, var(--onair-ink) 5%, transparent) 1px, transparent 1px) 0 0 / 100% 26px,
+    linear-gradient(90deg, color-mix(in srgb, var(--onair-ink) 5%, transparent) 1px, transparent 1px) 0 0 / 26px 100%,
+    radial-gradient(130% 150% at 0% 0%, color-mix(in srgb, var(--turf) 34%, var(--onair)) 0%, var(--onair) 62%);
+}
+.hero::after { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes wipe {
+    from { clip-path: polygon(0 0, 0 0, 0 0, 0 100%, 0 100%, 0 100%); }
+    to { clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px)); }
+  }
+}
+
+/* panels: squared, on a hairline, a gold line fading across the top */
+.module, #leaderboard {
+  border-radius: 6px;
+  background: var(--panel-line) top left / 100% 2px no-repeat, var(--surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.module .module { background: none; box-shadow: none; }
+.module > .mhead h2::before { width: 2px; border-radius: 0; box-shadow: 0 0 12px 1px var(--glow); }
+.box, .scard, .chip, .totop, .finder, .notice { border-radius: 4px; }
+.gcard { border-radius: 6px; }
+.bug { border-radius: 2px; }
+
+/* section links and switches: squared, in capitals, the current one lit */
+.jumpbar a { border-radius: 3px; background: transparent; text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; padding: 8px 11px 7px; }
+.jumpbar a.on { background: color-mix(in srgb, var(--gold) 14%, transparent); border-color: var(--gold); color: var(--gold-text); box-shadow: 0 0 16px -5px var(--glow); }
+.seg { border-radius: 4px; }
+.seg button { text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+.seg button[aria-pressed="true"], .weeks button[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #14100a; }
+.weeks button { border-radius: 3px; }
+.btn { border-radius: 4px; text-transform: uppercase; letter-spacing: 0.06em; font-size: 13px; }
+
+/* the podium: lit from its medal */
+.podium .step { border-radius: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--medal) 13%, var(--surface)), var(--surface) 70%); }
+.podium .step::before { height: 2px; box-shadow: 0 0 14px 1px var(--medal); }
+.podium .initials { border-radius: 10px; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--medal), 0 0 22px -2px var(--medal); }
+.podium .medal { letter-spacing: 0.22em; font-size: 12px; }
+
+/* how a game's picks split: the side most of the pool is on, in gold */
+.split .barline { height: 4px; }
+.split .barline span { border-radius: 1px; }
+.split .barline span.lead { background: linear-gradient(90deg, var(--gold), color-mix(in srgb, var(--gold) 62%, var(--turf))); box-shadow: 0 0 10px -2px var(--glow); }
+
+/* the phone's bottom bar */
+.bottombar { border-top: 1px solid color-mix(in srgb, var(--gold) 34%, var(--rule)); }
+.bottombar a { text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; }
+.bottombar a[aria-current="page"] { color: var(--gold-text); }
+.bottombar a[aria-current="page"]::before { height: 2px; left: 22%; right: 22%; border-radius: 0; box-shadow: 0 0 14px 1px var(--glow); }
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>
@@ -1295,7 +1398,8 @@ footer .fbrand img { width: 44px; height: 44px; }
   var FONTS = [
     "https://fonts.googleapis.com/css2?family=Big+Shoulders:opsz,wght@10..72,700..900&display=swap",
     "https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&display=swap",
-    "https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap"
+    "https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap",
+    "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap"
   ];
   var ME_KEY = "acql-pool-me", THEME_KEY = "acql-theme", VS_KEY = "acql-pool-vs";
   var app = document.getElementById("app");
@@ -2337,7 +2441,7 @@ footer .fbrand img { width: 44px; height: 44px; }
   function footer() {
     return el("footer", {}, [
       hasLogo() ? el("div", { class: "fbrand" }, [logoImg("logo"), "Arm Chair Quarterback League"]) : null,
-      "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every figure comes from the pool’s own sheets, with the pool’s lines applied.",
+      "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every number comes from the pool’s own sheets.",
       typeof ownerFooter === "function" ? ownerFooter() : null,
       homeScreenTip()
     ]);
@@ -2958,7 +3062,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       el("span", { class: "kicker" }, [el("span", { text: "Week " + L.week + " is over" })]),
       el("h1", { text: winners.length > 2 ? cap(count(winners.length, "coach", "coaches")) + " share week " + L.week + " on " + top
         : listNames(winners, 2) + (winners.length > 1 ? " win" : " wins") + " week " + L.week + " with " + top }),
-      el("p", { class: "deck", text: "From the final scores with the pool’s lines applied - the official table follows once the week is entered." })
+      el("p", { class: "deck", text: "From the final scores. The official table follows once the week is entered." })
     ], mine ? [
       stat(String(mine.now), "your score"),
       stat(ordinal(1 + t.rows.filter(function (o) { return o.now > mine.now; }).length), "of " + t.rows.length),
@@ -3082,7 +3186,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       el("p", { class: "race-sum", text: sum.join(" · ") + "." }),
       mineText ? el("p", { class: "note" }, [el("b", { text: "Yours: " }), mineText]) : null,
       pickRows(rows, "bl", 8),
-      el("p", { class: "note", text: "A point when the team loses by 15 or more. The % after the coaches is the share of cards with that team. Chances come from the score, the clock and the betting line." })
+      el("p", { class: "note", text: "A team scores a point when it loses by 15 or more. The % is the share of cards with that team. Chances come from the live score and the betting line." })
     ], { "data-card": "losers" });
   }
 
@@ -3114,7 +3218,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       el("p", { class: "race-sum", text: bits.join(" · ") + "." }),
       rows.length ? pickRows(rows, "sui", 10) : null,
       none.length ? el("p", { class: "note", text: "No suicide pick on the sheet: " + listNames(none.slice().sort(), 6) + "." }) : null,
-      el("p", { class: "note", text: "A team has to be credited with its game: in a lined game the favourite must win by at least the line, and the underdog survives by keeping it closer than that." })
+      el("p", { class: "note", text: "Your team has to win its game. If the game has a pool line, the favourite must win by at least the line, and the underdog survives by keeping it closer." })
     ], { "data-card": "suicide" });
   }
 
@@ -3144,8 +3248,8 @@ footer .fbrand img { width: 44px; height: 44px; }
     });
     return module("Out on a limb", "on " + few + " or fewer cards", [
       el("p", { class: "race-sum", text: crowdDone
-        ? "The crowd’s own card - the side most of the pool took in every game - has " + crowdRight + " of " + crowdDone + " right as things stand."
-        : "The crowd’s own card - the side most of the pool took in every game - is scored here once the games start." }),
+        ? "The crowd’s card (the side most of the pool took in each game) has " + crowdRight + " of " + crowdDone + " right as things stand."
+        : "The crowd’s card (the side most of the pool took in each game) is scored here once the games start." }),
       rows.length ? pickRows(rows, "limb", 10) : el("p", { class: "note", text: "Nobody went out on a limb this week." })
     ], { "data-card": "limb" });
   }
@@ -3463,7 +3567,7 @@ footer .fbrand img { width: 44px; height: 44px; }
     var on = t.games.filter(function (x) { return x.state === "in"; });
     if (!on.length) return null;
     return module("On now", plural(on.length, "game"), [el("div", { class: "games" }, on.map(gameCard)),
-      el("p", { class: "note", text: "The bar under a game is each side’s chance of being credited with it, the pool’s line applied." })],
+      el("p", { class: "note", text: "The bar under a game shows each side’s chance of getting the point." })],
       { "data-card": "on-now" });
   }
   function finalBanner(t, withLink) {
@@ -3472,7 +3576,7 @@ footer .fbrand img { width: 44px; height: 44px; }
     return el("div", { class: "final-banner" }, [
       el("span", { class: "note", text: "Week " + DATA.live.week + " is over" }),
       el("b", { text: "★ " + listNames(winners, 3) + " " + (winners.length > 1 ? "win" : "wins") + " with " + top }),
-      el("span", { class: "note", text: "From the final scores with the pool’s lines applied - the official table follows once the week is entered." }),
+      el("span", { class: "note", text: "From the final scores. The official table follows once the week is entered." }),
       withLink ? el("button", { class: "btn", type: "button", text: "See the final table", onclick: function () { go("live"); } }) : null
     ]);
   }
@@ -3529,7 +3633,7 @@ footer .fbrand img { width: 44px; height: 44px; }
     });
     return el("div", { class: "view", "data-view": "live" }, [
       el("div", { class: "pagehead" }, [el("h1", { text: "Week " + L.week + ", as it happens" }), liveStatus(t)]),
-      fold("live:how", "How the live numbers work", [el("p", { class: "note", text: "Now counts every pick that would be right if the scores stayed as they are, with the pool’s lines applied, plus Big Loser teams losing by 15 or more. Win % is each coach’s chance of the best week, from the scores, the clock and the betting lines. $ now is what the week would pay if it ended as it stands: the best card collects a dollar a game from every card behind it, and cards level at the top split it. Final counts only finished games. Season adds Now to each coach’s wins so far." })], "howto"),
+      fold("live:how", "How the live numbers work", [el("p", { class: "note", text: "Now counts every pick that is right as the scores stand, plus Big Loser teams losing by 15 or more. Win % is each coach’s chance of having the best week. $ now is what the week would pay if it ended now: the best card collects a dollar a game from every card behind it, and tied cards split it. Final counts finished games only. Season adds Now to each coach’s wins so far." })], "howto"),
       weekOver(t) ? finalBanner(t, false) : null,
       onNowModule(t),
       el("div", { class: "cols" }, [
@@ -3624,7 +3728,7 @@ footer .fbrand img { width: 44px; height: 44px; }
         el("span", { class: "meta" }, meta)
       ]));
     });
-    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL); the arrows are places since last week; a green dot is still in the suicide pool." });
+    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL). Arrows show places gained or lost since last week. A green dot means still in the suicide pool." });
     return el("div", {}, [el("div", { class: "rows standrows", id: "leaderboard" }, rows), avgNote]);
   }
   function everyWeekTable() {
@@ -3700,7 +3804,7 @@ footer .fbrand img { width: 44px; height: 44px; }
           ]);
         }))
       ])]),
-      el("p", { class: "note", text: "Per week: how much a coach has to beat the leader by, every week left, to catch up. Title: the rest of the season played out 10,000 times, with every coach scoring like a typical week in the pool - so it comes from the standings alone, not from anyone’s picks." }),
+      el("p", { class: "note", text: "Per week is how much a coach has to beat the leader by, every week from here, to catch up. Title is each coach’s chance of winning the season, from playing out the rest of it 10,000 times. It uses the standings only, not anyone’s picks." }),
       moreLink("Title odds week by week", "charts")
     ], { "data-card": "race" });
   }
@@ -3816,7 +3920,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       popular.length ? el("p", { class: "race-sum", text: "Most used so far: " + popular.map(function (c) { return teams[c] + " (" + count_[c] + ")"; }).join(", ") + "." }) : null,
       el("div", { class: "sboard" }, cards),
       el("p", { class: "note", text: "Each team can be used once a season." + (ranked
-        ? " Top " + TOP_TEAMS + " is the ten best teams by this season’s betting lines, shown in bold under Teams left; fewest left comes first."
+        ? " Top " + TOP_TEAMS + " is the ten best teams by this season’s betting lines, shown in bold under Teams left. The coach with fewest left comes first."
         : " Fewest teams left comes first.") })
     ], { "data-card": "board" });
   }
@@ -4023,7 +4127,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       ]))]),
       shownWeek ? module("Where they split in week " + shownWeek.week, picker, [splits])
         : el("p", { class: "note", text: a + " and " + b + " have picked the same side in every game so far." }),
-      el("p", { class: "note", text: "Only games already played. ✓ is the side the pool credited, with the pool’s lines applied. Scores include Big Loser points." })
+      el("p", { class: "note", text: "Only finished games. ✓ is the side that got the point. Scores include Big Loser points." })
     ]);
   }
 
@@ -4280,7 +4384,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       el("div", { class: "rp-read" }, [el("div", { class: "rp-moment" }, [when, head, play]),
         el("div", { class: "rp-standing" }, [rep.leadText, board])]),
       rep.adjusted && rep.adjusted.length ? el("p", { class: "note", text: "The last step puts in the pool’s own scores for " + listNames(rep.adjusted) + ", whose card the replay only partly knew." }) : null,
-      el("p", { class: "note", text: "Each step is a kickoff, a score or a final whistle; the scores are where the week stood if it had ended there, with the pool’s lines – the live page’s rule. The line is wins behind the leader." })
+      el("p", { class: "note", text: "Each step is a kickoff, a score or a final whistle. The scores show where the week stood at that moment. The line is wins behind the leader." })
     ]);
     rep.fill(start);
     return module("The week, replayed", aside, [box], { "data-card": "replay", id: "replay-card" });
@@ -4346,7 +4450,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       if (a.wild != null) text += " In wild weeks " + signed(a.wild) + " against the pool" + (a.calm != null ? ", in calm ones " + signed(a.calm) + "." : ".");
       kids.push(el("p", { class: "race-sum", text: text }));
     }
-    kids.push(el("p", { class: "note", text: "Each split is measured against the rest of the pool in the same games, and counts only when it’s off " + p.name + "’s own usual too. The line move is settled before kickoff, so it’s skill rather than luck." }));
+    kids.push(el("p", { class: "note", text: "Each one is compared with how the rest of the pool did in the same games. The line move is settled before kickoff, so it’s skill rather than luck." }));
     return module("Blind spots", spotRecord(pt.overall) + " on every pick", kids, { "data-card": "spots" });
   }
 
@@ -4362,7 +4466,7 @@ footer .fbrand img { width: 44px; height: 44px; }
         el("span", { class: "why", text: plural(c.upsets, "upset") + " where the lines expected " + c.expected.toFixed(1) + "." +
           (c.biggest ? " The biggest: " + c.biggest + "." : "") })
       ]),
-      el("p", { class: "note", text: "Out of 10: how surprising the results were against the betting lines, under the pool’s own line rule. A 7 means seven weeks in ten with these games would have been calmer." })
+      el("p", { class: "note", text: "A score out of 10 for how surprising the week’s results were. A 7 means seven weeks in ten would have been calmer." })
     ], { "data-card": "chaos" });
   }
 
@@ -4414,7 +4518,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       down ? "the worse of " + down : "the worse of nobody"];
     if (even) parts.push("even with " + even);
     kids.push(el("p", { class: "race-sum", text: "Week for week, " + p.name + " has had " + parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] + "." }));
-    kids.push(el("p", { class: "note", text: "Tap one for the full head-to-head. Twins from every game played; weeks count Big Loser points." }));
+    kids.push(el("p", { class: "note", text: "Tap one for the full head-to-head. Twins are counted over every game played. Weeks include Big Loser points." }));
     return module("Twins and nemeses", null, [el("div", { class: "twins" }, kids)], { "data-card": "twins" });
   }
 
@@ -4520,7 +4624,7 @@ footer .fbrand img { width: 44px; height: 44px; }
         el("th", { class: "n", text: "vs avg" }), el("th", { class: "n hide-narrow", text: "Picks right" }),
         el("th", { class: "n hide-narrow", text: "Big Loser" }), el("th", { class: "n", text: "Week" }),
         el("th", { class: "n hide-narrow", text: "Season" }), el("th", { text: "Suicide pick" })])]), el("tbody", {}, rows)])),
-        el("p", { class: "note", text: "Week is where the week’s score ranked; Season is the standings place after that week. Wins include Big Loser points." })])
+        el("p", { class: "note", text: "Week is where that week’s score ranked. Season is the place in the standings after it. Wins include Big Loser points." })])
         : el("p", { class: "note", text: "No scores yet." })
     ]);
   }
@@ -4990,7 +5094,7 @@ footer .fbrand img { width: 44px; height: 44px; }
     if (T.weeks && T.weeks.length >= 2) {
       kids.push(module("Title odds", "the chance of the title as it stood after each week", [
         chartBox("title", 300, function (w) { return titleChart(w, focus); }), legend([["me", focus || "Choose a coach"], ["", "the four likeliest now"], ["ctx", "everyone else"]]),
-        el("p", { class: "note", text: "Each week the rest of the season was played out thousands of times from the standings then, every coach scoring like a typical week in the pool." }),
+        el("p", { class: "note", text: "Each week’s chance comes from playing out the rest of the season thousands of times from the standings at that point." }),
         tableView("title", ["Coach"].concat(T.weeks.map(function (n) { return "Wk " + n; })),
           Object.keys(T.odds).sort(function (a, b) { return (T.odds[b][T.odds[b].length - 1] || 0) - (T.odds[a][T.odds[a].length - 1] || 0); })
             .map(function (k) { return [k].concat(T.odds[k].map(function (v) { return v == null ? "–" : (v < 1 && v > 0 ? "<1" : Math.round(v)) + "%"; })); }))
@@ -5010,7 +5114,7 @@ footer .fbrand img { width: 44px; height: 44px; }
       kids.push(module("Money", "each coach’s money after each week", [
         chartBox("money", 300, function (w) { return moneyChart(w, focus, false); }),
         legend([["me", focus || "Choose a coach"], ["", "most and least so far"], ["ctx", "everyone else"]]),
-        el("p", { class: "note", text: "Week by week by the pool’s rule - the week’s best card collects a dollar a game from everyone behind it - and it adds up to the money sheet’s totals." }),
+        el("p", { class: "note", text: "Each week the best card collects a dollar a game from everyone behind it. The weeks add up to the money sheet’s totals." }),
         tableView("money", ["Coach"].concat(weeks.map(function (n) { return "Wk " + n; })),
           Object.keys(M).sort(function (a, b) { return M[b][M[b].length - 1] - M[a][M[a].length - 1]; }).map(function (k) { return [k].concat(M[k].map(dollars)); }))
       ], { "data-card": "money-chart" }));

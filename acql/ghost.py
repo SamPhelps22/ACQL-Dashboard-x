@@ -2,11 +2,12 @@
 everyone's is, so the pages can show where it would stand - never counted,
 never placed, never paid.
 
-Its picks are the card This Week recommends, kept as it stood at the first
-kickoff (cards.model); weeks from before that was kept are rebuilt from the
-stored lines, and say so. Its Big Losers are the three likeliest by the same
-lines - what Game Day gives it - scored by the pool's rule: a point when the
-team loses by 15 or more. The money is the pool's rule too, had it played:
+Its picks are the card This Week recommends, kept as it stood when the
+pool's cards were due (cards.model); weeks from before that was kept are
+rebuilt from the stored lines, and say so. Its Big Losers are the three on
+that kept card - the three likeliest by the same lines, for a card kept
+before they were - scored by the pool's rule: a point when the team loses by
+15 or more. The money is the pool's rule too, had it played:
 the best card takes a dollar a game from every card behind it, level cards
 split it.
 
@@ -125,12 +126,18 @@ def _margins(season: Season, number: int, week: Week) -> dict[int, int]:
     return out
 
 
-def _losers(season: Season, number: int, week: Week) -> list[str]:
-    """Its three Big Losers: the likeliest by the lines kept for the week."""
+def _losers(season: Season, number: int, week: Week, snap=None) -> list[str]:
+    """Its three Big Losers, as team codes: the ones kept with its card, or -
+    for a card kept before they were - the likeliest by the week's lines."""
     from . import pricing
+    from .predictions import team_code
+    kept = [code for code in (getattr(snap, "losers", None) or []) if code]
+    if kept:
+        return kept[:BIG_LOSERS]
     try:
         prices = pricing.price_week(season, number, sorted(week.games, key=lambda g: g.index))
-        return [b.team for b in pricing.big_loser_candidates(prices, include_played=True)[:BIG_LOSERS]]
+        found = [team_code(b.team) for b in pricing.big_loser_candidates(prices, include_played=True)]
+        return [code for code in found if code][:BIG_LOSERS]
     except Exception:  # noqa: BLE001 - its card without Big Losers
         return []
 
@@ -151,15 +158,16 @@ def week_score(season: Season, number: int, *, rebuild: bool = True) -> GhostWee
         return None
     margins = _margins(season, number, week)
     losers, known = 0, True
-    for team in _losers(season, number, week):
-        game = next((g for g in week.games if same_team(team, g.home) or same_team(team, g.away)), None)
+    from .predictions import team_code
+    for team in _losers(season, number, week, snap):
+        game = next((g for g in week.games if team in (team_code(g.home), team_code(g.away))), None)
         if game is None:
             continue
         margin = margins.get(game.index)
         if margin is None:
             known = False
             continue
-        lost_by = -margin if same_team(team, game.home) else margin
+        lost_by = -margin if team == team_code(game.home) else margin
         losers += lost_by >= BLOWOUT
     total = regular + losers
     field = [int(line.total_wins or 0) for line in week.lines.values()]
@@ -207,8 +215,8 @@ def tooltip(record: GhostSeason) -> str:
     lines = [
         f"{MODEL_NAME}, the dashboard's own card, scored like a coach's: shown for "
         "comparison, never placed or paid.",
-        "Its picks: the card This Week recommended at the first kickoff. Its Big "
-        "Losers: the three likeliest by the same lines.",
+        "Its picks and its three Big Losers: the card This Week recommended when the "
+        "pool's cards were due.",
     ]
     if rebuilt:
         lines.append(f"Rebuilt afterwards from the stored lines: week{'s' if len(rebuilt) > 1 else ''} "

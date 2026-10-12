@@ -96,6 +96,11 @@ class Score:
     home_color: str = ""
     #: ESPN's id for the game, which its play-by-play is asked for by (timeline.py).
     event: str = ""
+    #: Where it is played, for the forecast (weather.py): the stadium, its
+    #: "City, State", and whether there is a roof over it (None: not said).
+    venue: str = ""
+    city: str = ""
+    indoor: bool | None = None
 
 
 # ---- reading the scoreboard ------------------------------------------------------
@@ -255,8 +260,19 @@ def parse(payload: object) -> list[Score]:
             away_color=_color(sides["away"].get("team")),
             home_color=_color(sides["home"].get("team")),
             event=str(event.get("id") or comp.get("id") or ""),
+            **_venue(comp),
         ))
     return out
+
+
+def _venue(comp: dict) -> dict:
+    """The stadium, its city and its roof, as the scoreboard gives them."""
+    venue = comp.get("venue") if isinstance(comp.get("venue"), dict) else {}
+    address = venue.get("address") if isinstance(venue.get("address"), dict) else {}
+    place = ", ".join(_text(address.get(k)) for k in ("city", "state", "country") if _text(address.get(k)))
+    indoor = venue.get("indoor")
+    return {"venue": _text(venue.get("fullName")), "city": place,
+            "indoor": indoor if isinstance(indoor, bool) else None}
 
 
 def fetch(year: int, week: int, opener=None) -> list[Score]:
@@ -335,6 +351,14 @@ def save(year: int, week: int, scores: list[Score], at: float | None = None) -> 
         })
     except store.StoreError:
         pass
+    # Each game's line as the scoreboard has it, for as long as it shows one:
+    # the closing line every pick is measured against afterwards (closing.py).
+    if scores:
+        try:
+            from . import closing
+            closing.capture(year, week, scores, at)
+        except Exception:  # noqa: BLE001 - the scores are kept either way
+            pass
 
 
 def find(scores: list[Score], away: str, home: str) -> tuple[Score | None, bool]:

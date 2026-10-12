@@ -19,11 +19,11 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from ... import briefing, cards, evidence, odds, survivor
+from ... import bigloser, briefing, cards, evidence, odds, survivor
 from ...predictions import display_team
 from ...models import Season
 from ..theme import mix
-from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ..widgets import Card, IconButton, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
 from ... import oddslock
 from .base import Page
@@ -38,6 +38,8 @@ CARD_TITLE = "The card in detail"
 SWING_TITLE = "Where the week is won"
 GLANCE_TITLE = f"{MODEL_NAME}'s card at a glance"
 WHY_TITLE = "Why each pick"
+SCORE_TITLE = "Signal scoreboard - how each reason has done this season"
+SCORE_HEADERS = ["Signal", "Had a view", "Right", "Rate", "Against the betting line", "Read it as"]
 #: Shared with Game Day and the Report card: who "you" are.
 ME_KEY = "insights/me"
 #: Games across the glance grid.
@@ -74,6 +76,12 @@ class _Fetcher(QThread):
 
     def run(self) -> None:
         try:
+            # The injury report rides along: it is the why behind the moves.
+            try:
+                from ... import injuries
+                injuries.refresh()
+            except Exception:  # noqa: BLE001 - the lines matter more than the report
+                pass
             self.done.emit(odds.fetch(self.key))
         except odds.OddsError as exc:
             self.done.emit(str(exc))
@@ -91,11 +99,10 @@ class OddsDialog(QDialog):
         layout = QVBoxLayout(self)
         intro = QLabel(
             (f"<p style='color:#d03b3b'>{reason}</p>" if reason else "")
-            + "Lines come from <b>The Odds API</b>. Its free plan is 500 "
-            "requests a month, and one update is one request. Sign up with "
-            f"just an email at <a href='{odds.SIGNUP_PAGE}'>the-odds-api.com</a>, "
-            "and paste the key it emails you below. It is stored locked to "
-            "your Windows account."
+            + "Lines come from <b>The Odds API</b>. Its free plan allows 500 requests a month, "
+            "and one update uses three. Sign up with an email at "
+            f"<a href='{odds.SIGNUP_PAGE}'>the-odds-api.com</a> and paste the key it sends you "
+            "below. The key is stored locked to your Windows account."
         )
         intro.setWordWrap(True)
         intro.setOpenExternalLinks(True)
@@ -122,8 +129,8 @@ class OddsDialog(QDialog):
 
 
 class BriefingPage(Page):
-    title = "This Week"
-    subtitle = "Your card for the week, the games that decide it, and the side pools"
+    from ...places import THIS_WEEK as title
+    subtitle = "The card to hand in this week, the reason behind every pick, and the three Big Losers"
     icon = "\N{MEMO}"
 
     #: Asks the window to re-read everything - after new lines are stored.
@@ -156,25 +163,25 @@ class BriefingPage(Page):
         found = self.style_picker.findData(wanted)
         self.style_picker.setCurrentIndex(max(found, 0))
         self.style_picker.currentIndexChanged.connect(self._style_changed)
-        self.lines_button = QPushButton("\u21bb  Update lines")
+        self.lines_button = IconButton("Update lines", "refresh")
         self.lines_button.setToolTip(
             "Fetch the latest betting lines for this week and re-plan the card"
         )
         self.lines_button.clicked.connect(self._update_lines)
         head.addWidget(self.lines_button, 0)
-        self.lines_settings = QPushButton("\u2699")
+        self.lines_settings = IconButton("", "sliders")
         self.lines_settings.setToolTip("The Odds API key")
         self.lines_settings.setFixedWidth(36)
         self.lines_settings.clicked.connect(lambda: self._odds_settings())
         head.addWidget(self.lines_settings, 0)
-        self.save_button = QPushButton("\N{PUSHPIN}  Save card")
+        self.save_button = IconButton("Save card", "bookmark")
         self.save_button.setToolTip(
             "Remember this card as the one you're handing in, so any change "
             "before the lock can be pointed out"
         )
         self.save_button.clicked.connect(self._save_card)
         head.addWidget(self.save_button, 0)
-        self.copy_button = QPushButton("Copy as text")
+        self.copy_button = IconButton("Copy as text", "copy")
         self.copy_button.setToolTip(
             "Put the whole briefing on the clipboard, ready to paste into a "
             "message"
@@ -198,6 +205,17 @@ class BriefingPage(Page):
         self.glance_grid.setHorizontalSpacing(10)
         self.glance_grid.setVerticalSpacing(10)
         self.glance_card.body().addLayout(self.glance_grid)
+        # ...and its three Big Losers, which are part of the card too.
+        self.losers_head = QLabel("")
+        self.losers_head.setTextFormat(Qt.TextFormat.RichText)
+        self.glance_card.add(self.losers_head)
+        self.losers_grid = QGridLayout()
+        self.losers_grid.setHorizontalSpacing(10)
+        self.glance_card.body().addLayout(self.losers_grid)
+        self.losers_note = QLabel("")
+        self.losers_note.setObjectName("Muted")
+        self.losers_note.setWordWrap(True)
+        self.glance_card.add(self.losers_note)
         self.glance_note = QLabel("")
         self.glance_note.setObjectName("Muted")
         self.glance_note.setWordWrap(True)
@@ -220,6 +238,16 @@ class BriefingPage(Page):
         self.changes_card.body().addLayout(self.changes_box)
         self.layout_.addWidget(self.changes_card)
         self.changes_card.hide()
+
+        # Which of the reasons below have earned a tick's trust this season.
+        self.score_card = Card(SCORE_TITLE)
+        self.score_box = QVBoxLayout()
+        self.score_card.body().addLayout(self.score_box)
+        self.score_note = QLabel("")
+        self.score_note.setObjectName("Muted")
+        self.score_note.setWordWrap(True)
+        self.score_card.add(self.score_note)
+        self.layout_.addWidget(self.score_card)
 
         # Every pick and the whole case for it: each signal for it, against
         # it, or worth knowing (evidence.py).
@@ -302,11 +330,14 @@ class BriefingPage(Page):
         self.save_button.setEnabled(not cards.week_started(season, week))
         self._update_changes(week, brief)
         try:
-            me = QSettings().value(ME_KEY, "") or None
+            from ... import me as owner
+            me = owner.key(season) or QSettings().value(ME_KEY, "") or None
             cases = evidence.build(season, brief, me)
         except Exception:  # noqa: BLE001 - the card stands without its reasons
             cases = []
         self._update_glance(brief, cases)
+        self._update_losers(season, brief)
+        self._update_scoreboard(season)
         self._update_why(season, brief, cases)
         self._update_tiles(brief)
         self._update_swings(brief)
@@ -332,7 +363,9 @@ class BriefingPage(Page):
     def _update_suicide(self, season: Season, week: int) -> None:
         """Fill the coach list - still alive first - and keep the choice."""
         self._suicide_week = week
-        wanted = self.coach_picker.currentData() or QSettings().value(self.SUICIDE_KEY, "")
+        from ... import me as owner
+        wanted = (self.coach_picker.currentData() or owner.key(self.season)
+                  or QSettings().value(self.SUICIDE_KEY, ""))
         players = sorted(
             season.players.values(),
             key=lambda p: (not p.suicide_alive, p.display.casefold()),
@@ -399,14 +432,11 @@ class BriefingPage(Page):
             view, _ = make_table(model, stretch_column=3, row_height=28)
             self.suicide_box.addWidget(view)
         self.suicide_note.setText(
-            f"Teams already used are left out. 'Strong' is a later week at "
-            f"{survivor.STRONG:.0%} or better; later weeks are estimated from the "
-            f"{advice.rated_from} betting lines seen so far this season, so they "
-            f"sharpen as the season goes. 'est.' means this week's line isn't in yet. "
-            f"The pool's lines apply: a lined favourite must win by at least "
-            f"the line and an underdog survives by keeping it closer, so big favourites "
-            f"are close to coin flips. A line with '?' is a guess - the pool "
-            f"hasn't posted it."
+            f"Teams you've already used are left out. \u201cStrong\u201d marks a later week at "
+            f"{survivor.STRONG:.0%} or better. Later weeks are estimates from the "
+            f"{advice.rated_from} betting lines seen so far. \u201cest.\u201d means this week's line "
+            f"isn't in yet. The pool's lines apply here too, so a big favourite with a line is close "
+            f"to a coin flip. A line with \u201c?\u201d is a guess: the pool hasn't posted it."
         )
 
     @staticmethod
@@ -420,9 +450,13 @@ class BriefingPage(Page):
         for tile in self._tiles:
             tile.update_values(self.NO_VALUE, "Nothing priced yet")
         self.clear_layout(self.glance_grid)
+        self.clear_layout(self.losers_grid)
+        self.losers_head.setText("")
+        self.losers_note.setText("")
         self.glance_note.setText("")
         self.why_intro.setText("")
         self.clear_layout(self.why_box)
+        self.score_card.hide()
         for box, message in (
             (self.swing_box, "The swings appear once the week is priced."),
             (self.card_box,
@@ -465,6 +499,8 @@ class BriefingPage(Page):
                 + "</div>"
             )
             chip.setTextFormat(Qt.TextFormat.RichText)
+            chip.setWordWrap(True)
+            chip.setMinimumWidth(120)
             chip.setToolTip(f"{choice.matchup}: take {choice.pick} - {choice.why}")
             chip.setStyleSheet(
                 f"QLabel {{ background: {p.raised}; border: 1px solid {p.border}; "
@@ -478,19 +514,116 @@ class BriefingPage(Page):
             label = evidence.strength(choice.chance)
             counts[label] = counts.get(label, 0) + 1
         order = [name for _, name in evidence.STRENGTHS]
+        blowouts = sum(b.chance for b in brief.losers)
         self.glance_card.set_title(
             f"{GLANCE_TITLE} - week {brief.week}: {brief.expected:.1f} of "
             f"{len(brief.choices)} expected right"
+            + (f", plus {blowouts:.1f} Big Loser points" if brief.losers else "")
         )
         self.glance_note.setText(
             " \u00b7 ".join(
                 f"<span style='color:{self._strength_colour(name)}'><b>{counts[name]}</b> "
-                f"{name.lower()}{'s' if counts[name] != 1 and name != 'Coin flip' else ''}"
-                f"{'s' if counts[name] != 1 and name == 'Coin flip' else ''}</span>"
+                f"{name.lower()}{'s' if counts[name] != 1 and name != 'Strong' else ''}</span>"
                 for name in order if counts.get(name)
             )
-            + f" \u00b7 Lock 75%+, Strong 65%+, Lean 55%+. In slate order, the way the sheet "
-            f"lists the games. Every reason is below."
+            + f" \u00b7 Lock 75%+, Strong 65%+, Lean 55%+. Games are in the sheet's order. "
+            f"The reasons are below."
+        )
+
+    def _update_losers(self, season: Season, brief: briefing.Brief) -> None:
+        """Deadeye's three Big Losers, as much a part of the card as the picks."""
+        self.clear_layout(self.losers_grid)
+        p = self.palette
+        if not brief.losers:
+            self.losers_head.setText("")
+            self.losers_note.setText("")
+            return
+        try:
+            board = bigloser.board(season, brief.week, brief)
+            held = {o.code: o for o in board.options}
+        except Exception:  # noqa: BLE001 - the three stand without the pool's share
+            board, held = None, {}
+        self.losers_head.setText(
+            f"<span style='font-weight:700; color:{p.ink}'>{MODEL_NAME}'s three Big Losers</span>"
+            f"<span style='color:{p.ink_muted}'> \u00b7 a point each when the team loses by 15 or more"
+            + (" \u00b7 chosen for the money card" if brief.for_money else "") + "</span>"
+        )
+        for n, loser in enumerate(brief.losers):
+            from ...predictions import team_code
+            option = held.get(team_code(loser.team))
+            where = (f"{abs(loser.margin):g}-point underdogs" if loser.margin < -0.25
+                     else f"{loser.margin:g}-point favourites" if loser.margin > 0.25 else "a pick'em")
+            chip = QLabel(
+                f"<div style='color:{p.ink_muted}; font-size:11px'>BIG LOSER {n + 1} \u00b7 against "
+                f"{display_team(loser.opponent)}</div>"
+                f"<div style='font-size:19px; font-weight:800; color:{p.ink}'>{display_team(loser.team)}</div>"
+                f"<div style='color:{p.critical}; font-weight:700'>{loser.chance:.0%} to lose by 15+</div>"
+                f"<div style='color:{p.ink_muted}; font-size:12px'>{where}"
+                + (f" \u00b7 on about {option.held:.0%} of cards" if option is not None else "")
+                + "</div>"
+            )
+            chip.setTextFormat(Qt.TextFormat.RichText)
+            chip.setWordWrap(True)
+            chip.setMinimumWidth(120)
+            chip.setStyleSheet(
+                f"QLabel {{ background: {p.raised}; border: 1px solid {p.border}; "
+                f"border-left: 5px solid {p.critical}; border-radius: 6px; padding: 8px 10px; }}"
+            )
+            self.losers_grid.addWidget(chip, 0, n)
+        for column in range(GLANCE_COLUMNS):
+            self.losers_grid.setColumnStretch(column, 1)
+        note = ""
+        try:
+            past = bigloser.review(season).model
+            if past.picks:
+                note = (f"This season its three have come in {past.hits} of {past.picks} times "
+                        f"(their odds added up to {past.expected:.1f}). ")
+        except Exception:  # noqa: BLE001
+            pass
+        if board is not None and board.options:
+            mine = {team_code(b.team) for b in brief.losers}
+            other = [o.team for o in board.best_gain if o.code not in mine]
+            if other:
+                note += (f"These are the three likeliest - the most points. To gain on the pool "
+                         f"instead, the board on Side Pools would swap in {', '.join(other)}: "
+                         f"less likely, but on far fewer cards.")
+        self.losers_note.setText(note)
+
+    def _update_scoreboard(self, season: Season) -> None:
+        self.clear_layout(self.score_box)
+        try:
+            board = [r for r in evidence.scoreboard(season) if r.games]
+        except Exception:  # noqa: BLE001 - the card stands without it
+            board = []
+        if not board:
+            self.score_card.hide()
+            return
+        self.score_card.show()
+        rows, tones = [], {}
+        for r, s in enumerate(board):
+            if s.name == "Betting line":
+                versus, verdict = self.NO_VALUE, "the yardstick"
+            elif not s.split:
+                versus, verdict = "never disagreed", "says what the line says"
+            else:
+                versus = f"right {s.split_right} of {s.split}"
+                share = s.split_right / s.split
+                verdict = ("too few to say" if s.split < 6 else
+                           "worth a tick" if share >= 0.6 else
+                           "has pointed the wrong way" if share <= 0.4 else "no better than the line")
+                if s.split >= 6:
+                    tones[(r, 5)] = "good" if share >= 0.6 else "bad" if share <= 0.4 else "muted"
+            rows.append([s.name, s.games, s.right, f"{s.rate:.0%}", versus, verdict])
+            tones[(r, 3)] = "good" if s.rate >= 0.6 else "bad" if s.rate < 0.45 else ""
+        model = TableModel(SCORE_HEADERS, rows, palette=self.palette, numeric_columns={1, 2, 3},
+                           tones=tones, bold_columns={0})
+        view, _ = make_table(model, stretch_column=5, row_height=27)
+        self.score_box.addWidget(view)
+        self.score_note.setText(
+            "Each signal is checked on every graded game: which side did it point to, and was that "
+            "side right? The column that matters is the games where it disagreed with the betting "
+            "line. A signal that has pointed the wrong way is still shown under each pick, but as a "
+            "dot, and it no longer counts. These are small numbers this early."
         )
 
     def _update_why(self, season: Season, brief: briefing.Brief, cases: list[evidence.Case]) -> None:
@@ -636,10 +769,9 @@ class BriefingPage(Page):
         if not swings:
             self.swing_card.set_title(SWING_TITLE)
             note = QLabel(
-                "No pick on this card gains much on the field. Every game the "
-                "pool is likely to see the same way, so the week will be "
-                "decided by the games everyone gets wrong rather than by "
-                "anything chosen here."
+                "No pick on this card gains much on the rest of the pool. Everyone is likely to "
+                "see these games the same way, so the week will come down to the games "
+                "everyone gets wrong."
             )
             note.setObjectName("Muted")
             note.setWordWrap(True)
@@ -847,10 +979,10 @@ class BriefingPage(Page):
             coming = oddslock.coming(self.season, week) if self.season is not None and week else ""
             say((note + "  " if note else "") + (
                 "Lines: from the predictions file or typed spreads. "
-                "\u21bb Update lines fetches the latest from the books."
+                "Update lines fetches the latest from the books."
                 if odds.api_key() else
                 "Lines: from the predictions file or typed spreads. Add a free "
-                "Odds API key (\u2699) and \u21bb Update lines fetches them for you."
+                "Odds API key (the button beside it) and Update lines fetches them for you."
             ) + (" " + coming if coming else ""))
             return
         moved = odds.movements(week)
@@ -884,7 +1016,7 @@ class BriefingPage(Page):
                 return
             key = odds.api_key()
         self.lines_button.setEnabled(False)
-        self.lines_button.setText("\u21bb  Updating\u2026")
+        self.lines_button.setText("Updating\u2026")
         fetcher = _Fetcher(key)
         fetcher.done.connect(self._lines_fetched)
         # Only let go of the thread once it has really stopped.
@@ -900,7 +1032,7 @@ class BriefingPage(Page):
 
     def _lines_fetched(self, result: object) -> None:
         self.lines_button.setEnabled(not self._locked(self._week_shown))
-        self.lines_button.setText("\u21bb  Update lines")
+        self.lines_button.setText("Update lines")
         if isinstance(result, str):
             self.lines_status.setText(f"Lines not updated. {result}")
             if "key" in result:
@@ -930,9 +1062,9 @@ class BriefingPage(Page):
         if self._brief is None or not self._brief.choices:
             return
         snap = cards.save_mine(self._week_shown, self._brief)
-        self.save_button.setText("\N{PUSHPIN}  Saved")
+        self.save_button.setText("Saved")
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(1500, lambda: self.save_button.setText("\N{PUSHPIN}  Save card"))
+        QTimer.singleShot(1500, lambda: self.save_button.setText("Save card"))
         self._update_changes(self._week_shown, self._brief)
         self.lines_status.setText(
             f"Card saved {_when(snap.at)}. Update the lines before the lock and "
@@ -969,7 +1101,7 @@ class BriefingPage(Page):
             self.changes_box.addWidget(label)
         if found.swaps and found.what == "the card you saved":
             note = QLabel(
-                "Changed your card? Press \N{PUSHPIN} Save card again so the "
+                "Changed your card? Press Save card again so the "
                 "next check starts from it."
             )
             note.setObjectName("Muted")

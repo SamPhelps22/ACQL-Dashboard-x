@@ -10,7 +10,9 @@ worth knowing:
     Computer models  how many of the published models side with the pick
     Form             each team's record and scoring margin this season
     Rest             a short week or a bye, when the two teams differ
+    Weather          wind, rain or cold at an outdoor game, when it is worth knowing
     Scoring          the over/under, when it stands out from the slate
+    Injuries         who is out on each side, from ESPN's report
     The pool         how much of the pool is expected on the same side
     You              your own record picking these teams this season
     Track record     how Deadeye's picks at this confidence have done
@@ -45,6 +47,11 @@ REST_GAP = 2
 BLOWOUT = 0.15
 #: An over/under this far from the slate's middle is worth mentioning.
 TOTAL_GAP = 4.0
+#: A signal that has disagreed with the betting line this often...
+DISTRUST_GAMES = 6
+#: ...and been right no more than this share of those times is shown but not
+#: counted: its tick or cross has been worth less than nothing.
+DISTRUST_RATE = 0.4
 #: The commissioner usually puts a line on a favourite of about this size or
 #: bigger (the same figure the long replay uses, backtest.LINED_FROM).
 LINE_LIKELY = 6.5
@@ -202,6 +209,39 @@ def _line_coming(game: Game, forecast, lines_posted: bool) -> Signal | None:
     )
 
 
+def _injuries(pick: str, other: str, pick_code: str, other_code: str) -> Signal | None:
+    """Who is out on each side. The line has it already; this is the why."""
+    from . import injuries
+    mine, theirs = injuries.team(pick_code), injuries.team(other_code)
+    if not mine and not theirs:
+        return None
+
+    def short(name: str, report) -> str:
+        gone = [i for i in report if i.missing]
+        passer = next((i for i in gone if i.quarterback), None)
+        if passer is not None:
+            return f"{name}: QB {passer.name} {injuries.STATUSES[passer.status]}"
+        return f"{name}: {len(gone)} out" if gone else f"{name}: none out"
+
+    detail = " ".join(
+        f"{name} - {injuries.summary(code) or 'nothing reported'}."
+        for name, code in ((pick, pick_code), (other, other_code))
+    )
+    return Signal("Injuries", INFO, f"{short(pick, mine)} \u00b7 {short(other, theirs)}",
+                  detail + " Already in the line; it is why the line is where it is.")
+
+
+def _weather(year: int, week: int, game: Game) -> Signal | None:
+    """Wind, rain or cold at kickoff - only when there is some, and no roof."""
+    from . import weather
+    found = weather.game(year, week, game.away, game.home)
+    if found is None or not found.notable:
+        return None
+    return Signal("Weather", INFO, found.words() + (f" in {found.city.split(',')[0]}" if found.city else ""),
+                  "Wind and rain pull the scoring down and favour the run. The total has it in "
+                  "already; it is why a blowout is a little less likely here.")
+
+
 def _scoring(forecast, typical: float) -> Signal | None:
     """The over/under, when this game stands out from the rest of the slate."""
     total = getattr(forecast, "total", None)
@@ -356,6 +396,9 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
                     if team_code(b.team)}
     chosen = {team_code(b.team) for b in brief.losers}
     lines_posted = any(g.line is not None for g in games)
+    doubted = distrusted(season)
+    # today's injury report says nothing about a week that has been played
+    current = not all(g.played for g in games)
 
     out = []
     for choice in brief.choices:
@@ -373,12 +416,15 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
             _form(pick_code, other_code, choice.pick, choice.other, form),
             _rest(choice.pick, choice.other, pick_code, other_code,
                   _kickoff(year, brief.week, game), form),
+            _injuries(choice.pick, choice.other, pick_code, other_code) if current else None,
+            _weather(year, brief.week, game) if current else None,
             _scoring(forecast, ctx.typical_total),
             _crowd(choice),
             _yours(spots, choice.pick, choice.other),
             _track(choice.chance, bands),
             _blowout(choice.other, other_code, loser_chance, chosen),
         ]
+        signals = [_discounted(s, doubted) for s in signals]
         if choice.turned:
             signals.insert(0, Signal("Against the pool", INFO, f"{choice.pick} is the less likely side",
                                      "Taken on purpose, to finish first rather than near the top."))
@@ -401,3 +447,117 @@ def overruled(season: Season, week: int) -> list[str]:
         return []
     games = sorted(found.games, key=lambda g: g.index)
     return [p.game.label for p in pricing.price_week(season, week, games) if p.overruled]
+
+
+# ---- how each signal has done ----------------------------------------------------------
+@dataclass(frozen=True)
+class SignalRecord:
+    """One signal as a tipster: every graded game it had a view on."""
+
+    name: str
+    games: int = 0              # games it pointed to a side
+    right: int = 0              # ...and that side was credited
+    split: int = 0              # games it pointed the other way from the betting line
+    split_right: int = 0        # ...and was right
+
+    @property
+    def rate(self) -> float:
+        return self.right / self.games if self.games else 0.0
+
+
+_BOARD: dict[tuple, list[SignalRecord]] = {}
+
+
+def distrusted(season: Season) -> dict[str, SignalRecord]:
+    """Signals whose own record this season says not to count them."""
+    try:
+        board = scoreboard(season)
+    except Exception:  # noqa: BLE001 - without a record every signal counts
+        return {}
+    return {r.name: r for r in board
+            if r.split >= DISTRUST_GAMES and r.split_right / r.split <= DISTRUST_RATE
+            and r.name in ("Line move", "Computer models", "Form", "Rest")}
+
+
+def _discounted(signal: Signal | None, doubted: dict[str, SignalRecord]) -> Signal | None:
+    """A signal with a wrong-way record keeps its place and loses its vote."""
+    if signal is None or signal.verdict == INFO or signal.name not in doubted:
+        return signal
+    record = doubted[signal.name]
+    return Signal(
+        signal.name, INFO, signal.headline,
+        f"{signal.detail} Not counted: when it has disagreed with the betting line this season "
+        f"it has been right {record.split_right} of {record.split} times.",
+    )
+
+
+#: The rows of the scoreboard, in the order they are read.
+SCORED = ("Deadeye", "Betting line", "Computer models", "Line move", "Form", "Rest", "The pool")
+
+
+def scoreboard(season: Season) -> list[SignalRecord]:
+    """How often each signal's side has been credited this season.
+
+    Every graded game is asked of every signal: which side does it point
+    to? - the same rule the page uses for a tick or a cross. `split` is the
+    part worth knowing: the games where a signal disagreed with the betting
+    line, and who was right. A signal that only ever agrees with the line
+    tells you nothing the line didn't.
+    """
+    from . import odds, patterns, picks, predictions
+    from .version import MODEL_NAME
+    key = (id(season), predictions.store_stamp(), odds.stamp(), picks._store_stamp(),
+           sum(1 for w in season.weeks.values() for g in w.games if g.played))
+    if key in _BOARD:
+        return _BOARD[key]
+    year = results.season_year(season)
+    tally = {name: [0, 0, 0, 0] for name in SCORED}
+    for number in sorted(season.weeks):
+        week = season.weeks[number]
+        games = [g for g in sorted(week.games, key=lambda g: g.index) if patterns._decided(g)]
+        if not games:
+            continue
+        ctx = pricing.context(season, number, sorted(week.games, key=lambda g: g.index))
+        prices = {p.game.index: p for p in pricing.price_week(season, number, sorted(week.games, key=lambda g: g.index), ctx)}
+        form = season_form(year, number)
+        crowd: dict[int, list[int]] = {}
+        for card in patterns.week_cards(season, number).values():
+            for pick in card:
+                sides = crowd.setdefault(pick.game.index, [0, 0])
+                sides[0 if pick.side == "home" else 1] += 1
+        for game in games:
+            forecast = ctx.forecasts.get(game.index)
+            home, away = display_team(game.home), display_team(game.away)
+            home_code, away_code = team_code(game.home), team_code(game.away)
+            home_credited = team_code(game.winner) == home_code
+            views: dict[str, bool | None] = {}
+
+            def side(signal: Signal | None) -> bool | None:
+                if signal is None or signal.verdict == INFO:
+                    return None
+                return signal.verdict == FOR            # for the home side, the one asked about
+
+            views["Betting line"] = side(_market(game, home, True, forecast))
+            views["Line move"] = side(_move(game, home, True, forecast))
+            views["Computer models"] = side(_models(game, home, True, forecast))
+            views["Form"] = side(_form(home_code, away_code, home, away, form))
+            views["Rest"] = side(_rest(home, away, home_code, away_code, _kickoff(year, number, game), form))
+            took = crowd.get(game.index)
+            views["The pool"] = None if not took or took[0] == took[1] else took[0] > took[1]
+            guess = prices[game.index].prediction() if game.index in prices else None
+            views["Deadeye"] = None if guess is None else team_code(guess.pick) == home_code
+            line = views["Betting line"]
+            for name, view in views.items():
+                if view is None:
+                    continue
+                row = tally[name]
+                row[0] += 1
+                row[1] += view == home_credited
+                if line is not None and view != line:
+                    row[2] += 1
+                    row[3] += view == home_credited
+    labels = {"Deadeye": MODEL_NAME}
+    board = [SignalRecord(labels.get(name, name), *tally[name]) for name in SCORED]
+    _BOARD.clear()
+    _BOARD[key] = board
+    return board

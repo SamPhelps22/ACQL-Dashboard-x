@@ -175,14 +175,26 @@ def team_code(name: object) -> str:
     the city belongs to one team, so a bare "Los Angeles" stays unmatched
     rather than guessing between two.
     """
+    if isinstance(name, str):
+        return _code_of(name)
+    text = _words(name)
+    return _code_for(text) if text else ""
+
+
+@lru_cache(maxsize=8192)
+def _code_of(name: str) -> str:
+    """team_code for a spelling exactly as written, remembered: tidying the
+    spelling (_words) was the last thing done afresh on every one of the
+    eighty-odd thousand calls a page makes."""
     text = _words(name)
     return _code_for(text) if text else ""
 
 
 def forget_teams() -> None:
-    """Drop both caches, for a test that edits the team tables."""
+    """Drop the caches, for a test that edits the team tables."""
     _team_lookup.cache_clear()
     _code_for.cache_clear()
+    _code_of.cache_clear()
 
 
 def _number(value: object) -> float | None:

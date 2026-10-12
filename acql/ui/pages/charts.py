@@ -6,6 +6,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel
 
+from ... import me
 from .. import seasoncharts as SC
 from ..charts import HeatmapChart, LineChart
 from ..funcharts import CrowdChart, FunnelChart, LandedChart, RaceChart
@@ -13,12 +14,12 @@ from ..widgets import Card, section
 from .base import Page
 
 HIGHLIGHT_KEY = "charts/highlight"
-DEFAULT_HIGHLIGHT = "Phelpy"
+DEFAULT_HIGHLIGHT = me.NAME
 
 
 class ChartsPage(Page):
     title = "Charts"
-    subtitle = "The race, each week, the suicide pool, hot and cold streaks, upsets and title odds"
+    subtitle = "The season in pictures: the race, each week, the suicide pool, streaks, upsets and title odds"
     icon = "\N{CHART WITH UPWARDS TREND}"
 
     def build(self) -> None:
@@ -93,7 +94,11 @@ class ChartsPage(Page):
         self._filling = True
         try:
             settings = QSettings()
-            wanted = (self._chosen() or str(settings.value(HIGHLIGHT_KEY, "") or "")
+            # A new session starts on the dashboard's owner; after that the
+            # choice made here stands.
+            started, self._started = getattr(self, "_started", False), True
+            wanted = (self._chosen() or (me.display(season) if not started else "")
+                      or str(settings.value(HIGHLIGHT_KEY, "") or "")
                       or str(settings.value("thisweek/suicide_coach", "") or "") or DEFAULT_HIGHLIGHT)
             names = sorted((p.display for p in season.players.values()), key=str.casefold)
             self.highlight.clear()

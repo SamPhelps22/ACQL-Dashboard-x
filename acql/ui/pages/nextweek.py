@@ -175,11 +175,9 @@ class OddsDialog(QDialog):
         layout.setSpacing(10)
 
         note = QLabel(blurb or (
-            "Every line that names one of this week's matchups and carries a "
-            "spread is read; moneylines, totals and the odds in brackets are "
-            "ignored. Anything that can't be read is listed afterwards, and "
-            "games already filled in are only overwritten when the paste "
-            "covers them."
+            "Every line that names one of this week's games and has a spread is read. Moneylines "
+            "and totals are ignored. Anything that can't be read is listed afterwards. Games already "
+            "filled in are only replaced if the paste includes them."
         ))
         note.setObjectName("Muted")
         note.setWordWrap(True)
@@ -205,8 +203,8 @@ class OddsDialog(QDialog):
 
 
 class NextWeekPage(Page):
-    title = "Every Game"
-    subtitle = "A pick for every game on the slate, with your pool's lines applied"
+    from ...places import EVERY_GAME as title
+    subtitle = "Every game on the slate, priced: enter the pool's lines here and see each pick's chance"
     icon = "\N{AMERICAN FOOTBALL}"
 
     #: Line games were typed in: the window reads everything again with them.
@@ -623,10 +621,8 @@ class NextWeekPage(Page):
     def _show_blank(self, number: int) -> None:
         self.table.hide()
         self.empty_note.setText(
-            f"Week {number} has no games. There is no pick sheet for it yet, "
-            f"no predictions file for it, and the schedule "
-            f"doesn't have it either - which usually means the season table in "
-            f"schedule.py stops short of week {number}."
+            f"Week {number} has no games yet. There is no pick sheet or predictions file for it, "
+            f"and the schedule doesn't list it."
         )
         self.empty_note.show()
         self.status.setText("")
@@ -1185,9 +1181,8 @@ class NextWeekPage(Page):
             return
         if not forecasts:
             self.paste_note.setText(
-                "No games found in that paste. Each row needs two team names "
-                "and the ten numbers after them - the header rows and blank "
-                "lines are skipped, so the whole block can be pasted as it is."
+                "No games found in that paste. Each row needs two team names and the ten numbers "
+                "after them. Header rows and blank lines are skipped."
             )
             self.paste_note.show()
             return
@@ -1517,9 +1512,8 @@ class NextWeekPage(Page):
         )
         if not plan.flipped:
             self.plan_body.setText(
-                f"Take the likelier side of all {_plural(len(rows), 'game')}: "
-                f"nothing is crowded enough this week to be worth giving up a "
-                f"better chance for. Expected {plan.expected_hits:.1f} right."
+                f"Take the likelier side of all {_plural(len(rows), 'game')}. No game is crowded enough "
+                f"this week to be worth a riskier pick. Expected {plan.expected_hits:.1f} right."
             )
             return
         said = []
@@ -1539,11 +1533,11 @@ class NextWeekPage(Page):
         self.plan_body.setText(
             f"{_plural(len(plan.flipped), 'game')} worth turning around, against "
             f"{plan.coaches} other {field} cards:\n" + "\n".join(said)
-            + f"\nIt expects {plan.expected_hits:.1f} right rather than "
+            + f"\nIt expects {plan.expected_hits:.1f} right instead of "
               f"{plan.plain_hits:.1f}, and makes the top five less often "
-              f"({plan.top_five:.0%} against {plan.plain_top_five:.0%}). In the "
-              f"2011-2025 replay that trade didn't pay, so This Week's card keeps "
-              f"the likelier side unless you pick the card built to finish first."
+              f"({plan.top_five:.0%} against {plan.plain_top_five:.0%}). Over 2011-2025 "
+              f"that trade didn't pay, so This Week keeps the likelier side unless you "
+              f"choose the card built to finish first."
         )
 
     # ---- the headline numbers ----------------------------------------------

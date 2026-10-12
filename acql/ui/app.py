@@ -7,7 +7,7 @@ import sys
 import traceback
 from datetime import datetime
 
-from PySide6.QtCore import QPoint, QSettings, Qt, QTimer, QUrl
+from PySide6.QtCore import QPoint, QSettings, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -25,10 +25,11 @@ from PySide6.QtWidgets import (
 
 from pathlib import Path
 
-from .. import APP_NAME, __version__, analytics, oddslock, results
+from .. import APP_NAME, __version__, analytics, oddslock, places, results
 from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
 from ..version import MODEL_NAME
+from . import icons
 from .groups import GroupSpec, PageGroup
 from .pages.base import (
     CHECK_RESULTS, CHECK_UPDATES, GO_TO_DATA, INSTALL_UPDATE, KEEPING, LIVE_CHECK, LIVE_CHECK_NOW, OPEN_FOLDER,
@@ -40,52 +41,62 @@ from .watch import FolderWatcher, describe
 from .pages.thisweek import BriefingPage
 from .pages.charts import ChartsPage
 from .pages.data import DataPage
+from .pages.everyone import EveryonePage
 from .pages.gameday import GameDayPage
 from .pages.overview import OverviewPage
 from .pages.insights import InsightsPage
 from .pages.model import ModelPage
+from .pages.modellab import ModelLabPage
+from .pages.modelcharts import ModelChartsPage
+from .pages.hitsmisses import HitsMissesPage
+from .pages.radar import RadarPage
 from .pages.nextweek import NextWeekPage
 from .pages.player import PlayerPage
 from .pages.pools import PoolsPage
 from .pages.projections import ProjectionsPage
 from .pages.reportcard import ReportCardPage
 from .pages.standings import StandingsPage
+from .pages.teams import TeamsPage
 from .pages.weekly import WeeklyPage
 from .pages.winnings import WinningsPage
 from .theme import PALETTES, stylesheet
 
 #: The sidebar: eight places, the pages inside each shown as tabs (groups.py).
 NAV = (
-    GroupSpec("Season", "\N{TROPHY}", "Where the season stands: the table, the money, the odds",
+    GroupSpec(places.SEASON, "trophy", "Where the season stands: the standings, who has won money, and who can still take the title",
               (("Overview", OverviewPage), ("Standings", StandingsPage),
                ("Winnings", WinningsPage), ("Projections", ProjectionsPage),
                ("Charts", ChartsPage))),
     # Second, and on Ctrl+2: the question most visits are here to answer is
     # "what do I play this week", and it should not be four clicks away.
-    GroupSpec("This Week", "\N{MEMO}", "The card to hand in, and every game on the slate",
-              (("Your card", BriefingPage), ("Every game", NextWeekPage))),
+    GroupSpec(places.THIS_WEEK, "calendar", "What to play this week: your card, every game priced, and where the card could be wrong",
+              ((places.CARD, BriefingPage), (places.EVERY_GAME, NextWeekPage), (places.RADAR, RadarPage))),
     # While the games are on: every score against the pool's lines, live.
-    GroupSpec("Game Day", "\N{TELEVISION}", "Every game as it happens, against your pool's lines",
-              (("Game day", GameDayPage),)),
-    GroupSpec("Results", "\N{SPIRAL CALENDAR PAD}", "One week at a time, and the recap to send round",
+    GroupSpec(places.GAME_DAY, "football", "The games as they happen: live scores against the pool's lines, and what you need to go your way",
+              (("Game day", GameDayPage), (places.EVERYONE, EveryonePage))),
+    GroupSpec(places.RESULTS, "bars", "How each week finished: every game, who won the week, and the recap to send round",
               (("Results", WeeklyPage),)),
-    GroupSpec("Side Pools", "\N{DIRECT HIT}", "Big Loser and the suicide pool",
+    GroupSpec(places.SIDE_POOLS, "people", "The Big Loser and suicide pools: who leads, who is still alive, and the best picks left",
               (("Side pools", PoolsPage),)),
-    GroupSpec("Player", "\N{BUST IN SILHOUETTE}", "One coach's season in detail",
+    GroupSpec(places.PLAYER, "person", "One coach's whole season: every week, their habits, and how they compare with the pool",
               (("Player", PlayerPage),)),
-    GroupSpec("Insights", "\N{LEFT-POINTING MAGNIFYING GLASS}", "The pool's habits and luck",
-              (("The pool", InsightsPage),)),
+    GroupSpec(places.INSIGHTS, "search",
+              "What the numbers say about the pool: its habits, its luck, and how the market rates every team",
+              ((places.POOL, InsightsPage), (places.TEAMS, TeamsPage))),
     # Its own place, so "is it any good, and should I follow it?" is one
     # click from anywhere rather than a tab inside Insights.
-    GroupSpec(MODEL_NAME, "\N{BOW AND ARROW}", f"How accurate {MODEL_NAME} is, and whether to follow it",
-              (("Report card", ReportCardPage), ("Details", ModelPage))),
-    GroupSpec("Data & Update", "\N{CARD INDEX DIVIDERS}", "What is loaded, where the results came from, and updating the app",
+    GroupSpec(places.MODEL, "crosshair", f"How good {MODEL_NAME}'s picks are, where they miss, and whether anything would do better",
+              ((places.REPORT_CARD, ReportCardPage), (places.DETAILS, ModelPage), (places.LAB, ModelLabPage),
+               (places.HITS, HitsMissesPage), (places.MODEL_CHARTS, ModelChartsPage))),
+    GroupSpec(places.DATA, "database", "Which files are loaded, where each result came from, and how to update the app",
               (("Data", DataPage),)),
 )
 #: The sidebar before Game Day joined it (2.13), so a place remembered by its
 #: number then still opens the same place now.
-PLACES_BEFORE = ("Season", "This Week", "Results", "Side Pools", "Player", "Insights",
-                 MODEL_NAME, "Data & Update")
+PLACES_BEFORE = (places.SEASON, places.THIS_WEEK, places.RESULTS, places.SIDE_POOLS, places.PLAYER,
+                 places.INSIGHTS, places.MODEL, places.DATA)
+#: Sizes, in points: a place's icon, a footer button's, and the mark by the name.
+NAV_ICON, FOOTER_ICON, MARK_SIZE = 20, 15, 40
 #: Every page, in sidebar order - one instance of each.
 PAGE_CLASSES = tuple(cls for spec in NAV for cls in spec.classes)
 
@@ -168,7 +179,7 @@ class MainWindow(QMainWindow):
         # Window size and last page survive restarts (skipped for smoke tests).
         self._state = QSettings() if remember_state else None
 
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(places.BRAND)
         self.resize(1440, 920)
         self.setMinimumSize(1060, 700)
 
@@ -196,8 +207,9 @@ class MainWindow(QMainWindow):
             self.groups.append(group)
             self.stack.addWidget(group)
             # "&" in a button label is a Qt mnemonic; double it to show it.
-            button = QPushButton(f"  {spec.icon}   {spec.title}".replace("&", "&&"))
+            button = QPushButton(f"   {spec.title}".replace("&", "&&"))
             button.setObjectName("NavButton")
+            button.setIconSize(QSize(NAV_ICON, NAV_ICON))        # drawn in apply_theme
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             keys = page_shortcut(index)
@@ -352,7 +364,7 @@ class MainWindow(QMainWindow):
         if not self._closing:
             self.statusBar().showMessage(
                 f"The pool website didn't update by itself: {why} "
-                "Results › Pool page tries again."
+                f"{places.RESULTS} › Pool page tries again."
             )
 
     def site_worker_finished(self) -> None:
@@ -406,17 +418,45 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         self.sidebar = QWidget()
         self.sidebar.setObjectName("Sidebar")
-        self.sidebar.setFixedWidth(208)
+        self.sidebar.setFixedWidth(226)       # wide enough for the name in capitals
         self.nav_layout = QVBoxLayout(self.sidebar)
         self.nav_layout.setContentsMargins(0, 0, 0, 0)
         self.nav_layout.setSpacing(1)
 
-        self.brand = QLabel(APP_NAME)
+        # The name, beside its mark: the ball in the sights (icons.py).
+        first, _, rest = places.BRAND.upper().partition(" ")
+        lockup = QHBoxLayout()
+        lockup.setContentsMargins(18, 20, 12, 8)
+        lockup.setSpacing(11)
+        self.mark = QLabel()
+        self.mark.setFixedSize(MARK_SIZE, MARK_SIZE)
+        self.mark.setToolTip(places.TAGLINE)
+        words = QVBoxLayout()
+        words.setContentsMargins(0, 0, 0, 0)
+        words.setSpacing(0)
+        self.brand_top = QLabel(first if rest else "")
+        self.brand_top.setObjectName("BrandTop")
+        self.brand = QLabel(rest or first)
         self.brand.setObjectName("SidebarTitle")
+        self.brand.setToolTip(places.TAGLINE)
+        words.addStretch(1)
+        words.addWidget(self.brand_top)
+        words.addWidget(self.brand)
+        words.addStretch(1)
+        lockup.addWidget(self.mark)
+        lockup.addLayout(words, 1)
+        self.engine_label = QLabel(f"{MODEL_NAME} prediction engine".upper())
+        self.engine_label.setObjectName("BrandLine")
         self.season_label = QLabel("\u2013")
-        self.season_label.setObjectName("SidebarSubtitle")
-        self.nav_layout.addWidget(self.brand)
+        self.season_label.setObjectName("BrandLine")
+        rule = QWidget()
+        rule.setObjectName("BrandRule")
+        rule.setFixedHeight(21)             # a one-pixel line and the margins either side of it
+        self.nav_layout.addLayout(lockup)
+        self.nav_layout.addWidget(self.engine_label)
+        self.nav_layout.addSpacing(3)
         self.nav_layout.addWidget(self.season_label)
+        self.nav_layout.addWidget(rule)
 
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
@@ -427,21 +467,22 @@ class MainWindow(QMainWindow):
         footer.setContentsMargins(10, 8, 10, 12)
         footer.setSpacing(6)
 
-        self.jump_btn = QPushButton("\u2315  Jump to\u2026")
+        self.jump_btn = QPushButton("  Jump to\u2026")
         self.jump_btn.setToolTip("Search pages and commands (Ctrl+K)")
         self.jump_btn.clicked.connect(self.open_palette)
-        self.refresh_btn = QPushButton("\u21bb  Refresh")
+        self.refresh_btn = QPushButton("  Refresh")
         self.refresh_btn.setToolTip(
             "Rescan the watched folders (F5 or Ctrl+R). New or saved files "
             "are picked up by themselves, so this is rarely needed."
         )
         self.refresh_btn.clicked.connect(self.refresh_by_hand)
-        self.theme_btn = QPushButton("\u25d0  Theme")
+        self.theme_btn = QPushButton("  Theme")
         self.theme_btn.setToolTip("Switch between light and dark (Ctrl+T)")
         self.theme_btn.clicked.connect(self.toggle_theme)
-        footer.addWidget(self.jump_btn)
-        footer.addWidget(self.refresh_btn)
-        footer.addWidget(self.theme_btn)
+        self._footer_icons = ((self.jump_btn, "search"), (self.refresh_btn, "refresh"), (self.theme_btn, "theme"))
+        for button, _name in self._footer_icons:
+            button.setIconSize(QSize(FOOTER_ICON, FOOTER_ICON))
+            footer.addWidget(button)
 
         try:
             from ..version import VERSION as shown_version
@@ -498,6 +539,7 @@ class MainWindow(QMainWindow):
                 self.restoreGeometry(geometry)
             titles = [spec.title for spec in NAV]
             place = self._state.value("window/place", "")
+            place = places.FORMERLY.get(place, place) if isinstance(place, str) else place
             if isinstance(place, str) and place in titles:
                 start = titles.index(place)
                 keys = {g: f"window/tabs/{title}" for g, title in enumerate(titles)}
@@ -568,7 +610,22 @@ class MainWindow(QMainWindow):
     def apply_theme(self) -> None:
         app = QApplication.instance()
         if app:
+            app.setProperty("theme", self.palette_.name)    # for widgets that draw themselves
             app.setStyleSheet(stylesheet(self.palette_))
+        self._draw_icons()
+
+    def _draw_icons(self) -> None:
+        """The sidebar's icons and the mark, in the palette's colours: quiet
+        at rest, the accent on the place you are in."""
+        p = self.palette_
+        for index, spec in enumerate(NAV):
+            button = self.nav_group.button(index)
+            if button is not None:
+                button.setIcon(icons.icon(spec.icon, p.ink_muted, p.accent, NAV_ICON))
+        for button, name in getattr(self, "_footer_icons", ()):
+            button.setIcon(icons.icon(name, p.ink_muted, size=FOOTER_ICON))
+        ratio = max(2.0, self.devicePixelRatioF())
+        self.mark.setPixmap(icons.pixmap("mark", p.brand or p.accent, MARK_SIZE, ratio, weight=1.25))
 
     def toggle_theme(self) -> None:
         self.settings.theme = "light" if self.palette_.name == "dark" else "dark"
@@ -601,7 +658,7 @@ class MainWindow(QMainWindow):
     # ---- data ------------------------------------------------------------
     def _set_loading(self, loading: bool) -> None:
         self.refresh_btn.setEnabled(not loading)
-        self.refresh_btn.setText("\u21bb  Refreshing\u2026" if loading else "\u21bb  Refresh")
+        self.refresh_btn.setText("  Refreshing\u2026" if loading else "  Refresh")
         self.progress.setVisible(loading)
 
     def refresh_by_hand(self, *_signal_args) -> None:
@@ -823,13 +880,13 @@ class MainWindow(QMainWindow):
         self._loaded_at = datetime.now()
         self._tick_updated()
         self.updated_label.setToolTip(f"Last read {self._loaded_at:%A %H:%M:%S}")
-        self.season_label.setText(
+        self.season_label.setText((
             f"{season.title}  \u00b7  week {season.current_week}"
             if season.current_week
             else season.title
-        )
+        ).upper())
         if season.title:
-            self.setWindowTitle(f"{season.title} \u2013 {APP_NAME}")
+            self.setWindowTitle(f"{places.BRAND} \u2013 {season.title}")
         # The workbook's folder is only known now; make sure it is watched.
         self.watcher.watch(self._watch_folders())
         for page in self.pages:
@@ -1003,7 +1060,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1] + list(argv))
     app.setApplicationName(APP_NAME)
-    app.setApplicationDisplayName(APP_NAME)
+    # shown as Operation Sunday; kept under its first name, where its settings are
+    app.setApplicationDisplayName(places.BRAND)
     app.setOrganizationName("ACQL")
     if ICON_FILE.is_file():
         app.setWindowIcon(QIcon(str(ICON_FILE)))

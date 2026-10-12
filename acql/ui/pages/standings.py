@@ -65,7 +65,7 @@ def gaps_to_leader(
 
 class StandingsPage(Page):
     title = "Standings"
-    subtitle = "Official positions from the latest stats.xls export"
+    subtitle = "The official table from the latest standings export, with every week's score"
     icon = "\N{SPORTS MEDAL}"
 
     #: Emitted when a row is opened, so the window can show that player.

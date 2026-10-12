@@ -5,7 +5,9 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from ... import analytics, bigloser, oddslock
 from ...models import Player, Season
+from ...version import MODEL_NAME
 from ..charts import BarChart, LineChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
@@ -14,6 +16,12 @@ BL_HEADERS = ["#", "Player", "Points", "Wins", "Weeks", "Avg / week"]
 SUICIDE_HEADERS = ["Player", "Status", "Latest pick", "Picks made", "Out in"]
 BL_CHART_SIZE = 12
 SURVIVAL_TITLE = "Suicide pool - still alive after each week"
+OPTIMIZER_TITLE = "Big Loser optimizer"
+RECORD_TITLE = "Big Loser picking - every coach's record"
+OPTIMIZER_HEADERS = ["Team", "Game", "Lose by 15+", "Pool has it", "Gain on the pool", "Take"]
+RECORD_HEADERS = ["Coach", "Came in", "Picks", "Rate", "Deserved", "Luck", "With the pool"]
+#: Candidates listed on the optimizer; the rest are long shots nobody holds.
+OPTIMIZER_SHOWN = 14
 
 
 def _plural(count: int, word: str) -> str:
@@ -43,8 +51,8 @@ def survivors_by_week(
 
 
 class PoolsPage(Page):
-    title = "Side Pools"
-    subtitle = "Big Loser standings and who is still alive in the suicide pool"
+    from ...places import SIDE_POOLS as title
+    subtitle = "Big Loser standings and the best picks left, and who is still alive in the suicide pool"
     icon = "\N{DIRECT HIT}"
 
     # ---- build ---------------------------------------------------------
@@ -64,6 +72,33 @@ class PoolsPage(Page):
         # Wrapped rather than squeezed: 4 to a row keeps every tile
         # wide enough for its own number on a laptop screen.
         self.layout_.addLayout(tile_grid(list(self._tiles), per_row=4))
+
+        # Which three to take: the blowout, the pool's share of it, the gain.
+        self.optimizer_card = Card(OPTIMIZER_TITLE)
+        self.optimizer_lead = QLabel("")
+        self.optimizer_lead.setWordWrap(True)
+        self.optimizer_lead.setTextFormat(Qt.TextFormat.RichText)
+        self.optimizer_card.add(self.optimizer_lead)
+        self.optimizer_box = QVBoxLayout()
+        self.optimizer_card.body().addLayout(self.optimizer_box)
+        self.optimizer_note = QLabel("")
+        self.optimizer_note.setObjectName("Muted")
+        self.optimizer_note.setWordWrap(True)
+        self.optimizer_card.add(self.optimizer_note)
+        self.layout_.addWidget(self.optimizer_card)
+
+        self.record_card = Card(RECORD_TITLE)
+        self.record_lead = QLabel("")
+        self.record_lead.setWordWrap(True)
+        self.record_card.add(self.record_lead)
+        self.record_box = QVBoxLayout()
+        self.record_card.body().addLayout(self.record_box)
+        self.record_note = QLabel("")
+        self.record_note.setObjectName("Muted")
+        self.record_note.setWordWrap(True)
+        self.record_card.add(self.record_note)
+        self.layout_.addWidget(self.record_card)
+        self.record_table: QWidget | None = None
 
         self.teams_card = Card("Big Loser teams by week")
         self.teams_label = QLabel("")
@@ -117,6 +152,8 @@ class PoolsPage(Page):
             players, key=lambda p: (-p.big_loser_points, p.display.lower())
         )
         self._update_tiles(season, players, big_loser)
+        self._update_optimizer(season)
+        self._update_record(season)
         self._update_teams(season)
         self._update_survival(season, players)
         self._update_bl_chart(big_loser)
@@ -177,6 +214,111 @@ class PoolsPage(Page):
         )
         self.tile_bl_max.update_values(
             str(season.max_big_loser_points), "picks available each week",
+        )
+
+    # ---- the Big Loser optimizer and record (bigloser.py) ---------------------------
+    def _optimizer_week(self, season: Season) -> int:
+        """The week still open to pick: the one ahead, or the next when its cards are in."""
+        week = analytics.upcoming_week(season)
+        if week and oddslock.locked_for(season, week) and season.weeks.get(week + 1) is not None:
+            return week + 1
+        return week
+
+    def _update_optimizer(self, season: Season) -> None:
+        self.clear_layout(self.optimizer_box)
+        week = self._optimizer_week(season)
+        board = bigloser.board(season, week) if week else bigloser.Board(0)
+        if not board.options:
+            self.optimizer_card.set_title(OPTIMIZER_TITLE)
+            self.optimizer_lead.setText(
+                f"Appears once week {week} has its betting lines." if week else "No week to pick yet.")
+            self.optimizer_note.setText("")
+            return
+        likeliest = {o.code for o in board.likeliest}
+        gains = {o.code for o in board.best_gain}
+        shown = [o for o in board.options if o.code in likeliest | gains][:OPTIMIZER_SHOWN]
+        shown += [o for o in board.options if o not in shown][:max(0, OPTIMIZER_SHOWN - len(shown))]
+        shown.sort(key=lambda o: -o.chance)
+        rows, tones = [], {}
+        for r, o in enumerate(shown):
+            take = " + ".join(filter(None, [
+                "\u2605 most points" if o.code in likeliest else "",
+                "\u25b2 gains most" if o.code in gains else "",
+            ]))
+            rows.append([o.team, f"against {o.opponent}", f"{o.chance:.0%}", f"{o.held:.0%}",
+                         f"+{o.gain:.2f}", take])
+            if take:
+                tones[(r, 5)] = "good"
+            if o.code in gains:
+                tones[(r, 4)] = "good"
+            if o.code in likeliest:
+                tones[(r, 2)] = "good"
+        model = TableModel(
+            OPTIMIZER_HEADERS, rows, palette=self.palette, numeric_columns={2, 3, 4},
+            sort_values={2: [o.chance for o in shown], 3: [o.held for o in shown], 4: [o.gain for o in shown]},
+            tones=tones, bold_columns={0},
+        )
+        view, _ = make_table(model, stretch_column=1, row_height=27)
+        self.optimizer_box.addWidget(view)
+
+        def names(options) -> str:
+            return ", ".join(o.team for o in options)
+
+        top, gain = board.likeliest, board.best_gain
+        self.optimizer_card.set_title(f"{OPTIMIZER_TITLE} - week {week}")
+        self.optimizer_lead.setText(
+            f"<b>\u2605 Most points:</b> {names(top)} - {sum(o.chance for o in top):.2f} expected, "
+            f"held by {sum(o.held for o in top) / len(top):.0%} of the pool on average.<br>"
+            f"<b>\u25b2 Gains most on the pool:</b> {names(gain)} - {sum(o.chance for o in gain):.2f} "
+            f"expected, held by {sum(o.held for o in gain) / len(gain):.0%}."
+        )
+        self.optimizer_note.setText(
+            "A Big Loser scores a point when the team loses by 15 or more. Gain is how much a team puts "
+            "you ahead of the average card: a point everybody has moves nobody. "
+            + ("The pool's share is counted from this week's pick sheet. " if board.counted else
+               "The pool's share is an estimate until this week's pick sheet is in. ")
+            + "Over 2011-2025, picking for gain paid about $3.70 a week more than picking the three "
+              "likeliest."
+        )
+
+    def _update_record(self, season: Season) -> None:
+        self.clear_layout(self.record_box)
+        self.record_table = None
+        review = bigloser.review(season)
+        if not review.coaches:
+            self.record_lead.setText("Appears once a finished week's pick sheet is loaded.")
+            self.record_note.setText("")
+            return
+        rows, tones = [], {}
+        for r, c in enumerate(review.coaches):
+            luck = c.luck
+            rows.append([c.name, c.hits, c.picks, f"{c.rate:.0%}", f"{c.expected:.1f}",
+                         self.NO_VALUE if luck != luck else f"{luck:+.1f}", f"{c.crowd:.0%}"])
+            if luck == luck and abs(luck) >= 1:
+                tones[(r, 5)] = "good" if luck > 0 else "bad"
+        model = TableModel(
+            RECORD_HEADERS, rows, palette=self.palette, numeric_columns={1, 2, 3, 4, 5, 6},
+            sort_values={3: [c.rate for c in review.coaches], 4: [c.expected for c in review.coaches],
+                         5: [c.luck if c.luck == c.luck else 0.0 for c in review.coaches],
+                         6: [c.crowd for c in review.coaches]},
+            tones=tones, bold_columns={0},
+        )
+        view, _ = make_table(model, stretch_column=0, row_height=27)
+        self.record_table = view
+        self.record_box.addWidget(view)
+        pool, model_ = review.pool, review.model
+        weeks = len(review.weeks)
+        self.record_card.set_title(f"{RECORD_TITLE}, over {_plural(weeks, 'week')}")
+        self.record_lead.setText(
+            f"The pool: {pool.hits} of {pool.picks} came in ({pool.rate:.0%}); its picks deserved "
+            f"{pool.expected:.0f}. {MODEL_NAME}'s three likeliest each week: {model_.hits} of "
+            f"{model_.picks}, deserved {model_.expected:.1f}."
+        )
+        self.record_note.setText(
+            "Deserved is what the picks' own odds added up to; the difference is luck. With the pool is "
+            "the share of cards holding the same team. "
+            + ("So far the popular teams haven't been blown out."
+               if pool.picks and pool.hits < pool.expected - 0.15 * pool.picks else "")
         )
 
     def _update_teams(self, season: Season) -> None:

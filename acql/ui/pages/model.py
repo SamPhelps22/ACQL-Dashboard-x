@@ -46,7 +46,7 @@ def _ordinal(n: int) -> str:
 
 class ModelPage(Page):
     title = f"{MODEL_NAME}, in detail"
-    subtitle = f"How {MODEL_NAME}'s picks have done, and whether to follow them"
+    subtitle = f"{MODEL_NAME}'s card against yours week by week, and whether its percentages can be trusted"
     icon = "\N{BOW AND ARROW}"
     needs_data = False
 
@@ -82,11 +82,9 @@ class ModelPage(Page):
         self.track_box = QVBoxLayout()
         self.track_card.body().addLayout(self.track_box)
         self.track_note = QLabel(
-            f"{MODEL_NAME}'s card is the likeliest side of every game as it stood "
-            "before the week's first kickoff - This Week's default card - scored "
-            "on the regular games once results are in; the card built to finish "
-            "first is shown beside it. \u201cRebuilt\u201d weeks came before cards "
-            "were kept, and were re-made from the stored lines."
+            f"{MODEL_NAME}'s card is the one This Week recommends. It is saved before the first kickoff "
+            "and scored when the results are in. The card built to finish first is shown beside it. "
+            "\u201cRebuilt\u201d weeks came before cards were saved and were re-made afterwards."
         )
         self.track_note.setObjectName("Muted")
         self.track_note.setWordWrap(True)
@@ -97,10 +95,8 @@ class ModelPage(Page):
         self.calibration_chart = BarChart(self.palette, height=3.0)
         self.calibration_card.add(self.calibration_chart, 1)
         self.calibration_note = QLabel(
-            "A pick that says 70% should come in about seven times in ten. "
-            "Landing above what it claims is not a bonus - it means the "
-            "chances are understated, and every \"worth it against the field\" "
-            "call is made on a wrong number."
+            "On the line, picks came in exactly as often as it said. Above the line its percentages "
+            "are too low. Below the line they are too high."
         )
         self.calibration_note.setObjectName("Muted")
         self.calibration_note.setWordWrap(True)
@@ -137,7 +133,8 @@ class ModelPage(Page):
 
     # ---- following the model -------------------------------------------
     def _update_track(self, season) -> None:
-        wanted = self.me_picker.currentData() or QSettings().value(TRACK_KEY, "") \
+        from ... import me
+        wanted = self.me_picker.currentData() or me.key(season) or QSettings().value(TRACK_KEY, "") \
             or QSettings().value("thisweek/suicide_coach", "")
         players = sorted(season.players.values(), key=lambda p: p.display.casefold())
         self.me_picker.blockSignals(True)
@@ -274,9 +271,9 @@ class ModelPage(Page):
             + (f", {card.lined_hits} of {card.lined_picks} against the pool's lines"
                if card.lined_picks else "")
             + f". It expected {card.expected:.1f} and got {card.hits}"
-            + (" - about right." if abs(gap) < 3
-               else " - it is running bold." if gap < 0
-               else " - it is running shy.")
+            + (": about right." if abs(gap) < 3
+               else ": its percentages are running high." if gap < 0
+               else ": its percentages are running low.")
         )
 
         bands = analytics.calibration(entries)

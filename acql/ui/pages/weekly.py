@@ -22,7 +22,7 @@ from ...predictions import display_team
 from ...models import Week
 from ..charts import BarChart, HistogramChart
 from .. import recap
-from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ..widgets import Card, IconButton, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
 from .base import POOL_EXTRAS, POOL_PAGE, Page
 
@@ -53,8 +53,8 @@ def _score(game) -> str:
     return f"  ({away}\u2013{home})"
 
 class WeeklyPage(Page):
-    title = "Results"
-    subtitle = "The slate, the scoreboard, the trap games and the recap"
+    from ...places import RESULTS as title
+    subtitle = "One week's results: every game, the week's winner, the games that fooled the pool, and the recap to share"
     icon = "\N{SPIRAL CALENDAR PAD}"
 
     # ---- build ---------------------------------------------------------
@@ -78,7 +78,7 @@ class WeeklyPage(Page):
         # On a line of its own under the week picker: the buttons need the room.
         self.status = QLabel("")
         self.status.setObjectName("Muted")
-        self.share_btn = QPushButton("\N{CAMERA}  Share recap")
+        self.share_btn = IconButton("Share recap", "camera")
         self.share_btn.setObjectName("Primary")
         self.share_btn.setToolTip(
             "Make a picture of this week - winner, standings, awards and the "
@@ -87,19 +87,19 @@ class WeeklyPage(Page):
         )
         self.share_btn.clicked.connect(self._share)
         controls.addWidget(self.share_btn)
-        self.email_btn = QPushButton("\N{ENVELOPE}  Email recap")
+        self.email_btn = IconButton("Email recap", "mail")
         self.email_btn.setToolTip(
             "Email this week's recap picture from your Gmail. The first time, "
             "it asks where to send it and for a Gmail app password."
         )
         self.email_btn.clicked.connect(self._email)
         controls.addWidget(self.email_btn)
-        self.email_settings_btn = QPushButton("\N{GEAR}")
+        self.email_settings_btn = IconButton("", "sliders")
         self.email_settings_btn.setToolTip("Email settings - who it goes to, and the Gmail it sends from")
         self.email_settings_btn.setFixedWidth(40)
         self.email_settings_btn.clicked.connect(lambda: self._email_settings())
         controls.addWidget(self.email_settings_btn)
-        self.pool_btn = QPushButton("\N{GLOBE WITH MERIDIANS}  Pool page")
+        self.pool_btn = IconButton("Pool page", "globe")
         self.pool_btn.setToolTip(
             "Put this week on the pool's website - standings, the week, the "
             f"side pools, history. Nothing about your card or {MODEL_NAME}'s goes on "
@@ -108,7 +108,7 @@ class WeeklyPage(Page):
         )
         self.pool_btn.clicked.connect(lambda *_: self.action_requested.emit(POOL_PAGE))
         controls.addWidget(self.pool_btn)
-        self.extras_btn = QPushButton("\N{GEAR}")
+        self.extras_btn = IconButton("", "sliders")
         self.extras_btn.setToolTip(
             "What the website says: an announcement at the top, the league's past "
             "champions for its History page, and whether it updates by itself"
@@ -283,7 +283,10 @@ class WeeklyPage(Page):
         except Exception:  # noqa: BLE001 - fall back to the home folder
             from pathlib import Path
             folder = Path.home() / "ACQL recaps"
-        return made, recap.render(made, recap.default_path(folder, made), self.palette)
+        # In the league's own colours, whatever the dashboard is wearing: this
+        # picture goes round to the pool.
+        from ..theme import league
+        return made, recap.render(made, recap.default_path(folder, made), league(self.palette))
 
     def _share(self) -> None:
         """Render this week's recap, save it, and put it on the clipboard."""
@@ -341,7 +344,7 @@ class WeeklyPage(Page):
             settings, path, f"{made.season_title} - week {made.week} recap", summary,
         )
         self.email_btn.setEnabled(False)
-        self.email_btn.setText("\N{ENVELOPE}  Sending\N{HORIZONTAL ELLIPSIS}")
+        self.email_btn.setText("Sending\N{HORIZONTAL ELLIPSIS}")
         sender = _Sender(settings, message)
         sender.done.connect(lambda error, to=settings.recipients: self._emailed(error, to))
         # The thread is only let go once it has really stopped: "done" arrives
@@ -358,7 +361,7 @@ class WeeklyPage(Page):
 
     def _emailed(self, error: str, recipients: list[str]) -> None:
         self.email_btn.setEnabled(True)
-        self.email_btn.setText("\N{ENVELOPE}  Email recap")
+        self.email_btn.setText("Email recap")
         if error:
             self.share_note.setText(f"Not sent. {error}")
             self.share_note.show()
@@ -661,12 +664,11 @@ class EmailDialog(QDialog):
         layout = QVBoxLayout(self)
         intro = QLabel(
             (f"<p style='color:#d03b3b'>{reason}</p>" if reason else "")
-            + "The recap is sent from your own Gmail. Gmail needs an <b>app "
-            "password</b> for this, not your normal one: turn on 2-Step "
-            "Verification, then make one at "
+            + "The recap is sent from your own Gmail. Gmail needs an <b>app password</b> for "
+            "this, not your normal password. Turn on 2-Step Verification, then make one at "
             f"<a href='{mailer.APP_PASSWORD_PAGE}'>{mailer.APP_PASSWORD_PAGE}</a> "
             "(call it \u201cACQL Dashboard\u201d) and paste the 16 letters below. "
-            "It is stored locked to your Windows account, and you can revoke it "
+            "It is stored locked to your Windows account, and you can cancel it "
             "from the same page at any time."
         )
         intro.setWordWrap(True)

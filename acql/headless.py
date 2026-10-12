@@ -9,9 +9,12 @@ website stays current whether or not anyone has the dashboard open:
     python -m acql.headless --poll      only when a look is due (a game under way,
                                         a finished game without its replay) -
                                         otherwise it leaves in a second
+    python -m acql.headless --email     Deadeye's card for the week ahead, on the
+                                        freshest lines, emailed to the dashboard's
+                                        own address (cardmail.py)
 
-schedule.ps1 registers both: --daily at 3am, --poll every ten minutes on
-game days. Everything it does goes in the dashboard's log (acql-log.txt),
+schedule.ps1 registers all three: --daily at 3am, --poll every ten minutes
+on game days, --email at noon on Tuesday, Wednesday and Thursday. Everything it does goes in the dashboard's log (acql-log.txt),
 each line starting "headless:".
 
 Both also keep the week ahead's numbers fresh until its odds lock: the
@@ -48,6 +51,12 @@ LINES_EVERY_LAST_HOURS = 20 * 60
 LAST_HOURS = 2 * 3600
 #: The predictions file is looked for no more often than this.
 PREDICTIONS_EVERY = 3600
+#: Before the card is emailed the lines are fetched again unless they are this fresh.
+EMAIL_LINES_FRESH = 45 * 60
+#: The email waits this long for a run already going (the poll starts at noon too).
+EMAIL_WAIT = 240
+#: Where --email --dry-run leaves the card to look at, instead of sending it.
+EMAIL_PREVIEW = Path(DATA_DIR) / "deadeye-email-preview.html"
 #: Lines aren't posted much further ahead than this.
 LINES_AHEAD = 6 * 86400
 #: A refresh that failed isn't tried again for this long.
@@ -186,6 +195,82 @@ def _fetch_lines(season, week: int) -> None:
     _log(update.summary() + (f" {left} requests left this month." if left is not None else ""))
 
 
+def _injuries() -> None:
+    """ESPN's injury report, a few times a day - hourly on the day the cards are due."""
+    from . import injuries
+    try:
+        now = time.time()
+        year = results.season_year()
+        week = _week_ahead(year, now)
+        lock_in = oddslock.lock_time(year, week) - now if week else None
+        if injuries.due(lock_in, now):
+            _log(f"injury report read: {injuries.refresh()} players listed")
+    except Exception as exc:  # noqa: BLE001 - the picks don't wait on it
+        _log(f"injury report not read: {exc}")
+
+
+def _known(season) -> None:
+    """Everything known about the week ahead's games, written down while it is
+    open and frozen at the deadline - so nothing learned later can get into it."""
+    try:
+        from . import known
+        now = time.time()
+        year = results.season_year(season)
+        for week in results.calendar_weeks(year, now):
+            if season.weeks.get(week) is None:
+                continue
+            done = known.keep(season, year, week, oddslock.lock_time(year, week), now)
+            if done in ("kept", "frozen"):
+                _log(f"week {week}: what is known before kickoff {done}")
+    except Exception as exc:  # noqa: BLE001 - the picks don't wait on it
+        _log(f"what is known before kickoff not kept: {exc}")
+
+
+def _seasons() -> None:
+    """The Model Lab's season-by-season record - several seconds' work, done here
+    so the page never waits for it. It only changes when a season ends."""
+    try:
+        from . import contenders
+        year = results.season_year()
+        if contenders.seasons(year) is None:
+            made = contenders.seasons(year, compute=True)
+            _log(f"model lab: the contenders' season-by-season record worked out ({len(made or [])} seasons)")
+        from . import nflverse
+        if nflverse.available() and nflverse.families() is None:
+            found = nflverse.families(compute=True)
+            _log(f"model lab: market, football and hybrid worked out over {len(found.seasons)} seasons")
+    except Exception as exc:  # noqa: BLE001 - the page says it isn't there yet
+        _log(f"model lab: season-by-season record not worked out: {exc}")
+
+
+def _autopsy(season) -> None:
+    """Each finished week's games, written down as they were picked and how they came out."""
+    try:
+        from . import autopsy
+        from .version import MODEL_NAME
+        done = autopsy.keep(season)
+        if done:
+            _log(f"{MODEL_NAME}'s hits and misses kept for week{'s' if len(done) != 1 else ''} "
+                 f"{', '.join(str(w) for w in done)}")
+    except Exception as exc:  # noqa: BLE001 - the page works it out afresh instead
+        _log(f"hits and misses not kept: {exc}")
+
+
+def _weather() -> None:
+    """The forecast for the outdoor games still to kick off, a few times a day."""
+    from . import weather
+    try:
+        now = time.time()
+        year = results.season_year()
+        for week in results.calendar_weeks(year, now):
+            if weather.due(year, week, now):
+                count = weather.refresh(year, week, now=now)
+                if count:
+                    _log(f"weather read for {count} outdoor game(s) of week {week}")
+    except Exception as exc:  # noqa: BLE001 - the picks don't wait on it
+        _log(f"weather not read: {exc}")
+
+
 def _refresh_lines(season) -> None:
     """The week ahead's numbers brought up to date, then Deadeye's card kept."""
     from . import briefing, cards, store
@@ -279,6 +364,54 @@ def _publish(season) -> str | None:
     return url
 
 
+def email_card(*, dry_run: bool = False) -> int:
+    """Deadeye's card for the week ahead, on the freshest numbers, emailed to
+    the dashboard's own address. `dry_run` writes it to a file instead."""
+    from . import briefing, cardmail, cards, mailer
+    now = time.time()
+    settings = Settings.load()
+    season = load_season(settings, AliasTable.load())
+    year = results.season_year(season)
+    week = _week_ahead(year, now)
+    if week is None or season.weeks.get(week) is None:
+        _log("card email: no week open to pick - not sent")
+        return 0
+    # the newest numbers first: the file, the lines (unless just fetched), the injuries
+    for step in (_download_predictions, None):
+        try:
+            if step is not None:
+                step(season, week)
+            elif now - predictions.market_time(week) >= EMAIL_LINES_FRESH:
+                _fetch_lines(season, week)
+        except Exception as exc:  # noqa: BLE001 - the card goes out on what there is
+            _log(f"card email: the latest numbers couldn't be fetched ({exc})")
+    _injuries()
+    card = cardmail.compose(season, week)
+    if card is None:
+        _log(f"card email: week {week} has no lines yet - not sent")
+        return 0
+    try:
+        cards.record_model(season, week, briefing.build(season, week, use_sheet=False))
+    except Exception:  # noqa: BLE001
+        pass
+    if dry_run:
+        EMAIL_PREVIEW.write_text(
+            f"<!doctype html><meta charset='utf-8'><title>{card.subject}</title>"
+            f"<p style='font-family:Segoe UI,Arial;color:#666'>Subject: {card.subject}</p>{card.html}",
+            encoding="utf-8")
+        _log(f"card email (dry run): \"{card.subject}\" written to {EMAIL_PREVIEW.name}, "
+             f"would go to {len(cardmail.recipients())} address(es); nothing sent")
+        return 0
+    try:
+        to = cardmail.send(card)
+    except mailer.MailError as exc:
+        _log(f"card email not sent: {exc}")
+        return 1
+    _log(f"card email sent: \"{card.subject}\" to {len(to)} address(es)"
+         + (f"; {len(card.changes)} change(s) since the last one" if card.changes else ""))
+    return 0
+
+
 def run(*, force: bool, dry_run: bool = False) -> int:
     started = time.monotonic()
     settings = Settings.load()
@@ -293,6 +426,11 @@ def run(*, force: bool, dry_run: bool = False) -> int:
          f"ESPN results for week(s) {fetched or 'none due'}")
     _predictions(season)
     _refresh_lines(season)
+    _injuries()
+    _weather()
+    _autopsy(season)
+    _seasons()
+    _known(season)
     if _timelines(season):
         season = load_season(settings, AliasTable.load(), online=False)
     if dry_run:
@@ -312,8 +450,26 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--daily", action="store_true", help="every step, whatever the time")
     mode.add_argument("--poll", action="store_true", help="only when a look at ESPN is due")
-    parser.add_argument("--dry-run", action="store_true", help="do everything but publish the website")
+    mode.add_argument("--email", action="store_true", help="email Deadeye's card for the week ahead")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="do everything but publish the website, or send the email")
     args = parser.parse_args(argv)
+
+    if args.email:
+        # The poll starts on the same minute: wait for it rather than give up.
+        waited = time.monotonic()
+        while True:
+            with _RunLock(LOCK_FILE) as mine:
+                if mine:
+                    try:
+                        return email_card(dry_run=args.dry_run)
+                    except Exception as exc:  # noqa: BLE001
+                        _log(f"card email failed: {exc!r}\n{traceback.format_exc()}")
+                        return 1
+            if time.monotonic() - waited > EMAIL_WAIT:
+                _log("card email: another run was still going after four minutes - not sent")
+                return 1
+            time.sleep(5)
 
     with _RunLock(LOCK_FILE) as mine:
         if not mine:

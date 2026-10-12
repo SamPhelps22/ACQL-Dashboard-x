@@ -31,6 +31,9 @@ class Palette:
     serious: str
     critical: str
     selection: str
+    #: The gold of the name and the mark. The accent is for what you can act
+    #: on or are looking at; this is for what the thing is.
+    brand: str = ""
 
     def series_color(self, index: int) -> str:
         """Fixed-order slot assignment; past the last slot, fold to muted."""
@@ -39,53 +42,134 @@ class Palette:
         return self.ink_muted
 
 
+# Operation Sunday: black and graphite, white type, gold for the name, and one
+# electric blue for whatever is chosen, focused or can be pressed. Nothing
+# else competes with that blue - good and bad news keep their green and red,
+# and the data colours are eight that stay apart on either surface.
 DARK = Palette(
     name="dark",
-    surface="#1a1a19",
-    plane="#0d0d0d",
-    raised="#232322",
-    ink="#ffffff",
-    ink_secondary="#c3c2b7",
-    ink_muted="#898781",
-    grid="#2c2c2a",
-    baseline="#383835",
+    surface="#0b0f15",
+    plane="#05070a",
+    raised="#111720",
+    ink="#f3f6fa",
+    ink_secondary="#b6c1cf",
+    ink_muted="#77859a",
+    grid="#1a2230",
+    baseline="#2c3849",
     border="rgba(255,255,255,0.10)",
-    accent="#3987e5",
-    series=("#3987e5", "#d95926", "#199e70", "#c98500",
-            "#d55181", "#008300", "#9085e9", "#e66767"),
-    sequential=("#0d366b", "#184f95", "#256abf", "#2a78d6",
-                "#3987e5", "#5598e7", "#86b6ef", "#b7d3f6", "#cde2fb"),
-    good="#0ca30c",
-    warning="#fab219",
-    serious="#ec835a",
-    critical="#d03b3b",
-    selection="#1c5cab",
+    accent="#2e9bff",
+    series=("#2e9bff", "#e8b84e", "#2fd68a", "#ff7847",
+            "#ff5fa8", "#9b8cff", "#22d3ee", "#ff5b5b"),
+    sequential=("#0a1b30", "#0d2846", "#11375f", "#15487d",
+                "#1a5b9d", "#2071c2", "#2e8ce8", "#66aef6", "#acd4fc"),
+    good="#2fd68a",
+    warning="#f2b93b",
+    serious="#ff8a4c",
+    critical="#ff5b5b",
+    selection="#12325a",
+    brand="#e8b84e",
 )
 
 LIGHT = Palette(
     name="light",
-    surface="#fcfcfb",
-    plane="#f9f9f7",
+    surface="#f8fafc",
+    plane="#edf1f6",
     raised="#ffffff",
-    ink="#0b0b0b",
-    ink_secondary="#52514e",
-    ink_muted="#898781",
-    grid="#e1e0d9",
-    baseline="#c3c2b7",
-    border="rgba(11,11,11,0.10)",
-    accent="#2a78d6",
-    series=("#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-            "#e87ba4", "#008300", "#4a3aa7", "#e34948"),
-    sequential=("#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef",
-                "#5598e7", "#3987e5", "#256abf", "#184f95", "#0d366b"),
-    good="#0ca30c",
-    warning="#fab219",
-    serious="#ec835a",
-    critical="#d03b3b",
-    selection="#cde2fb",
+    ink="#0a0f16",
+    ink_secondary="#374353",
+    ink_muted="#687587",
+    grid="#d8dfe9",
+    baseline="#a9b5c4",
+    border="rgba(10,15,22,0.10)",
+    accent="#1463d9",
+    series=("#1463d9", "#b9820a", "#0f9d62", "#e2622b",
+            "#d43f86", "#6f56e8", "#0891b2", "#dc3a3a"),
+    sequential=("#dbe9fd", "#bcd6fb", "#97bff7", "#6ea5f1",
+                "#4789ea", "#2a6edc", "#1c57bd", "#16469a", "#113572"),
+    good="#0f9d58",
+    warning="#c98600",
+    serious="#e2622b",
+    critical="#d93025",
+    selection="#d5e5fb",
+    brand="#a06f0a",
+)
+
+# The league's own colours, off its logo: black, gold and the field's green.
+# What goes round to the pool - the weekly recap picture - is drawn in these,
+# whatever the dashboard itself is wearing.
+LEAGUE_DARK = Palette(
+    name="dark",
+    surface="#0f1613",
+    plane="#070b09",
+    raised="#17211c",
+    ink="#f5f8f5",
+    ink_secondary="#c4cfc7",
+    ink_muted="#8b998f",
+    grid="#223129",
+    baseline="#35483c",
+    border="rgba(255,255,255,0.10)",
+    accent="#f5b82e",
+    series=("#f5b82e", "#3d9bff", "#2ee08a", "#ff7a3d",
+            "#ff5fa2", "#a98bff", "#27d3e6", "#ff5a5a"),
+    sequential=("#0c2b1d", "#10402a", "#155637", "#1b6f46",
+                "#228a57", "#2ba869", "#3fc47f", "#74e0a6", "#b8f4d1"),
+    good="#2ee08a",
+    warning="#ffc233",
+    serious="#ff8a4c",
+    critical="#ff5a5a",
+    selection="#1d4a36",
+    brand="#f5b82e",
+)
+
+LEAGUE_LIGHT = Palette(
+    name="light",
+    surface="#fbfcfa",
+    plane="#f1f5f0",
+    raised="#ffffff",
+    ink="#0b100d",
+    ink_secondary="#3d4942",
+    ink_muted="#73807a",
+    grid="#dde5dd",
+    baseline="#b5c2b8",
+    border="rgba(11,16,13,0.10)",
+    accent="#0d7a45",
+    series=("#c98a06", "#1f6fe0", "#10a765", "#e8622a",
+            "#d93f87", "#7a5cf0", "#0a9fb3", "#e23d3d"),
+    sequential=("#d4f2e1", "#b3e6cb", "#8ed9b2", "#67c996",
+                "#43b67b", "#2a9d63", "#1b8251", "#12673f", "#0b4a2d"),
+    good="#0f9d58",
+    warning="#e09a00",
+    serious="#e8622a",
+    critical="#d93025",
+    selection="#d3eede",
+    brand="#0d7a45",
 )
 
 PALETTES = {"dark": DARK, "light": LIGHT}
+
+# The model's own charts name three things - Deadeye, the betting line and a
+# baseline - and all three can share one plot, scatter included, so these are
+# chosen for every pair, not only neighbours: blue, a gold stepped down into
+# the dark surface's range, and a pink in place of the green that sits too
+# near gold for a reader who cannot tell red from green. Checked with the
+# six tests of the charting rules (lightness band, chroma, separation under
+# simulated protanopia and deuteranopia >= 8, normal vision >= 15, contrast
+# against the surface >= 3) on each surface: worst pair 10.8 dark, 13.7 light.
+MODEL_SERIES = {
+    "dark": ("#2c95f6", "#b28c3a", "#e75597"),
+    "light": ("#1463d9", "#b9820a", "#d43f86"),
+}
+
+
+def model_series(palette: Palette) -> tuple[str, str, str]:
+    """(Deadeye, the betting line, the baseline) for the model's charts."""
+    return MODEL_SERIES.get(palette.name, MODEL_SERIES["dark"])
+LEAGUE = {"dark": LEAGUE_DARK, "light": LEAGUE_LIGHT}
+
+
+def league(palette: Palette) -> Palette:
+    """The league's colours, light or dark to match the palette in use."""
+    return LEAGUE.get(palette.name, LEAGUE_DARK)
 
 FONT_STACK = '"Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif'
 # Numbers read better when they line up in a column, which the UI font's
@@ -160,10 +244,30 @@ def tone_color(p: Palette, tone: str) -> str:
     }.get(tone, p.ink_secondary)
 
 
+def _luminance(colour: str) -> float:
+    """Relative luminance (WCAG), 0 for black to 1 for white."""
+    h = colour.lstrip("#")
+    parts = []
+    for i in (0, 2, 4):
+        c = int(h[i:i + 2], 16) / 255
+        parts.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2]
+
+
+def contrast(a: str, b: str) -> float:
+    """The contrast ratio between two colours, 1 (none) to 21."""
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _bright(colour: str) -> bool:
+    """Whether dark text reads better than white on a colour."""
+    return contrast(colour, "#05070a") >= contrast(colour, "#ffffff")
+
+
 def stylesheet(p: Palette) -> str:
     """Qt stylesheet for the whole application."""
     hover = mix(p.ink, p.surface, 0.07)       # neutral hover wash
-    active = mix(p.accent, p.surface, 0.18)   # the current page in the sidebar
     pressed = mix(p.ink, p.raised, 0.12)      # a button while it is held down
     # The primary button's hover used to borrow the selection colour, which
     # in the light theme is a pale blue: white text on it measured 1.3:1 and
@@ -171,6 +275,13 @@ def stylesheet(p: Palette) -> str:
     # label's contrast in both themes (light 4.4 -> 5.7, dark 3.6 -> 4.7).
     primary_hover = mix(p.accent, "#000000", 0.86)
     primary_pressed = mix(p.accent, "#000000", 0.74)
+    # What is written on the accent: dark on the dark theme's gold, white on
+    # the light theme's green - whichever reads.
+    on_accent = "#05070a" if _bright(p.accent) else "#ffffff"
+    brand = p.brand or p.accent
+    glow = mix(p.accent, p.raised, 0.07)      # the accent, barely there: a tile's wash
+    lit = mix(p.accent, p.surface, 0.26)      # the chosen place, at the edge the bar is on
+    rule = mix(p.accent, p.raised, 0.40)      # a hairline in the accent
     t = TYPE
     s = SPACE
     r = RADIUS
@@ -204,29 +315,54 @@ def stylesheet(p: Palette) -> str:
 
     /* ---- left navigation ---- */
     #Sidebar {{
-        background: {p.surface};
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                    stop:0 {p.surface}, stop:1 {mix(p.surface, p.plane, 0.35)});
         border-right: 1px solid {p.grid};
     }}
+    /* The name: OPERATION in light capitals, SUNDAY under it in gold. */
+    #BrandTop {{
+        color: {p.ink_secondary};
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 5px;
+    }}
     #SidebarTitle {{
-        color: {p.ink};
-        font-size: {t["heading"]}px;
-        font-weight: 700;
-        padding: 22px 24px 2px 24px;
+        color: {brand};
+        font-size: 19px;
+        font-weight: 800;
+        letter-spacing: 3.4px;
+    }}
+    #BrandLine {{
+        color: {p.ink_muted};
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 1.7px;
+        padding: 0 18px 0 18px;
+    }}
+    #BrandRule {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                    stop:0 {brand}, stop:0.55 {mix(brand, p.surface, 0.25)}, stop:1 {p.surface});
+        border: none;
+        margin: 10px 18px 10px 18px;
     }}
     #SidebarSubtitle {{
         color: {p.ink_muted};
-        font-size: {t["label"]}px;
-        padding: 0 24px 16px 24px;
+        font-size: {t["caption"]}px;
+        padding: 0 18px 6px 18px;
     }}
+    /* A place: its icon and its name, edge to edge. The chosen one carries
+       the blue down its left edge and a wash of it fading to the right. */
     #Sidebar QPushButton#NavButton {{
         background: transparent;
         border: none;
-        border-radius: 8px;
+        border-left: 3px solid transparent;
+        border-radius: 0px;
         color: {p.ink_secondary};
         text-align: left;
-        padding: 10px 14px;
-        margin: 1px 10px;
+        padding: 10px 14px 10px 17px;
+        margin: 1px 0px;
         font-size: {t["body"]}px;
+        letter-spacing: 0.3px;
     }}
     #Sidebar QPushButton#NavButton:hover,
     #Sidebar QPushButton#NavButton:focus {{
@@ -234,23 +370,24 @@ def stylesheet(p: Palette) -> str:
         color: {p.ink};
     }}
     #Sidebar QPushButton#NavButton:checked {{
-        background: {active};
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {lit}, stop:1 {mix(p.accent, p.surface, 0.03)});
+        border-left: 3px solid {p.accent};
         color: {p.ink};
-        font-weight: 600;
+        font-weight: 700;
     }}
 
     /* Refresh / theme / jump: quiet outlines, so the nav stays the loudest thing. */
     #Sidebar QPushButton {{
         background: transparent;
         border: 1px solid {p.grid};
-        border-radius: 8px;
+        border-radius: 6px;
         color: {p.ink_secondary};
         text-align: left;
-        padding: 7px 12px;
+        padding: 7px 11px;
     }}
     #Sidebar QPushButton:hover {{
         background: {hover};
-        border-color: {p.baseline};
+        border-color: {rule};
         color: {p.ink};
     }}
     #Sidebar QPushButton:disabled {{ color: {p.ink_muted}; }}
@@ -259,13 +396,24 @@ def stylesheet(p: Palette) -> str:
     #Card {{
         background: {p.surface};
         border: 1px solid {p.grid};
-        border-radius: 10px;
+        border-radius: 8px;
     }}
-    /* Headline numbers sit one step above the content cards. */
+    /* Headline numbers sit one step above the content cards, on a panel lit
+       from its top left corner, with the accent's line across the top. */
     #StatTile {{
-        background: {p.raised};
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {glow}, stop:0.5 {p.raised});
         border: 1px solid {p.grid};
-        border-radius: 12px;
+        border-top: 2px solid {p.accent};
+        border-radius: 8px;
+    }}
+    /* What a tile measures, as an instrument labels its dials. */
+    #StatTile #CardTitle {{
+        color: {p.ink_muted};
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        border: none;
+        padding: 0;
     }}
     /* An award tile is a stat tile with a hairline down its left edge tinted
        by tone, so a good or bad award reads at a glance without the text
@@ -332,12 +480,21 @@ def stylesheet(p: Palette) -> str:
     #GameNote {{ font-size: {t["caption"]}px; color: {p.ink_muted}; font-style: italic; }}
     #Ball {{ font-size: {t["label"]}px; }}
 
-    #PageTitle {{ font-size: {t["title"]}px; font-weight: 700; color: {p.ink}; }}
+    #PageTitle {{
+        font-size: {t["title"]}px;
+        font-weight: 700;
+        letter-spacing: 3px;
+        color: {p.ink};
+    }}
     #PageSubtitle {{ font-size: {t["body"]}px; color: {p.ink_muted}; }}
+    /* A card's title, behind a tick of the accent. */
     #CardTitle {{
         font-size: {t["label"]}px;
-        font-weight: 600;
-        color: {p.ink_secondary};
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        color: {p.ink};
+        border-left: 2px solid {p.accent};
+        padding-left: 8px;
     }}
     #StatValue {{
         font-family: {NUMERIC_STACK};
@@ -386,7 +543,7 @@ def stylesheet(p: Palette) -> str:
         alternate-background-color: {p.raised};
         gridline-color: {p.grid};
         border: 1px solid {p.grid};
-        border-radius: 10px;
+        border-radius: 8px;
         selection-background-color: {p.selection};
         selection-color: {p.ink};
         font-size: 13px;
@@ -402,9 +559,9 @@ def stylesheet(p: Palette) -> str:
         color: {p.ink_muted};
         padding: 9px 10px;
         border: none;
-        border-bottom: 1px solid {p.grid};
-        font-size: 12px;
-        font-weight: 600;
+        border-bottom: 1px solid {rule};
+        font-size: 11.5px;
+        font-weight: 700;
     }}
     QHeaderView::section:hover {{ color: {p.ink}; background: {mix(p.ink, p.raised, 0.05)}; }}
     /* The sort arrow sits at the right of its heading. Left to the Windows 11
@@ -437,8 +594,8 @@ def stylesheet(p: Palette) -> str:
     QPushButton#Primary {{
         background: {p.accent};
         border-color: {p.accent};
-        color: #ffffff;
-        font-weight: 600;
+        color: {on_accent};
+        font-weight: 700;
     }}
     QPushButton#Primary:hover {{ background: {primary_hover}; border-color: {primary_hover}; }}
     QPushButton#Primary:pressed {{ background: {primary_pressed}; border-color: {primary_pressed}; }}
@@ -525,19 +682,20 @@ def stylesheet(p: Palette) -> str:
     }}
     QTabBar#GroupTabBar {{ background: transparent; }}
     QTabBar#GroupTabBar::tab {{
-        font-size: {t["body"]}px;
-        font-weight: 600;
-        padding: 9px 18px 8px 18px;
+        font-size: {t["label"]}px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        padding: 10px 18px 9px 18px;
         margin-right: 4px;
     }}
 
     QScrollArea {{ border: none; background: {p.plane}; }}
     QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
     QScrollBar::handle:vertical {{ background: {p.baseline}; border-radius: 5px; min-height: 30px; }}
-    QScrollBar::handle:vertical:hover {{ background: {p.ink_muted}; }}
+    QScrollBar::handle:vertical:hover {{ background: {p.accent}; }}
     QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
     QScrollBar::handle:horizontal {{ background: {p.baseline}; border-radius: 5px; min-width: 30px; }}
-    QScrollBar::handle:horizontal:hover {{ background: {p.ink_muted}; }}
+    QScrollBar::handle:horizontal:hover {{ background: {p.accent}; }}
     QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
     QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
@@ -549,7 +707,7 @@ def stylesheet(p: Palette) -> str:
     QToolTip {{
         background: {p.raised};
         color: {p.ink};
-        border: 1px solid {p.baseline};
+        border: 1px solid {rule};
         border-radius: {r["chip"]}px;
         padding: {s["snug"]}px {s["step"]}px;
         font-size: {t["body"]}px;

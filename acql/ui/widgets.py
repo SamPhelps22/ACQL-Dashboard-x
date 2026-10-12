@@ -14,6 +14,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -26,10 +27,54 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .theme import Palette, tone_color
+from .theme import DARK, PALETTES, Palette, contrast, tone_color
 
 #: The tones a widget may be given; anything else is treated as no tone.
 TONES = ("good", "warning", "serious", "bad", "muted")
+
+
+def theme_palette() -> Palette:
+    """The palette the window is wearing (app.apply_theme names it on the
+    application), for a widget that has to draw in its colours."""
+    app = QApplication.instance()
+    name = app.property("theme") if app is not None else None
+    return PALETTES.get(name if isinstance(name, str) else "dark", DARK)
+
+
+class IconButton(QPushButton):
+    """A button with one of the dashboard's own icons (icons.py) beside its
+    words, redrawn in the theme's colours whenever the theme changes."""
+
+    def __init__(self, text: str = "", icon: str = "", parent: QWidget | None = None, size: int = 15) -> None:
+        super().__init__(parent)
+        self._icon, self._size = icon, size
+        self.setIconSize(QSize(size, size))
+        self.setText(text)
+        self._draw()
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt naming)
+        # a little air between the icon and the words
+        super().setText(f"  {text.strip()}" if text.strip() else "")
+
+    def setObjectName(self, name: str) -> None:  # noqa: N802
+        super().setObjectName(name)
+        self._draw()            # a primary button's icon is drawn for its own background
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.StyleChange:
+            self._draw()
+
+    def _draw(self) -> None:
+        from . import icons
+        p = theme_palette()
+        if self.objectName() == "Primary":
+            colour = "#05070a" if contrast(p.accent, "#05070a") >= contrast(p.accent, "#ffffff") else "#ffffff"
+        else:
+            colour = p.ink_secondary
+        if (self._icon, colour) != getattr(self, "_drawn", None):
+            self._drawn = (self._icon, colour)
+            self.setIcon(icons.icon(self._icon, colour, size=self._size))
 
 
 class ElidedLabel(QLabel):
@@ -117,7 +162,8 @@ class StatTile(Card):
         detail: str = "",
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(title, parent)
+        # What a tile measures is set in small capitals, as on an instrument.
+        super().__init__(title.upper(), parent)
         # A different object name lets the theme lift tiles above the cards.
         self.setObjectName("StatTile")
         self._palette: Palette | None = None
@@ -134,6 +180,9 @@ class StatTile(Card):
         self._layout.addStretch(1)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setMinimumHeight(112)
+
+    def set_title(self, title: str) -> None:
+        super().set_title(title.upper())
 
     def update_values(self, value: str, detail: str = "", tone: str = "") -> None:
         self.value_label.setText(value)
@@ -744,7 +793,7 @@ def section(title: str, subtitle: str = "") -> QWidget:
     layout = QVBoxLayout(wrap)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(2)
-    heading = QLabel(title)
+    heading = QLabel(title.upper())
     heading.setObjectName("PageTitle")
     layout.addWidget(heading)
     if subtitle:

@@ -46,8 +46,8 @@ class _PoolWeek:
 
 
 class PlayerPage(Page):
-    title = "Player"
-    subtitle = "One coach's season in detail"
+    from ...places import PLAYER as title
+    subtitle = "One coach's season: week by week, strong and weak spots, and how they stack up against the pool"
     icon = "\N{BUST IN SILHOUETTE}"
 
     # ---- build ---------------------------------------------------------
@@ -186,7 +186,8 @@ class PlayerPage(Page):
         self._report = patterns.report(season)
 
         names = [p.display for p in season.ordered_players()]
-        keep = self._wanted or self.picker.currentText()
+        from ... import me
+        keep = self._wanted or self.picker.currentText() or me.display(season)
         self._wanted = None
         rival_keep = self.rival_picker.currentData() or ""
 

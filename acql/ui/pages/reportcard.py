@@ -9,9 +9,9 @@ acql.reportcard; this file is layout.
 from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
 
-from ... import reportcard
+from ... import grades, me, reportcard
 from ..charts import LineChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
@@ -19,8 +19,12 @@ from .base import Page
 
 VERDICT_TITLE = "Should I follow it?"
 WEEKS_TITLE = "Week by week - its card against yours"
-WEEK_HEADERS = ["Week", f"{MODEL_NAME}'s card", "You", "Pool average", "Week's best",
-                f"{MODEL_NAME} would have been", "You were"]
+WEEK_HEADERS = ["Week", f"{MODEL_NAME}'s card", "Line alone", "Its chances said", "You", "Pool average",
+                "Week's best", f"{MODEL_NAME} would have been", "You were"]
+GRADES_TITLE = "Subject by subject"
+RUNNING_TITLE = "Running total - games ahead of the pool's average coach"
+STANDING_TITLE = "Where its card would stand in the pool"
+STANDING_HEADERS = ["Place", "Coach", "Games right"]
 LOSER_TITLE = "Big Losers - its three likeliest against yours"
 LOSER_HEADERS = ["Week", f"{MODEL_NAME}'s three", "Its points", "Your points"]
 LONG_TITLE = "Over the long run - 2011 to 2025 under this pool's rules"
@@ -38,8 +42,8 @@ def _plural(count: int, word: str) -> str:
 
 
 class ReportCardPage(Page):
-    title = "Report Card"
-    subtitle = f"How accurate {MODEL_NAME} is, and whether to follow it"
+    from ...places import REPORT_CARD as title
+    subtitle = f"{MODEL_NAME}'s grades: an overall mark, eight subjects, and whether to follow its card"
     icon = "\N{BAR CHART}"
 
     # ---- build ---------------------------------------------------------
@@ -54,18 +58,48 @@ class ReportCardPage(Page):
         chooser.addStretch(1)
         self.layout_.addLayout(chooser)
 
+        top = QHBoxLayout()
+        top.setSpacing(16)
+        self.grade_card = Card("Overall grade")
+        self.grade_card.setFixedWidth(250)
+        self.grade_card.setMinimumHeight(236)
+        self.grade_label = QLabel("")
+        self.grade_label.setTextFormat(Qt.TextFormat.RichText)
+        self.grade_label.setWordWrap(True)
+        self.grade_card.add(self.grade_label)
+        top.addWidget(self.grade_card, 0)
         self.verdict_card = Card(VERDICT_TITLE)
         self.verdict = QLabel("")
         self.verdict.setWordWrap(True)
         self.verdict.setTextFormat(Qt.TextFormat.RichText)
         self.verdict_card.add(self.verdict)
-        self.layout_.addWidget(self.verdict_card)
+        top.addWidget(self.verdict_card, 1)
+        self.layout_.addLayout(top)
+
+        self.grades_card = Card(GRADES_TITLE)
+        self.grades_box = QGridLayout()
+        self.grades_box.setHorizontalSpacing(22)
+        self.grades_box.setVerticalSpacing(7)
+        self.grades_box.setColumnStretch(2, 5)
+        self.grades_box.setColumnStretch(3, 6)
+        self.grades_card.body().addLayout(self.grades_box)
+        self.grades_note = QLabel("")
+        self.grades_note.setObjectName("Muted")
+        self.grades_note.setTextFormat(Qt.TextFormat.RichText)
+        self.grades_note.setWordWrap(True)
+        self.grades_card.add(self.grades_note)
+        self.layout_.addWidget(self.grades_card)
 
         self.tile_right = StatTile("Games Right")
+        self.tile_line = StatTile("Against The Line")
         self.tile_you = StatTile("Against You")
+        self.tile_pool = StatTile("In The Pool")
         self.tile_best = StatTile("Week's Best Score")
         self.tile_honest = StatTile("Honest Chances")
-        self._tiles = (self.tile_right, self.tile_you, self.tile_best, self.tile_honest)
+        self.tile_margin = StatTile("Margin Error")
+        self.tile_form = StatTile("Best And Worst Week")
+        self._tiles = (self.tile_right, self.tile_line, self.tile_you, self.tile_pool,
+                       self.tile_best, self.tile_honest, self.tile_margin, self.tile_form)
         self.layout_.addLayout(tile_grid(list(self._tiles), per_row=4))
 
         self.weeks_card = Card(WEEKS_TITLE)
@@ -74,16 +108,39 @@ class ReportCardPage(Page):
         self.weeks_box = QVBoxLayout()
         self.weeks_card.body().addLayout(self.weeks_box)
         self.weeks_note = QLabel(
-            "Regular games only, so every card is scored on the same games. "
-            f"{MODEL_NAME}'s card is the likeliest side of every game as it stood before "
-            "the week's first kickoff - the card This Week recommends. "
-            "“Rebuilt” weeks came before cards were kept, and were re-made "
-            f"from the stored lines, which is a little kind to {MODEL_NAME}."
+            f"{MODEL_NAME}'s card is the one This Week recommends, saved before the first kickoff. "
+            "\u201cLine alone\u201d is what the betting line scored. \u201cIts chances said\u201d is "
+            "what it expected to get. \u201cRebuilt\u201d weeks were re-made after the fact, which "
+            "flatters it slightly."
         )
         self.weeks_note.setObjectName("Muted")
+        self.weeks_note.setTextFormat(Qt.TextFormat.RichText)
         self.weeks_note.setWordWrap(True)
         self.weeks_card.add(self.weeks_note)
         self.layout_.addWidget(self.weeks_card, 1)
+
+        lower = QHBoxLayout()
+        lower.setSpacing(16)
+        self.running_card = Card(RUNNING_TITLE)
+        self.running_chart = LineChart(self.palette, height=3.0)
+        self.running_card.add(self.running_chart, 1)
+        self.running_note = QLabel(
+            "Each line is a card's games right so far, minus the pool's average coach. "
+            "A line going up is pulling away from the pool."
+        )
+        self.running_note.setObjectName("Muted")
+        self.running_note.setWordWrap(True)
+        self.running_card.add(self.running_note)
+        lower.addWidget(self.running_card, 3)
+        self.standing_card = Card(STANDING_TITLE)
+        self.standing_lead = QLabel("")
+        self.standing_lead.setWordWrap(True)
+        self.standing_card.add(self.standing_lead)
+        self.standing_box = QVBoxLayout()
+        self.standing_card.body().addLayout(self.standing_box)
+        self.standing_card.body().addStretch(1)
+        lower.addWidget(self.standing_card, 2)
+        self.layout_.addLayout(lower)
 
         self.loser_card = Card(LOSER_TITLE)
         self.loser_summary = QLabel("")
@@ -108,13 +165,14 @@ class ReportCardPage(Page):
 
     def restyle(self) -> None:
         self.weeks_chart.set_palette(self.palette)
+        self.running_chart.set_palette(self.palette)
         self.refresh_now()
 
     # ---- refresh -------------------------------------------------------
     def refresh(self) -> None:
         season = self.season
         assert season is not None  # guaranteed by Page.refresh_now()
-        wanted = self.me_picker.currentData() or QSettings().value(ME_KEY, "") \
+        wanted = self.me_picker.currentData() or me.key(season) or QSettings().value(ME_KEY, "") \
             or QSettings().value("thisweek/suicide_coach", "")
         players = sorted(season.players.values(), key=lambda p: p.display.casefold())
         self.me_picker.blockSignals(True)
@@ -135,9 +193,14 @@ class ReportCardPage(Page):
             QSettings().setValue(ME_KEY, key)
         name = self.me_picker.currentText() or "you"
         report = reportcard.build(season, key, name)
+        card = grades.build(season, report, key)
         self._render_verdict(report)
+        self._render_grades(card)
         self._render_tiles(report)
-        self._render_weeks(report)
+        self._render_more_tiles(report, card)
+        self._render_weeks(report, card)
+        self._render_running(report, card)
+        self._render_standing(report, card)
         self._render_losers(report)
         self._render_long_run(report)
 
@@ -150,10 +213,156 @@ class ReportCardPage(Page):
             f"{report.headline}</p>"
             f"<ul style='margin-top:6px'>{bullets}</ul>"
             f"<p style='margin:0'>This Week plays {MODEL_NAME}'s card by default: the likeliest "
-            "side of every game and the three likeliest Big Losers - the most wins toward "
-            "the season title. Its card picker also offers <i>most money this week</i>, "
-            "which chooses Big Losers the pool isn't on.</p>"
+            "side of every game and the three likeliest Big Losers. You can also choose "
+            "<i>most money this week</i>, which picks Big Losers the pool isn't on.</p>"
         )
+
+    # ---- the grades -----------------------------------------------------------
+    def _render_grades(self, card: grades.Card) -> None:
+        p = self.palette
+        colours = {"good": p.good, "warning": p.warning, "bad": p.critical, "muted": p.ink_muted, "": p.accent}
+        overall = card.overall
+        if overall:
+            best, worst = card.best, card.worst
+            self.grade_label.setText(
+                f"<div style='font-size:64px; font-weight:800; color:{colours[grades.tone(overall)]}; "
+                f"margin:0'>{overall.replace('-', '&minus;')}</div>"
+                f"<div style='color:{p.ink_secondary}'>{'Provisional \u00b7 ' if card.provisional else ''}"
+                f"{_plural(card.weeks, 'week')} \u00b7 {len(card.marked)} of {len(card.subjects)} marked</div>"
+                + (f"<div>Best: <b>{best.name}</b> ({best.grade.replace('-', '&minus;')})</div>"
+                   f"<div>Weakest: <b>{worst.name}</b> ({worst.grade.replace('-', '&minus;')})</div>"
+                   if best is not None and worst is not None and best is not worst else "")
+            )
+        else:
+            self.grade_label.setText(
+                f"<div style='font-size:64px; font-weight:800; color:{p.ink_muted}; margin:0'>&ndash;</div>"
+                f"<div style='color:{p.ink_secondary}'>Marked once a week is graded</div>")
+        # Laid out as wrapped lines rather than a table: the reading under each
+        # grade is a sentence, and a table would cut it short.
+        self.clear_layout(self.grades_box)
+        for r, s in enumerate(card.subjects):
+            colour = colours[grades.tone(s.grade)]
+            name = QLabel(f"<b>{s.name}</b>")
+            mark = QLabel(f"<span style='font-size:20px; font-weight:800; color:{colour}'>"
+                          f"{s.grade.replace('-', '&minus;') or '&ndash;'}</span>")
+            mark.setMinimumWidth(46)
+            figure = QLabel(f"{s.figure}<br><span style='color:{p.ink_muted}'>{s.against}</span>")
+            reading = QLabel(
+                f"<span style='color:{p.ink_secondary}'>{s.meaning}</span>"
+                + (f"<br><span style='color:{p.ink_muted}'><b>To raise it:</b> {s.better}</span>" if s.better else ""))
+            for column, label in enumerate((name, mark, figure, reading)):
+                label.setTextFormat(Qt.TextFormat.RichText)
+                label.setWordWrap(column >= 2)
+                label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+                if s.scale:
+                    label.setToolTip(s.scale)
+                self.grades_box.addWidget(label, 2 * r, column)
+            if r < len(card.subjects) - 1:
+                rule = QFrame()
+                rule.setFixedHeight(1)
+                rule.setStyleSheet(f"background: {p.grid}; border: none;")
+                self.grades_box.addWidget(rule, 2 * r + 1, 0, 1, 4)
+        self.grades_note.setText(
+            f"Each subject is one number compared with one yardstick. Hover over a grade to see its scale. "
+            f"Level with the betting line is a B, because beating the market is rare."
+            + (f" The overall grade is provisional until {grades.MATURE_WEEKS} weeks are in."
+               if card.provisional else "")
+        )
+
+    def _render_more_tiles(self, report: reportcard.Report, card: grades.Card) -> None:
+        hits = card.hits
+        overall = getattr(hits, "overall", None)
+        if overall is not None and overall.line_games:
+            ahead = overall.right - overall.line_right
+            self.tile_line.update_values(
+                f"{ahead:+d}" if ahead else "level",
+                f"games, on the same {overall.line_games}\n"
+                f"{overall.right} to the betting line's {overall.line_right}",
+                "good" if ahead >= 3 else "bad" if ahead <= -3 else "",
+            )
+        else:
+            self.tile_line.update_values(self.NO_VALUE, "needs a graded week with betting lines")
+        stand = card.standing
+        if stand is not None:
+            mine = (f"\n{report.coach} would be {_ordinal(stand.mine[0])} with {stand.mine[1]}" if stand.mine else "")
+            self.tile_pool.update_values(
+                ("T-" if stand.tied else "") + _ordinal(stand.rank),
+                f"of {stand.of} with {stand.total} \u00b7 the best coach: {stand.leader[0]}, {stand.leader[1]}{mine}",
+                "good" if stand.share >= 0.75 else "",
+            )
+        else:
+            self.tile_pool.update_values(self.NO_VALUE, "appears once a week is graded")
+        error = getattr(hits, "error", None)
+        if error is not None and error.games:
+            self.tile_margin.update_values(
+                f"{error.deadeye:.1f} pts",
+                f"average miss on the final margin, {error.games} games\nthe betting line alone: {error.line:.1f}",
+                "good" if error.deadeye < error.line - 0.15 else "bad" if error.deadeye > error.line + 0.15 else "",
+            )
+        else:
+            self.tile_margin.update_values(self.NO_VALUE, "needs final scores from the scoreboard")
+        if report.weeks:
+            best = max(report.weeks, key=lambda w: (w.model / max(1, w.games), -w.week))
+            worst = min(report.weeks, key=lambda w: (w.model / max(1, w.games), w.week))
+            self.tile_form.update_values(
+                f"{best.model} & {worst.model}",
+                f"best: week {best.week}, {best.model} of {best.games} ({_ordinal(best.model_place)})\n"
+                f"worst: week {worst.week}, {worst.model} of {worst.games} ({_ordinal(worst.model_place)})",
+            )
+        else:
+            self.tile_form.update_values(self.NO_VALUE, "appears once a week is graded")
+
+    def _render_running(self, report: reportcard.Report, card: grades.Card) -> None:
+        weeks = report.weeks
+        if not weeks:
+            self.running_chart.empty("Appears once a week is graded")
+            return
+        by_week = card.by_week()
+
+        def running(values):
+            total, out = 0.0, []
+            for value, w in zip(values, weeks):
+                if value is None:
+                    out.append(None)
+                    continue
+                total += value - w.pool_average
+                out.append(round(total, 1))
+            return out
+
+        series = [(MODEL_NAME, running([w.model for w in weeks]))]
+        # the betting line's side, for as many weeks as it is known on the same games
+        line, known = [], True
+        for w in weeks:
+            known = known and w.week in by_week and by_week[w.week][0] == w.games
+            line.append(by_week[w.week][1] if known else None)
+        if sum(v is not None for v in line) >= 2:
+            series.append(("Betting line", running(line)))
+        if any(w.mine is not None for w in weeks):
+            series.append((report.coach, running([w.mine for w in weeks])))
+        self.running_chart.plot(
+            [w.week for w in weeks], series, ylabel="Games ahead",
+            reference=("Pool average", [0.0 for _ in weeks]),
+        )
+
+    def _render_standing(self, report: reportcard.Report, card: grades.Card) -> None:
+        self.clear_layout(self.standing_box)
+        stand = card.standing
+        if stand is None:
+            self.standing_lead.setText("Appears once a week is graded.")
+            return
+        self.standing_lead.setText(
+            f"Regular games over the same {_plural(len(report.weeks), 'week')}: its card would be "
+            f"{'tied ' if stand.tied else ''}{_ordinal(stand.rank)} of {stand.of}."
+        )
+        rows, tones = [], {}
+        for r, (rank, name, total) in enumerate(stand.table):
+            rows.append([_ordinal(rank), name, total])
+            if name == f"{MODEL_NAME}'s card":
+                tones[(r, 1)] = tones[(r, 2)] = "good"
+        model = TableModel(STANDING_HEADERS, rows, palette=self.palette, numeric_columns={2}, tones=tones,
+                           bold_columns={1})
+        view, _ = make_table(model, stretch_column=1, row_height=28)
+        self.standing_box.addWidget(view)
 
     def _render_tiles(self, report: reportcard.Report) -> None:
         if report.weeks:
@@ -200,7 +409,8 @@ class ReportCardPage(Page):
             self.tile_honest.update_values(self.NO_VALUE, "needs a graded week with stored lines")
 
     # ---- week by week ------------------------------------------------------------
-    def _render_weeks(self, report: reportcard.Report) -> None:
+    def _render_weeks(self, report: reportcard.Report, card: grades.Card | None = None) -> None:
+        by_week = card.by_week() if card is not None else {}
         self.clear_layout(self.weeks_box)
         weeks = report.weeks
         if not weeks:
@@ -217,9 +427,12 @@ class ReportCardPage(Page):
         )
         rows, tones = [], {}
         for r, w in enumerate(reversed(weeks)):
+            picks, line_hits, said = by_week.get(w.week, (0, 0, 0.0))
             rows.append([
                 f"{w.week}" + ("  (rebuilt)" if w.rebuilt else ""),
                 f"{w.model} of {w.games}",
+                (f"{line_hits}" + ("" if picks == w.games else f" of {picks}")) if picks else self.NO_VALUE,
+                f"{said:.1f}" if picks else self.NO_VALUE,
                 w.mine if w.mine is not None else self.NO_VALUE,
                 f"{w.pool_average:.1f}",
                 w.best,
@@ -230,10 +443,11 @@ class ReportCardPage(Page):
             if w.mine is not None:
                 tones[(r, 1)] = "good" if w.model > w.mine else "bad" if w.model < w.mine else ""
             if w.model_place == 1:
-                tones[(r, 5)] = "good"
+                tones[(r, 7)] = "good"
+            tones[(r, 2)] = tones[(r, 3)] = "muted"
         model = TableModel(WEEK_HEADERS, rows, palette=self.palette,
-                           numeric_columns={1, 2, 3, 4}, tones=tones, bold_columns={1})
-        view, _ = make_table(model, stretch_column=5, row_height=28)
+                           numeric_columns={1, 2, 3, 4, 5, 6}, tones=tones, bold_columns={1})
+        view, _ = make_table(model, stretch_column=7, row_height=28)
         self.weeks_box.addWidget(view)
 
     # ---- big losers -------------------------------------------------------------
@@ -242,9 +456,7 @@ class ReportCardPage(Page):
         found = report.losers
         if not found:
             self.loser_summary.setText(
-                "Graded once a week has its pick sheet and its final scores (or "
-                "the standings export names the week's big losers) - that is how "
-                "the app knows which teams were blown out."
+                "This is graded once a week has its pick sheet and final scores."
             )
             return
         model = sum(x.model_points for x in found)

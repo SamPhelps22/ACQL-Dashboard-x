@@ -55,10 +55,18 @@ class Snapshot:
     planned: dict[int, str] = field(default_factory=dict)    # the planner's card
     win_odds: float | None = None
     rebuilt: bool = False                     # made after the fact, not at the time
+    #: The card's three Big Losers, as team codes, and each one's chance of
+    #: losing by 15 or more as it stood. Empty on a card kept before they were.
+    losers: list[str] = field(default_factory=list)
+    loser_chance: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def of(cls, brief, at: float | None = None, rebuilt: bool = False) -> Snapshot:
+        from .predictions import team_code
+        picked = [(team_code(b.team), b.chance) for b in (getattr(brief, "losers", None) or [])]
         return cls(
+            losers=[code for code, _ in picked if code],
+            loser_chance={code: round(chance, 4) for code, chance in picked if code},
             at=time.time() if at is None else at,
             take={c.index: c.pick for c in brief.choices},
             chance={c.index: round(c.chance, 4) for c in brief.choices},
@@ -91,6 +99,8 @@ class Snapshot:
                 planned=ints(raw.get("planned")),
                 win_odds=raw.get("win_odds"),
                 rebuilt=bool(raw.get("rebuilt", False)),
+                losers=[str(code) for code in raw.get("losers") or []],
+                loser_chance={str(k): float(v) for k, v in (raw.get("loser_chance") or {}).items()},
             )
         except (TypeError, ValueError):
             return None

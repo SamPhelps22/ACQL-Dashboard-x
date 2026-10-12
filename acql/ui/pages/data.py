@@ -58,8 +58,8 @@ class DataPage(Page):
     rather than overwritten here.
     """
 
-    title = "Data & Update"
-    subtitle = "What is loaded, where the results came from, what disagrees, and updating the app"
+    from ...places import DATA as title
+    subtitle = "Which files are loaded, where each result came from, anything that disagrees, and updating the app"
     icon = "\N{CARD INDEX DIVIDERS}"
     #: This is where folders get added, so it must work before any data does.
     needs_data = False
@@ -117,11 +117,9 @@ class DataPage(Page):
         # ---- keeping the website current with nobody here (keeping.py) ----
         self.keep_card = Card("Keeping the website up to date by itself")
         self.keep_note = QLabel(
-            "The website updates itself when results come in or a new pick sheet lands "
-            "in the folder - but only while the dashboard is running. Turn these on and "
-            "it runs out of sight from the moment the computer starts, so the site keeps "
-            "up on a Sunday whether or not anyone opens it. The computer still has to be "
-            "on and awake."
+            "The website updates by itself, but only while the dashboard is running. Turn these on and "
+            "it runs in the background from the moment the computer starts. The computer still has to "
+            "be on and awake."
         )
         self.keep_note.setObjectName("StatDetail")
         self.keep_note.setWordWrap(True)
@@ -141,12 +139,10 @@ class DataPage(Page):
         # ---- where the results come from ----
         self.results_card = Card("Results")
         self.results_note = QLabel(
-            "Every week is built from the commissioner's pick sheet: the games, "
-            "the pool's lines and everyone's picks. Results come from his graded "
-            "copy of the sheet when you've downloaded it, and otherwise from "
-            "ESPN's final scores with the pool's lines applied \u2014 the "
-            "dashboard looks every few minutes while games are on. stats.xls "
-            "stays the official word on the standings."
+            "Each week comes from the commissioner's pick sheet: the games, the pool's lines and "
+            "everyone's picks. Results come from his graded sheet if you have it, otherwise from "
+            "ESPN's final scores. The standings export (stats.xls) stays the official word on the "
+            "standings."
         )
         self.results_note.setObjectName("StatDetail")
         self.results_note.setWordWrap(True)
@@ -166,12 +162,9 @@ class DataPage(Page):
         # ---- editor (only while a workbook is still loaded) ----
         self.editor_card = Card("The workbook")
         self.editor_note = QLabel(
-            "Your ACQL Dashboard workbook is still being read for the weeks it "
-            "has results in. It isn't needed any more \u2014 the pick sheets "
-            "and the results do its job \u2014 so take it out of the folder "
-            "whenever you like. Until then, anything typed here is kept: a "
-            "timestamped backup is taken before each save, and a change set "
-            "that would touch a formula is refused whole."
+            "Your old ACQL Dashboard workbook is still being read for the weeks it has results in. "
+            "You don't need it any more, so you can take it out of the folder. Until then anything "
+            "typed here is saved, and a backup is taken first."
         )
         self.editor_note.setObjectName("StatDetail")
         self.editor_note.setWordWrap(True)
@@ -223,9 +216,8 @@ class DataPage(Page):
         # numbers and work backwards.
         self.weekly_card = Card("Pick sheets, graded copies and predictions")
         self.weekly_note = QLabel(
-            "Everything the app is holding for a particular week, whatever "
-            "folder it came from. A sheet from another pool is named here "
-            "rather than quietly ignored."
+            "Everything the app has for each week, whichever folder it came from. "
+            "A sheet from another pool is listed here too."
         )
         self.weekly_note.setObjectName("StatDetail")
         self.weekly_note.setWordWrap(True)
@@ -408,15 +400,14 @@ class DataPage(Page):
             ]
             self.folders_label.setText(
                 "\n".join(lines)
-                + "\n\nDrop the week's pick sheet, stats.xls or a predictions CSV "
-                "into any of these (pick sheets are found in Downloads too). They "
-                "are read as soon as they land or are saved – Rescan now is "
-                "only for when you want to force it."
+                + "\n\nDrop the week's pick sheet, the standings export or a predictions file "
+                "into any of these folders. They are read as soon as they land. Pick sheets are "
+                "also found in Downloads."
             )
         else:
             self.folders_label.setText(
                 "No folders are being watched yet. Use \u201cAdd a folder\u2026\u201d "
-                "to point the app at the place you keep the pick sheets and stats.xls."
+                "to choose where you keep the pick sheets and standings exports."
             )
 
     @staticmethod

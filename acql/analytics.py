@@ -428,26 +428,33 @@ def _key_weights() -> dict[int, float]:
 KEY_WEIGHT = _key_weights()     # tie ~0.1, 3 ~2.5, 7 ~1.7, 14 ~1.8, 21 ~1.4, 28 ~1.6
 
 
-def _shape(center: float, sd: float) -> dict[int, float]:
-    """Chance of each margin around `center`, before the mean is corrected.
+_MARGINS = np.array(MARGIN_RANGE, dtype=float)
+_KEY_WEIGHTS = np.array([KEY_WEIGHT.get(abs(d), 1.0) for d in MARGIN_RANGE])
+
+
+def _shape(center: float, sd: float) -> np.ndarray:
+    """Chance of each margin in MARGIN_RANGE around `center`, before the mean
+    is corrected.
 
     `sd` is the width of the ordinary game. Callers widen it for a game the
     forecasters disagree about (see `math.hypot(SPREAD_SD, extra)`); that
     extra doubt is about where the centre is, so it widens both bells by the
     same amount rather than stretching them in proportion.
+
+    All 121 margins at once: margin_distribution asks for this forty-one
+    times a game, and one margin at a time that was most of the time the
+    week's card took to open.
     """
     extra = max(0.0, sd * sd - SPREAD_SD * SPREAD_SD)
     narrow = math.sqrt(SPREAD_SD * SPREAD_SD + extra)
     wide = math.sqrt((SPREAD_SD * TAIL_RATIO) ** 2 + extra)
-    weights = {}
-    for d in MARGIN_RANGE:
-        bell = (
-            (1 - TAIL_SHARE) * math.exp(-((d - center) / narrow) ** 2 / 2) / narrow
-            + TAIL_SHARE * math.exp(-((d - center) / wide) ** 2 / 2) / wide
-        )
-        weights[d] = bell * KEY_WEIGHT.get(abs(d), 1.0)
-    total = sum(weights.values())
-    return {d: w / total for d, w in weights.items()}
+    off = _MARGINS - center
+    bell = (
+        (1 - TAIL_SHARE) * np.exp(-(off / narrow) ** 2 / 2) / narrow
+        + TAIL_SHARE * np.exp(-(off / wide) ** 2 / 2) / wide
+    )
+    weights = bell * _KEY_WEIGHTS
+    return weights / weights.sum()
 
 
 @lru_cache(maxsize=512)
@@ -464,11 +471,11 @@ def margin_distribution(spread: float, sd: float = SPREAD_SD) -> tuple[tuple[int
     low, high = spread - 8, spread + 8
     for _ in range(40):                      # bisection on the centre
         mid = (low + high) / 2
-        if sum(d * p for d, p in _shape(mid, sd).items()) < spread:
+        if float(_shape(mid, sd) @ _MARGINS) < spread:
             low = mid
         else:
             high = mid
-    return tuple(_shape((low + high) / 2, sd).items())
+    return tuple(zip(MARGIN_RANGE, _shape((low + high) / 2, sd).tolist()))
 
 
 def line_need(line: float) -> int:

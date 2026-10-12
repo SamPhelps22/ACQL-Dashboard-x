@@ -30,7 +30,7 @@ from ... import gameday as GD
 from ...predictions import display_team
 from ...version import MODEL_NAME
 from ..theme import mix
-from ..widgets import Card, ElidedLabel, Pill, StatTile, TableModel, make_table, section, tile_grid
+from ..widgets import Card, ElidedLabel, IconButton, Pill, StatTile, TableModel, make_table, section, tile_grid
 from .base import LIVE_CHECK, LIVE_CHECK_NOW, Page
 
 #: Shared with the Report card and Deadeye's details, so every page knows who you are.
@@ -310,8 +310,8 @@ class GameCard(QFrame):
 
 
 class GameDayPage(Page):
-    title = "Game Day"
-    subtitle = "Every game as it happens, against your pool's lines"
+    from ...places import GAME_DAY as title
+    subtitle = "Live scores against the pool's lines, where you stand this week, and what to root for"
     icon = "\N{TELEVISION}"
 
     # ---- build ---------------------------------------------------------
@@ -338,7 +338,7 @@ class GameDayPage(Page):
         self.status = QLabel("")
         self.status.setObjectName("Muted")
         controls.addWidget(self.status)
-        self.refresh_button = QPushButton("↻  Scores now")
+        self.refresh_button = IconButton("Scores now", "refresh")
         self.refresh_button.setToolTip("Ask ESPN for the latest scores now")
         self.refresh_button.clicked.connect(lambda *_: self.action_requested.emit(LIVE_CHECK_NOW))
         controls.addWidget(self.refresh_button)
@@ -377,13 +377,10 @@ class GameDayPage(Page):
         self.layout_.addWidget(self.side_card)
 
         self.footnote = QLabel(
-            "While this page is open and a game is on, ESPN is asked for the scores every "
-            "minute. A game's chances come from the score, the time left and the line before "
-            "kickoff - what is left of the game carries that much of the expected margin, and "
-            "results spread as widely as whole games do, narrowing as the clock runs down. Your "
-            f"chance of finishing first plays the rest of the week out {GD.SIMS:,} times against "
-            "everyone's cards on the commissioner's sheet. Money is the pool's rule: a dollar a "
-            "game behind the week's best card."
+            "Scores are checked every minute while a game is on. A game's chances come from the score, "
+            "the time left and the betting line. Your chance of finishing first plays the rest of the "
+            f"week out {GD.SIMS:,} times against everyone's cards. Money follows the pool's rule: a "
+            "dollar for each game behind the week's best card."
         )
         self.footnote.setObjectName("Muted")
         self.footnote.setWordWrap(True)
@@ -421,6 +418,10 @@ class GameDayPage(Page):
         key = self.me_picker.currentData()
         if isinstance(key, str) and key:
             return key
+        from ... import me
+        owner = me.key(self.season)
+        if owner:
+            return owner
         for name in (ME_KEY, "thisweek/suicide_coach"):
             value = QSettings().value(name, "")
             if isinstance(value, str) and value:
@@ -760,10 +761,10 @@ class GameDayPage(Page):
         view, _ = make_table(model, stretch_column=1, row_height=27)
         self.board_box.addWidget(view)
         self.board_note.setText(
-            "Now counts the games over and the ones on as they stand; banked counts only the "
-            "games over. Can reach is the most a card can still make. To win plays the rest of "
-            "the week out; level cards share. If it ended now is the pool's money at today's "
-            f"score. {MODEL_NAME} is shown for comparison and takes no place or prize.")
+            "Now counts finished games and games in progress. Banked counts finished games only. "
+            "Can reach is the most a card can still score. To win is the chance of finishing first, "
+            "with ties shared. If it ended now is the money at today's scores. "
+            f"{MODEL_NAME} is shown for comparison and takes no place or prize.")
 
     # ---- the side pools ------------------------------------------------------------
     def _render_side(self, bd: GD.Board) -> None:

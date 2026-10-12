@@ -72,8 +72,8 @@ class AwardTile(QFrame):
 
 
 class OverviewPage(Page):
-    title = "Overview"
-    subtitle = "Where the season stands right now"
+    from ...places import OVERVIEW as title
+    subtitle = "The season at a glance: the leader, the money, and how tightly the pool is bunched"
     icon = "\N{TROPHY}"
 
     def build(self) -> None:

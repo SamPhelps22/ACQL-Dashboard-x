@@ -591,7 +591,7 @@ class LineChart(Chart):
                 xytext=(x, label_y),
                 textcoords=text_space,
                 color=self.palette.ink_secondary,
-                fontsize=LABEL_SIZE, va="center", fontweight="semibold",
+                fontsize=LABEL_SIZE, va="center", fontweight="bold",
                 arrowprops=dict(
                     arrowstyle="-", color=color, linewidth=1.2,
                     shrinkA=3, shrinkB=2,
@@ -1003,5 +1003,5 @@ class ScatterChart(Chart):
                 ax.annotate(
                     name, xy=(x, y), xytext=(6, 5), textcoords="offset points",
                     fontsize=8.5, color=self.palette.ink_secondary,
-                    fontweight="semibold" if name == highlight else "normal",
+                    fontweight="bold" if name == highlight else "normal",
                 )

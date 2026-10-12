@@ -40,8 +40,8 @@ def _plural(count: int, word: str) -> str:
 
 
 class InsightsPage(Page):
-    title = "The Pool"
-    subtitle = "What the season's numbers say about the pool - and about luck"
+    from ...places import POOL as title
+    subtitle = "How this pool picks: its habits, who has been lucky, its blind spots, and which weeks were chaos"
     icon = "\N{LEFT-POINTING MAGNIFYING GLASS}"
 
     # ---- build ---------------------------------------------------------
@@ -135,9 +135,8 @@ class InsightsPage(Page):
         self.spots_label.setTextFormat(Qt.TextFormat.RichText)
         self.spots_card.add(self.spots_label)
         self.spots_note = QLabel(
-            "Each coach's own blind spots and strong suits are on the Player page. "
-            "Every split there is measured against how the rest of the pool did in "
-            "the same games, so a hard week or a trap line counts against nobody."
+            "Each coach's own strong and weak spots are on the Player page. Everything there is "
+            "compared with how the rest of the pool did in the same games."
         )
         self.spots_note.setObjectName("Muted")
         self.spots_note.setWordWrap(True)
@@ -148,9 +147,8 @@ class InsightsPage(Page):
         self.h2h_chart = HeatmapChart(self.palette, height=6.0)
         self.h2h_card.add(self.h2h_chart, 1)
         self.h2h_note = QLabel(
-            "Read across a row: the share of weeks that player outscored the "
-            "player in each column, counting ties as half. Blue beats, red "
-            "loses, grey is even."
+            "Read across a row: how often that coach outscored the coach in each column "
+            "(ties count half). Blue is winning, red is losing, grey is even."
         )
         self.h2h_note.setObjectName("Muted")
         self.h2h_note.setWordWrap(True)
@@ -325,16 +323,15 @@ class InsightsPage(Page):
         best = max(lines, key=lambda l: (l.expected, l.name))
         pool_luck = sum(l.luck for l in lines) / len(lines)
         self.luck_note.setText(
-            "Every pick had a chance of landing - the betting line says how likely, "
-            "and the pool's line rule says what counts. Their sum is what a coach's "
-            "picks deserved; the rest is luck, which evens out, while good picks last. "
+            "Every pick had a chance of coming in. Add those chances up and you get the wins a coach's "
+            "picks deserved. The rest is luck. "
             f"Best picks so far, luck aside: {best.name}, "
             f"{best.expected - average:+.1f} deserved wins above the average coach. "
-            f"The whole pool is running {pool_luck:+.1f} a coach - "
-            + ("favourites have come in more often than the lines said."
+            f"The whole pool is running {pool_luck:+.1f} a coach: "
+            + ("favourites have won more often than expected."
                if pool_luck > 0.5 else
-               "the lines have been about right." if pool_luck > -0.5 else
-               "upsets have come in more often than the lines said.")
+               "about as expected." if pool_luck > -0.5 else
+               "upsets have happened more often than expected.")
         )
 
     def _update_habits(self, season) -> None:
@@ -342,8 +339,7 @@ class InsightsPage(Page):
         if not obs:
             self.habits_card.set_title("How this pool picks")
             self.habits_label.setText(
-                "Appears once a week's pick sheet and that week's betting lines "
-                "are both loaded - it learns from what the pool actually did."
+                "Shows up once a week's pick sheet and betting lines are both loaded."
             )
             self.habits_note.setText("")
             return

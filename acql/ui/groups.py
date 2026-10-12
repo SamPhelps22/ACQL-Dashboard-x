@@ -68,7 +68,7 @@ class PageGroup(QWidget):
             self.tabs.setDrawBase(False)
             self.tabs.setExpanding(False)
             for (label, _), page in zip(spec.tabs, self.pages):
-                index = self.tabs.addTab(label)
+                index = self.tabs.addTab(label.replace("&", "&&"))      # "&" alone is a Qt mnemonic
                 self.tabs.setTabToolTip(index, page.subtitle or label)
             self.tabs.currentChanged.connect(self._on_tab)
             row.addWidget(self.tabs)

@@ -7,8 +7,11 @@
 #                        midnight. Only does anything when a game is under
 #                        way or has just finished; otherwise it's gone in a
 #                        second.
+#    ACQL Deadeye email  Tue, Wed and Thu at 12:00 noon: Deadeye's card for
+#                        the week ahead, on the freshest lines, emailed to
+#                        the dashboard's own address - and nobody else.
 #
-#  Run it again after moving the folder. To take both away:
+#  Run it again after moving the folder. To take them all away:
 #      powershell -ExecutionPolicy Bypass -File schedule.ps1 -Remove
 #  What each run did goes in data\acql-log.txt, lines starting "headless:".
 # ---------------------------------------------------------------------
@@ -16,12 +19,12 @@ param([switch]$Remove)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$names = "ACQL Daily", "ACQL Game-day poll"
+$names = "ACQL Daily", "ACQL Game-day poll", "ACQL Deadeye email"
 
 foreach ($name in $names) {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
 }
-if ($Remove) { Write-Host "  Both ACQL scheduled tasks removed."; exit 0 }
+if ($Remove) { Write-Host "  The ACQL scheduled tasks are removed."; exit 0 }
 
 # pythonw: the venv's Python without a console window popping up at 3am.
 $python = Join-Path $root ".venv\Scripts\pythonw.exe"
@@ -53,7 +56,14 @@ Register-ScheduledTask -TaskName "ACQL Game-day poll" -Action $poll -Settings $s
     -Trigger $gameDays `
     -Description "ACQL Dashboard: live results and the pool website during games." | Out-Null
 
+# The card by email: woken for, like the 3am run, so a sleeping PC still sends it.
+$mail = New-ScheduledTaskAction -Execute $python -Argument "-m acql.headless --email" -WorkingDirectory $root
+Register-ScheduledTask -TaskName "ACQL Deadeye email" -Action $mail -Settings $wake `
+    -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday, Wednesday, Thursday -At 12:00PM) `
+    -Description "ACQL Dashboard: Deadeye's card for the week ahead, emailed to you." | Out-Null
+
 Write-Host "  Scheduled:"
 Write-Host "    ACQL Daily          every day at 3:00 AM"
 Write-Host "    ACQL Game-day poll  Thu/Sun/Mon, every 10 min, 9 AM - midnight"
+Write-Host "    ACQL Deadeye email  Tue/Wed/Thu at 12:00 noon"
 Write-Host "  Runs while you're signed in to Windows. Log: data\acql-log.txt"
