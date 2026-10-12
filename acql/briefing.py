@@ -420,6 +420,35 @@ def weekplan_minimum(choices: list[Choice]) -> int:
     return 6
 
 
+#: How a pick on a finished game came out (`graded`).
+RIGHT, WRONG, TIED = "right", "wrong", "tie"
+
+
+def graded(game: Game | None, pick: str) -> str:
+    """RIGHT or WRONG against the side the pool credited, TIED for a tie
+    (how the pool scores one is its own rule, so it is neither), or "" while
+    the game has no result."""
+    from .results import TIE
+    winner = str(getattr(game, "winner", "") or "").strip()
+    if game is None or not winner:
+        return ""
+    if winner.casefold() == TIE.casefold():
+        return TIED
+    same = same_team(winner, pick) or predictions.team_code(winner) == predictions.team_code(pick)
+    return RIGHT if same else WRONG
+
+
+def big_loss(games: list[Game], team: str) -> int | None:
+    """How many points `team` lost by this week (negative: it won), from the
+    final score; None until the score is in. A Big Loser needs 15 or more."""
+    from .results import lost_by
+    for game in games:
+        by = lost_by(game, team)
+        if by is not None:
+            return by
+    return None
+
+
 def _line_text(game: Game) -> str:
     line = getattr(game, "line", None)
     favourite = getattr(game, "line_favourite", "") or ""

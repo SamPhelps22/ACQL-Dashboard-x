@@ -854,6 +854,89 @@ class TestDeadeyeBigLosers(_ScratchStore):
         self.assertEqual(ghost._losers(Season(), 6, Week(6), snap), ["ari", "was", "lac"])
 
 
+class TestCardResults(_ScratchStore):
+    """Your card marks each pick right or wrong once its game is in, says which
+    games are line games, and shows how far each Big Loser lost."""
+
+    def _week(self):
+        from acql.models import Game, Week
+        return Week(6, games=[
+            Game(1, home="Denver", away="Seattle", winner="Seattle", home_points=17, away_points=24),
+            Game(2, home="Kansas City", away="Los Angeles Chargers", winner="Los Angeles Chargers",
+                 line=7, line_favourite="Kansas City", home_points=27, away_points=21),
+            Game(3, home="Green Bay", away="Dallas", winner="Tie", home_points=20, away_points=20),
+            Game(4, home="Indianapolis", away="Tennessee", winner="Indianapolis", home_points=38, away_points=13),
+            Game(5, home="New England", away="New York Jets"),
+        ])
+
+    def test_a_pick_is_graded_against_the_credited_side(self):
+        from acql import briefing
+        g = {x.index: x for x in self._week().games}
+        self.assertEqual(briefing.graded(g[1], "Seattle"), briefing.RIGHT)
+        self.assertEqual(briefing.graded(g[1], "Denver"), briefing.WRONG)
+        # Kansas City won, but by less than the pool's line: the Chargers are credited.
+        self.assertEqual(briefing.graded(g[2], "Kansas City"), briefing.WRONG)
+        self.assertEqual(briefing.graded(g[2], "LAC"), briefing.RIGHT)
+        self.assertEqual(briefing.graded(g[3], "Dallas"), briefing.TIED)
+        self.assertEqual(briefing.graded(g[5], "New England"), "")
+        self.assertEqual(briefing.graded(None, "New England"), "")
+
+    def test_a_big_loss_is_read_from_the_score(self):
+        from acql import briefing
+        games = self._week().games
+        self.assertEqual(briefing.big_loss(games, "Tennessee"), 25)
+        self.assertEqual(briefing.big_loss(games, "Indianapolis"), -25)
+        self.assertIsNone(briefing.big_loss(games, "New York Jets"))      # not played
+        self.assertIsNone(briefing.big_loss(games, "Buffalo"))            # not on the slate
+
+    def test_the_glance_shows_the_rule_and_the_results(self):
+        import os
+        from types import SimpleNamespace
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            self.skipTest(f"PySide6 unavailable: {exc}")
+        # Kept on the class: a QApplication nobody holds is freed under its widgets.
+        type(self).app = QApplication.instance() or QApplication([])
+        from acql import analytics
+        from acql.ui.pages.thisweek import BriefingPage
+        from acql.ui.theme import PALETTES
+
+        def choice(index, matchup, pick, chance, line=""):
+            return SimpleNamespace(index=index, matchup=matchup, pick=pick, chance=chance,
+                                   lined=bool(line), line=line, why="")
+        brief = SimpleNamespace(week=6, expected=2.9, for_money=False, choices=[
+            choice(1, "Seattle @ Denver", "Seattle", 0.59),
+            choice(2, "Los Angeles Chargers @ Kansas City", "Kansas City", 0.55, "Kansas City by 7"),
+            choice(5, "New York Jets @ New England", "New England", 0.87),
+        ], losers=[analytics.BigLoser("Tennessee", "Indianapolis", -15.1489, 0.49),
+                   analytics.BigLoser("New York Jets", "New England", -12.5818, 0.43)])
+        season = Season()
+        season.weeks[6] = self._week()
+        page = BriefingPage(next(iter(PALETTES.values())))
+        page.season = season
+        page._update_glance(season, brief, [])
+        chips = [page.glance_grid.itemAt(i).widget().text() for i in range(page.glance_grid.count())]
+        self.assertIn("Right", chips[0])
+        self.assertIn("Straight up", chips[0])
+        self.assertIn("LINE GAME", chips[1])
+        self.assertIn("Kansas City by 7", chips[1])
+        self.assertIn("Wrong", chips[1])
+        self.assertNotIn("Right", chips[2])
+        self.assertNotIn("Wrong", chips[2])
+        self.assertIn("1 of 2 right so far", page.glance_card.title_label.text())
+        self.assertIn("1 line game", page.glance_note.text())
+        page._update_losers(season, brief)
+        losers = [page.losers_grid.itemAt(i).widget().text() for i in range(page.losers_grid.count())]
+        self.assertIn("15.1-point underdogs", losers[0])
+        self.assertNotIn("15.1489", losers[0])
+        self.assertIn("Hit", losers[0])
+        self.assertIn("lost by 25", losers[0])
+        self.assertNotIn("lost by", losers[1])
+        page.deleteLater()
+
+
 class TestCardEmail(_ScratchStore):
     """Deadeye's card goes to whoever runs the dashboard - never to the pool's list."""
 

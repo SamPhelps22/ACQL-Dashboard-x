@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from ... import bigloser, briefing, cards, evidence, odds, survivor
+from ... import analytics, bigloser, briefing, cards, evidence, odds, survivor
 from ...predictions import display_team
 from ...models import Season
 from ..theme import mix
@@ -335,7 +335,7 @@ class BriefingPage(Page):
             cases = evidence.build(season, brief, me)
         except Exception:  # noqa: BLE001 - the card stands without its reasons
             cases = []
-        self._update_glance(brief, cases)
+        self._update_glance(season, brief, cases)
         self._update_losers(season, brief)
         self._update_scoreboard(season)
         self._update_why(season, brief, cases)
@@ -441,7 +441,6 @@ class BriefingPage(Page):
 
     @staticmethod
     def _week(season: Season) -> int:
-        from ... import analytics
         return analytics.upcoming_week(season)
 
     def _show_empty(self, week: int) -> None:
@@ -481,27 +480,56 @@ class BriefingPage(Page):
             "Lean": p.warning,
         }.get(label, p.ink_muted)
 
-    def _update_glance(self, brief: briefing.Brief, cases: list[evidence.Case]) -> None:
+    def _result_line(self, outcome: str, right: str = "Right", wrong: str = "Wrong", extra: str = "") -> str:
+        """The finished pick's own line: right, wrong, or a tie. "" before."""
+        p = self.palette
+        text, colour = {
+            briefing.RIGHT: (f"\u2713&nbsp;{right}", p.good),
+            briefing.WRONG: (f"\u2717&nbsp;{wrong}", p.critical),
+            briefing.TIED: ("Tie", p.ink_muted),
+        }.get(outcome, ("", p.ink_muted))
+        if not text:
+            return ""
+        return (f"<div style='color:{colour}; font-weight:800'>{text}"
+                + (f"<span style='color:{p.ink_muted}; font-weight:400'> \u00b7 {extra}</span>" if extra else "")
+                + "</div>")
+
+    def _update_glance(self, season: Season, brief: briefing.Brief, cases: list[evidence.Case]) -> None:
         self.clear_layout(self.glance_grid)
         p = self.palette
         by_index = {c.index: c for c in cases}
+        found = season.weeks.get(brief.week)
+        games = {g.index: g for g in found.games} if found else {}
+        outcomes = []
         for n, choice in enumerate(brief.choices):
             case = by_index.get(choice.index)
             label = evidence.strength(choice.chance)
             colour = self._strength_colour(label)
+            outcome = briefing.graded(games.get(choice.index), choice.pick)
+            outcomes.append(outcome)
+            # Which rule decides it: the pool's line, or just the winner.
+            rule = (f"<span style='color:{p.warning}; font-weight:700'>LINE GAME</span> "
+                    f"<span style='color:{p.ink_muted}'>{choice.line}</span>"
+                    if choice.lined and choice.line
+                    else f"<span style='color:{p.ink_muted}'>Straight up</span>")
             chip = QLabel(
                 f"<div style='color:{p.ink_muted}; font-size:11px'>#{choice.index} \u00b7 "
                 f"{choice.matchup}</div>"
                 f"<div style='font-size:19px; font-weight:800; color:{p.ink}'>{choice.pick}</div>"
+                + self._result_line(outcome) +
                 f"<div style='color:{colour}; font-weight:700'>{choice.chance:.0%} \u00b7 {label}"
                 + (f"<span style='color:{p.ink_muted}; font-weight:400'> \u00b7 {case.summary()}</span>"
                    if case is not None else "")
                 + "</div>"
+                f"<div style='font-size:11px'>{rule}</div>"
             )
             chip.setTextFormat(Qt.TextFormat.RichText)
             chip.setWordWrap(True)
             chip.setMinimumWidth(120)
-            chip.setToolTip(f"{choice.matchup}: take {choice.pick} - {choice.why}")
+            chip.setToolTip(
+                f"{choice.matchup}: take {choice.pick} - {choice.why}"
+                + (f"\nA line game: {choice.line}. The chance is of being credited under the pool's "
+                   f"line, not of winning outright." if choice.lined and choice.line else ""))
             chip.setStyleSheet(
                 f"QLabel {{ background: {p.raised}; border: 1px solid {p.border}; "
                 f"border-left: 5px solid {colour}; border-radius: 6px; padding: 8px 10px; }}"
@@ -515,11 +543,15 @@ class BriefingPage(Page):
             counts[label] = counts.get(label, 0) + 1
         order = [name for _, name in evidence.STRENGTHS]
         blowouts = sum(b.chance for b in brief.losers)
+        right = outcomes.count(briefing.RIGHT)
+        decided = right + outcomes.count(briefing.WRONG)
         self.glance_card.set_title(
             f"{GLANCE_TITLE} - week {brief.week}: {brief.expected:.1f} of "
             f"{len(brief.choices)} expected right"
             + (f", plus {blowouts:.1f} Big Loser points" if brief.losers else "")
+            + (f" \u00b7 {right} of {decided} right so far" if decided else "")
         )
+        lined = sum(1 for c in brief.choices if c.lined and c.line)
         self.glance_note.setText(
             " \u00b7 ".join(
                 f"<span style='color:{self._strength_colour(name)}'><b>{counts[name]}</b> "
@@ -528,6 +560,11 @@ class BriefingPage(Page):
             )
             + f" \u00b7 Lock 75%+, Strong 65%+, Lean 55%+. Games are in the sheet's order. "
             f"The reasons are below."
+            + (f"<br>{_plural(lined, 'line game')} this week - on those the chance is of being "
+               f"credited under the pool's line, not of winning outright." if lined else
+               f"<br><span style='color:{self.palette.warning}'>No pool line games are in for week "
+               f"{brief.week}, so every game is shown straight up. If the commissioner has posted "
+               f"line games, enter them and the card re-prices.</span>")
         )
 
     def _update_losers(self, season: Season, brief: briefing.Brief) -> None:
@@ -548,15 +585,22 @@ class BriefingPage(Page):
             f"<span style='color:{p.ink_muted}'> \u00b7 a point each when the team loses by 15 or more"
             + (" \u00b7 chosen for the money card" if brief.for_money else "") + "</span>"
         )
+        found = season.weeks.get(brief.week)
+        games = list(found.games) if found else []
         for n, loser in enumerate(brief.losers):
             from ...predictions import team_code
             option = held.get(team_code(loser.team))
-            where = (f"{abs(loser.margin):g}-point underdogs" if loser.margin < -0.25
-                     else f"{loser.margin:g}-point favourites" if loser.margin > 0.25 else "a pick'em")
+            where = (f"{abs(loser.margin):.1f}-point underdogs" if loser.margin < -0.25
+                     else f"{loser.margin:.1f}-point favourites" if loser.margin > 0.25 else "a pick'em")
+            by = briefing.big_loss(games, loser.team)
+            result = "" if by is None else self._result_line(
+                briefing.RIGHT if by > analytics.BIG_LOSER_MARGIN else briefing.WRONG, "Hit", "Missed",
+                f"lost by {by}" if by > 0 else f"won by {-by}" if by < 0 else "tied")
             chip = QLabel(
                 f"<div style='color:{p.ink_muted}; font-size:11px'>BIG LOSER {n + 1} \u00b7 against "
                 f"{display_team(loser.opponent)}</div>"
                 f"<div style='font-size:19px; font-weight:800; color:{p.ink}'>{display_team(loser.team)}</div>"
+                + result +
                 f"<div style='color:{p.critical}; font-weight:700'>{loser.chance:.0%} to lose by 15+</div>"
                 f"<div style='color:{p.ink_muted}; font-size:12px'>{where}"
                 + (f" \u00b7 on about {option.held:.0%} of cards" if option is not None else "")
