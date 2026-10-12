@@ -226,17 +226,20 @@ def advise(
     *,
     games: list[tuple[str, str, float]] | None = None,
     this_week: dict[str, float] | None = None,
+    also_used: set[str] | frozenset[str] = frozenset(),
 ) -> Advice | None:
     """What this coach should consider for `week`.
 
     `games` (every priced game so far) and `this_week` (team code -> market
-    margin) are read from the stored predictions unless given.
+    margin) are read from the stored predictions unless given. `also_used`
+    is team codes spent somewhere the sheets don't know (the owner's own
+    log, acqlpicks.py): they are left out like any other used team.
     """
     player = season.players.get(coach_key)
     if player is None:
         return None
     used = used_teams(season, coach_key)
-    spent = {code for _, code in used}
+    spent = {code for _, code in used} | {predictions.team_code(t) or t for t in also_used}
     priced = games if games is not None else _lines_so_far(week)
     rating = ratings(priced)
     market = this_week if this_week is not None else _this_week_lines(week, season)
