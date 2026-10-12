@@ -17,6 +17,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from .models import Player, Season
+from .wording import plural as _plural
 
 GOOD = "good"
 BAD = "bad"
@@ -42,10 +43,6 @@ class Award:
 def _money(value: float) -> str:
     """Payouts are usually whole dollars; only show cents when there are some."""
     return f"${value:,.0f}" if float(value).is_integer() else f"${value:,.2f}"
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 def _negate(value: float | tuple[float, ...]) -> tuple[float, ...]:

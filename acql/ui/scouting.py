@@ -73,6 +73,8 @@ class ScoutingDialog(QDialog):
 
         plan = Card("The game plan")
         plan.add(_text(escape(r.plan)))
+        if r.made:
+            plan.add(_text("How the number was made: " + escape(r.made), muted=True))
         layout.addWidget(plan)
 
         teams = QHBoxLayout()

@@ -316,52 +316,6 @@ class Sparkbar(QWidget):
         painter.end()
 
 
-class MetricRow(QWidget):
-    """A label, a figure and an optional note, on one line.
-
-    Several of these in a card read as a small table without the weight of
-    an actual table - which is what most of these cards were reaching for.
-    """
-
-    def __init__(
-        self,
-        label: str,
-        value: str = "",
-        note: str = "",
-        tone: str = "",
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 2, 0, 2)
-        row.setSpacing(8)
-        self.label = ElidedLabel(label)
-        self.label.setObjectName("MetricLabel")
-        self.value = QLabel(value)
-        self.value.setObjectName("MetricValue")
-        self.value.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        self.note = QLabel(note)
-        self.note.setObjectName("MetricNote")
-        row.addWidget(self.label, 1)
-        row.addWidget(self.value)
-        row.addWidget(self.note)
-        self.note.setVisible(bool(note))
-        self.set_tone(tone)
-
-    def set_tone(self, tone: str) -> None:
-        self.value.setProperty("tone", tone if tone in TONES else "")
-        self.value.style().unpolish(self.value)
-        self.value.style().polish(self.value)
-
-    def update_values(self, value: str, note: str = "", tone: str = "") -> None:
-        self.value.setText(value)
-        self.note.setText(note)
-        self.note.setVisible(bool(note))
-        self.set_tone(tone)
-
-
 def tile_grid(tiles: list[QWidget], per_row: int = 4, spacing: int = 12) -> QGridLayout:
     """Lay tiles out in rows rather than squeezing them all onto one line.
 
@@ -711,6 +665,21 @@ class ColumnFitter(QObject):
         for c, w in fit_widths(want, values, room).items():
             if header.sectionSize(c) != w:
                 header.resizeSection(c, w)
+
+
+def current_sort(view, columns: int, default: tuple[int, bool] = (0, True)) -> tuple[int, bool]:
+    """A table's current (column, ascending), or the default if unknown.
+
+    Tables are rebuilt on every refresh, which resets the sort indicator, so
+    the reader's choice has to be read off the old one and carried across.
+    """
+    if view is None or not hasattr(view, "horizontalHeader"):
+        return default
+    header = view.horizontalHeader()
+    column = header.sortIndicatorSection()
+    if not 0 <= column < columns:
+        return default
+    return column, header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
 
 
 def make_table(

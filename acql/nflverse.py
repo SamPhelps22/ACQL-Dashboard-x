@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
-from . import backtest, contenders
+from . import analytics, backtest, contenders
 from .config import DATA_DIR
 
 FOLDER = DATA_DIR / "nflverse"
@@ -117,6 +117,15 @@ def games(first: int = FIRST - 1) -> list[Played]:
             division=row["div_game"] == "1", neutral=row["location"].strip().casefold() == "neutral",
         ))
     return sorted(out, key=lambda g: (g.season, g.week, g.game))
+
+
+def routs(first: int = analytics.ROUT_SEASONS[0], last: int = analytics.ROUT_SEASONS[1]) -> tuple[list[float], list[bool]]:
+    """Every team's closing spread (+ favoured) and whether it lost by 15 or more,
+    both teams of every game from `first` to `last` - what analytics.rout_fit is taught on."""
+    played = [g for g in games(first) if g.season <= last]
+    bar = analytics.BIG_LOSER_MARGIN + 1
+    return ([g.spread for g in played] + [-g.spread for g in played],
+            [g.margin <= -bar for g in played] + [g.margin >= bar for g in played])
 
 
 def team_games(seasons) -> dict[tuple[str, str], tuple[float, float, float, float]]:
@@ -301,3 +310,77 @@ def families(compute: bool = False) -> Families | None:
     except Exception:  # noqa: BLE001 - shown this once, worked out again next time
         pass
     return made
+
+
+# ---- how each team is playing right now ---------------------------------------------------------
+#: nflverse's abbreviations where they are not the dashboard's own code.
+CODES = {"LA": "lar"}
+
+
+@dataclass(frozen=True)
+class TeamForm:
+    """A team over its last few games (WINDOW), last season's included."""
+
+    team: str               # the dashboard's code
+    games: int
+    attack: float           # expected points added a play, with the ball
+    defence: float          # ...allowed a play (lower is better)
+    yards: float            # yards a play
+    yards_allowed: float
+    turnovers: float        # giveaways less takeaways, a game (lower is better)
+    attack_rank: int = 0    # 1 = the league's best
+    defence_rank: int = 0
+
+    @property
+    def net(self) -> float:
+        """Points added a play more than it allows."""
+        return self.attack - self.defence
+
+
+@dataclass(frozen=True)
+class Efficiency:
+    teams: dict[str, TeamForm]
+    season: int             # the last game counted
+    week: int
+    window: int = WINDOW
+
+
+_EFFICIENCY: dict = {}
+
+
+def efficiency() -> Efficiency | None:
+    """Every team's form as the files stand, or None without them. Read once per set of files."""
+    from .predictions import team_code
+    try:
+        files = sorted(FOLDER.glob(TEAM_FILE.format(season="*")))
+        stamp = tuple((f.name, f.stat().st_mtime_ns) for f in files[-2:] + [FOLDER / GAMES_FILE])
+    except OSError:
+        return None
+    if not files:
+        return None
+    if _EFFICIENCY.get("stamp") == stamp:
+        return _EFFICIENCY["found"]
+    seasons = sorted(int(f.name.split("_")[-1].split(".")[0]) for f in files)[-2:]
+    attack = team_games(seasons)
+    recent: dict[str, deque] = defaultdict(lambda: deque(maxlen=WINDOW))
+    last = (0, 0)
+    for g in games(first=seasons[0]):
+        mine, theirs = attack.get((g.game, g.home)), attack.get((g.game, g.away))
+        if mine is None or theirs is None:
+            continue
+        recent[g.home].append(mine + theirs)
+        recent[g.away].append(theirs + mine)
+        last = max(last, (g.season, g.week))
+    forms = {team: _form(played) for team, played in recent.items()}
+    ready = {team: form for team, form in forms.items() if form[5] >= ENOUGH}
+    by_attack = sorted(ready, key=lambda team: -ready[team][0])
+    by_defence = sorted(ready, key=lambda team: ready[team][1])
+    teams = {}
+    for team, form in ready.items():
+        code = CODES.get(team) or team_code(team)
+        if code:
+            teams[code] = TeamForm(code, form[5], form[0], form[1], form[2], form[3], form[4],
+                                   by_attack.index(team) + 1, by_defence.index(team) + 1)
+    found = Efficiency(teams, last[0], last[1]) if teams else None
+    _EFFICIENCY.update(stamp=stamp, found=found)
+    return found

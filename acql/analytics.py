@@ -457,7 +457,7 @@ def _shape(center: float, sd: float) -> np.ndarray:
     return weights / weights.sum()
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=1024)
 def margin_distribution(spread: float, sd: float = SPREAD_SD) -> tuple[tuple[int, float], ...]:
     """Chance of each final margin, for a team favoured by `spread`.
 
@@ -490,9 +490,26 @@ def line_need(line: float) -> int:
     return math.ceil(line - 1e-9)
 
 
+@lru_cache(maxsize=4096)
+def _at_least(spread: float, sd: float) -> tuple[float, ...]:
+    """Chance of winning by at least each margin in MARGIN_RANGE, in its order.
+
+    Every page asks cover_chance thousands of times about a few hundred
+    spreads; adding up the same 121 chances for each question was a third of
+    the time the week's card took to open. Each is added up here once, in the
+    order it always was, so every answer is the same number it was before.
+    """
+    chances = [p for _, p in margin_distribution(spread, sd)]
+    return tuple(sum(chances[i:]) for i in range(len(chances)))
+
+
 def cover_chance(spread: float, need: int, sd: float = SPREAD_SD) -> float:
     """Chance a team favoured by `spread` wins by at least `need` points."""
-    return sum(p for margin, p in margin_distribution(round(spread, 1), sd) if margin >= need)
+    at_least = _at_least(round(spread, 1), sd)
+    place = math.ceil(need) - MARGIN_RANGE[0]
+    if place >= len(at_least):
+        return 0
+    return at_least[max(place, 0)]
 
 
 def win_chance(spread: float) -> float:
@@ -535,6 +552,31 @@ def line_threshold(spread: float, most: int = 30, sd: float = SPREAD_SD) -> int:
 # pool's lines have no effect here - it is the raw result that counts.
 BIG_LOSER_MARGIN = 14
 
+# The margin curve above is drawn to say who wins and who covers, and it is
+# as good at that as anything tried. At "loses by 15 or more" it is not: set
+# against both teams of every regular-season game of 2011-2025 it called
+# 13.7% of them big losers where 15.0% were, and it was furthest out just
+# where Big Losers are picked - underdogs of 6.5 to 9.5 points, 26% said and
+# 32% routed (833 teams; it was 31% in 1999-2010 as well).
+#
+# So a Big Loser's chance is read off what has happened instead: how often a
+# team lost by 15 or more against the closing spread it carried, both teams
+# of all 6,967 regular-season games from 1999 to 2025 (nflverse.routs). It is
+# a straight line in the odds that may bend at the spreads below. Taught only
+# on the seasons before the one it was marked on, it beat the curve - log
+# loss 0.3768 against 0.3782, and a third off the gap between said and
+# happened. Nothing else earned a place beside the spread: the over/under,
+# home field, rest, the roof, the wind, the moneyline, each side's season so
+# far and a new quarterback were all tried, and none found more Big Losers
+# than the spread alone. rout_fit teaches it again when a season is added.
+ROUT_BENDS = (-7.0, -3.0, 0.0, 3.0, 7.0)
+ROUT_WEIGHTS = (-1.5871, -1.0274, -0.8341, 0.7874, -0.2620, -0.6055, 0.5223)
+#: The seasons ROUT_WEIGHTS was taught on.
+ROUT_SEASONS = (1999, 2025)
+#: A light hold on the weights while it is taught, so a thin stretch of
+#: spreads cannot bend it far.
+ROUT_HOLD = 1.0
+
 
 @dataclass(frozen=True)
 class BigLoser:
@@ -546,14 +588,74 @@ class BigLoser:
     chance: float        # chance they lose by MORE than BIG_LOSER_MARGIN
 
 
+def _rout_terms(margin: float) -> list[float]:
+    tens = margin / 10
+    return [1.0, tens] + [max(0.0, tens - bend / 10) for bend in ROUT_BENDS]
+
+
+def rout_chance(margin: float) -> float:
+    """How often a team with this expected margin has lost by more than 14.
+
+    `margin` is from the team's own side, so -10 means they are ten-point
+    underdogs: 36%, where a pick'em is 13% and a ten-point favourite 3%.
+    """
+    score = sum(w * t for w, t in zip(ROUT_WEIGHTS, _rout_terms(float(margin))))
+    return 1 / (1 + math.exp(-score))
+
+
+def rout_fit(margins, routed, hold: float = ROUT_HOLD) -> tuple[float, ...]:
+    """ROUT_WEIGHTS, taught again: each team's spread, and whether it lost by more than 14."""
+    terms = np.array([_rout_terms(float(m)) for m in margins])
+    lost = np.asarray(routed, dtype=float)
+    held = hold * np.eye(terms.shape[1])
+    held[0, 0] = 0.0
+    weights = np.zeros(terms.shape[1])
+    for _ in range(60):
+        said = 1 / (1 + np.exp(-terms @ weights))
+        weights -= np.linalg.solve((terms * (said * (1 - said))[:, None]).T @ terms + held,
+                                   terms.T @ (said - lost) + held @ weights)
+    return tuple(round(float(w), 4) for w in weights)
+
+
+def curve_rout_chance(margin: float, sd: float = SPREAD_SD) -> float:
+    """What the margin curve alone makes a team's chance of losing by more
+    than 14: the other side clearing 15, which is what cover_chance answers."""
+    return cover_chance(-margin, BIG_LOSER_MARGIN + 1, sd)
+
+
+def _moved(chance: float, was: float, now: float, share: float = 1.0) -> float:
+    """`chance`, its odds moved by `share` of the way `was` moved to become `now`."""
+    if not (0.0 < chance < 1.0 and 0.0 < was < 1.0 and 0.0 < now < 1.0):
+        return chance
+    odds = math.log(chance / (1 - chance)) + share * (math.log(now / (1 - now)) - math.log(was / (1 - was)))
+    return 1 / (1 + math.exp(-odds))
+
+
 def big_loser_chance(margin: float, sd: float = SPREAD_SD) -> float:
     """Chance a team with this expected margin loses by more than 14.
 
     `margin` is from the team's own side, so -10 means they are ten-point
-    underdogs. Losing by 15 or more means the other side clearing 15, which
-    is what cover_chance answers.
+    underdogs. The number is history's (rout_chance). A game priced wider
+    than usual - a high over/under, forecasters who disagree - has its odds
+    raised by as much as the margin curve raises them for that width, so the
+    two still agree about which games are wide open.
     """
-    return cover_chance(-margin, BIG_LOSER_MARGIN + 1, sd)
+    chance = rout_chance(margin)
+    if sd <= SPREAD_SD:                      # the curve only ever widens
+        return chance
+    return _moved(chance, curve_rout_chance(margin), curve_rout_chance(margin, sd))
+
+
+def big_loser_chance_in_play(live: float, margin: float, sd: float, left: float) -> float:
+    """A Big Loser chance read off a game under way, in step with big_loser_chance.
+
+    `live` is what the margins still possible say (gameday.outlook draws them
+    off the margin curve); `margin` and `sd` are the team's from before
+    kickoff and `left` the share of the game still to play. At kickoff
+    history's correction applies in full; as the game is played the score
+    takes over, and the correction fades with the time left.
+    """
+    return _moved(live, curve_rout_chance(margin, sd), big_loser_chance(margin, sd), min(1.0, max(0.0, left)))
 
 
 def big_losers(games: list[tuple[str, str, float]], sd: float = SPREAD_SD) -> list[BigLoser]:

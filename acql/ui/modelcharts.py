@@ -10,7 +10,9 @@ neutral grey to blue around a coin flip. Text is always in the ink colours.
 
 from __future__ import annotations
 
+import matplotlib
 import matplotlib.patches as mpatches
+import matplotlib.ticker
 from matplotlib.ticker import PercentFormatter
 
 from .. import showcase
@@ -282,3 +284,74 @@ class MatrixChart(Chart):
                         fontsize=LABEL_SIZE - 1, color=_ink_on(colour))
         ax.text(len(columns) + 0.5, y, "right", ha="center", va="center", fontsize=LABEL_SIZE, color=p.ink_muted)
         self.draw_idle()
+
+
+class FlightChart(Chart):
+    """Each game's betting line, reading by reading, as a grid of small charts on one scale of time."""
+
+    COLUMNS = 4
+    ROW = 150           # pixels a row of small charts takes
+
+    def _draw(self, flights: list) -> None:
+        flights = [f for f in flights if f.readings]
+        if not flights:
+            self.empty("No readings of this week's lines are kept")
+            return
+        import math
+        p = self.palette
+        line_colour, models_colour, _ = model_series(p)
+        rows = math.ceil(len(flights) / self.COLUMNS)
+        tall = rows * self.ROW + 30
+        self.setMinimumHeight(tall)
+        self.setMaximumHeight(tall)
+        self.figure.clear()
+        self._hover_targets = []
+        self._annotation = None
+        lock = flights[0].lock
+        first = min(f.readings[0][0] for f in flights)
+        last = max(max(f.readings[-1][0] for f in flights), lock if lock < first + 14 * 86400 else first)
+        left = min(-0.2, (first - lock) / 86400) - 0.15
+        right = max(0.25, (last - lock) / 86400 + 0.15)
+        for n, flight in enumerate(flights):
+            ax = self.figure.add_subplot(rows, self.COLUMNS, n + 1)
+            self.style_axes(ax)
+            days = [(at - lock) / 86400 for at, _line in flight.readings]
+            values = [line for _at, line in flight.readings]
+            # a line stands until the next reading: drawn as steps, carried to the last moment known
+            end = min(right - 0.1, max(days[-1], min(0.0, right - 0.1)))
+            ax.step(days + [max(end, days[-1])], values + [values[-1]], where="post", color=line_colour,
+                    linewidth=LINE_WIDTH, zorder=3)
+            ax.plot(days, values, linestyle="none", marker="o", markersize=4.5, color=line_colour,
+                    markeredgecolor=p.surface, markeredgewidth=1.0, zorder=4)
+            if flight.models is not None:
+                ax.axhline(flight.models, color=models_colour, linewidth=1.3, zorder=2)
+            if flight.typed is not None:
+                ax.plot([(flight.typed[0] - lock) / 86400], [flight.typed[1]], marker="D", markersize=6,
+                        color=p.ink, markeredgecolor=p.surface, markeredgewidth=1.0, zorder=5, linestyle="none")
+            ax.axvline(0, color=p.baseline, linewidth=0.9, zorder=1)
+            spread = values + ([flight.models] if flight.models is not None else [])
+            low, high = min(spread), max(spread)
+            pad = max(1.0, (high - low) * 0.35)
+            ax.set_ylim(low - pad, high + pad)
+            ax.set_xlim(left, right)
+            ax.set_title(f"{flight.pick}  {self._words(flight.latest)}", fontsize=LABEL_SIZE, color=p.ink_secondary,
+                         loc="left", pad=3)
+            ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(nbins=3, steps=[1, 2, 5, 10]))
+            ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
+                lambda value, _pos: "0" if abs(value) < 0.05 else f"{'\u2212' if value > 0 else '+'}{abs(value):g}"))
+            bottom = n >= len(flights) - self.COLUMNS
+            ax.set_xticks([t for t in range(math.ceil(left), 1)][-4:] if bottom else [])
+            if bottom:
+                ax.set_xticklabels(["deadline" if t == 0 else f"{-t}d before" for t in ax.get_xticks()],
+                                   fontsize=LABEL_SIZE - 1)
+            ax.tick_params(labelsize=LABEL_SIZE - 1)
+            ax.grid(axis="y", color=p.grid, linewidth=0.7, zorder=0)
+        self.draw_idle()
+
+    @staticmethod
+    def _words(line: float | None) -> str:
+        if line is None:
+            return ""
+        if abs(line) < 0.25:
+            return "pick'em"
+        return f"{'\u2212' if line > 0 else '+'}{abs(line):g}"

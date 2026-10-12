@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from . import analytics, luck, pricing, results
 from .models import Game, Season, same_team
 from .predictions import display_team, team_code
+from .version import MODEL_NAME
 
 FOR, AGAINST, INFO = "for", "against", "info"
 #: Confidence, from the chance the pick is credited.
@@ -52,6 +53,9 @@ DISTRUST_GAMES = 6
 #: ...and been right no more than this share of those times is shown but not
 #: counted: its tick or cross has been worth less than nothing.
 DISTRUST_RATE = 0.4
+#: Sides this far apart in points added a play (attack less defence) is a real gap:
+#: over the sixty-odd plays a side runs, about three points.
+EFFICIENCY_GAP = 0.05
 #: The commissioner usually puts a line on a favourite of about this size or
 #: bigger (the same figure the long replay uses, backtest.LINED_FROM).
 LINE_LIKELY = 6.5
@@ -70,6 +74,15 @@ class Signal:
 
 
 @dataclass(frozen=True)
+class Step:
+    """One step in how the pick's number was made, in order."""
+
+    name: str
+    words: str                      # what it says
+    points: float | None = None     # what it adds to the pick's margin (None: not a number of points)
+
+
+@dataclass(frozen=True)
 class Case:
     index: int
     matchup: str
@@ -79,6 +92,15 @@ class Case:
     line: str               # the pool's line as written, or ""
     turned: bool
     signals: tuple[Signal, ...]
+    steps: tuple[Step, ...] = ()    # how the number was made, from the betting line to the chance
+
+    def made(self) -> str:
+        """The steps on one line: "Betting line Seattle -2 (+2.0) > Moneyline (-0.6) > ..."."""
+        parts = []
+        for step in self.steps:
+            words = f"{step.name}: {step.words}" if step.words else step.name
+            parts.append(words + (f" ({step.points:+.1f})" if step.points is not None else ""))
+        return "  \u2192  ".join(parts)
 
     @property
     def strength(self) -> str:
@@ -229,6 +251,83 @@ def _injuries(pick: str, other: str, pick_code: str, other_code: str) -> Signal 
     )
     return Signal("Injuries", INFO, f"{short(pick, mine)} \u00b7 {short(other, theirs)}",
                   detail + " Already in the line; it is why the line is where it is.")
+
+
+def _nth(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _efficiency(pick: str, other: str, pick_code: str, other_code: str, year: int, week: int) -> Signal | None:
+    """How well each side has actually moved the ball and stopped it, lately."""
+    try:
+        from . import nflverse
+        found = nflverse.efficiency() if nflverse.available() else None
+    except Exception:  # noqa: BLE001 - the case stands without it
+        found = None
+    if found is None:
+        return None
+    mine, theirs = found.teams.get(pick_code), found.teams.get(other_code)
+    if mine is None or theirs is None:
+        return None
+    gap = mine.net - theirs.net
+    verdict = FOR if gap >= EFFICIENCY_GAP else AGAINST if gap <= -EFFICIENCY_GAP else INFO
+
+    def words(name: str, form) -> str:
+        return f"{name} attack {_nth(form.attack_rank)}, defence {_nth(form.defence_rank)}"
+
+    behind = (week - 1) - found.week if found.season == year else None
+    stale = ("" if behind is not None and behind <= 0 else
+             f" The file stops at week {found.week} of {found.season}, so the latest games are not in it.")
+    return Signal(
+        "Efficiency", verdict, f"{words(pick, mine)} \u00b7 {words(other, theirs)}",
+        f"Expected points added a play over each side's last {found.window} games: {pick} "
+        f"{mine.attack:+.2f} with the ball and {mine.defence:+.2f} allowed; {other} {theirs.attack:+.2f} and "
+        f"{theirs.defence:+.2f}. The line has weighed this already - it is the football under the number.{stale}")
+
+
+def _quarterback(pick: str, other: str, pick_code: str, other_code: str) -> Signal | None:
+    """Whether either side has a quarterback on the injury report."""
+    from . import injuries
+    if not injuries.fetched_at():
+        return None
+    mine = [i for i in injuries.team(pick_code) if i.quarterback]
+    theirs = [i for i in injuries.team(other_code) if i.quarterback]
+
+    def words(name: str, listed) -> str:
+        if not listed:
+            return f"{name}: none listed"
+        return f"{name}: " + ", ".join(f"{i.name} {injuries.STATUSES.get(i.status, i.status)}" for i in listed[:2])
+
+    mine_out, theirs_out = any(i.missing for i in mine), any(i.missing for i in theirs)
+    verdict = FOR if theirs_out and not mine_out else AGAINST if mine_out and not theirs_out else INFO
+    detail = ("No quarterback on either side's injury report." if not mine and not theirs else
+              "The report lists every quarterback on a roster, so a name here may be a backup rather than the "
+              "starter - check who is starting. The line already has it in.")
+    return Signal("Quarterback", verdict, f"{words(pick, mine)} \u00b7 {words(other, theirs)}", detail)
+
+
+def _steps(game: Game, choice, pick_home: bool, price, forecast) -> tuple[Step, ...]:
+    """How the pick's number was made: the betting line, what was added to it, the pool's rule, the chance."""
+    if price is None or price.margin is None or price.base is None:
+        return ()
+    side = 1.0 if pick_home else -1.0
+    out = [Step("Typed spread" if price.typed else "Betting line", _spread(price.base, game), side * price.base)]
+    anchor = price.base if price.typed or forecast is None else pricing._anchor(game, forecast, price.base)
+    if abs(anchor - price.base) >= 0.05:
+        out.append(Step("Moneyline", "the prices to win outright", side * (anchor - price.base)))
+    if price.edge is not None:
+        count = len(getattr(forecast, "opinions", ()) or ())
+        out.append(Step("Computer models", f"{count} of them" if count else "", side * (price.margin - anchor)))
+    ahead = side * price.margin
+    out.append(Step(MODEL_NAME, f"{choice.pick} by {ahead:.1f}" if ahead >= 0 else f"{choice.other} by {-ahead:.1f}"))
+    if game.line is not None and game.line_favourite:
+        out.append(Step("Pool's line", f"{display_team(game.line_favourite)} must win by "
+                                       f"{analytics.line_need(game.line)}"))
+    else:
+        out.append(Step("Straight up", "just has to win"))
+    out.append(Step("Chance", f"{choice.chance:.0%}"))
+    return tuple(out)
 
 
 def _weather(year: int, week: int, game: Game) -> Signal | None:
@@ -396,6 +495,7 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
                     if team_code(b.team)}
     chosen = {team_code(b.team) for b in brief.losers}
     lines_posted = any(g.line is not None for g in games)
+    priced = {p.game.index: p for p in prices}
     doubted = distrusted(season)
     # today's injury report says nothing about a week that has been played
     current = not all(g.played for g in games)
@@ -413,6 +513,8 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
             _line_coming(game, forecast, lines_posted),
             _move(game, choice.pick, pick_home, forecast),
             _models(game, choice.pick, pick_home, forecast),
+            _efficiency(choice.pick, choice.other, pick_code, other_code, year, brief.week) if current else None,
+            _quarterback(choice.pick, choice.other, pick_code, other_code) if current else None,
             _form(pick_code, other_code, choice.pick, choice.other, form),
             _rest(choice.pick, choice.other, pick_code, other_code,
                   _kickoff(year, brief.week, game), form),
@@ -432,6 +534,7 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
             index=choice.index, matchup=choice.matchup, pick=choice.pick, other=choice.other,
             chance=choice.chance, line=choice.line, turned=choice.turned,
             signals=tuple(s for s in signals if s is not None),
+            steps=_steps(game, choice, pick_home, priced.get(game.index), forecast),
         ))
     return out
 

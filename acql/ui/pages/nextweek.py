@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from ... import analytics, lines, oddslock, picks, predictions, pricing, schedule, weekplan
 from ...config import BIG_LOSER_PICKS, WEEKS_IN_SEASON
 from ...models import Game
+from ...wording import plural as _plural
 from ..widgets import Card, ColumnFitter, StatTile, fit_height, section
 from .base import Page
 
@@ -138,10 +139,6 @@ WHERE_TO_PUT_IT = (
     "\"nflpredictions_week_3.csv\" - and press Refresh; it is picked up from "
     "then on. Load predictions… takes one from anywhere."
 )
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 def _same(a: object, b: object) -> bool:
@@ -1207,35 +1204,6 @@ class NextWeekPage(Page):
         self.paste_note.setText(" ".join(parts))
         self.paste_note.show()
         self._show_week()
-
-    def _load_picks(self) -> None:
-        start = picks.search_folders(
-            getattr(self.season, "workbook_path", None) if self.season else None
-        )
-        path, _ = QFileDialog.getOpenFileName(
-            self, "The pool's pick sheet", str(start[0]) if start else "",
-            "Pick sheets (*.xls *.xlsx);;All files (*)",
-        )
-        if not path:
-            return
-        try:
-            sheet = picks.read_file(path)
-        except (picks.Unreadable, OSError, ValueError) as problem:
-            self.paste_note.setText(str(problem))
-            self.paste_note.show()
-            return
-        picks.save(sheet)
-        scored = self._apply_picks(sheet)
-        if sheet.week != self._week_number:
-            self._user_chose_week = True
-            self._set_week(sheet.week)
-        self._show_week()
-        self.paste_note.setText(
-            f"Week {sheet.week} pick sheet loaded: {picks.summary(sheet)}. "
-            f"Every \"Vs pool\" figure on this week is now counted rather than "
-            f"estimated." + scored
-        )
-        self.paste_note.show()
 
     def _apply_picks(self, sheet: "picks.WeekPicks") -> str:
         """Put the sheet into the season, and tell the rest of the app.

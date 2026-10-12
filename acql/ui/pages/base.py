@@ -144,6 +144,8 @@ class StatePanel(QWidget):
         body = QVBoxLayout(column)
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(10)
+        self._body = body
+        self._details: QPlainTextEdit | None = None
 
         self.icon = QLabel("")
         self.icon.setObjectName("StateIcon")
@@ -168,19 +170,12 @@ class StatePanel(QWidget):
         self.buttons = QHBoxLayout()
         self.buttons.setSpacing(8)
 
-        self.details = QPlainTextEdit()
-        self.details.setObjectName("StateDetails")
-        self.details.setReadOnly(True)
-        self.details.setMinimumHeight(180)
-        self.details.setVisible(False)
-
         body.addWidget(self.icon)
         body.addWidget(self.heading)
         body.addWidget(self.message)
         body.addSpacing(6)
         body.addWidget(self.progress, 0, Qt.AlignmentFlag.AlignHCenter)
         body.addLayout(self.buttons)
-        body.addWidget(self.details)
 
         row = QHBoxLayout()
         row.addStretch(1)
@@ -190,6 +185,23 @@ class StatePanel(QWidget):
         outer.addStretch(3)
 
         self.actions: list[QPushButton] = []
+
+    @property
+    def details(self) -> QPlainTextEdit:
+        """The box a failure's details go in, made the first time one is wanted.
+
+        Every page has one of these panels and almost none ever fails; a text
+        editor apiece that nobody would see was a third of a second of start-up.
+        """
+        if self._details is None:
+            box = QPlainTextEdit()
+            box.setObjectName("StateDetails")
+            box.setReadOnly(True)
+            box.setMinimumHeight(180)
+            box.setVisible(False)
+            self._body.addWidget(box)
+            self._details = box
+        return self._details
 
     def show_state(
         self,
@@ -230,8 +242,9 @@ class StatePanel(QWidget):
             self.actions.append(button)
         self.buttons.addStretch(1)
 
-        self.details.setPlainText(details)
-        self.details.setVisible(False)
+        if details or self._details is not None:
+            self.details.setPlainText(details)
+            self.details.setVisible(False)
 
 
 class Page(QWidget):

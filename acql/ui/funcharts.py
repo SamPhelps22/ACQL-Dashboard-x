@@ -7,12 +7,9 @@ from __future__ import annotations
 from matplotlib.ticker import MaxNLocator, PercentFormatter
 
 from .charts import LABEL_SIZE, LINE_WIDTH, Chart
+from ..wording import ordinal as _ordinal
 
 MUTED_ALPHA = 0.28
-
-
-def _ordinal(n: int) -> str:
-    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
 class RaceChart(Chart):

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from ... import injuries, power
+from ...wording import plural as _plural
 from ..charts import DivergingBarChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
@@ -17,10 +17,6 @@ HEADERS = ["#", "Team", "Market rating", "Own rating", "Record", "Points a game"
 RANK_TITLE = "Market power rankings"
 #: Places apart before the market and the results are said to disagree.
 GAP = 8
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 class TeamsPage(Page):

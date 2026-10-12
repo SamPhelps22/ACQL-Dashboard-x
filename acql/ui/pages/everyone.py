@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
 from ... import everyone, me
 from ...places import EVERYONE as title_
 from ...version import MODEL_NAME
+from ...wording import plural as _plural
 from ..widgets import Card, StatTile, TableModel, fit_height, make_table, section, tile_grid
 from .base import Page
 
@@ -16,10 +17,6 @@ SIDES_TITLE = "Big Losers and suicide picks"
 POOL_ROW = "Most cards"
 NO_PICK = "·"
 ROW_HEIGHT = 26
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 class EveryonePage(Page):

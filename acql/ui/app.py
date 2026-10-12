@@ -41,6 +41,7 @@ from .watch import FolderWatcher, describe
 from .pages.thisweek import BriefingPage
 from .pages.charts import ChartsPage
 from .pages.data import DataPage
+from .pages.readiness import ReadinessPage
 from .pages.everyone import EveryonePage
 from .pages.gameday import GameDayPage
 from .pages.overview import OverviewPage
@@ -48,6 +49,8 @@ from .pages.insights import InsightsPage
 from .pages.model import ModelPage
 from .pages.modellab import ModelLabPage
 from .pages.modelcharts import ModelChartsPage
+from .pages.recipe import RecipePage
+from .pages.computers import ComputersPage
 from .pages.hitsmisses import HitsMissesPage
 from .pages.radar import RadarPage
 from .pages.nextweek import NextWeekPage
@@ -87,9 +90,10 @@ NAV = (
     # click from anywhere rather than a tab inside Insights.
     GroupSpec(places.MODEL, "crosshair", f"How good {MODEL_NAME}'s picks are, where they miss, and whether anything would do better",
               ((places.REPORT_CARD, ReportCardPage), (places.DETAILS, ModelPage), (places.LAB, ModelLabPage),
-               (places.HITS, HitsMissesPage), (places.MODEL_CHARTS, ModelChartsPage))),
+               (places.HITS, HitsMissesPage), (places.MODEL_CHARTS, ModelChartsPage),
+               (places.RECIPE, RecipePage), (places.COMPUTERS, ComputersPage))),
     GroupSpec(places.DATA, "database", "Which files are loaded, where each result came from, and how to update the app",
-              (("Data", DataPage),)),
+              (("Data", DataPage), (places.READINESS, ReadinessPage))),
 )
 #: The sidebar before Game Day joined it (2.13), so a place remembered by its
 #: number then still opens the same place now.

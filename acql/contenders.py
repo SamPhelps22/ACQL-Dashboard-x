@@ -24,6 +24,7 @@ No Qt here, and nothing but numpy.
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
@@ -196,16 +197,50 @@ def teach(year: int) -> Taught:
     made.latest = {t: list(v) for t, v in recent.items()} if season == year else {}
     made.games = len(rows)
     if len(rows) >= 10 * MIN_LEAF:
-        X, y = np.array(rows), np.array(answers)
-        made.line = ridge(X, y)
-        made.start, made.trees = boost(X, y)
+        made.line, made.start, made.trees = _fitted(np.array(rows), np.array(answers))
     _KEPT.clear()
     _KEPT[key] = made
     return made
 
 
 # ---- season by season: taught on the past, asked about the next -----------------------------------
-KIND, SEASONS_KEY = "modellab", "seasons"
+KIND, SEASONS_KEY, TAUGHT_KEY = "modellab", "seasons", "taught"
+
+
+def _as_tree(kept):
+    """A tree as it was grown, from the lists the store keeps it as."""
+    if not isinstance(kept, list):
+        return float(kept)
+    j, edge, below, above = kept
+    return (int(j), float(edge), _as_tree(below), _as_tree(above))
+
+
+def _fitted(X: np.ndarray, y: np.ndarray) -> tuple[tuple, float, list]:
+    """(the Analyst's line, the Machine's start, its trees) for these games.
+
+    Growing the trees takes a couple of seconds, and they are grown from past
+    seasons only - which never change. So the fit is kept, marked with the
+    exact games and settings it came from, and read back until either differs.
+    """
+    from . import store
+    settings = (TREES, LEARNING_RATE, MIN_LEAF, CUTS, SAMPLE, SEED, RIDGE)
+    mark = hashlib.sha1(X.tobytes() + y.tobytes() + repr(settings).encode()).hexdigest()
+    try:
+        kept = store.get(KIND, TAUGHT_KEY, None)
+        if isinstance(kept, dict) and kept.get("mark") == mark:
+            mean, spread, weights, constant = kept["line"]
+            return ((np.array(mean), np.array(spread), np.array(weights), float(constant)),
+                    float(kept["start"]), [_as_tree(tree) for tree in kept["trees"]])
+    except Exception:  # noqa: BLE001 - nothing kept that can be read: fit it again
+        pass
+    line = ridge(X, y)
+    start, trees = boost(X, y)
+    try:
+        store.put(KIND, TAUGHT_KEY, {"mark": mark, "line": [line[0].tolist(), line[1].tolist(), line[2].tolist(), line[3]],
+                                     "start": start, "trees": trees})
+    except Exception:  # noqa: BLE001 - fitted again next session, that's all
+        pass
+    return line, start, trees
 #: Seasons to be taught on before the first season it is asked about.
 TAUGHT_FIRST = 3
 

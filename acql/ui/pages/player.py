@@ -19,8 +19,9 @@ from PySide6.QtWidgets import (
 
 from ... import analytics, patterns, picks
 from ...models import Player, Season
+from ...wording import plural as _plural
 from ..charts import BarChart, LineChart, RankChart
-from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ..widgets import Card, StatTile, TableModel, current_sort, make_table, section, tile_grid
 from .base import Page
 
 HEADERS = ["Week", "Wins", "Regular", "Big Loser", "Rank", "Suicide pick",
@@ -31,10 +32,6 @@ NO_COMPARISON = "No comparison"
 SPOTS_TITLE = "Blind spots and strong suits"
 #: Of each, at most this many are listed.
 SPOTS_SHOWN = 4
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 @dataclass(frozen=True)
@@ -610,12 +607,4 @@ class PlayerPage(Page):
 
     def _current_sort(self) -> tuple[int, bool]:
         """The table's current (column, ascending), or the default if unknown."""
-        default = (0, True)
-        view = self.table
-        if view is None or not hasattr(view, "horizontalHeader"):
-            return default
-        header = view.horizontalHeader()
-        column = header.sortIndicatorSection()
-        if not 0 <= column < len(HEADERS):
-            return default
-        return column, header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
+        return current_sort(self.table, len(HEADERS))

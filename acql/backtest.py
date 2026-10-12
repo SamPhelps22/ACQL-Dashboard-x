@@ -71,6 +71,9 @@ HOME_EDGE_STEP = 0.002
 ERROR_CAP = 35.0
 #: Proxy chances use a spread of results this much wider than real lines do.
 PROXY_SD_FACTOR = 1.15
+#: How sharply the pool piles onto the likeliest Big Losers, as fitted against
+#: the margin curve's chances - the ones `routed` still gives these margins.
+CROWD_SHARPNESS = 3.0
 
 # The pool's rules.
 LINED_FROM = 6.5
@@ -165,6 +168,17 @@ def pool_line(home_margin: float) -> float | None:
 
 def _sd() -> float:
     return analytics.SPREAD_SD * PROXY_SD_FACTOR
+
+
+def routed(margin: float) -> float:
+    """Chance a team with this proxy margin loses by 15 or more.
+
+    The margin curve, widened as every proxy chance is - not history's own
+    number (analytics.rout_chance), which is counted off betting lines and
+    reads a rating's rougher margin as if it were one. On these margins the
+    widened curve is the honest one: 14.9% said, 15.0% routed, 2011-2025.
+    """
+    return analytics.curve_rout_chance(margin, _sd())
 
 
 def favourite_credited(fav_margin: float, line: float) -> float:
@@ -335,15 +349,14 @@ def replay_money(rated: list[HistGame], *, sims: int = 6000, progress=None) -> l
     for g in rated:
         if g.season >= SCORED_FROM:
             by_week[(g.season, g.week)].append(g)
-    sd = _sd()
     out = []
     for n, key in enumerate(sorted(by_week)):
         games = by_week[key]
         chances = {}
         for g in games:
-            chances[g.home] = analytics.big_loser_chance(g.rated, sd)
-            chances[g.away] = analytics.big_loser_chance(-g.rated, sd)
-        held = moneyplan.loser_shares(chances)
+            chances[g.home] = routed(g.rated)
+            chances[g.away] = routed(-g.rated)
+        held = moneyplan.loser_shares(chances, sharpness=CROWD_SHARPNESS)
         planned, credited = [], []
         for g in games:
             p_home = credited_home(g.rated)
@@ -564,9 +577,9 @@ def replay_big_losers(rated: list[HistGame]) -> dict:
     for key, games in sorted(by_week.items()):
         options = []
         for g in games:
-            # big_loser_chance takes the team's own margin (negative = underdog).
-            options.append((analytics.big_loser_chance(-g.rated, _sd()), g.away, -g.margin))
-            options.append((analytics.big_loser_chance(g.rated, _sd()), g.home, g.margin))
+            # routed takes the team's own margin (negative = underdog).
+            options.append((routed(-g.rated), g.away, -g.margin))
+            options.append((routed(g.rated), g.home, g.margin))
         options.sort(reverse=True)
         for chance, _team, their_margin in options[:3]:
             said += chance

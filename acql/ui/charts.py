@@ -24,15 +24,16 @@ would then fight over the same annotation.
 from __future__ import annotations
 
 import statistics
+from dataclasses import fields, is_dataclass
 
 import matplotlib
 
 matplotlib.use("QtAgg")
 
-import matplotlib.patches as mpatches
 import matplotlib.transforms as mtransforms
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.cm import ScalarMappable
+from matplotlib.collections import PolyCollection
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator, PercentFormatter
@@ -83,8 +84,49 @@ def _ink_on(fill: str) -> str:
     return "#111111" if luminance > 0.36 else "#ffffff"
 
 
+#: The most a chart's inputs are read through when deciding whether they have
+#: changed. Past this the chart is simply drawn again.
+MARK_BUDGET = 20_000
+
+
+class _Unreadable(Exception):
+    """Something in a chart's inputs that can't be told apart by looking."""
+
+
+def _read(value, callables: bool, left: list[int]):
+    left[0] -= 1
+    if left[0] < 0:
+        raise _Unreadable
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return (value.__class__, value)
+    if isinstance(value, (list, tuple)):
+        return (value.__class__, tuple(_read(v, callables, left) for v in value))
+    if isinstance(value, dict):
+        return (dict, tuple((_read(k, callables, left), _read(v, callables, left)) for k, v in value.items()))
+    if is_dataclass(value) and not isinstance(value, type):
+        return (value.__class__, tuple(_read(getattr(value, f.name), callables, left) for f in fields(value)))
+    if callables and callable(value):
+        return "a function"
+    raise _Unreadable
+
+
+def _mark(value, callables: bool = False):
+    """What a chart was asked to draw, as something two askings can be compared
+    by - taken when asked, so a list changed in place afterwards still reads
+    as changed. None when the inputs hold anything that can't be read this way
+    (the chart is then always redrawn)."""
+    try:
+        return _read(value, callables, [MARK_BUDGET])
+    except (_Unreadable, RecursionError):
+        return None
+
+
 class Chart(FigureCanvasQTAgg):
     """Base canvas: themed surface, tight layout, and a shared hover tooltip."""
+
+    #: True for a chart that takes a function among its inputs and can take a
+    #: new one without redrawing (see `_same_again`).
+    _takes_functions = False
 
     def __init__(self, palette: Palette, height: float = 2.8, parent=None) -> None:
         self.palette = palette
@@ -99,6 +141,7 @@ class Chart(FigureCanvasQTAgg):
         self._annotation = None
         self._hover_targets: list[tuple] = []
         self._replay: tuple[str, tuple, dict] | None = None
+        self._drawn = None       # the mark of what is on the canvas now
         # What the tooltip is currently saying, and where. Moving a mouse
         # across a chart fires a motion event every few pixels, and redrawing
         # the figure for each one - a heatmap is several hundred patches -
@@ -111,7 +154,16 @@ class Chart(FigureCanvasQTAgg):
     # ---- public surface --------------------------------------------------
     def plot(self, *args, **kwargs) -> None:
         """Draw, remembering the call so the chart can be re-themed in place."""
+        mark = _mark((args, kwargs), self._takes_functions)
+        again = mark is not None and mark == self._drawn and self._replay is not None and self._replay[0] == "_draw"
         self._replay = ("_draw", args, kwargs)
+        if again:
+            # Asked to draw exactly what is already on it. Every page asks this
+            # of every chart each time the data is read again, and most of a
+            # season's charts are the same from one read to the next.
+            self._same_again(*args, **kwargs)
+            return
+        self._drawn = None
         self._shown = None
         # Room to breathe, but not without limit: set beside a 35-row table
         # a chart used to be handed the whole table's height and drew a
@@ -119,9 +171,15 @@ class Chart(FigureCanvasQTAgg):
         self.setMaximumHeight(int(self._full_height * CHART_GROWTH))
         self.setMinimumHeight(self._full_height)
         self._draw(*args, **kwargs)
+        if self._replay[0] == "_draw":          # a _draw with nothing to show calls empty()
+            self._drawn = mark
+
+    def _same_again(self, *args, **kwargs) -> None:
+        """Asked for what is already drawn: take anything new that isn't drawn."""
 
     def empty(self, message: str = "No data yet") -> None:
         self._replay = ("_draw_empty", (message,), {})
+        self._drawn = None
         self._shown = None
         # A chart with nothing in it does not need the room a chart needs. Held
         # at full height it leaves a hand-span of empty card with one line of
@@ -239,6 +297,9 @@ class Chart(FigureCanvasQTAgg):
                 annotation_clip=False,
             )
             self._annotation.set_visible(False)
+            # The tooltip floats over the chart: the layout is not worked out
+            # again around it (and the plot does not shift) each time it shows.
+            self._annotation.set_in_layout(False)
         return self._annotation
 
     def _hover_at(self, event) -> tuple[str, tuple[float, float]] | None:
@@ -749,9 +810,15 @@ class HeatmapChart(Chart):
     to dark cannot show.
     """
 
+    _takes_functions = True
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._heatmap: tuple | None = None
+
+    def _same_again(self, row_labels, col_labels, values=None, *, tooltip_fn=None, **_drawn) -> None:
+        # the same grid, described by whatever function the page has made this time
+        self._heatmap = (row_labels, col_labels, values, tooltip_fn)
 
     def _draw(
         self,
@@ -787,6 +854,10 @@ class HeatmapChart(Chart):
             bottom -= (top - bottom) * 0.15
         span = (top - bottom) or 1
 
+        # One collection for the whole grid: a season against the pool is
+        # several hundred cells, and a patch apiece was most of the time the
+        # grid took to draw.
+        squares, fills = [], []
         for r, row in enumerate(values):
             for c, value in enumerate(row):
                 if value is None:
@@ -803,19 +874,20 @@ class HeatmapChart(Chart):
                     # same pale blue. Anchored at the floor, seven is dark,
                     # fourteen is pale, and the grid says something.
                     color = ramp_color(p, (value - bottom) / span)
-                # A 2px surface gap keeps neighbouring cells legible.
-                ax.add_patch(
-                    mpatches.Rectangle(
-                        (c + 0.02, r + 0.02), 0.96, 0.96,
-                        facecolor=color, edgecolor=p.surface, linewidth=1.2,
-                    )
-                )
+                left, right, upper, lower = c + 0.02, c + 0.98, r + 0.02, r + 0.98
+                squares.append(((left, upper), (right, upper), (right, lower), (left, lower)))
+                fills.append(color)
                 if cell_text and value is not None:
+                    # inside its cell, so the layout has no need to measure it
                     ax.text(
                         c + 0.5, r + 0.5, cell_format.format(value),
                         ha="center", va="center", fontsize=8.5,
                         color=_ink_on(color),
-                    )
+                    ).set_in_layout(False)
+        # A 2px surface gap keeps neighbouring cells legible.
+        ax.add_collection(PolyCollection(
+            squares, facecolors=fills, edgecolors=p.surface, linewidths=1.2, joinstyle="miter",
+        ))
 
         # The axis always holds room for at least this many columns, so two
         # weeks against twenty-four coaches gives cells a sane width instead of

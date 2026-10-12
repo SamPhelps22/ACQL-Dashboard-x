@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ... import analytics
 from ...config import WEEKS_IN_SEASON
+from ...wording import plural as _plural
 from ..charts import BarChart
-from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ..widgets import Card, StatTile, TableModel, current_sort, make_table, section, tile_grid
 from .base import Page
 
 HEADERS = ["#", "Player", "Wins", "Pace / wk", "Projected", "Best case",
@@ -27,10 +27,6 @@ METHOD_NOTE = (
     "half a season of their own, so one hot week doesn't make a favourite. "
     "Best case assumes a perfect {per_week}-win week, every week."
 )
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 class ProjectionsPage(Page):
@@ -278,12 +274,4 @@ class ProjectionsPage(Page):
         return self.pct(odds)
 
     def _current_sort(self) -> tuple[int, bool]:
-        default = (0, True)
-        view = self.table
-        if view is None or not hasattr(view, "horizontalHeader"):
-            return default
-        header = view.horizontalHeader()
-        column = header.sortIndicatorSection()
-        if not 0 <= column < len(HEADERS):
-            return default
-        return column, header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
+        return current_sort(self.table, len(HEADERS))

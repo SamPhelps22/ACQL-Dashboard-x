@@ -9,6 +9,7 @@ from ... import analytics, awards as awards_module
 from ...awards import Award
 from ...config import WEEKS_IN_SEASON
 from ...models import Player, Season
+from ...wording import plural as _plural
 from ..charts import BarChart, HistogramChart
 from ..widgets import Banner, Card, ElidedLabel, StatTile, section, tile_grid
 from .base import Page
@@ -16,10 +17,6 @@ from .base import Page
 LEADERBOARD_SIZE = 12
 AWARD_COLUMNS = 4
 LEADERBOARD_TITLE = "Leaderboard - season wins"
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 class AwardTile(QFrame):

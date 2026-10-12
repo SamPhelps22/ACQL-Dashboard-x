@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 
 from .models import Season
 from .version import MODEL_NAME
+from .wording import ordinal as _ordinal, plural as _plural
 
 #: Letters and what each is worth, best first.
 SCALE = (("A+", 4.3), ("A", 4.0), ("A-", 3.7), ("B+", 3.3), ("B", 3.0), ("B-", 2.7),
@@ -191,15 +192,6 @@ BY_LOSERS = ((0.4, "A"), (0.2, "A-"), (0.08, "B+"), (-0.08, "B"), (-0.2, "B-"), 
              (-0.6, "D"), (-99.0, "F"))
 #: Line movement: points the line moved toward its picks, on average.
 BY_MOVE = ((0.5, "A"), (0.25, "A-"), (0.1, "B+"), (-0.1, "B"), (-0.25, "C+"), (-0.5, "C"), (-99.0, "D"))
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
-
-
-def _ordinal(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
 
 
 def mark(report, hits=None, value=None, stand: Standing | None = None, pool_losers: float | None = None) -> Card:

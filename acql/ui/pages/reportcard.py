@@ -15,6 +15,7 @@ from ... import grades, me, reportcard
 from ..charts import LineChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
+from ...wording import ordinal as _ordinal, plural as _plural
 from .base import Page
 
 VERDICT_TITLE = "Should I follow it?"
@@ -30,15 +31,6 @@ LOSER_HEADERS = ["Week", f"{MODEL_NAME}'s three", "Its points", "Your points"]
 LONG_TITLE = "Over the long run - 2011 to 2025 under this pool's rules"
 #: Shared with The Model > Details so both pages remember the same coach.
 ME_KEY = "insights/me"
-
-
-def _ordinal(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 class ReportCardPage(Page):

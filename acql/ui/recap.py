@@ -17,6 +17,7 @@ from pathlib import Path
 
 from ..models import Season, same_team
 from ..predictions import display_team
+from ..wording import ordinal as _ordinal
 from .theme import Palette, mix
 
 #: How many places of the standings the picture shows.
@@ -130,11 +131,6 @@ def _list(names: list[str], most: int = 2) -> str:
     if len(names) <= most:
         return ", ".join(names)
     return ", ".join(names[:most]) + f" +{len(names) - most} more"
-
-
-def _ordinal(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
 
 
 DEAD_MARKERS = {"dead", "out", "x", "eliminated"}

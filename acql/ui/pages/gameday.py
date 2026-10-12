@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -29,6 +28,7 @@ from PySide6.QtWidgets import (
 from ... import gameday as GD
 from ...predictions import display_team
 from ...version import MODEL_NAME
+from ...wording import ordinal as _ordinal, plural as _plural
 from ..theme import mix
 from ..widgets import Card, ElidedLabel, IconButton, Pill, StatTile, TableModel, make_table, section, tile_grid
 from .base import LIVE_CHECK, LIVE_CHECK_NOW, Page
@@ -41,15 +41,6 @@ CARD_MIN_WIDTH = 430
 ROOTS_SHOWN = 5
 LOSERS_SHOWN = 8
 BOARD_HEADERS = ["#", "Coach", "Now", "Games", "Big L.", "Banked", "Can reach", "To win", "If it ended now"]
-
-
-def _plural(count: int, word: str, many: str = "") -> str:
-    return f"{count} {word if count == 1 else (many or word + 's')}"
-
-
-def _ordinal(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
 
 
 def _money(value: float | None) -> str:

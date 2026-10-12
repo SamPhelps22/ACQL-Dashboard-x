@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QLabel, QPushBu
 from ... import closing, contenders, modellab, nflverse, results
 from ...places import LAB as title_
 from ...version import MODEL_NAME
+from ...wording import plural as _plural
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
@@ -29,10 +30,6 @@ VALUE_HEADERS = ["Week", "Game", "Took", "Line at the deadline", "Line at kickof
 LAB_TITLE = "Every recipe, on the same games"
 VALUE_TITLE = "Closing line value - did the line come round to the picks?"
 WEEKS_TITLE = "Week by week - each recipe's record, on the games it priced"
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 def _line(margin: float, team: str) -> str:
@@ -459,16 +456,6 @@ class ModelLabPage(Page):
             f"The betting line was best or level-best in {wins[nflverse.MARKET]} of {len(seasons)} seasons, the "
             f"hybrid in {wins[nflverse.HYBRID]} and football alone in {wins[nflverse.FOOTBALL]}. The hybrid's "
             f"record against the spread swings both ways. That is what no edge looks like."))
-
-    def _work_out_kinds(self) -> None:
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            nflverse.families(compute=True)
-        except Exception:  # noqa: BLE001
-            pass
-        finally:
-            QApplication.restoreOverrideCursor()
-        self._update_kinds()
 
     # ---- season by season ----------------------------------------------------------------------
     def _update_seasons(self) -> None:

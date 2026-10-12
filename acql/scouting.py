@@ -82,6 +82,7 @@ class Report:
     risks: tuple[str, ...] = ()
     weather: str = ""
     plan: str = ""
+    made: str = ""                  # how the number was made, step by step (evidence.Case.made)
 
     @property
     def score_text(self) -> str:
@@ -292,5 +293,6 @@ def report(season: Season, index: int, week: int | None = None, me: str | None =
         upset=shape.upset, close=shape.close, rout=shape.rout, hard=shape.hard,
         factors=tuple(weighing[:3]), also=tuple(weighing[3:]),
         risks=tuple(_risks(shape, case, home, away, game)), weather=sky,
+        made=case.made() if case is not None and hasattr(case, "made") else "",
     )
     return replace(made, plan=_plan(made))

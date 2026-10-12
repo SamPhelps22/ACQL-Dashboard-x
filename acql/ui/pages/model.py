@@ -20,6 +20,7 @@ from ... import analytics, cards, pricing
 from ..charts import BarChart, LineChart
 from ..widgets import Card, TableModel, make_table, section
 from ...version import MODEL_NAME
+from ...wording import ordinal as _ordinal, plural as _plural
 from .base import Page
 
 MODEL_TITLE = f"How {MODEL_NAME}'s picks are doing"
@@ -33,15 +34,6 @@ CALLS_HEADERS = ["Week", "Game", "You took", f"{MODEL_NAME}'s card (its chance)"
 BACKTEST_TITLE ="Over the long run - 2010 to 2025 under this pool's rules"
 #: A band needs this many picks before its colour says anything about it.
 CALIBRATION_MIN_PICKS = 20
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
-
-
-def _ordinal(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
 
 
 class ModelPage(Page):

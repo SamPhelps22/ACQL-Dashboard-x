@@ -31,7 +31,7 @@ import re
 import statistics
 import time
 from dataclasses import asdict, dataclass
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from pathlib import Path
 
 from .config import ROOT
@@ -262,9 +262,11 @@ class Forecast:
     def models(self) -> int:
         return len(self.opinions)
 
-    @property
+    @cached_property
     def consensus(self) -> float | None:
-        """What the models make the game, outliers left out.
+        """What the models make the game, outliers left out. Worked out once:
+        a forecast never changes, and pricing a slate asks this of every game
+        several times over.
 
         With every model in hand the wildest fifth at each end is dropped and
         the rest averaged. With only the summary table, the median is taken
@@ -277,9 +279,10 @@ class Forecast:
             return statistics.fmean(middle)
         return self.median if self.median is not None else self.file_average
 
-    @property
+    @cached_property
     def disagreement(self) -> float | None:
-        """How far apart the models that count are.
+        """How far apart the models that count are. Worked out once, like
+        `consensus`.
 
         The file's own linestd is measured over every model including the
         wild ones, so it says more about them than about the game. It is
@@ -768,12 +771,33 @@ def market_time(week: int) -> float:
     return when
 
 
+#: week -> (the store's stamp, its forecasts, their source), as `load` last
+#: made them. The same Forecasts are handed back until the store changes, so
+#: what each has worked out about itself is not worked out again per page.
+_LOADED: dict[int, tuple[tuple, list["Forecast"], str]] = {}
+
+
 def load(week: int) -> tuple[list[Forecast], str]:
     """(forecasts, where they came from) for a week, or ([], "").
 
     Lines fetched with "Update lines" are laid over the file's own market
     numbers when they are newer, and stand in for the file when there is none.
     """
+    from . import store
+    try:
+        stamp = store.stamp()
+    except store.StoreError:
+        stamp = None
+    kept = _LOADED.get(week)
+    if kept is None or stamp is None or kept[0] != stamp:
+        games, source = _load(week)
+        if stamp is None:
+            return games, source
+        kept = _LOADED[week] = (stamp, games, source)
+    return list(kept[1]), kept[2]
+
+
+def _load(week: int) -> tuple[list[Forecast], str]:
     entry = _read_store().get(str(week))
     if not isinstance(entry, dict):
         fetched = _with_odds(week, [], 0)
@@ -790,10 +814,6 @@ def load(week: int) -> tuple[list[Forecast], str]:
         except TypeError:
             continue
     return _with_odds(week, games, entry.get("imported", 0)), str(entry.get("source", ""))
-
-
-def stored_source(week: int) -> str:
-    return load(week)[1]
 
 
 def stored_weeks() -> dict[int, list[Forecast]]:

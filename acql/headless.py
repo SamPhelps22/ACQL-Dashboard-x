@@ -226,6 +226,15 @@ def _known(season) -> None:
         _log(f"what is known before kickoff not kept: {exc}")
 
 
+def _computers() -> None:
+    """Each computer model's number, kept by name while the week's file is still on disk."""
+    try:
+        from . import computers
+        computers.keep()
+    except Exception as exc:  # noqa: BLE001 - the picks do not wait on it
+        _log(f"computer models' names not kept: {exc}")
+
+
 def _seasons() -> None:
     """The Model Lab's season-by-season record - several seconds' work, done here
     so the page never waits for it. It only changes when a season ends."""
@@ -431,6 +440,7 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     _autopsy(season)
     _seasons()
     _known(season)
+    _computers()
     if _timelines(season):
         season = load_season(settings, AliasTable.load(), online=False)
     if dry_run:
@@ -440,9 +450,20 @@ def run(*, force: bool, dry_run: bool = False) -> int:
         _publish(season)
     except Exception as exc:  # noqa: BLE001 - reported, never swallowed
         _log(f"website update failed: {exc}\n{traceback.format_exc()}")
+        _ran(False, f"the website update failed: {exc}")
         return 1
     _log(f"done in {time.monotonic() - started:.0f}s")
+    _ran(True, f"took {time.monotonic() - started:.0f}s")
     return 0
+
+
+def _ran(ok: bool, note: str = "") -> None:
+    """When the last run finished and how - for the readiness page (readiness.py)."""
+    try:
+        from . import store
+        store.put("headless", "last_run", {"at": time.time(), "ok": bool(ok), "note": note[:200]})
+    except Exception:  # noqa: BLE001 - bookkeeping only
+        pass
 
 
 def main(argv: list[str] | None = None) -> int:

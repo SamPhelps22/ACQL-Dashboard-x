@@ -56,10 +56,8 @@ from .sources.workbook import (
     ROW_HOME,
     ROW_LAST_PLAYER,
     ROW_RESULT,
-    SEASON_FIRST_ROW,
     SEASON_GAMES_ROW,
     SEASON_FIRST_WEEK_COL,
-    SEASON_LAST_ROW,
 )
 
 MAX_BACKUPS = 25
@@ -259,17 +257,6 @@ class WorkbookEditor:
 
     def _find_week_row(self, sheet: str, player: str) -> int:
         rows = self._rows_for(sheet, ROW_FIRST_PLAYER, ROW_LAST_PLAYER, COL_PLAYER)
-        key = self.aliases.key(player)
-        if key not in rows:
-            raise WriteBackError(
-                f"'{player}' is not on the {sheet} sheet. "
-                "Add the player in Excel first, or map the name in aliases.json."
-            )
-        return rows[key]
-
-    def _find_grid_row(self, sheet: str, player: str) -> int:
-        """Locate a player on the Season or Winnings sheet (validation only)."""
-        rows = self._rows_for(sheet, SEASON_FIRST_ROW, SEASON_LAST_ROW, 1)
         key = self.aliases.key(player)
         if key not in rows:
             raise WriteBackError(

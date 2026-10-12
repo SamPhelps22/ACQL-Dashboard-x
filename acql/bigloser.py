@@ -3,8 +3,9 @@
 A Big Loser is a point when the team loses by 15 or more. Two things decide
 what a pick is worth:
 
-    the blowout     how likely the team is to lose that badly, from the line
-                    and the game's spread of results (pricing.py)
+    the blowout     how likely the team is to lose that badly: how often
+                    teams with its line have, in every season since 1999
+                    (analytics.rout_chance)
     the pool        how many cards already hold the team - a point everyone
                     banks moves nobody
 

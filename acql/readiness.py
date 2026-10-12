@@ -1,0 +1,548 @@
+"""System readiness: is everything the dashboard runs on up to date?
+
+A pick is only as good as what it was made from. Lines go stale, an injury
+report from yesterday is yesterday's, a scheduled job can quietly stop - and
+none of that shows on a page of confident percentages. This gathers the
+state of every input into one checklist, each line saying when it was last
+updated and whether that is recent enough for where the week stands:
+
+    Data sources      scores, betting lines (and the requests left to fetch
+                      them), the computer models, injuries, weather, the team
+                      efficiency file, the pool's own files
+    This week's card  whether every game has what pricing it needs, whether
+                      Deadeye's card was kept before the first kickoff, whether
+                      your own card is saved
+    Automation        the scheduled jobs, the website, the card email
+
+"Recent enough" depends on the clock: a line twelve hours old is fine on a
+Monday and stale two hours before the deadline, so each check is judged
+against how close the cards are to being due (the same cadence the scheduled
+job fetches on, headless.py). A check that cannot be made says so rather
+than passing.
+
+Nothing here fetches anything or changes anything. No Qt here.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+
+from .models import Season
+from .version import MODEL_NAME
+
+OK, NOTE, WARN, BAD = "ok", "note", "warn", "bad"
+#: Worst first, for sorting and for the overall word.
+ORDER = (BAD, WARN, NOTE, OK)
+SOURCES, CARD, AUTOMATION = "Data sources", "This week's card", "Automation"
+#: The scheduled jobs schedule.ps1 registers, and how long each may go without running.
+TASKS = (("ACQL Daily", "the nightly run", 27 * 3600),
+         ("ACQL Game-day poll", "the game-day check", 8 * 86400),
+         ("ACQL Deadeye email", "the card email job", 8 * 86400))
+#: Task Scheduler's "all is well" results: done, still running, not yet run.
+TASK_FINE = {0, 267009, 267011}
+#: A line may be this much older than the cadence it is fetched on before it is called stale.
+SLACK = 1.5
+DAY = 86400.0
+
+
+def ago(seconds: float | None) -> str:
+    """"just now", "12 min ago", "5 h ago", "3 days ago"."""
+    if seconds is None:
+        return "never"
+    seconds = max(0.0, float(seconds))
+    if seconds < 90:
+        return "just now"
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.0f} min ago"
+    if seconds < 36 * 3600:
+        return f"{seconds / 3600:.0f} h ago"
+    return f"{seconds / DAY:.0f} days ago"
+
+
+def until(seconds: float) -> str:
+    """"in 40 min", "in 5 h", "in 3 days" - or how long ago, once it has passed."""
+    if seconds < 0:
+        return ago(-seconds)
+    if seconds < 90 * 60:
+        return f"in {max(1.0, seconds / 60):.0f} min"
+    if seconds < 36 * 3600:
+        return f"in {seconds / 3600:.0f} h"
+    return f"in {seconds / DAY:.0f} days"
+
+
+@dataclass(frozen=True)
+class Check:
+    group: str
+    name: str
+    state: str              # OK, NOTE, WARN or BAD
+    headline: str
+    detail: str = ""
+    at: float | None = None     # when what it describes was last updated
+
+
+@dataclass(frozen=True)
+class Readiness:
+    checks: list[Check] = field(default_factory=list)
+    week: int = 0               # the week the next card is for
+    lock: float | None = None   # when that card is due
+    now: float = 0.0
+
+    def of(self, state: str) -> list[Check]:
+        return [c for c in self.checks if c.state == state]
+
+    @property
+    def worst(self) -> str:
+        return next((s for s in ORDER if self.of(s)), OK)
+
+    @property
+    def ready(self) -> bool:
+        return not self.of(BAD) and not self.of(WARN)
+
+    @property
+    def verdict(self) -> str:
+        bad, warn = len(self.of(BAD)), len(self.of(WARN))
+        if bad:
+            return f"{bad} thing{'' if bad == 1 else 's'} broken" + (f", {warn} to look at" if warn else "")
+        if warn:
+            return f"{warn} thing{'' if warn == 1 else 's'} to look at"
+        return "Ready"
+
+    def grouped(self) -> list[tuple[str, list[Check]]]:
+        out = []
+        for group in (SOURCES, CARD, AUTOMATION):
+            rows = sorted((c for c in self.checks if c.group == group), key=lambda c: ORDER.index(c.state))
+            if rows:
+                out.append((group, rows))
+        return out
+
+
+def line_cadence(to_lock: float) -> float:
+    """How often the lines are fetched, given how long until the cards are due (headless.py's rule)."""
+    from . import headless
+    if to_lock <= headless.LAST_HOURS:
+        return float(headless.LINES_EVERY_LAST_HOURS)
+    return float(headless.LINES_EVERY_LOCK_DAY if to_lock < DAY else headless.LINES_EVERY)
+
+
+def freshness(age: float | None, limit: float, *, matters: bool = True) -> str:
+    """OK inside the limit, WARN past it (NOTE when it doesn't matter yet), BAD if never."""
+    if age is None:
+        return BAD if matters else NOTE
+    if age <= limit:
+        return OK
+    return WARN if matters else NOTE
+
+
+# ---- the checks -----------------------------------------------------------------------------------
+def _scores(year: int, week: int, now: float) -> Check:
+    from . import results
+    scores = results.load(year, week)
+    at = results.checked_at(year, week)
+    age = None if at is None else now - at
+    live = sum(1 for s in scores if s.state == "in")
+    final = sum(1 for s in scores if s.final)
+    over = bool(scores) and results.over(year, week)
+    down = results.unreachable_since(now)
+    words = f"week {week}: {final} of {len(scores)} final" + (f", {live} being played" if live else "")
+    if down is not None and (at is None or down > at):
+        return Check(SOURCES, "Scores", WARN, f"ESPN couldn't be reached {ago(now - down)}",
+                     f"Last read {ago(age)} - {words}. It is tried again by itself.", at)
+    if over:
+        return Check(SOURCES, "Scores", OK, f"Week {week} is finished - every game final", f"Read {ago(age)}.", at)
+    limit = 20 * 60 if live else 13 * 3600
+    state = freshness(age, limit, matters=bool(live) or not scores)
+    return Check(SOURCES, "Scores", state, f"Read {ago(age)} - {words}",
+                 "While games are on the scoreboard is read every few minutes, with the dashboard open or by "
+                 "the game-day job." if live else "Read again by the nightly run and whenever the dashboard opens.", at)
+
+
+def _slate(season: Season, week: int):
+    """(the week's unplayed games, each one's price) - priced from what is stored."""
+    from . import pricing
+    found = season.weeks.get(week)
+    games = sorted(found.games, key=lambda g: g.index) if found is not None else []
+    ctx = pricing.context(season, week, games) if games else None
+    prices = {p.game.index: p for p in pricing.price_week(season, week, games, ctx)} if games else {}
+    return [g for g in games if not g.played], prices, ctx
+
+
+def _lines(season: Season, week: int, to_lock: float, now: float) -> list[Check]:
+    from . import headless, odds, predictions
+    games, prices, _ctx = _slate(season, week)
+    at = predictions.market_time(week) or None
+    age = None if at is None else now - at
+    priced = [g for g in games if prices.get(g.index) is not None and prices[g.index].base is not None]
+    missing = [g.label for g in games if g not in priced]
+    out = []
+    if not games:
+        out.append(Check(SOURCES, "Betting lines", NOTE, f"Week {week} has no games set up yet",
+                         "The slate comes from the pool's pick sheet or the NFL's schedule."))
+    elif to_lock <= 0:
+        out.append(Check(SOURCES, "Betting lines", OK if priced else BAD,
+                         f"Locked at the deadline - {len(priced)} of {len(games)} games had a line",
+                         f"Last taken {ago(age)}; nothing is fetched for a week once its cards are in.", at))
+    else:
+        limit = line_cadence(to_lock) * SLACK
+        soon = to_lock < 3 * DAY
+        state = BAD if not priced and soon else freshness(age, limit, matters=soon) if priced else NOTE
+        words = (f"{len(priced)} of {len(games)} games priced, lines {ago(age)}" if priced
+                 else "No lines for the week yet")
+        detail = (f"Cards are due {until(to_lock)}; this close, lines are fetched every "
+                  f"{line_cadence(to_lock) / 3600:g} h. ")
+        if missing:
+            detail += ("No line yet for " + ", ".join(missing[:5]) + (f" and {len(missing) - 5} more" if len(missing) > 5 else "")
+                       + " - books post some games late. ")
+            if soon and state == OK:
+                state = WARN if to_lock < 2 * DAY else NOTE
+        out.append(Check(SOURCES, "Betting lines", state, words, detail.strip(), at))
+    left = odds.remaining()
+    if not odds.api_key():
+        out.append(Check(SOURCES, "Odds requests", BAD, "No Odds API key is set",
+                         "Without one the lines can only be typed in by hand (This Week > Your card, the "
+                         "button beside Update lines)."))
+    elif left is None:
+        out.append(Check(SOURCES, "Odds requests", NOTE, "Requests left this month: not known until the next fetch"))
+    else:
+        low = left <= headless.ODDS_RESERVE
+        out.append(Check(SOURCES, "Odds requests", WARN if low else OK, f"{left} requests left this month",
+                         f"A fetch costs 3. The scheduled job stops at {headless.ODDS_RESERVE} left, keeping "
+                         "those for fetching by hand." + (" It has stopped." if low else "")))
+    return out
+
+
+def _models(season: Season, week: int, to_lock: float, now: float) -> Check:
+    games, _prices, ctx = _slate(season, week)
+    forecasts = ctx.forecasts if ctx is not None else {}
+    with_models = [g for g in games if len(getattr(forecasts.get(g.index), "opinions", ()) or ()) >= 3]
+    if not games:
+        return Check(SOURCES, "Computer models", NOTE, f"Nothing to price for week {week} yet")
+    if with_models:
+        state = OK if len(with_models) == len(games) or to_lock <= 0 else NOTE
+        return Check(SOURCES, "Computer models", state,
+                     f"The published models are in for {len(with_models)} of {len(games)} games",
+                     f"From the Prediction Tracker's file; {MODEL_NAME} nudges the line by them.")
+    soon = 0 < to_lock < 2 * DAY
+    return Check(SOURCES, "Computer models", WARN if soon else NOTE,
+                 f"No computer models for week {week} yet - {MODEL_NAME} is running on the line alone",
+                 "The Prediction Tracker posts each week's file midweek; the scheduled job reads it hourly "
+                 "once it is up." + (" It is usually in by now." if soon else ""))
+
+
+def _injuries(to_lock: float, now: float) -> Check:
+    from . import injuries
+    at = injuries.fetched_at() or None
+    age = None if at is None else now - at
+    limit = (injuries.EVERY_LOCK_DAY if 0 <= to_lock < DAY else injuries.EVERY) * 2.5
+    return Check(SOURCES, "Injury report", freshness(age, limit, matters=to_lock > 0),
+                 f"Read {ago(age)}" if at else "Never read",
+                 "ESPN's report, read every few hours and hourly on the day the cards are due. It is where "
+                 "the quarterback and injury lines under each pick come from.", at)
+
+
+def _weather(year: int, week: int, to_lock: float, now: float) -> Check:
+    from . import store
+    kept = store.get("weather", f"{year}-{week}", {}) or {}
+    at = float(kept.get("at") or 0) or None
+    age = None if at is None else now - at
+    outdoors = sum(1 for g in (kept.get("games") or {}).values() if not g.get("indoor"))
+    near = 0 < to_lock < 5 * DAY
+    return Check(SOURCES, "Weather", freshness(age, 13 * 3600, matters=near) if at or near else NOTE,
+                 f"Forecast read {ago(age)} for {outdoors} outdoor game{'' if outdoors == 1 else 's'}" if at
+                 else f"No forecast for week {week} yet",
+                 "Forecasts only reach two weeks ahead and firm up near the game; read a few times a day.", at)
+
+
+def _efficiency(year: int, week: int) -> Check:
+    from . import nflverse
+    found = nflverse.efficiency() if nflverse.available() else None
+    if found is None:
+        return Check(SOURCES, "Team efficiency", NOTE, "The nflverse files are not installed",
+                     "Without them the efficiency line under each pick is left out; nothing else changes.")
+    behind = (week - 1) - found.week if found.season == year else 99
+    words = f"Through week {found.week} of {found.season}, {len(found.teams)} teams"
+    if behind <= 0:
+        return Check(SOURCES, "Team efficiency", OK, words, "Each team's last eight games, from nflverse's team files.")
+    return Check(SOURCES, "Team efficiency", WARN,
+                 f"{words} - {'a week' if behind == 1 else f'{behind} weeks'} behind",
+                 "These are files fetched by hand (data/nflverse), not read automatically: the efficiency line "
+                 "under each pick is missing the latest games until this season's file is fetched again.")
+
+
+def _pool_files(season: Season) -> Check:
+    notes = list(getattr(season, "warnings", None) or [])
+    conflicts = len(getattr(season, "conflicts", None) or [])
+    words = f"{len(season.players)} coaches, standings through week {season.current_week}"
+    if conflicts:
+        return Check(SOURCES, "The pool's files", WARN, f"{words} - {conflicts} disagreement{'' if conflicts == 1 else 's'} between files",
+                     "Two files say different things about the same result; Data & Update > Data lists each one. "
+                     + " ".join(notes[:2]))
+    if notes:
+        return Check(SOURCES, "The pool's files", NOTE, f"{words} - {len(notes)} note{'' if len(notes) == 1 else 's'} from the last load",
+                     " ".join(notes[:3]))
+    return Check(SOURCES, "The pool's files", OK, words, "Loaded with nothing to report.")
+
+
+def _inputs(season: Season, week: int, to_lock: float) -> Check:
+    from . import oddslock, results
+    games, prices, ctx = _slate(season, week)
+    if not games:
+        return Check(CARD, "Every game's inputs", NOTE, f"Week {week} has no unplayed games set up")
+    year = results.season_year(season)
+    scores = results.load(year, week)
+    forecasts = ctx.forecasts if ctx is not None else {}
+    lacking = []
+    for g in games:
+        price = prices.get(g.index)
+        missing = []
+        if price is None or price.base is None:
+            missing.append("no betting line")
+        elif getattr(forecasts.get(g.index), "market_win", None) is None and g.line is None:
+            missing.append("no moneyline")
+        found, _flip = results.find(scores, g.away, g.home)
+        if found is None or not found.kickoff:
+            missing.append("no kickoff time")
+        if missing:
+            lacking.append((g.label, missing))
+    unpriced = [label for label, missing in lacking if "no betting line" in missing]
+    posted = any(g.line is not None for g in games)
+    line_note = ("" if posted or to_lock <= 0 else
+                 " The pool's lines aren't in yet: big favourites are priced straight up until they are entered "
+                 "on This Week > Every game.")
+    if not lacking:
+        return Check(CARD, "Every game's inputs", OK, f"All {len(games)} games have a line and a kickoff time",
+                     ("" + line_note).strip())
+    state = BAD if unpriced and 0 < to_lock < DAY else WARN if unpriced and to_lock < 2 * DAY else NOTE
+    if to_lock <= 0 and unpriced:
+        state = WARN
+    detail = "; ".join(f"{label}: {', '.join(missing)}" for label, missing in lacking[:6])
+    if len(lacking) > 6:
+        detail += f"; and {len(lacking) - 6} more"
+    return Check(CARD, "Every game's inputs", state,
+                 f"{len(lacking)} of {len(games)} games are missing something - {len(unpriced)} can't be priced",
+                 detail + "." + line_note)
+
+
+def _kept_card(season: Season, year: int, week: int, now: float) -> Check:
+    """Was Deadeye's card written down before the games began?"""
+    from . import cards, oddslock
+    snap = cards.model(week)
+    kickoff = oddslock.kickoff_time(year, week)
+    started = cards.week_started(season, week)
+    name = f"{MODEL_NAME}'s card, week {week}"
+    if snap is None:
+        if started:
+            return Check(CARD, name, BAD, "No card was kept before the first kickoff",
+                         "Its record for this week will have to be re-made from the stored lines afterwards, "
+                         "which is a little kind to it. The nightly run and opening This Week both keep it.")
+        return Check(CARD, name, WARN if kickoff - now < 2 * DAY else NOTE, "Not kept yet",
+                     "It is written down whenever This Week is opened or the scheduled job prices the week, "
+                     "and for the last time before the first kickoff.")
+    if getattr(snap, "rebuilt", False):
+        return Check(CARD, name, WARN, "Re-made after the fact, not kept at the time",
+                     "Scored on the lines as stored, which is a little kind to it.", snap.at)
+    if started and snap.at > kickoff + 15 * 60:
+        return Check(CARD, name, WARN, f"Kept {ago(now - snap.at)} - after the first kickoff",
+                     "A card written down once games have started is not a prediction of them.", snap.at)
+    return Check(CARD, name, OK,
+                 f"Kept before the first kickoff ({ago(now - snap.at)})" if started
+                 else f"Kept as it stands, {ago(now - snap.at)} - frozen at the first kickoff",
+                 "This is the card it is scored on: it is never rewritten once the games begin.", snap.at)
+
+
+def _known(year: int, week: int, to_lock: float, now: float) -> Check:
+    from . import known
+    found = known.kept(year, week)
+    if found is None:
+        return Check(CARD, "What was known", NOTE if to_lock > 0 else WARN,
+                     "Nothing written down for this week yet" if to_lock > 0
+                     else "The week closed with nothing written down",
+                     "Each game's injuries, rest, weather and ratings are written down while the week is open "
+                     "and frozen at the deadline, so later models are tested on what was known then.")
+    at = float(found.get("at") or 0) or None
+    frozen = bool(found.get("frozen"))
+    return Check(CARD, "What was known", OK,
+                 f"{len(found.get('games') or {})} games written down {ago(now - at) if at else ''}"
+                 + (" - frozen at the deadline" if frozen else " - still open"), "", at)
+
+
+def _my_card(week: int, to_lock: float, now: float) -> Check:
+    from . import cards
+    mine = cards.mine(week)
+    if mine is not None:
+        return Check(CARD, "Your own card", OK, f"Saved {ago(now - mine.at)}",
+                     "Any change before the deadline is pointed out on This Week.", mine.at)
+    if to_lock <= 0:
+        return Check(CARD, "Your own card", NOTE, "No card was saved for this week")
+    return Check(CARD, "Your own card", WARN if to_lock < DAY else NOTE,
+                 f"Not saved yet - cards are due {until(to_lock)}",
+                 "Save card on This Week remembers the one you are handing in.")
+
+
+def _autopsy(season: Season, year: int) -> Check:
+    from . import autopsy
+    done = [n for n in sorted(season.weeks) if season.weeks[n].games and all(g.played for g in season.weeks[n].games)]
+    kept = [n for n in done if autopsy.kept(year, n) is not None]
+    if not done:
+        return Check(CARD, "Hits and misses", NOTE, "No finished week yet")
+    if len(kept) == len(done):
+        return Check(CARD, "Hits and misses", OK, f"Every finished week is written down (through week {done[-1]})",
+                     "Each game as it was picked and how it came out, kept so nothing learned later rewrites it.")
+    missing = [n for n in done if n not in kept]
+    return Check(CARD, "Hits and misses", NOTE,
+                 f"Week{'s' if len(missing) != 1 else ''} {', '.join(map(str, missing))} not written down yet",
+                 "The nightly run does it, and so does opening Deadeye > Hits & misses.")
+
+
+def task_states() -> dict[str, dict] | None:
+    """{task name: {"last": seconds since 1970 or None, "next": the same, "result": int or None,
+    "found": bool}} from Windows' Task Scheduler - or None where that can't be asked."""
+    import csv
+    import io
+    import os
+    import subprocess
+    if os.name != "nt":
+        return None
+    out: dict[str, dict] = {}
+    for name, _what, _limit in TASKS:
+        try:
+            done = subprocess.run(
+                ["schtasks", "/Query", "/TN", name, "/FO", "CSV", "/V"], capture_output=True, text=True,
+                timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode != 0:
+            out[name] = {"found": False, "last": None, "next": None, "result": None}
+            continue
+        rows = list(csv.DictReader(io.StringIO(done.stdout)))
+        row = rows[0] if rows else {}
+
+        def moment(text: str) -> float | None:
+            text = (text or "").strip()
+            for pattern in ("%m/%d/%Y %I:%M:%S %p", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S"):
+                try:
+                    stamp = time.mktime(time.strptime(text, pattern))
+                except (ValueError, OverflowError):
+                    continue
+                return stamp if stamp > 946684800 else None       # "never" comes back as a date in 1999
+            return None
+
+        try:
+            result = int(str(row.get("Last Result", "")).strip())
+        except ValueError:
+            result = None
+        out[name] = {"found": True, "last": moment(row.get("Last Run Time", "")),
+                     "next": moment(row.get("Next Run Time", "")), "result": result}
+    return out
+
+
+def _tasks(states: dict[str, dict] | None, now: float) -> list[Check]:
+    if states is None:
+        return [Check(AUTOMATION, "Scheduled jobs", NOTE, "Couldn't ask Windows about the scheduled jobs",
+                      "They are registered by schedule.ps1 in the project folder.")]
+    out = []
+    for name, what, limit in TASKS:
+        found = states.get(name) or {"found": False}
+        title = what[0].upper() + what[1:]
+        if not found.get("found"):
+            out.append(Check(AUTOMATION, title, BAD, f"“{name}” is not set up on this computer",
+                             "Run schedule.ps1 in the project folder once to register it."))
+            continue
+        last, result, coming = found.get("last"), found.get("result"), found.get("next")
+        when = f"last ran {ago(now - last)}" if last else "has not run yet"
+        after = f", next {until(coming - now)}" if coming else ""
+        if result is not None and result not in TASK_FINE:
+            out.append(Check(AUTOMATION, title, WARN, f"Its last run ended with an error ({result}) - {when}",
+                             "The log on Data & Update says what it was doing." + after, last))
+        elif last is not None and now - last > limit:
+            out.append(Check(AUTOMATION, title, WARN, f"Overdue - {when}{after}",
+                             "The computer may have been off, or the job switched off.", last))
+        else:
+            # set up but never yet run is worth knowing, not a pass
+            out.append(Check(AUTOMATION, title, OK if last else NOTE, (when[0].upper() + when[1:]) + after, "", last))
+    return out
+
+
+def _last_run(now: float) -> Check | None:
+    from . import store
+    found = store.get("headless", "last_run", None)
+    if not isinstance(found, dict) or not found.get("at"):
+        return None
+    at = float(found["at"])
+    fine = bool(found.get("ok", True))
+    return Check(AUTOMATION, "Last automatic run", OK if fine else WARN,
+                 f"Finished {ago(now - at)}" + ("" if fine else " - with a problem"),
+                 str(found.get("note") or ""), at)
+
+
+def _website(now: float) -> Check:
+    from . import siteextras, webpublish
+    if not webpublish.WebSettings.load().ready:
+        return Check(AUTOMATION, "Pool website", NOTE, "Not set up", "Results > Pool page walks through it.")
+    last = siteextras.last_published() or {}
+    auto = siteextras.Extras.load().auto_publish
+    when = str(last.get("at") or "")
+    words = f"Last published {when} (after week {last.get('week')})" if when else "Never published"
+    if not auto:
+        return Check(AUTOMATION, "Pool website", WARN, f"{words} - updating by itself is switched off",
+                     "It only changes when Pool page is pressed on Results.")
+    return Check(AUTOMATION, "Pool website", OK if when else WARN, words,
+                 "Updates by itself whenever what it shows has changed.")
+
+
+def _email(week: int, now: float) -> Check:
+    from . import mailer, store
+    settings = mailer.MailSettings.load()
+    if not (settings.sender and settings.sealed_password):
+        return Check(AUTOMATION, f"{MODEL_NAME}'s card email", NOTE, "Email isn't set up",
+                     "Results > Email settings: the Gmail it sends from.")
+    sent = store.get("cardmail", str(week), {}) or {}
+    at = float(sent.get("at") or 0) or None
+    return Check(AUTOMATION, f"{MODEL_NAME}'s card email", OK,
+                 f"Week {week}'s card last emailed {ago(now - at)}" if at else f"Week {week}'s card not emailed yet",
+                 "Goes to you alone, Tuesday, Wednesday and Thursday at noon.", at)
+
+
+def build(season: Season, now: float | None = None, tasks: dict[str, dict] | None | bool = True) -> Readiness:
+    """Every check. `tasks` is Task Scheduler's answer when it is already to
+    hand (or False to leave the scheduled jobs out); True asks Windows."""
+    from . import analytics, oddslock, results
+    now = time.time() if now is None else now
+    year = results.season_year(season)
+    ahead = analytics.upcoming_week(season)
+    calendar = results.calendar_weeks(year, now)
+    playing = calendar[0] if calendar else ahead
+    lock = oddslock.lock_time(year, ahead)
+    to_lock = lock - now
+    checks: list[Check] = []
+
+    def add(make, *args) -> None:
+        try:
+            found = make(*args)
+        except Exception as exc:  # noqa: BLE001 - one check failing is itself worth saying
+            label = getattr(make, "__name__", "check").strip("_").replace("_", " ")
+            found = Check(SOURCES, label.capitalize(), NOTE, "Couldn't be checked", f"{type(exc).__name__}: {exc}")
+        if found is None:
+            return
+        checks.extend(found if isinstance(found, list) else [found])
+
+    add(_scores, year, playing, now)
+    add(_lines, season, ahead, to_lock, now)
+    add(_models, season, ahead, to_lock, now)
+    add(_injuries, to_lock, now)
+    add(_weather, year, ahead, to_lock, now)
+    add(_efficiency, year, ahead)
+    add(_pool_files, season)
+    add(_inputs, season, ahead, to_lock)
+    if playing != ahead and season.weeks.get(playing) is not None:
+        add(_kept_card, season, year, playing, now)
+    add(_kept_card, season, year, ahead, now)
+    add(_my_card, ahead, to_lock, now)
+    add(_known, year, ahead, to_lock, now)
+    add(_autopsy, season, year)
+    if tasks is not False:
+        add(_tasks, task_states() if tasks is True else tasks, now)
+    add(_last_run, now)
+    add(_website, now)
+    add(_email, ahead, now)
+    return Readiness(checks, ahead, lock, now)

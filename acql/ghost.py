@@ -16,6 +16,7 @@ Nothing here touches the website: Deadeye stays off it.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 from . import analytics, cards, results
@@ -52,6 +53,7 @@ class GhostWeek:
 class GhostSeason:
     weeks: list[GhostWeek]
     scored_weeks: int           # weeks the pool has scored, card or not
+    field_chances: int = 0      # what the pool's sheet has every coach's record out of (0: it doesn't say)
 
     @property
     def complete(self) -> bool:
@@ -63,13 +65,22 @@ class GhostSeason:
         return sum(w.total for w in self.weeks)
 
     @property
+    def chances(self) -> int:
+        """What its record is out of. Its wins count Big Loser points, as a
+        coach's do, so its Big Loser picks are chances too: the pool's own
+        count when it has a card for every week the coaches' records cover,
+        else its own weeks' games and Big Losers."""
+        if self.complete and self.field_chances and self.field_chances >= self.wins:
+            return self.field_chances
+        return sum(w.games + BIG_LOSERS for w in self.weeks)
+
+    @property
     def losses(self) -> int:
-        return max(0, sum(w.games for w in self.weeks) - self.wins)
+        return max(0, self.chances - self.wins)
 
     @property
     def pct(self) -> float:
-        games = sum(w.games for w in self.weeks)
-        return self.wins / games if games else 0.0
+        return self.wins / self.chances if self.chances else 0.0
 
     @property
     def won(self) -> float:
@@ -185,6 +196,14 @@ def week_score(season: Season, number: int, *, rebuild: bool = True) -> GhostWee
     )
 
 
+def field_chances(season: Season) -> int:
+    """What the pool's sheet has a coach's record out of: wins and losses
+    together, which it keeps the same for every coach (the commonest, should
+    they differ; 0 when it gives no records)."""
+    totals = Counter(int(round(p.wins + p.losses)) for p in season.players.values() if p.wins and p.losses)
+    return totals.most_common(1)[0][0] if totals else 0
+
+
 def season_record(season: Season, *, rebuild: bool = True) -> GhostSeason | None:
     """Its whole season so far; None before any week with a card is scored.
     Worked out once per loaded season - three pages ask."""
@@ -200,7 +219,7 @@ def season_record(season: Season, *, rebuild: bool = True) -> GhostSeason | None
         found = week_score(season, number, rebuild=rebuild)
         if found is not None:
             weeks.append(found)
-    out = GhostSeason(weeks, len(scored)) if weeks else None
+    out = GhostSeason(weeks, len(scored), field_chances(season)) if weeks else None
     try:
         season._ghost_season = (rebuild, out)
     except Exception:  # noqa: BLE001 - a season that takes no attributes: worked out again
@@ -218,6 +237,8 @@ def tooltip(record: GhostSeason) -> str:
         "Its picks and its three Big Losers: the card This Week recommended when the "
         "pool's cards were due.",
     ]
+    lines.append(f"Its record is out of {record.chances}: every game and every Big Loser pick, "
+                 "the same as a coach's.")
     if rebuilt:
         lines.append(f"Rebuilt afterwards from the stored lines: week{'s' if len(rebuilt) > 1 else ''} "
                      + ", ".join(str(w) for w in rebuilt) + ".")

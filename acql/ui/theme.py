@@ -702,6 +702,18 @@ def stylesheet(p: Palette) -> str:
     QProgressBar {{ background: {p.grid}; border: none; border-radius: 4px; }}
     QProgressBar::chunk {{ background: {p.accent}; border-radius: 4px; }}
 
+    /* A slider: a hairline track, lit up to the handle. */
+    QSlider::groove:horizontal {{ height: 4px; background: {p.grid}; border-radius: 2px; }}
+    QSlider::sub-page:horizontal {{ background: {p.accent}; border-radius: 2px; }}
+    QSlider::handle:horizontal {{
+        background: {p.accent};
+        border: 2px solid {p.surface};
+        width: 14px;
+        margin: -7px 0;
+        border-radius: 9px;
+    }}
+    QSlider::handle:horizontal:hover {{ background: {p.ink}; }}
+
     /* Tooltips carry a lot of the explanation in this app, so they are set
        for reading rather than for glancing. */
     QToolTip {{

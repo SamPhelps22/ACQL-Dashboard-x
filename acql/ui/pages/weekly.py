@@ -24,6 +24,7 @@ from ..charts import BarChart, HistogramChart
 from .. import recap
 from ..widgets import Card, IconButton, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
+from ...wording import plural as _plural, suffix as _ordinal
 from .base import POOL_EXTRAS, POOL_PAGE, Page
 
 SLATE_HEADERS = [
@@ -34,14 +35,6 @@ BOARD_HEADERS = ["#", "Player", "Total", "Regular", "Big Loser", "Suicide pick"]
 TRAP_COUNT = 10
 EASY_RATE = 0.75      # most of the pool got it - not a trap
 TRAP_RATE = 0.30      # most of the pool missed it
-
-
-def _ordinal(n: int) -> str:
-    return "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 

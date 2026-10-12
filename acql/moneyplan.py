@@ -120,10 +120,23 @@ def field_tables(coins: np.ndarray, coaches: int = COACHES) -> tuple[np.ndarray,
     dist = np.zeros((sims, n + 1))
     dist[:, 0] = 1.0
     for j in range(n):
-        q = coins[:, j:j + 1]
-        nxt = dist * (1 - q)
-        nxt[:, 1:] += dist[:, :-1] * q
-        dist = nxt
+        # Only the weeks where this coin can land move, and only the scores
+        # reachable so far: a Big Loser's coin is zero in nine weeks in ten,
+        # and after j coins nobody has more than j points. The rest would be
+        # multiplied by one and have nothing added - so they are left alone.
+        q = coins[:, j]
+        rows = np.flatnonzero(q)
+        if not rows.size:
+            continue
+        every = rows.size == sims
+        part = dist[:, :j + 2] if every else dist[rows, :j + 2]
+        q = q[:, None] if every else q[rows, None]
+        nxt = part * (1 - q)
+        nxt[:, 1:] += part[:, :-1] * q
+        if every:
+            dist[:, :j + 2] = nxt
+        else:
+            dist[rows, :j + 2] = nxt
     F = np.cumsum(dist, axis=1)                                   # P(score <= k)
     F = np.minimum(F, 1.0)
     FN = F ** coaches
@@ -143,8 +156,9 @@ def field_tables(coins: np.ndarray, coaches: int = COACHES) -> tuple[np.ndarray,
         p = np.where(F > 0, dist / np.maximum(F, 1e-300), 0.0)
         tiny = p < 1e-9
         safe = np.where(tiny, 1.0, p)
-        share = np.where(tiny, coaches, (1 - (1 - p) ** (coaches + 1)) / safe - 1)
-        first = np.where(tiny, 1.0, (1 - (1 - p) ** (coaches + 1)) / ((coaches + 1) * safe))
+        some = 1 - (1 - p) ** (coaches + 1)                     # somebody else lands on this score
+        share = np.where(tiny, coaches, some / safe - 1)
+        first = np.where(tiny, 1.0, some / ((coaches + 1) * safe))
     collect = FN * mu * share
     return collect - owe, FN * first
 
@@ -314,7 +328,10 @@ def card_value(games: list[Game], take: list[str], losers: list[str], *,
 #: and no team gets past the ceiling - the pool's favourite Big Loser sits on
 #: 54-82% of cards, never all of them. Reputation counts too (the Browns,
 #: Jets and Titans are held well past their chances), which this leaves out.
-LOSER_SHARPNESS = 3.0
+#: Fitted again on 2026 weeks 1-5 (518 picks) when a Big Loser's chance
+#: became history's number (analytics.rout_chance): 2.5 fits the sheets best
+#: on those chances, as 2.75-3.0 did on the margin curve's.
+LOSER_SHARPNESS = 2.5
 LOSER_CEILING = 0.70
 
 

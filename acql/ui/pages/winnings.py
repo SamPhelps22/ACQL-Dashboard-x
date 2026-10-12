@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from ... import ghost
 from ...models import Season
+from ...wording import plural as _plural
 from ..charts import DivergingBarChart, LineChart
-from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ..widgets import Card, StatTile, TableModel, current_sort, make_table, section, tile_grid
 from .base import Page
 
 FIXED_HEADERS = ["#", "Player", "Buy-in", "Won", "Net", "Weeks cashed"]
@@ -27,10 +27,6 @@ CHART_EXTREMES = 10
 # past that the lines tangle and the legend has to do all the work.
 TRAJECTORY_PLAYERS = 5
 TRAJECTORY_TITLE = "Money over the season - crossing the buy-in line is profit"
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 def running_totals(weekly: dict[int, float], weeks: list[int]) -> list[float]:
@@ -524,12 +520,4 @@ class WinningsPage(Page):
 
     def _current_sort(self, columns: int) -> tuple[int, bool]:
         """The table's current (column, ascending), or the default if unknown."""
-        default = (0, True)
-        view = self.table
-        if view is None or not hasattr(view, "horizontalHeader"):
-            return default
-        header = view.horizontalHeader()
-        column = header.sortIndicatorSection()
-        if not 0 <= column < columns:
-            return default
-        return column, header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
+        return current_sort(self.table, columns)

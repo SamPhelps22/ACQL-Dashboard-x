@@ -88,8 +88,12 @@ def use(path: str | Path | None) -> None:
 
 
 def close() -> None:
-    global _CONN, _PATH
+    global _CONN, _PATH, _WRITES, _LOOKED
     with _LOCK:
+        _LOOKED = None
+        # Another file may be opened next, and its own counter starts again:
+        # nothing remembered against this one's stamp may ever match it.
+        _WRITES += 1
         if _CONN is not None:
             try:
                 _CONN.close()
@@ -133,12 +137,25 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+#: How long (seconds) the last look at the file's own counter is trusted. A
+#: page reads a few hundred documents in a burst, and asking SQLite before
+#: each one whether another program had written was a twentieth of a second
+#: a refresh. Another program's write is noticed this much later, at most;
+#: this program's own are counted in _WRITES and noticed at once.
+LOOK_EVERY = 0.05
+_LOOKED: tuple[float, int] | None = None
+
+
 def _version(conn: sqlite3.Connection) -> tuple[int, int]:
-    try:
-        outside = conn.execute("PRAGMA data_version").fetchone()[0]
-    except sqlite3.Error:
-        outside = -1
-    return (outside, _WRITES)
+    global _LOOKED
+    now = time.monotonic()
+    if _LOOKED is None or not 0 <= now - _LOOKED[0] <= LOOK_EVERY:
+        try:
+            outside = conn.execute("PRAGMA data_version").fetchone()[0]
+        except sqlite3.Error:
+            outside = -1
+        _LOOKED = (now, outside)
+    return (_LOOKED[1], _WRITES)
 
 
 def _write(statements: list[tuple[str, tuple]]) -> None:

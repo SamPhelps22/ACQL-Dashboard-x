@@ -37,7 +37,7 @@ CHANGES_TITLE = "Did anything change?"
 CARD_TITLE = "The card in detail"
 SWING_TITLE = "Where the week is won"
 GLANCE_TITLE = f"{MODEL_NAME}'s card at a glance"
-WHY_TITLE = "Why each pick"
+WHY_TITLE = f"Why {MODEL_NAME} picked it"
 SCORE_TITLE = "Signal scoreboard - how each reason has done this season"
 SCORE_HEADERS = ["Signal", "Had a view", "Right", "Rate", "Against the betting line", "Read it as"]
 #: Shared with Game Day and the Report card: who "you" are.
@@ -636,8 +636,10 @@ class BriefingPage(Page):
         intro = (
             f"{MARKS[evidence.FOR]} backs the pick \u00b7 {MARKS[evidence.AGAINST]} points the "
             f"other way \u00b7 {MARKS[evidence.INFO]} worth knowing. The chance is made from "
-            f"the betting line and the computer models; the rest is what they have already "
-            f"weighed, shown so every pick can be checked rather than taken on trust."
+            f"the betting line and the computer models - the first line under each pick shows "
+            f"how, step by step. The rest (efficiency, the quarterbacks, rest, form, weather) is "
+            f"what the line has already weighed, shown so every pick can be checked rather than "
+            f"taken on trust."
         )
         if stale:
             intro += (
@@ -670,6 +672,22 @@ class BriefingPage(Page):
             head.setTextFormat(Qt.TextFormat.RichText)
             head.setStyleSheet("background: transparent; border: none;")
             body.addWidget(head)
+            if case.steps:
+                made = QLabel(
+                    f"<span style='color:{p.ink_muted}'>How the number was made:</span> "
+                    + f" <span style='color:{p.ink_muted}'>\u2192</span> ".join(
+                        f"<span style='color:{p.ink_secondary}'>{step.name}</span> <b>{step.words}</b>"
+                        + (f" <span style='color:{p.ink_muted}'>({step.points:+.1f})</span>"
+                           if step.points is not None else "")
+                        for step in case.steps))
+                made.setTextFormat(Qt.TextFormat.RichText)
+                made.setWordWrap(True)
+                made.setToolTip(
+                    "Read left to right: the betting line for this pick, what the moneyline and the computer "
+                    "models added to it (in points, from the pick's side), the number that leaves, the pool's "
+                    "rule for the game, and the chance that comes out.")
+                made.setStyleSheet("background: transparent; border: none;")
+                body.addWidget(made)
             grid = QGridLayout()
             grid.setHorizontalSpacing(12)
             grid.setVerticalSpacing(4)

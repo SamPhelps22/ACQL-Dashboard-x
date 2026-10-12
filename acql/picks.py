@@ -41,6 +41,7 @@ from pathlib import Path
 from .config import ROOT
 from .models import Game, Player, PlayerWeek, Season, Week
 from .predictions import DISPLAY, team_code
+from .wording import plural as _plural
 
 #: Where older versions kept the pick sheets; read in once by store.py.
 PICKS_FILE = ROOT / "acql-picks.json"
@@ -168,14 +169,6 @@ class WeekPicks:
             if {team_code(game.away), team_code(game.home)} == want:
                 return game
         return None
-
-    def loser_counts(self) -> list[tuple[str, int]]:
-        """How many coaches took each Big Loser, most popular first."""
-        tally = Counter(
-            team_code(team) for picks in self.losers.values() for team in picks
-            if team_code(team)
-        )
-        return tally.most_common()
 
     def loser_share(self, team: str) -> float:
         """The fraction of coaches with this team among their three."""
@@ -476,10 +469,6 @@ def summary(week: WeekPicks) -> str:
     return " \u00b7 ".join(parts)
 
 
-def _plural(count: int, word: str, many: str = "") -> str:
-    return f"{count} {word if count == 1 else (many or word + 's')}"
-
-
 # ---- grading a week from the raw sheet --------------------------------------
 @dataclass(frozen=True)
 class Graded:
@@ -501,26 +490,6 @@ class Graded:
 
 def _decided(game: Game) -> bool:
     return bool(str(getattr(game, "winner", "") or "").strip())
-
-
-def grade_week(week: Week, sheet: WeekPicks) -> dict[str, int]:
-    """Each coach's correct picks for a week, from the raw sheet and the results.
-
-    The workbook records the winner with the pool's line already applied, so
-    grading against it needs no knowledge of the line - a pick is right when
-    it names the team in the result row.
-    """
-    scores: dict[str, int] = {}
-    for game in week.games:
-        if not _decided(game):
-            continue
-        found = sheet.game_for(game.away, game.home)
-        if found is None:
-            continue
-        winner = team_code(game.winner)
-        for coach, team in found.picks.items():
-            scores[coach] = scores.get(coach, 0) + (team_code(team) == winner)
-    return scores
 
 
 def _sync_players(season: Season, week: Week, source: str) -> None:

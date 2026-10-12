@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 from ... import analytics, crowd, luck, patterns, picks, predictions
-from ...predictions import display_team
+from ...wording import plural as _plural
 
 from ..charts import BarChart, DivergingBarChart, HeatmapChart, LineChart, ScatterChart
 from ..widgets import Card, StatTile, section, tile_grid
@@ -33,10 +33,6 @@ SPOTS_TITLE = "Blind spots across the pool"
 #: A team needs this many of the pool's picks before its record is quoted.
 TEAM_PICKS = 20
 QUADRANTS = ("Strong and steady", "Strong but streaky", "Steady, but short", "Feast or famine")
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 class InsightsPage(Page):

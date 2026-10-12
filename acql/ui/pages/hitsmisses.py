@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout
 from ... import autopsy
 from ...places import HITS as title_
 from ...version import MODEL_NAME
+from ...wording import plural as _plural
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
@@ -21,10 +22,6 @@ CUT_TITLE = "Where its picks come good"
 MISS_TITLE = "Every miss, and what kind it was"
 #: Games ahead of or behind the betting line before a row is coloured for it.
 CLEAR = 3
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 def _reading_tone(row: autopsy.Row) -> str:

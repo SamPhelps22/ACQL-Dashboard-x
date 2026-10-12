@@ -39,7 +39,10 @@ DETAILS = "Details"
 LAB = "Model Lab"
 HITS = "Hits & misses"              # where its picks come good, and what each miss was
 MODEL_CHARTS = "Charts"             # its season in pictures
+RECIPE = "Recipe"                   # what each ingredient does, and what a different share would change
+COMPUTERS = "Computer models"   # each published model on its own, and what the crowd is worth
 DATA = "Data & Update"              # what is loaded, and updating the app
+READINESS = "Readiness"             # is everything the picks are made from up to date
 
 #: The mission names the places wore for a while (2.16, before it shipped),
 #: so a place the window remembered under one still opens.

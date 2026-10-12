@@ -514,6 +514,28 @@ td.pk.no { color: var(--bad); text-decoration: line-through; opacity: 0.8; }
 td.pk.ok.live, td.pk.no.live { font-style: italic; }
 td.pk.no.live { text-decoration: none; }
 th.gk { text-align: center; font-size: 11px; }
+/* everyone's picks: a row a coach, a column a game */
+#picks-table .stick-b { left: 0; }
+#picks-table td.pk, #picks-table th.gk { padding-left: 6px; padding-right: 6px; }
+@media (max-width: 719px) {
+  #picks-table td.coach .who-link, #picks-side td.coach .who-link { display: inline-block; max-width: 7.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  #picks-side td.coach .who-link { max-width: 6.6em; }
+  #picks-side .tb { min-width: 30px; padding: 0 4px 0 6px; font-size: 12px; }
+  #picks-side td.sidepicks .sp { margin-right: 5px; gap: 3px; }
+  /* how the pool picked: no room for a tag beside the count, so "you: DAL" goes under the bar */
+  .split .side .mine-pick { display: none; }
+}
+@media (max-width: 380px) { .split .at { visibility: hidden; } }
+.split .lineinfo .you { color: var(--gold-text); font-weight: 700; }
+th.gk span { display: block; line-height: 1.35; }
+th.gk span.won { color: var(--good); }
+th.gk span.live { font-style: italic; }
+td.pk.apart { box-shadow: inset 0 -2px 0 var(--gold); }
+td.pk small { display: inline-block; width: 100%; font: 600 10px/1.3 var(--body); color: var(--muted); }
+tr.crowd td { border-bottom-color: var(--context-strong); }
+tr.crowd td.pk { white-space: normal; }
+tr.crowd td.pk:not(.ok):not(.no) { color: var(--ink); }
+td.sidepicks .sp { display: inline-flex; align-items: center; gap: 4px; margin: 2px 10px 2px 0; font-size: 13px; }
 .sui-ok { color: var(--good); font-weight: 600; }
 .sui-no { color: var(--bad); font-weight: 600; }
 .box table td, .box table th { padding: 6px 8px 6px 0; background: transparent; }
@@ -1327,7 +1349,15 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
 .weekpill { border-radius: 3px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
 .iconbtn, .mechip, .searchbtn { border-radius: 4px; }
 .initials, .mechip .initials { border-radius: 7px; }
-.desknav a { text-transform: uppercase; letter-spacing: 0.1em; font-size: 14px; font-weight: 600; }
+.desknav a { text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; font-weight: 600; }
+@media (min-width: 1100px) {
+  .desknav a { padding-left: 5px; padding-right: 5px; }
+  .mechip .who { max-width: 7em; }
+}
+@media (min-width: 1100px) and (max-width: 1239px) {
+  /* ten sections in the narrowest bar: closer together */
+  .desknav a { font-size: 13px; letter-spacing: 0.04em; padding-left: 4px; padding-right: 4px; }
+}
 .desknav a[aria-current="page"] { text-shadow: 0 0 14px var(--glow); }
 
 /* the headline panel: cut corners, a faint grid, the gold edge */
@@ -1386,6 +1416,22 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
 .bottombar a { text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; }
 .bottombar a[aria-current="page"] { color: var(--gold-text); }
 .bottombar a[aria-current="page"]::before { height: 2px; left: 22%; right: 22%; border-radius: 0; box-shadow: 0 0 14px 1px var(--glow); }
+
+/* a phone's top bar: when the week's tag has more to say ("live", "final", "after week 4")
+   the year gives it the room, so the menu button stays on the screen */
+@media (max-width: 520px) {
+  .wordmark { letter-spacing: 0.04em; }
+  .weekpill { letter-spacing: 0.04em; white-space: nowrap; }
+}
+@media (max-width: 410px) {
+  .topbar .inner.tight .wordmark .yr { display: none; }
+}
+@media (max-width: 380px) {
+  /* the narrowest phones: the year goes whatever the tag says */
+  .topbar .inner { gap: 6px; }
+  .weekpill { padding: 4px 6px; }
+  .wordmark .yr { display: none; }
+}
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>
@@ -1404,7 +1450,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   var ME_KEY = "acql-pool-me", THEME_KEY = "acql-theme", VS_KEY = "acql-pool-vs";
   var app = document.getElementById("app");
   var state = { view: "home", week: DATA.through_week, me: stored(ME_KEY), coach: "", a: "", b: "",
-    sheet: false, every: false, chartMe: "" };
+    sheet: false, every: false, chartMe: "", picksOrder: "" };
   var updateBar = null;     // the owner's update controls, kept across redraws
 
   // ---- small helpers ------------------------------------------------------
@@ -1646,6 +1692,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     pools: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M6 6l3.5 3.5M18 6l-3.5 3.5M6 18l3.5-3.5M18 18l-3.5-3.5"/>',
     me: '<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5"/>',
     weeks: '<rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
+    picks: '<path d="M4 7.5l2 2 3.5-4M4 16l2 2 3.5-4M13 8h7M13 16.5h7"/>',
     h2h: '<path d="M6 8h12l-3-3M18 16H6l3 3"/>',
     charts: '<path d="M4 19V5M4 19h16M7.5 15l4-4.5 3 2.5 5-6"/>',
     history: '<path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 6H5v1.5A3 3 0 0 0 8 10.5M16 6h3v1.5a3 3 0 0 1-3 3"/><path d="M12 13v4M8.5 20h7"/>',
@@ -1794,7 +1841,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   function followsScores() {
     if (!hasLive()) return false;
     if (state.coach) return true;
-    return ["home", "live", "pools", "me"].indexOf(state.view) >= 0;
+    return ["home", "live", "picks", "pools", "me"].indexOf(state.view) >= 0;
   }
   // How long until the next look: a minute while a game is on, two when a
   // kickoff is close, five otherwise; none once every game is final.
@@ -2265,6 +2312,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   var VIEWS = {
     home: { label: "Home", icon: "home" },
     live: { label: "Live", icon: "live" },
+    picks: { label: "Picks", icon: "picks", about: "Everyone’s picks this week, side by side" },
     standings: { label: "Standings", icon: "standings" },
     pools: { label: "Side pools", short: "Pools", icon: "pools" },
     me: { label: "Me", icon: "me" },
@@ -2276,18 +2324,18 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   };
   var ALIASES = { week: "weeks", table: "standings" };
   function available(view) {
-    if (view === "live") return hasLive();
+    if (view === "live" || view === "picks") return hasLive();
     if (view === "h2h") return DATA.weeks.some(function (w) { return w.picks; });
     if (view === "money") return !!DATA.money;
     return !!VIEWS[view];
   }
   function deskViews() {
-    return ["home", "live", "standings", "pools", "weeks", "h2h", "charts", "history", "money"].filter(available);
+    return ["home", "live", "picks", "standings", "pools", "weeks", "h2h", "charts", "history", "money"].filter(available);
   }
   function barViews() { return ["home", hasLive() ? "live" : "weeks", "standings", "pools", "me"]; }
   function moreViews() {
     var bar = barViews();
-    return ["live", "weeks", "h2h", "charts", "history", "money"].filter(function (v) { return available(v) && bar.indexOf(v) < 0; });
+    return ["live", "picks", "weeks", "h2h", "charts", "history", "money"].filter(function (v) { return available(v) && bar.indexOf(v) < 0; });
   }
   function currentView() {
     if (state.coach) return isMe(state.coach) ? "me" : "";
@@ -2313,7 +2361,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     var chip = el("a", { class: "mechip" + (me ? "" : " empty"), href: "#me", id: "me-chip", onclick: navTo("me"),
       "aria-label": me ? "Your page, " + me : "Pick your name" },
       [el("span", { class: "initials", style: me ? avatarStyle(me) : null, text: me ? initials(me) : "?" }), el("span", { class: "who", text: me || "Pick your name" })]);
-    return el("header", { class: "topbar" }, [el("div", { class: "inner" }, [
+    return el("header", { class: "topbar" }, [el("div", { class: "inner" + (pill.textContent.length > 8 ? " tight" : "") }, [
       el("a", { class: "brandmark", href: "#home", onclick: navTo("home"), "aria-label": "ACQL, home" }, [
         crest(), el("span", { class: "wordmark" }, ["ACQL", el("span", { class: "yr", text: String(seasonYear()) })])
       ]),
@@ -2485,6 +2533,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     if (coach) return coachView(coach);
     switch (state.view) {
       case "live": return liveView();
+      case "picks": return picksView();
       case "standings": return standingsView();
       case "pools": return poolsView();
       case "me": return meView();
@@ -2723,6 +2772,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   });
 
   var heroShown = false;    // the lower third wipes in once a visit, not on every refresh
+  var shown = "";           // the page last drawn
   function render(opts) {
     opts = opts || {};
     if (opts.quiet && busyHere()) { renderWaiting = true; return; }
@@ -2731,6 +2781,9 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     var ownerBox = document.getElementById("owner");
     var keep = ownerBox ? Array.prototype.slice.call(ownerBox.childNodes) : [];
     var y = window.scrollY;
+    // how far each wide table was scrolled sideways, to put it back on the same page
+    var here = state.coach ? "coach=" + state.coach : state.view;
+    var slid = opts.top || here !== shown ? [] : Array.prototype.map.call(app.querySelectorAll(".scroll"), function (s) { return s.scrollLeft; });
     if (!available(state.view)) state.view = "home";
     if (!weekData(state.week)) state.week = DATA.through_week;
     applyTheme();
@@ -2759,6 +2812,9 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     var hero = view.querySelector(".hero");
     if (hero && !heroShown) { hero.classList.add("enter"); heroShown = true; }
     drawCharts();
+    var wide = app.querySelectorAll(".scroll");
+    if (slid.length === wide.length) slid.forEach(function (left, i) { if (left) wide[i].scrollLeft = left; });
+    shown = state.coach ? "coach=" + state.coach : state.view;
     edges();
     if (opts.top) window.scrollTo(0, 0);
     else if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
@@ -2991,7 +3047,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     return [
       top,
       el("div", { class: "cols" }, [
-        el("div", {}, [splitsCard(t), limbCard(t)]),
+        el("div", {}, [splitsCard(t, true), limbCard(t)]),
         el("div", {}, [weekSuicideCard(t), weekLosersCard(t), w ? lastWeekModule(w) : null])
       ])
     ];
@@ -3040,7 +3096,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
       top_,
       el("div", { class: "cols" }, [
         el("div", {}, [
-          module("The week so far", "if it ended now", [weekBoard(t, sim, 8), moreLink("Every card", "live")], { "data-card": "board" }),
+          module("The week so far", "if it ended now", [weekBoard(t, sim, 8), moreLink("Every card", "live"), moreLink("Everyone’s picks", "picks")], { "data-card": "board" }),
           onNowModule(t),
           rootingCard(t, sim),
           swingCard(t, sim)
@@ -3077,7 +3133,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     return [
       top_,
       el("div", { class: "cols" }, [
-        el("div", {}, [module("Final", "week " + L.week + ", from the scores", [weekBoard(t, sim, 10), moreLink("Every card", "live")], { "data-card": "board" })]),
+        el("div", {}, [module("Final", "week " + L.week + ", from the scores", [weekBoard(t, sim, 10), moreLink("Every card", "live"), moreLink("Everyone’s picks", "picks")], { "data-card": "board" })]),
         el("div", {}, [weekSuicideCard(t), weekLosersCard(t)])
       ])
     ];
@@ -3255,7 +3311,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   }
 
   // How the pool picked every game: the split between the two sides.
-  function splitsCard(t) {
+  function splitsCard(t, link) {
     var L = DATA.live, mine = L.coaches.filter(function (c) { return isMe(c.name); })[0];
     var rows = t.games.map(function (x, gi) {
       var g = x.g, h = 0, a = 0;
@@ -3273,11 +3329,13 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
           el("span", { class: a > h ? "lead" : null, style: "width:" + Math.round(100 * a / total) + "%" }),
           el("span", { class: h > a ? "lead" : null, style: "width:" + Math.round(100 * h / total) + "%" })
         ]),
-        lined || x.state !== "pre" ? el("span", { class: "lineinfo", text: [lined ? "Pool line: " + teamName(x, g.fav) + " by " + g.line : "",
-          x.state === "post" ? "Final " + x.as + "–" + x.hs : x.state === "in" ? liveDetail(x) + " " + x.as + "–" + x.hs : ""].filter(Boolean).join("   ") }) : null
+        lined || x.state !== "pre" || my ? el("span", { class: "lineinfo" + (lined || x.state !== "pre" ? "" : " narrow-only") }, [[lined ? "Pool line: " + teamName(x, g.fav) + " by " + g.line : "",
+          x.state === "post" ? "Final " + x.as + "–" + x.hs : x.state === "in" ? liveDetail(x) + " " + x.as + "–" + x.hs : ""].filter(Boolean).join("   "),
+          my ? el("span", { class: "narrow-only you", text: (lined || x.state !== "pre" ? " · " : "") + "you: " + my.toUpperCase() }) : null]) : null
       ]);
     });
-    return module("How the pool picked", plural(L.coaches.length, "card"), [el("div", { class: "splits" }, rows)], { "data-card": "splits" });
+    return module("How the pool picked", plural(L.coaches.length, "card"), [el("div", { class: "splits" }, rows),
+      link ? moreLink("Everyone’s picks", "picks") : null], { "data-card": "splits" });
   }
 
   // One coach's whole card for the week being played: every pick, the Big
@@ -3645,6 +3703,136 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
       later.length ? module("Still to play", plural(later.length, "game"), [el("div", { class: "games" }, later.map(gameCard))], { "data-card": "to-play" }) : null,
       done.length ? module("Final", plural(done.length, "game"), [el("div", { class: "games" }, done.map(gameCard))], { "data-card": "finals" }) : null,
       el("div", {}, [el("button", { class: "btn", type: "button", text: "Refresh scores now", onclick: function () { fetchScores(); } })])
+    ]);
+  }
+
+  // ---- everyone's picks: the week's cards, side by side ----------------------------
+  // A row a coach, a column a game, straight from the week's pick sheet. The
+  // side most of the pool took sits on top, then the viewer's own card, then
+  // the rest - most right first once games are under way. Under it: how each
+  // game split, and every coach's Big Losers and suicide pick.
+  function picksView() {
+    var L = DATA.live;
+    if (!live.fetched && !live.error && !live.busy) fetchScores();
+    var t = liveTally(), n = L.coaches.length;
+    var started = t.games.some(function (x) { return x.state !== "pre"; });
+    var right = {}, season = {};
+    t.rows.forEach(function (r) { right[r.c.name] = r.games; });
+    DATA.players.forEach(function (p) { season[p.name] = p; });
+    var me = L.coaches.filter(function (c) { return isMe(c.name); })[0];
+    var rest = L.coaches.filter(function (c) { return !isMe(c.name); });
+    // each game: the cards on each side, and the side most of them are on
+    var cols = t.games.map(function (x, gi) {
+      var a = 0, h = 0;
+      L.coaches.forEach(function (c) { var pk = c.picks[gi]; if (pk === x.g.ac) a++; else if (pk === x.g.hc) h++; });
+      return { x: x, a: a, h: h, cards: a + h, most: Math.max(a, h), top: a === h ? "" : a > h ? x.g.ac : x.g.hc,
+        share: a + h ? Math.max(a, h) / (a + h) : 0 };
+    });
+    var picked = cols.filter(function (c) { return c.cards; });
+    var agreed = picked.slice().sort(function (p, q) { return q.share - p.share || q.cards - p.cards; })[0];
+    var split = picked.slice().sort(function (p, q) { return p.share - q.share || q.cards - p.cards; })[0];
+    var crowdRight = 0, crowdDone = 0, withCrowd = 0, ofCrowd = 0;
+    cols.forEach(function (c, gi) {
+      if (!c.top) return;
+      if (c.x.state !== "pre") { crowdDone++; if (c.x.credit === c.top) crowdRight++; }
+      if (me && me.picks[gi]) { ofCrowd++; if (me.picks[gi] === c.top) withCrowd++; }
+    });
+    function mini(v, k) {
+      return el("div", { class: "mini-fig" }, [el("span", { class: "v", text: v }), el("span", { class: "k", text: k })]);
+    }
+    var tiles = el("div", { class: "minis" }, [
+      mini(String(n), n >= DATA.entrants ? "cards in, the whole pool" : "cards in, of " + DATA.entrants + " coaches"),
+      agreed ? mini(agreed.top ? agreed.top.toUpperCase() : "–", "most agreed on: " + agreed.most + " of " + agreed.cards + " cards") : null,
+      split ? mini(split.a + "–" + split.h, "most split: " + split.x.g.ac.toUpperCase() + " at " + split.x.g.hc.toUpperCase()) : null,
+      me && ofCrowd ? mini(withCrowd + " of " + ofCrowd, "games where you’re with the crowd")
+        : crowdDone ? mini(crowdRight + " of " + crowdDone, "right for the crowd’s card so far")
+        : mini(String(picked.filter(function (c) { return c.share >= 0.8; }).length), "games where 4 in 5 cards agree")
+    ]);
+
+    // the board
+    var az = !started || state.picksOrder === "az";
+    var order = (me ? [me] : []).concat(rest.slice().sort(function (p, q) {
+      return (az ? 0 : (right[q.name] || 0) - (right[p.name] || 0)) || p.name.localeCompare(q.name);
+    }));
+    function cell(pick, c, under) {
+      var x = c.x, cls = "pk";
+      if (pick && x.state !== "pre") cls += (x.credit === pick ? " ok" : x.credit ? " no" : "") + (x.state === "in" ? " live" : "");
+      if (pick && c.top && pick !== c.top) cls += " apart";
+      return el("td", { class: cls }, [pick ? pick.toUpperCase() : "·", under != null ? el("small", { text: under }) : null]);
+    }
+    function nameCell(c, quiet) {
+      return [who(c.name), isMe(c.name) ? el("span", { class: "youtag" + (quiet ? " hide-narrow" : ""), text: "YOU" }) : null];
+    }
+    var head = [el("th", { class: "stick-b", text: "Coach" })];
+    if (started) head.push(el("th", { class: "n", text: "Right", title: "Picks right as the scores stand" }));
+    cols.forEach(function (c) {
+      var x = c.x, g = x.g, lined = g.line != null && g.fav;
+      function side(team) {
+        var won = x.state !== "pre" && x.credit === team;
+        return el("span", { class: won ? "won" + (x.state === "in" ? " live" : "") : null, text: team.toUpperCase() });
+      }
+      head.push(el("th", { class: "gk", title: g.a + " at " + g.h + (lined ? ", pool line " + teamName(x, g.fav) + " by " + g.line : "") },
+        [side(g.ac), side(g.hc)]));
+    });
+    var crowd = el("tr", { class: "crowd" }, [el("td", { class: "coach stick-b", text: "Most cards" })].concat(
+      started ? [el("td", { class: "n num", text: String(crowdRight) })] : [],
+      cols.map(function (c) { return cell(c.top, c, !c.cards ? "" : c.top ? String(c.most) : "even"); })));
+    var body = [crowd].concat(order.map(function (c) {
+      var cells = [el("td", { class: "coach stick-b" }, nameCell(c))];
+      if (started) cells.push(el("td", { class: "n num", text: String(right[c.name] || 0) }));
+      cols.forEach(function (col, gi) { cells.push(cell(c.picks[gi] || "", col)); });
+      return el("tr", { class: isMe(c.name) ? "me" : null }, cells);
+    }));
+    var sorter = started ? el("div", { class: "seg", role: "group", "aria-label": "Order" }, [["", "Most right"], ["az", "A to Z"]].map(function (o) {
+      return el("button", { type: "button", "aria-pressed": (state.picksOrder || "") === o[0] ? "true" : "false",
+        onclick: function () { state.picksOrder = o[0]; render(); }, text: o[1] });
+    })) : "tap a name for their week";
+    var board = module("Every pick", sorter, [
+      scroller(el("table", { id: "picks-table" }, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, body)])),
+      el("p", { class: "note", text: (started ? "Green is right and crossed out is wrong, as the scores stand. " : "Picks turn green or get crossed out once the games start. ") +
+        "A gold line under a pick means it goes against most of the pool. Most cards is the side most of the pool took, with the number of cards on it." })
+    ], { "data-card": "every-pick" });
+
+    // the side pools: three Big Losers a card, and a suicide pick while still in
+    function sidePick(team, good, bad, word) {
+      return el("span", { class: "sp" + (good ? " sui-ok" : bad ? " sui-no" : ""), title: teamName(tallyGame(t, team), team) }, [badge(team), word || null]);
+    }
+    var sideRows = (me ? [me] : []).concat(rest).map(function (c) {
+      var p = season[c.name], sui;
+      var losers = c.bl.map(function (team) {
+        var x = tallyGame(t, team), s = loserState(x, team);
+        var hit = s.by != null && s.by >= 15, miss = !hit && s.by != null && x.state === "post";
+        return sidePick(team, hit, miss, hit ? "✓" : miss ? "✗" : "");
+      });
+      if (!p || !p.suicide.alive) sui = p && p.suicide.out
+        ? el("span", { class: "flat", title: "Out of the suicide pool in week " + p.suicide.out }, ["out", el("span", { class: "hide-narrow", text: " in week " + p.suicide.out })])
+        : el("span", { class: "flat", text: "–" });
+      else if (!c.sui) sui = el("span", { class: "flat", text: "no pick" });
+      else {
+        var now = survivalState(tallyGame(t, c.sui), c.sui).now;
+        sui = sidePick(c.sui, now === "through" || now === "ahead", now === "out" || now === "behind",
+          now === "through" ? "✓" : now === "out" ? "✗ out" : now);
+      }
+      return el("tr", { class: isMe(c.name) ? "me" : null }, [
+        el("td", { class: "coach" }, nameCell(c, true)),
+        el("td", { class: "sidepicks" }, losers.length ? losers : [el("span", { class: "flat", text: "–" })]),
+        el("td", { class: "sidepicks" }, [sui])
+      ]);
+    });
+    var sideCard = L.coaches.some(function (c) { return c.bl.length || c.sui; }) ? module("Side pool picks", plural(n, "card"), [
+      scroller(el("table", { id: "picks-side" }, [
+        el("thead", {}, [el("tr", {}, [el("th", { text: "Coach" }), el("th", { text: "Big Losers" }),
+          el("th", {}, ["Suicide", el("span", { class: "hide-narrow", text: " pick" })])])]),
+        el("tbody", {}, sideRows)])),
+      el("p", { class: "note", text: "A Big Loser scores a point when the team loses by 15 or more. Only coaches still in the suicide pool have a suicide pick." })
+    ], { "data-card": "side-picks" }) : null;
+
+    return el("div", { class: "view", "data-view": "picks" }, [
+      el("div", { class: "pagehead" }, [el("h1", { text: "Week " + L.week + ", everyone’s picks" }), liveStatus(t)]),
+      tiles,
+      board,
+      splitsCard(t),
+      sideCard
     ]);
   }
 

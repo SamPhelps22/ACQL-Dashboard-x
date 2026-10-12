@@ -8,8 +8,9 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from ... import analytics, bigloser, oddslock
 from ...models import Player, Season
 from ...version import MODEL_NAME
+from ...wording import plural as _plural
 from ..charts import BarChart, LineChart
-from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
+from ..widgets import Card, StatTile, TableModel, current_sort, make_table, section, tile_grid
 from .base import Page
 
 BL_HEADERS = ["#", "Player", "Points", "Wins", "Weeks", "Avg / week"]
@@ -22,10 +23,6 @@ OPTIMIZER_HEADERS = ["Team", "Game", "Lose by 15+", "Pool has it", "Gain on the 
 RECORD_HEADERS = ["Coach", "Came in", "Picks", "Rate", "Deserved", "Luck", "With the pool"]
 #: Candidates listed on the optimizer; the rest are long shots nobody holds.
 OPTIMIZER_SHOWN = 14
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 def survivors_by_week(
@@ -273,7 +270,8 @@ class PoolsPage(Page):
             f"expected, held by {sum(o.held for o in gain) / len(gain):.0%}."
         )
         self.optimizer_note.setText(
-            "A Big Loser scores a point when the team loses by 15 or more. Gain is how much a team puts "
+            "A Big Loser scores a point when the team loses by 15 or more; its chance is how often teams "
+            "with that line have, in every season since 1999. Gain is how much a team puts "
             "you ahead of the average card: a point everybody has moves nobody. "
             + ("The pool's share is counted from this week's pick sheet. " if board.counted else
                "The pool's share is an estimate until this week's pick sheet is in. ")
@@ -498,10 +496,4 @@ class PoolsPage(Page):
         Both tables here are rebuilt on every refresh, which resets the sort
         indicator, so the user's choice has to be carried across.
         """
-        if view is None or not hasattr(view, "horizontalHeader"):
-            return default
-        header = view.horizontalHeader()
-        column = header.sortIndicatorSection()
-        if not 0 <= column < columns:
-            return default
-        return column, header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
+        return current_sort(view, columns, default)

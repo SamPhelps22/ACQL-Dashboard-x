@@ -24,6 +24,7 @@ from . import picks as pick_sheets, results, timeline
 from .analytics import line_need
 from .models import Game, Season
 from .predictions import display_team, team_code
+from .wording import ordinal as _ordinal
 
 BLOWOUT = results.BLOWOUT
 DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -285,10 +286,6 @@ def fingerprint(data: dict) -> str:
 
 
 # ---- the bad beats -------------------------------------------------------------------
-def _ordinal(n: int) -> str:
-    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
-
-
 def _names(names: list[str]) -> str:
     names = list(names)
     if len(names) <= 1:

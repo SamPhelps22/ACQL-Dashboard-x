@@ -373,8 +373,11 @@ def games_now(season: Season, week: int, *, kept: list[results.Score] | None = N
             p_home = float(weights[sides == HOME].sum())
             p_away = float(weights[sides == AWAY].sum())
             leader = int(credited_by(game, np.asarray([margin]))[0]) if state == "in" and margin is not None else NOBODY
-            bh = float(weights[margins <= -BLOWOUT].sum())
-            ba = float(weights[margins >= BLOWOUT].sum())
+            if state == "in":
+                bh = analytics.big_loser_chance_in_play(float(weights[margins <= -BLOWOUT].sum()), expected, sd, left)
+                ba = analytics.big_loser_chance_in_play(float(weights[margins >= BLOWOUT].sum()), -expected, sd, left)
+            else:                                # before kickoff: This Week's own numbers
+                bh, ba = analytics.big_loser_chance(expected, sd), analytics.big_loser_chance(-expected, sd)
 
         def oriented(home_value, away_value):
             return (away_value, home_value) if flipped else (home_value, away_value)
@@ -609,6 +612,29 @@ def _seed(year: int, week: int, states: list[GameNow], cards_: list[Card]) -> in
     return zlib.crc32(text.encode("utf-8"))
 
 
+def _routs(draws: np.ndarray, states: list[GameNow], seed: int) -> dict[int, np.ndarray]:
+    """Which side is routed in each played-out week, game by game.
+
+    The margins drawn come off the margin curve, which puts fewer routs on
+    the board than history does (analytics.rout_chance) - so counting the
+    draws of 15 or more would not add up to the chances the games carry. A
+    game still to finish has its routs made up to its own chance instead:
+    its most lopsided draws are the routs, equal margins settled by lot.
+    """
+    sims = len(draws)
+    blown = {HOME: draws <= -BLOWOUT, AWAY: draws >= BLOWOUT}
+    lots = np.random.default_rng(seed).random(draws.shape)
+    for g, st in enumerate(states):
+        if st.state not in ("pre", "in"):
+            continue
+        worst = np.lexsort((lots[:, g], draws[:, g]))               # the home side's worst days first
+        for side, chance, order in ((HOME, st.blowout_home, worst), (AWAY, st.blowout_away, worst[::-1])):
+            hit = np.zeros(sims, dtype=bool)
+            hit[order[:int(round(chance * sims))]] = True
+            blown[side][:, g] = hit
+    return blown
+
+
 def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
           kept: list[results.Score] | None = None) -> Board:
     """The whole week as it stands, played out `sims` times from here."""
@@ -621,7 +647,8 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
     you_standing = ghost_standing = None
     if states and every:
         index = {st.index: g for g, st in enumerate(states)}
-        rng = np.random.default_rng(_seed(year, week, states, every))
+        seed = _seed(year, week, states, every)
+        rng = np.random.default_rng(seed)
         draws = np.stack([st.outlook.sample(rng, sims) for st in states], axis=1)     # sims x games
         credited = np.stack([credited_by(st.game, draws[:, g]) for g, st in enumerate(states)], axis=1)
         # a game over or postponed is what it is, whatever its margin said
@@ -630,7 +657,7 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
                 credited[:, g] = st.leader
             elif st.state == "off":
                 credited[:, g] = NOBODY
-        blown = {HOME: draws <= -BLOWOUT, AWAY: draws >= BLOWOUT}
+        blown = _routs(draws, states, seed + 1)
         for g, st in enumerate(states):
             if st.state == "final" and st.margin is None:
                 blown[HOME][:, g] = st.blowout_home >= 0.5

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from ... import analytics, ghost, picks
 from ...models import Player, Season
+from ...wording import plural as _plural, suffix as _ordinal
 from ..charts import HeatmapChart, LineChart
-from ..widgets import Card, TableModel, make_table, section
+from ..widgets import Card, TableModel, current_sort, make_table, section
 from .base import Page
 
 HEADERS = [
@@ -25,14 +26,6 @@ GRID_ROWS = 24
 RACE_PLAYERS = 4
 RACE_TITLE = "The race - wins behind the leader, week by week"
 UP, DOWN = "▲", "▼"
-
-
-def _ordinal(n: int) -> str:
-    return "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
 
 
 def running_wins(player: Player, weeks: list[int]) -> list[int]:
@@ -363,15 +356,7 @@ class StandingsPage(Page):
 
     def _current_sort(self) -> tuple[int, bool]:
         """The table's current (column, ascending), or the default if unknown."""
-        default = (0, True)
-        view = self.table
-        if view is None or not hasattr(view, "horizontalHeader"):
-            return default
-        header = view.horizontalHeader()
-        column = header.sortIndicatorSection()
-        if not 0 <= column < len(HEADERS):
-            return default
-        return column, header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
+        return current_sort(self.table, len(HEADERS))
 
     # ---- the race -------------------------------------------------------
     def _update_race(self, season: Season, order: list[Player]) -> None:
