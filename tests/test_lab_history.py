@@ -115,6 +115,7 @@ def write_fixtures(folder: Path) -> build.Inputs:
             {"away": "dallas", "home": "NEW YORK GIANTS", "note": "|"},
             {"away": "los angeles rams", "home": "LOS ANGELES CHARGERS", "note": ""},
         ]}},
+        "weights": {"2030-1": {"weight": 0.33, "fit": None}, "not-a-week": {"weight": 1}},
     }
     extract = folder / "store_extract.json"
     extract.write_text(json.dumps({"database": "synthetic", "database_sha256": "0" * 64, "store": store},
@@ -429,6 +430,14 @@ class TestImport(LabCase):
         self.assertEqual(sheet, 2030)
         conn.close()
 
+    def test_production_weights_are_kept_by_season_and_week(self):
+        conn = sqlite3.connect(self.db)
+        self.assertEqual(conn.execute("SELECT season, week, weight FROM production_weights").fetchall(),
+                         [(2030, 1, 0.33)])
+        notes = [n for (n,) in conn.execute("SELECT note FROM build_notes")]
+        self.assertTrue(any("not-a-week" in n for n in notes))
+        conn.close()
+
     def test_playoff_games_are_left_out(self):
         conn = sqlite3.connect(self.db)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM games WHERE week > 18").fetchone()[0], 0)
@@ -447,6 +456,7 @@ class TestAppDatabaseIsOnlyRead(unittest.TestCase):
                 ("odds", "key", "api-key"),
                 ("odds", "weeks", {"1": {"history": []}}),
                 ("forecasts", "1", {"games": []}),
+                ("weights", "2026-3", {"weight": 0.33, "fit": None}),
                 ("picks", "1", {"source": "x.xls", "imported": 1.0, "games": [
                     {"away": "a", "home": "B", "note": "(b by 7)", "picks": {"Coach": "a"}}]}),
             ):
@@ -461,6 +471,7 @@ class TestAppDatabaseIsOnlyRead(unittest.TestCase):
             self.assertNotIn("api-key", text)
             self.assertNotIn("Coach", text)                      # coaches' picks stay behind
             self.assertEqual(found["picks"]["1"]["games"][0]["note"], "(b by 7)")
+            self.assertEqual(found["weights"]["2026-3"]["weight"], 0.33)
         finally:
             shutil.rmtree(folder, ignore_errors=True)
 

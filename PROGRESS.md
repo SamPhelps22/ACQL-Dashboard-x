@@ -1,54 +1,48 @@
-# PROGRESS — historical dataset for Deadeye's walk-forward backtest
+# PROGRESS — Deadeye historical dataset and walk-forward backtest
 
-**Goal.** Build a reproducible as-of-cutoff dataset with these pieces:
-- one prediction record per game per cutoff;
-- separate tables for timestamped odds and individual model forecasts;
-- leakage tests and a coverage report.
+**Goal.** A reproducible as-of-cutoff dataset (phase 1) and walk-forward
+backtests on it (phase 2). Production (`acql/`) stays unchanged.
 
-Production (`acql/`) stays unchanged.
-
-**Status: first version built and verified (2026-10-12). Not committed;
-waiting on Sam's approval.**
+**Status (2026-10-12)**
+- Phase 1 was committed as `6ad873f`.
+- Phase 2 is built and verified. It is not committed yet, waiting on Sam's
+  approval.
 
 **Decisions**
-- Code lives in `lab/history/`, which production never imports. Outputs go
-  to `lab/data/` (gitignored).
-- Cutoffs are `week_lock` (production's first-kickoff rule) and `kickoff`.
-  The pool's real deadline is unknown.
-- nflverse lines have no time, so they go only into `*_unverified` fields,
-  flagged. `asof.production_forecast` refuses them unless
-  `allow_unverified=True`.
-- `data/acql.db` is read only through a read-only SQLite URI, never through
-  `acql.store`. The extract leaves out settings, the API key and coaches'
-  picks.
-- nflverse raw data is not committed (no license file). It is pinned by
-  commit and sha256 in `lab/history/sources.lock.json`.
+- The lab lives in `lab/`, which production never imports. Outputs go to
+  `lab/data/` (gitignored). Cutoffs are `week_lock` and `kickoff`.
+- Undated lines (nflverse, typed spreads) go only into `*_unverified`
+  fields. The store is read through a read-only URI only.
+- "Current Deadeye" in phase 2 means production's own `pricing.price`, with
+  the weight production held for that week (now in the dataset as
+  `production_weights`).
+- The store extract is versioned (`store_extract-v2-…`). Older extracts are
+  kept, never overwritten.
 
-**Done**
-- Audit: `lab/reports/data-audit.md`.
-- Package: `lab/history/` (`schema`, `asof`, `build`, `report`).
-- Build: 7,239 games and 14,478 records.
-  - All records reproduce.
-  - Two builds produce identical data.
-  - `data/acql.db` is unchanged.
-- Coverage report: `lab/reports/coverage.md`.
-- Tests: 23 new in `tests/test_lab_history.py`, wired into
-  `tests/run_tests.py`.
-  - The full suite runs 62: 2 pre-existing failures, 1 skipped.
-  - Planted leakage bugs were caught: 7 failures for the odds bug, 2 for the
-    forecasts bug.
+**Phase 2 results (`lab/reports/walkforward.md`)**
+- **Verified, 2026 weeks 3–5, 45 games.**
+  - Market alone and Deadeye were each right 25 times.
+  - Log loss, Deadeye minus market: −0.005 (95% range −0.0175 to +0.0076).
+    No evidence either way.
+- **Curve width, 2010–2025, 4,167 games, undated lines.**
+  - Walk-forward log loss difference: −0.0002 (95% range includes 0).
+  - 1 pick changed.
+  - No case for changing `SPREAD_SD`.
+- **Fidelity.** The lab's Deadeye matched production's saved cards on 42 of
+  47 picks. All 5 differences are games with a hand-typed spread. Those
+  have no timestamp, so the dataset can't use them.
 
 **Next**
-- Sam to approve committing.
-- Get past Prediction Tracker files and timestamped historical odds. Put PT
-  CSVs in `lab/data/raw/predictiontracker/` with a `.meta.json`
-  (`season`, `week`, `retrieved_at`, `published_at`).
-- Then a walk-forward harness that compares the market-only and current
-  Deadeye baselines on identical eligible games.
+- Sam to approve committing phase 2.
+- Biggest gap: more verified weeks.
+  - Past Prediction Tracker files go in
+    `lab/data/raw/predictiontracker/` with a `.meta.json`.
+  - Timestamped odds are also needed.
+- Possible production change (needs approval): store a time when a spread is
+  typed, so typed spreads become verifiable.
 
 **Open questions for Sam**
 - The pool's real pick deadline.
-- What `old_rule` in `pool_weeks.json` was.
+- What `old_rule` was.
 - How ties are graded.
-- Whether the 2023 pick sheets in the store are really 2023. The slates
-  match 2023 uniquely, but `pool_weeks.json` mentions only 2025–2026.
+- Whether the four store pick sheets really are 2023.

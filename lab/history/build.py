@@ -22,6 +22,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -46,6 +47,9 @@ REPORT_FILE = ROOT / "lab" / "reports" / "coverage.md"
 STORE_DB = ROOT / "data" / "acql.db"
 SCORES_CSV = ROOT / "acql" / "data" / "nfl_scores_2010_2026.csv"
 PT_DROP = RAW / "predictiontracker"     # archived Prediction Tracker files, by hand
+#: Bumped when the extract takes more from the store, so an older extract is
+#: kept as it was rather than overwritten.
+EXTRACT_VERSION = 2
 
 # nflverse writes a few teams by an older or shorter code than the app does.
 NFLVERSE_CODES = {"LA": "lar", "OAK": "lv", "SD": "lac", "STL": "lar"}
@@ -175,6 +179,7 @@ def read_store(db_path: Path) -> dict:
             "odds_weeks": odds.get("weeks") or {},
             "spreads": kind("spreads"),
             "picks": picks,
+            "weights": kind("weights"),
         }
     finally:
         conn.close()
@@ -183,7 +188,7 @@ def read_store(db_path: Path) -> dict:
 def extract_store(db_path: Path = STORE_DB, *, raw: Path = RAW) -> Path:
     """Copy the store's relevant parts to raw/, named by the database's hash."""
     digest = sha256(db_path)
-    dest = raw / f"store_extract-{digest[:16]}.json"
+    dest = raw / f"store_extract-v{EXTRACT_VERSION}-{digest[:16]}.json"
     if dest.exists():
         return dest
     raw.mkdir(parents=True, exist_ok=True)
@@ -212,7 +217,7 @@ def default_inputs() -> Inputs:
     games_csv = RAW / "nflverse_games.csv"
     meta = json.loads((RAW / "nflverse_games.csv.meta.json").read_text(encoding="utf-8"))
     digest = sha256(STORE_DB)
-    extract = RAW / f"store_extract-{digest[:16]}.json"
+    extract = RAW / f"store_extract-v{EXTRACT_VERSION}-{digest[:16]}.json"
     return Inputs(games_csv, meta, extract if extract.exists() else None,
                   SCORES_CSV if SCORES_CSV.exists() else None, default_pt_files())
 
@@ -587,6 +592,33 @@ def import_pool_sheets(conn, slates: Slates, store: dict, notes: list[str]) -> N
                 "posted_at_basis": "not recorded on the sheet"})
 
 
+def import_weights(conn, store: dict, notes: list[str]) -> None:
+    """The model weight production priced each week with (pricing.week_weight).
+
+    Production fits it on the weeks before the one being priced and holds it
+    from that week's first kickoff, so it is information Deadeye had at the
+    lock. The store keeps no time for when it was noted.
+    """
+    weights = store.get("weights", {}) if store else {}
+    if not weights:
+        return
+    insert(conn, "sources", {
+        "source_id": "store:weights", "kind": "production_state",
+        "description": "the model weight each week was priced with",
+        "location": "data/acql.db (kind weights)", "sha256": None, "bytes": None,
+        "retrieved_at": None, "retrieved_at_basis": "the store keeps no time for these notes",
+        "note": "Fitted on earlier weeks only (pricing.model_weight(before=week))."})
+    for key, held in sorted(weights.items()):
+        found = re.fullmatch(r"(\d{4})-(\d{1,2})", str(key))
+        if not found or not isinstance(held, dict) or not isinstance(held.get("weight"), (int, float)):
+            notes.append(f"store weights {key!r}: not understood - not imported")
+            continue
+        insert(conn, "production_weights", {
+            "season": int(found.group(1)), "week": int(found.group(2)), "weight": float(held["weight"]),
+            "fit": json.dumps(held.get("fit"), sort_keys=True), "source_id": "store:weights",
+            "basis": "fitted by production on the weeks before this one; held from the first kickoff"})
+
+
 def insert_rules(conn) -> None:
     for row in (
         {"rule_id": asof.LINED_RULE, "applies_to": "games carrying a pool line",
@@ -641,6 +673,7 @@ def build(inputs: Inputs, dest: Path = DB_FILE) -> dict:
         import_app_odds(conn, slates, store, notes)
         import_typed_spreads(conn, slates, store, seasons, notes)
         import_pool_sheets(conn, slates, store, notes)
+        import_weights(conn, store, notes)
         insert_rules(conn)
         for record in asof.all_records(conn):
             insert(conn, "prediction_records", record)

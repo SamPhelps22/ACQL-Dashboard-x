@@ -29,7 +29,8 @@ Counts only; nothing is estimated. Definitions and source limits are in
 | store:forecasts:2 | market | `data/acql.db (kind forecasts)` | — | — | no time recorded (imported = 0) |
 | store:odds | market | `data/acql.db (kind odds, key weeks)` | — | — | each snapshot carries its own fetch time |
 | store:spreads | market | `data/acql.db (kind spreads)` | — | — | the store keeps no time for typed spreads |
-| store_extract | app_store_extract | `lab/data/raw/store_extract-6b56471efb6a0538.json` | 67809d75e295 | — | entries carry the app's own times |
+| store:weights | production_state | `data/acql.db (kind weights)` | — | — | the store keeps no time for these notes |
+| store_extract | app_store_extract | `lab/data/raw/store_extract-v2-6b56471efb6a0538.json` | 408d435fcbeb | — | entries carry the app's own times |
 
 ## Eligible games by season
 

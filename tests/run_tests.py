@@ -501,6 +501,8 @@ def main() -> int:
     suite = loader.loadTestsFromModule(sys.modules[__name__])
     import test_lab_history  # the Model Lab's dataset and leakage tests (tests/test_lab_history.py)
     suite.addTests(loader.loadTestsFromModule(test_lab_history))
+    import test_lab_walkforward  # the Model Lab's walk-forward backtest tests
+    suite.addTests(loader.loadTestsFromModule(test_lab_walkforward))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

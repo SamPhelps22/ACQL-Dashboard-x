@@ -123,6 +123,17 @@ CREATE TABLE pool_rules (
     verified_from_week   INTEGER
 );
 
+-- The share of the models' opinion production priced each week with.
+CREATE TABLE production_weights (
+    season      INTEGER NOT NULL,
+    week        INTEGER NOT NULL,
+    weight      REAL NOT NULL,
+    fit         TEXT NOT NULL,          -- JSON, as production noted it
+    source_id   TEXT NOT NULL REFERENCES sources(source_id),
+    basis       TEXT NOT NULL,
+    PRIMARY KEY (season, week)
+);
+
 -- One record per game per cutoff: only what was available at the cutoff.
 -- Deliberately no score, result or margin column.
 CREATE TABLE prediction_records (
