@@ -452,6 +452,7 @@ class TableModel(QAbstractTableModel):
         ]
         self._tone_colors = {
             "good": QColor(palette.good),
+            "warning": QColor(palette.warning),
             "bad": QColor(palette.critical),
             "muted": QColor(palette.ink_muted),
         }

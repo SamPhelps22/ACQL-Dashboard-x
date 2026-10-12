@@ -2236,6 +2236,239 @@ class TestChartsDrawOnce(unittest.TestCase):
         self.assertIsNone(charts._mark((list(range(charts.MARK_BUDGET + 5)),)))
 
 
+class TestComputerModels(_ScratchStore):
+    """Each computer model kept by name, and the crowd of them measured against the betting line."""
+
+    FILE = ("lineopen,line,road,home,linesag,linemass,linemidweek,lineavg,linestd,neutral,phwin\n"
+            "3,3.5,Tampa Bay,Dallas,4.5,2,3.5,3.3,1.0,0,0.6\n"
+            "-2,-2.5,Chicago,Green Bay,-1,,-2.5,-1.7,0.8,0,0.4\n")
+
+    @staticmethod
+    def _reading(i, line, actual, named, opinions=()):
+        from acql import computers
+        return computers.Reading(week=3 + i // 16, index=i % 16 + 1, matchup=f"A{i} @ H{i}", line=line,
+                                 middle=named.get("good"), apart=1.0 + (i % 2), opinions=tuple(opinions),
+                                 named=dict(named), deadeye=line, actual=actual)
+
+    def _season(self, games=40):
+        """Made-up games: one model near the result, its copy, one that runs backwards, one that is the line."""
+        out = []
+        for i in range(games):
+            line = float((i * 7) % 15 - 7)
+            actual = line + ((i * 5) % 13 - 6)
+            view = ((i * 3) % 7 - 3) / 2
+            named = {"good": actual + view / 4, "twin": actual + view / 4 + 0.5, "wild": line + 9 + (i % 5),
+                     "back": -line + (i % 3), "midweek": line, "odd": line + view}
+            out.append(self._reading(i, line, actual, named))
+        return out
+
+    def test_the_file_is_read_with_its_names(self):
+        from acql import computers
+        csv_file = self.folder / "nflpredictions week 3.csv"
+        csv_file.write_text(self.FILE, encoding="utf-8")
+        named = computers.read_named(csv_file)
+        self.assertEqual(named[("tb", "dal")], {"sag": 4.5, "mass": 2.0, "midweek": 3.5})
+        self.assertEqual(named[("chi", "gb")], {"sag": -1.0, "midweek": -2.5})      # a blank is no opinion
+        self.assertEqual(computers.label("sag"), "Sagarin (sag)")
+        self.assertEqual(computers.label("zzz"), "ZZZ")
+
+    def test_names_are_kept_only_where_the_file_still_matches(self):
+        from acql import computers, store
+        csv_file = self.folder / "nflpredictions week 3.csv"
+        csv_file.write_text(self.FILE, encoding="utf-8")
+        store.put("forecasts", "3", {"source": str(csv_file), "games": [
+            {"road": "Tampa Bay", "home": "Dallas", "opinions": [2.0, 3.5, 4.5]},
+            {"road": "Chicago", "home": "Green Bay", "opinions": [-9.0, -2.5]},      # priced from another copy
+        ]})
+        store.put("forecasts", "4", {"source": str(self.folder / "gone.csv"), "games": []})
+        self.assertEqual(computers.keep(), {3: 1})
+        kept = store.get(computers.KIND, "3")
+        self.assertEqual([(g["road"], g["home"]) for g in kept["games"]], [("tb", "dal")])
+        self.assertEqual(kept["games"][0]["named"]["sag"], 4.5)
+        stamp = kept["kept"]
+        self.assertEqual(computers.keep(), {3: 1})                                   # nothing new: not rewritten
+        self.assertEqual(store.get(computers.KIND, "3")["kept"], stamp)
+
+    def test_each_model_is_measured_against_the_line_on_its_own_games(self):
+        from acql import computers
+        found = self._season()
+        board = {s.code: s for s in computers.leaderboard(found)}
+        self.assertEqual(computers.leaderboard(found)[0].code, "good")
+        good, wild, line = board["good"], board["wild"], board["midweek"]
+        self.assertEqual((good.games, good.of, good.ranked), (40, 40, True))
+        self.assertGreater(good.edge, 0)
+        self.assertLess(wild.edge, 0)
+        self.assertAlmostEqual(line.edge, 0.0)
+        self.assertEqual((line.closer, line.further, line.cover_games), (0, 0, 0))
+        self.assertGreater(good.closer, good.further)
+        self.assertLessEqual(good.closer + good.further, good.games)
+        few = computers.leaderboard(found[:10])
+        self.assertFalse(any(s.ranked for s in few))
+
+    def test_the_residual_says_how_much_of_the_models_view_showed_up(self):
+        from acql import computers
+        rows = [self._reading(i, 0.0, 0.5 * x, {"good": x}) for i, x in enumerate([-4, -3, -2, -1, 0, 1, 2, 3, 4, 5])]
+        half = computers.residual(rows, share=0.33)
+        self.assertAlmostEqual(half.slope, 0.5)
+        self.assertEqual(half.verdict, "more")
+        flat = computers.residual([self._reading(i, 0.0, 0.0, {"good": x}) for i, x in enumerate(range(-5, 5))], 0.33)
+        self.assertAlmostEqual(flat.slope, 0.0)
+        self.assertEqual(flat.verdict, "nothing")
+        short = computers.residual(rows[:4])
+        self.assertIsNone(short.slope)
+        self.assertIn("Too few", short.reading)
+        noisy = computers.residual(self._season())
+        self.assertLess(noisy.low, noisy.slope)
+        self.assertIn(str(noisy.games), noisy.reading)
+
+    def test_ways_to_average_are_scored_on_the_same_games(self):
+        from acql import computers
+        opinions = (2.0, 2.5, 3.0, 3.0, 3.5, 4.0, 30.0)          # one wild model
+        found = [self._reading(i, 1.0, 3.0, {"good": 3.0}, opinions) for i in range(12)]
+        ways = computers.averages(found)
+        self.assertEqual(ways[-1].name, computers.LINE_ROW)
+        named = {w.name: w for w in ways}
+        self.assertLess(named["Median"].miss, named["Plain average"].miss)
+        self.assertLess(named[computers.IN_USE].miss, named["Plain average"].miss)
+        self.assertTrue(named[computers.IN_USE].in_use)
+        self.assertEqual({w.games for w in ways}, {12})
+        self.assertEqual(computers.averages([]), [])
+
+    def test_copies_and_bad_columns_are_found(self):
+        from acql import computers
+        found = self._season()
+        alike = computers.look_alikes(found)
+        self.assertIn(("good", "twin"), [(a, b) for a, b, _, _ in alike.pairs])
+        self.assertEqual(alike.crowd, 6)
+        self.assertLess(alike.effective, 5)                       # six columns, fewer opinions
+        flags = {f.code: f.what for f in computers.checks(found)}
+        self.assertEqual(flags["back"], "backwards")
+        self.assertEqual(flags["midweek"], "a betting line")
+        self.assertEqual(flags["wild"], "far from the rest")
+        self.assertNotIn("good", flags)
+
+    def test_a_season_with_no_models_is_an_empty_report(self):
+        from acql import computers
+        report = computers.build(Season())
+        self.assertEqual((report.found, report.board, report.slate, report.blend), ([], [], [], None))
+        self.assertIsNone(report.residual.slope)
+
+
+class TestLongRecord(unittest.TestCase):
+    """Each computer model's season totals since 2000, and what past form is worth."""
+
+    PAGE = ("<h3>2012 Season Totals</h3>Through 2013-02-04<table border='0' CLASS='results_table'>"
+            "<tr><th>Rank</th><th>System</th><th>Pct. Correct</th><th>Against Spread</th><th>Absolute Error</th>"
+            "<th>Bias</th><th>Mean Square Error</th><th>games</th><th>suw</th><th>sul</th><th>atsw</th><th>atsl</th></tr>"
+            "<tr><td align='center'><font size=2>1</font></td><td><font size=2>Sonny  Moore</font></td>"
+            "<td>0.66292</td><td>0.51200</td><td>10.2500</td><td>0.50000</td><td>170.100</td><td>267</td>"
+            "<td>177</td><td>90</td><td>128</td><td>122</td></tr>"
+            "<tr><td>2</td><td>Line (updated)</td><td>0.65</td><td>0.5</td><td>10.0</td><td>0.1</td><td>160.0</td>"
+            "<td>267</td><td>170</td><td>92</td><td>0</td><td>0</td></tr>"
+            "<tr><td>not a row</td></tr></table>")
+
+    @staticmethod
+    def _row(season, name, miss, games=267, cover=0.5, ats=(130, 130)):
+        from acql import longrecord
+        return longrecord.Row(season, name, 0.64, cover, miss, 0.2, games, ats[0], ats[1])
+
+    def _found(self):
+        """2010-2013: ten models that keep their order every season, the line ahead of them all."""
+        found = {}
+        for year in range(2010, 2014):
+            rows = [self._row(year, "Line (updated)", 10.0), self._row(year, "System Median", 10.5),
+                    self._row(year, "Computer Adjusted Line", 9.95, ats=(60, 40))]
+            for i in range(10):
+                name = "Sagarin Rating" if i == 0 else f"Model {i}"
+                beat_spread = (i + year) % 2 == 0           # a good year against the spread, then a bad one
+                rows.append(self._row(year, name, 10.2 + 0.1 * i, cover=0.56 if beat_spread else 0.46,
+                                      ats=(150, 118) if beat_spread else (123, 145)))
+            found[year] = rows
+        found[2014] = [self._row(2014, "Line (updated)", 9.0, games=60), self._row(2014, "Model 1", 8.0, games=60)]
+        return found
+
+    def test_a_season_page_is_read(self):
+        from acql import longrecord
+        rows = longrecord.parse(self.PAGE, 2012)
+        self.assertEqual([r.name for r in rows], ["Sonny Moore", "Line (updated)"])
+        moore = rows[0]
+        self.assertEqual((moore.season, moore.games, moore.ats_won, moore.ats_lost), (2012, 267, 128, 122))
+        self.assertAlmostEqual(moore.miss, 10.25)
+        self.assertEqual((moore.key, rows[1].key), ("sonnymoore", longrecord.LINE))
+        self.assertEqual(longrecord.key_of("Turnover Adj. regressio"), longrecord.key_of("Turnover Adj. regression"))
+        folder = Path(tempfile.mkdtemp(prefix="acql-test-"))
+        try:
+            (folder / "nflresults-2012.html").write_text(self.PAGE, encoding="utf-8")
+            self.assertEqual(sorted(longrecord.seasons(folder)), [2012])
+            self.assertEqual(longrecord.build(folder).careers, [])        # one season is not a record
+            self.assertEqual(longrecord.seasons(folder / "nowhere"), {})
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    def test_each_model_is_set_beside_the_line_over_its_own_seasons(self):
+        from acql import longrecord
+        found = self._found()
+        careers = longrecord.careers(found)
+        self.assertEqual(len(careers), 10)                   # no lines, no averages, no half season
+        best = careers[0]
+        self.assertEqual((best.name, best.seasons, best.first, best.last, best.games), ("Sagarin Rating", 4, 2010, 2013, 1068))
+        self.assertAlmostEqual(best.edge, -0.2)
+        self.assertEqual((best.ahead, best.of, best.current), (0, 4, False))
+        self.assertTrue(next(c for c in careers if c.name == "Model 1").current)
+        self.assertAlmostEqual(best.cover, (150 + 123 + 150 + 123) / (4 * 268))
+
+    def test_accuracy_carries_over_and_the_spread_record_does_not(self):
+        from acql import longrecord
+        carry = longrecord.carry_over(self._found())
+        self.assertEqual((carry.pairs, carry.hot_seasons), (30, 3))
+        self.assertAlmostEqual(carry.miss_r, 1.0)
+        self.assertEqual(carry.verdict, "strong")
+        self.assertLess(carry.cover_r, 0)
+        self.assertAlmostEqual(carry.top_was, carry.top_next)
+        self.assertGreater(carry.cover_was, carry.cover_next)
+        self.assertEqual((carry.hot_beat_typical, carry.hot_beat_line), (3, 0))
+        self.assertEqual(longrecord.carry_over({}).verdict, "none")
+
+    def test_the_line_the_crowd_and_form(self):
+        from acql import longrecord
+        found = self._found()
+        lines = longrecord.by_season(found)
+        self.assertEqual([s.season for s in lines], [2010, 2011, 2012, 2013])
+        self.assertEqual((lines[0].models, lines[0].ahead, lines[0].best), (10, 0, "Sagarin Rating"))
+        record = longrecord.Record(longrecord.careers(found), longrecord.carry_over(found), lines, 2010, 2013,
+                                   longrecord.form(found, 2014))
+        self.assertEqual(record.crowd[:2], (0, 4))
+        self.assertAlmostEqual(record.crowd[2], -0.5)
+        self.assertEqual((record.nudged[0], record.nudged[1], record.nudged[3], record.nudged[4]), (4, 4, 240, 160))
+        self.assertEqual(record.nudged_lately, (240, 160, 4))
+        self.assertEqual(record.model_seasons, (0, 40))
+        self.assertAlmostEqual(record.standing("sag"), 0.45)          # the weekly file's "sag" is Sagarin Rating
+        self.assertIsNone(record.standing("zzz"))
+        self.assertEqual(record.career("sag").name, "Sagarin Rating")
+        self.assertEqual(longrecord.form(found, 2011), {})            # one season is not form
+        self.assertNotIn("model1", {k for k, v in longrecord.form(found, 2014).items() if v > 0.4})
+
+    def test_crowds_are_chosen_on_form_from_before_the_season(self):
+        from acql import computers
+        codes = list("abcdefghij")
+        form = {code: 1.0 - i / 5 for i, code in enumerate(codes)}       # a is the best, j the worst
+        crowds = computers.chosen(codes + ["new"], form)
+        self.assertEqual(crowds[computers.PROVEN], set("abcde"))
+        self.assertEqual(crowds[computers.WITHOUT_WEAKEST], set("abcdefgh") | {"new"})
+        self.assertEqual(computers.chosen(codes[:6], form), {})          # too few with a record to choose from
+        found = []
+        for i in range(12):
+            named = {code: 3.0 + (4.0 * n if n >= 5 else 0.1 * n) for n, code in enumerate(codes)}
+            found.append(computers.Reading(week=3, index=i + 1, matchup=f"A{i} @ H{i}", line=1.0, middle=3.0, apart=1.0,
+                                           opinions=tuple(sorted(named.values())), named=named, deadeye=1.0, actual=3.0))
+        ways = {w.name: w for w in computers.averages(found, form)}
+        self.assertLess(ways[computers.PROVEN].miss, ways[computers.IN_USE].miss)      # the good half were the close ones
+        self.assertIn(computers.WITHOUT_WEAKEST, ways)
+        self.assertNotIn(computers.PROVEN, {w.name for w in computers.averages(found)})
+        board = computers.leaderboard(found * 3)
+        self.assertIsNone(computers.form_check(board[:4], form))
+
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")

@@ -41,7 +41,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import predictions, pricing, store
+from . import longrecord, predictions, pricing, store
 from .models import Season
 from .predictions import team_code
 
@@ -63,15 +63,10 @@ SAME_AS_LINE = 0.25
 #: The fewest games the residual is worked out on.
 MIN_RESIDUAL = 8
 
-#: The file's short names, spelled out where there is no doubt whose they are.
-NAMES = {
-    "sag": "Sagarin", "sagr": "Sagarin Recent", "sagpred": "Sagarin Predictor", "saggm": "Sagarin Golden Mean",
-    "mass": "Massey", "nfelo": "nfelo", "espn": "ESPN FPI", "elo": "Elo", "pyth": "Pythagorean",
-    "eff": "Scoring Efficiency", "log": "Logistic Regression", "teamrank": "TeamRankings", "dunk": "Dunkel",
-    "moore": "Moore", "dok": "Dokter Entropy", "donchess": "Donchess", "talis": "Talisman Red", "pugh": "Pugh",
-    "betbetter": "Bet Better", "gt": "Game Time Decision", "johnson": "Roger Johnson", "ash": "Ashby",
-    "kam": "Kambour", "midweek": "Midweek betting line",
-}
+#: The file's short names spelled out, as the season pages name them (longrecord.py) - a few tidied up.
+NAMES = {**longrecord.CODES, "eff": "Scoring Efficiency", "midweek": "Midweek betting line",
+         "l1": "Least Absolute Value", "l2h": "Least Squares, home edge", "l2to": "Turnover-adjusted",
+         "congrove": "Congrove", "teamrank": "TeamRankings", "sag": "Sagarin"}
 
 
 def label(code: str) -> str:
@@ -366,24 +361,55 @@ WAYS = (
 LINE_ROW = "The betting line"
 
 
-def averages(found: list[Reading]) -> list[Way]:
-    """Each way of boiling the models down to one number, on the same played games."""
+#: Two crowds chosen on the models' form before the season began (longrecord.form).
+PROVEN, WITHOUT_WEAKEST = "Proven half only", "Without the weakest quarter"
+
+
+def chosen(codes: list[str], form: dict[str, float]) -> dict[str, set[str]]:
+    """The better half of the models by form, and everyone but the weakest
+    quarter (a model with no long record stays in that one)."""
+    rated = sorted((c for c in codes if c in form), key=lambda c: (-form[c], c))
+    if len(rated) < 2 * predictions.MIN_KEPT:
+        return {}
+    weakest = set(rated[len(rated) - len(rated) // 4:])
+    return {PROVEN: set(rated[:len(rated) // 2]), WITHOUT_WEAKEST: set(codes) - weakest}
+
+
+def _way(name: str, made: list[tuple[float, Reading]]) -> Way:
+    sided = [(v, r) for v, r in made if v != r.line and r.actual != r.line]
+    return Way(
+        name, len(made), _miss((v, r.actual) for v, r in made),
+        closer=sum(1 for v, r in made if abs(v - r.actual) < abs(r.line - r.actual)),
+        cover=sum(1 for v, r in sided if (v > r.line) == (r.actual > r.line)),
+        cover_games=len(sided), in_use=name == IN_USE,
+    )
+
+
+def averages(found: list[Reading], form: dict[str, float] | None = None) -> list[Way]:
+    """Each way of boiling the models down to one number, on the same played
+    games. With the models' form going into the season, two more: the same
+    middle taken over a crowd chosen on that form."""
     graded = [r for r in _graded(found) if len(r.opinions) >= predictions.MIN_KEPT]
     if not graded:
         return []
-    out = []
-    for name, way in WAYS:
-        made = [(way(list(r.opinions)), r) for r in graded]
-        sided = [(v, r) for v, r in made if v != r.line and r.actual != r.line]
-        out.append(Way(
-            name, len(graded), _miss((v, r.actual) for v, r in made),
-            closer=sum(1 for v, r in made if abs(v - r.actual) < abs(r.line - r.actual)),
-            cover=sum(1 for v, r in sided if (v > r.line) == (r.actual > r.line)),
-            cover_games=len(sided), in_use=name == IN_USE,
-        ))
+    out = [_way(name, [(way(list(r.opinions)), r) for r in graded]) for name, way in WAYS]
+    if form and all(r.named for r in graded):
+        middle = _middle(predictions.TRIM_SHARE)
+        for name, crowd in chosen(sorted({c for r in graded for c in r.named}), form).items():
+            picked = [[v for c, v in r.named.items() if c in crowd] for r in graded]
+            if all(len(values) >= predictions.MIN_KEPT for values in picked):
+                out.append(_way(name, [(middle(values), r) for values, r in zip(picked, graded)]))
     out.sort(key=lambda w: w.miss)
     out.append(Way(LINE_ROW, len(graded), _miss((r.line, r.actual) for r in graded), 0, 0, 0))
     return out
+
+
+def form_check(board: list[SourceLine], form: dict[str, float]) -> tuple[float, int] | None:
+    """Does form before the season show up in it? (how closely the two go
+    together across the models, the models compared) - None with too few."""
+    both = [s for s in board if s.ranked and s.code in form]
+    r = _correlation([form[s.code] for s in both], [s.edge for s in both]) if len(both) >= 8 else None
+    return (r, len(both)) if r is not None else None
 
 
 # ---- when they agree, and when they do not ------------------------------------------------------
@@ -510,6 +536,9 @@ class Report:
     groups: list[Group] = field(default_factory=list)
     alike: Alike = Alike()
     flags: list[Flag] = field(default_factory=list)
+    record: longrecord.Record = longrecord.Record()     # every season since 2001, from the season pages
+    form: dict[str, float] = field(default_factory=dict)        # this season's models: their form coming in
+    form_r: tuple[float, int] | None = None     # how well that form has shown up this season, over how many models
 
     @property
     def slate(self) -> list[Reading]:
@@ -551,5 +580,15 @@ def build(season: Season) -> Report:
         share = pricing.model_weight(season)[0]
     except Exception:  # noqa: BLE001 - the share the picks start from
         share = predictions.CONSENSUS_WEIGHT
-    return Report(found, week, leaderboard(found), averages(found), residual(found, share),
-                  by_agreement(found), look_alikes(found), checks(found))
+    try:
+        record = longrecord.build()
+    except Exception:  # noqa: BLE001 - this season stands without the long record
+        record = longrecord.Record()
+    form = {}
+    for code in sorted({code for r in found for code in r.named}):
+        mark = record.standing(code)
+        if mark is not None:
+            form[code] = mark
+    board = leaderboard(found)
+    return Report(found, week, board, averages(found, form), residual(found, share),
+                  by_agreement(found), look_alikes(found), checks(found), record, form, form_check(board, form))

@@ -939,7 +939,7 @@ td.gone, span.gone { color: var(--muted); }
   .desknav { display: none; }
 }
 
-/* ---- the More sheet ------------------------------------------------------------------- */
+/* ---- the menu sheet ------------------------------------------------------------------- */
 .scrim { position: fixed; inset: 0; background: rgba(5, 12, 21, 0.55); z-index: 40; }
 .sheet {
   position: fixed;
@@ -1228,12 +1228,6 @@ html.scrolled .totop { opacity: 1; transform: none; pointer-events: auto; }
 .searchbtn .lbl, .searchbtn kbd { display: none; }
 @media (min-width: 1100px) {
   .topbar .inner { max-width: 1280px; }
-  .desknav a { padding-left: 7px; padding-right: 7px; }
-}
-@media (min-width: 1100px) and (max-width: 1339px) {
-  /* nine sections and a search: the name gives way to its picture */
-  .mechip .who { display: none; }
-  .mechip { padding: 3px; }
 }
 html.finding { overflow: hidden; }
 .finder-wrap { position: fixed; inset: 0; z-index: 60; }
@@ -1349,15 +1343,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
 .weekpill { border-radius: 3px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
 .iconbtn, .mechip, .searchbtn { border-radius: 4px; }
 .initials, .mechip .initials { border-radius: 7px; }
-.desknav a { text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; font-weight: 600; }
-@media (min-width: 1100px) {
-  .desknav a { padding-left: 5px; padding-right: 5px; }
-  .mechip .who { max-width: 7em; }
-}
-@media (min-width: 1100px) and (max-width: 1239px) {
-  /* ten sections in the narrowest bar: closer together */
-  .desknav a { font-size: 13px; letter-spacing: 0.04em; padding-left: 4px; padding-right: 4px; }
-}
+.desknav a { text-transform: uppercase; letter-spacing: 0.08em; font-size: 15px; font-weight: 600; padding-left: 12px; padding-right: 12px; }
 .desknav a[aria-current="page"] { text-shadow: 0 0 14px var(--glow); }
 
 /* the headline panel: cut corners, a faint grid, the gold edge */
@@ -1432,6 +1418,91 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   .weekpill { padding: 4px 6px; }
   .wordmark .yr { display: none; }
 }
+
+/* ==== fewer tabs =========================================================================
+   The bars carry four sections - Home, the week, Standings, Pools & money - and Me.
+   A section's own pages are a row of tabs at the top of each of them, and the menu
+   lists every page under its section. */
+.desknav { gap: 4px; margin-left: 10px; }
+a.weekpill { text-decoration: none; }
+@media (hover: hover) { a.weekpill:hover { border-color: var(--gold); color: var(--onair-ink); } }
+@media (min-width: 1100px) { .mechip .who { max-width: 9em; } }
+@media (min-width: 1280px) {
+  /* room now for the search to say what it is, and for a longer name */
+  .mechip .who { max-width: 13em; }
+  .searchbtn { width: auto; padding: 0 9px 0 10px; }
+  .searchbtn .lbl { display: inline; text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; color: var(--onair-muted); }
+  .searchbtn kbd { display: inline-block; font: 600 11px/1 var(--body); padding: 3px 5px 2px; border: 1px solid var(--onair-rule); border-radius: 3px; color: var(--onair-muted); }
+}
+
+/* a section's pages */
+.subnav {
+  display: flex;
+  gap: 2px;
+  margin: -6px 0 22px;
+  box-shadow: inset 0 -1px 0 var(--rule);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.subnav::-webkit-scrollbar { display: none; }
+.subnav a {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px 9px;
+  border-bottom: 2px solid transparent;
+  font: 600 17px/1 var(--display);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.subnav a:hover { color: var(--ink); }
+.subnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--gold); text-shadow: 0 0 14px var(--glow); }
+@media (max-width: 520px) {
+  .subnav a { font-size: 16px; padding-left: 11px; padding-right: 11px; }
+}
+@media (max-width: 380px) {
+  /* the narrowest phones: four tabs still fit across */
+  .subnav a { font-size: 15px; padding-left: 8px; padding-right: 8px; }
+}
+@media (prefers-reduced-motion: no-preference) { .subnav a { transition: color 0.15s ease, border-color 0.15s ease; } }
+
+/* the menu: every page, under its section */
+.sheet .group { display: grid; gap: 8px; padding: 8px 6px 14px; border-bottom: 1px solid var(--rule); }
+.sheet .group > b { font: 600 11px/1 var(--body); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.sheet .group .links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.sheet .group a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 10px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--raised);
+  text-decoration: none;
+  font-weight: 600;
+}
+.sheet .group a svg { width: 20px; height: 20px; color: var(--muted); flex: none; }
+.sheet .group a span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (min-width: 1100px) { .sheet { width: 372px; } }
+.sheet .group a[aria-current="page"] { border-color: var(--gold); color: var(--gold-text); }
+.sheet .group a[aria-current="page"] svg { color: inherit; }
+@media (hover: hover) { .sheet .group a:hover { border-color: color-mix(in srgb, var(--gold) 50%, var(--rule)); } }
+
+/* the week board and the home page's table: a coach's small print sits under the name, never beside it */
+.weekboard .name, [data-card="table"] .name { flex-wrap: wrap; row-gap: 3px; }
+.standrows .name > .meta { flex: 1 0 100%; }
+.standrows .name .youtag { flex: none; margin-left: 0; white-space: nowrap; }
+
+/* small phones: a table in a panel scrolls inside it, and never pushes the page sideways */
+.box:has(> table) { overflow-x: auto; }
+@media (max-width: 400px) {
+  [data-card="race"] .box { padding-left: 8px; padding-right: 8px; }
+  [data-card="race"] td.coach .who-link { display: inline-block; max-width: 7.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+}
+@media print { .subnav { display: none; } }
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>
@@ -2309,18 +2380,20 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   }
 
   // ---- the places on the site, and how to get to them ------------------------------
+  // Every page there is. `tab` is what a page is called among its section's
+  // pages, where that isn't its own name.
   var VIEWS = {
     home: { label: "Home", icon: "home" },
-    live: { label: "Live", icon: "live" },
+    live: { label: "Live", icon: "live", about: "The week as it happens: scores and every card" },
     picks: { label: "Picks", icon: "picks", about: "Everyone’s picks this week, side by side" },
-    standings: { label: "Standings", icon: "standings" },
-    pools: { label: "Side pools", short: "Pools", icon: "pools" },
-    me: { label: "Me", icon: "me" },
-    weeks: { label: "Weeks", icon: "weeks", about: "Every week’s results and stories" },
-    h2h: { label: "Head-to-head", icon: "h2h", about: "Any two coaches, pick by pick" },
+    weeks: { label: "Past weeks", icon: "weeks", about: "Results, stories and replays of every finished week" },
+    standings: { label: "Standings", tab: "Table", icon: "standings", about: "The season’s table and the title race" },
     charts: { label: "Charts", icon: "charts", about: "The season race, title odds, scores" },
+    h2h: { label: "Head-to-head", icon: "h2h", about: "Any two coaches, pick by pick" },
     history: { label: "History", icon: "history", about: "Champions and records" },
-    money: { label: "Money", icon: "money", about: "Who’s up and who owes" }
+    pools: { label: "Side pools", icon: "pools", about: "The suicide pool and the Big Losers" },
+    money: { label: "Money", icon: "money", about: "Who’s up and who owes" },
+    me: { label: "Me", icon: "me" }
   };
   var ALIASES = { week: "weeks", table: "standings" };
   function available(view) {
@@ -2329,13 +2402,30 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     if (view === "money") return !!DATA.money;
     return !!VIEWS[view];
   }
-  function deskViews() {
-    return ["home", "live", "picks", "standings", "pools", "weeks", "h2h", "charts", "history", "money"].filter(available);
+  // every page, in the order the search lists them
+  function pageList() {
+    return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "history", "pools", "money"].filter(available);
   }
-  function barViews() { return ["home", hasLive() ? "live" : "weeks", "standings", "pools", "me"]; }
-  function moreViews() {
-    var bar = barViews();
-    return ["live", "picks", "weeks", "h2h", "charts", "history", "money"].filter(function (v) { return available(v) && bar.indexOf(v) < 0; });
+  // The few sections the bars show, and the pages each one holds. Me is its
+  // own button beside them.
+  var SECTIONS = [
+    { id: "home", label: "Home", icon: "home", views: ["home"] },
+    { id: "week", label: "This week", icon: "weeks", views: ["live", "picks", "weeks"] },
+    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "charts", "h2h", "history"] },
+    { id: "pools", label: "Pools & money", short: "Pools", icon: "pools", views: ["pools", "money"] }
+  ];
+  // The sections as the bars draw them: the pages each has now, where it
+  // leads, and whether the viewer is in it. With no week being played the
+  // week's section is only the weeks gone by, and says so.
+  function sections() {
+    var here = currentView();
+    return SECTIONS.map(function (s) {
+      var pages = s.views.filter(available);
+      var quiet = s.id === "week" && !hasLive();
+      return { id: s.id, icon: s.icon, pages: pages, first: pages[0], on: pages.indexOf(here) >= 0,
+        label: quiet ? "Weeks" : s.label, short: quiet ? "Weeks" : s.short || s.label,
+        live: s.id === "week" && gameOn() };
+    }).filter(function (s) { return s.pages.length; });
   }
   function currentView() {
     if (state.coach) return isMe(state.coach) ? "me" : "";
@@ -2349,13 +2439,14 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   function topbar() {
     var t = hasLive() ? liveTally() : null;
     var on = t ? gamesOn(t) : 0;
+    // the week's tag is the short way to the week itself
     var pill;
     if (t) {
       var over = live.fetched && weekOver(t);
-      pill = el("span", { class: "weekpill" + (on ? " live" : ""),
+      pill = el("a", { class: "weekpill" + (on ? " live" : ""), href: "#live", id: "week-pill", onclick: navTo("live"),
         text: "Week " + DATA.live.week + (on ? " live" : over ? " final" : "") });
     } else {
-      pill = el("span", { class: "weekpill", text: "After week " + DATA.through_week });
+      pill = el("a", { class: "weekpill", href: "#weeks", id: "week-pill", onclick: navTo("weeks"), text: "After week " + DATA.through_week });
     }
     var me = hasMe() ? state.me : "";
     var chip = el("a", { class: "mechip" + (me ? "" : " empty"), href: "#me", id: "me-chip", onclick: navTo("me"),
@@ -2366,9 +2457,9 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
         crest(), el("span", { class: "wordmark" }, ["ACQL", el("span", { class: "yr", text: String(seasonYear()) })])
       ]),
       pill,
-      el("nav", { class: "desknav", "aria-label": "Sections" }, deskViews().map(function (v) {
-        return el("a", { href: "#" + v, id: "nav-" + v, "aria-current": currentView() === v ? "page" : null, onclick: navTo(v),
-          text: VIEWS[v].label });
+      el("nav", { class: "desknav", "aria-label": "Sections" }, sections().map(function (s) {
+        return el("a", { href: "#" + s.first, id: "nav-" + s.id, "aria-current": s.on ? "page" : null, onclick: navTo(s.first),
+          text: s.label });
       })),
       el("div", { class: "right" }, [
         el("button", { class: "searchbtn", type: "button", id: "find-btn", "aria-label": "Find a coach, a week or a page",
@@ -2376,7 +2467,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
           [icon("search"), el("span", { class: "lbl", text: "Search" }), el("kbd", { text: "/" })]),
         el("div", { id: "owner" }),
         chip,
-        el("button", { class: "iconbtn menubtn", type: "button", id: "more-btn", "aria-label": "More", "aria-haspopup": "dialog",
+        el("button", { class: "iconbtn menubtn", type: "button", id: "more-btn", "aria-label": "Menu", "aria-haspopup": "dialog",
           onclick: function () { state.sheet = true; render(); } }, [icon("menu")])
       ])
     ])]);
@@ -2418,16 +2509,27 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
 
   // ---- the phone's bottom bar -----------------------------------------------------------
   function bottombar() {
-    var t = hasLive() ? liveTally() : null;
-    return el("nav", { class: "bottombar", "aria-label": "Sections" }, barViews().map(function (v) {
-      var info = VIEWS[v];
-      return el("a", { href: "#" + v, id: "bar-" + v, "aria-current": currentView() === v ? "page" : null, onclick: navTo(v) },
-        [icon(info.icon), el("span", { text: info.short || info.label }),
-          v === "live" && t && gamesOn(t) ? el("span", { class: "livedot", title: "Games on now" }) : null]);
+    return el("nav", { class: "bottombar", "aria-label": "Sections" }, sections().map(function (s) {
+      return el("a", { href: "#" + s.first, id: "bar-" + s.id, "aria-current": s.on ? "page" : null, onclick: navTo(s.first) },
+        [icon(s.icon), el("span", { text: s.short }), s.live ? el("span", { class: "livedot", title: "Games on now" }) : null]);
+    }).concat([
+      el("a", { href: "#me", id: "bar-me", "aria-current": currentView() === "me" ? "page" : null, onclick: navTo("me") },
+        [icon("me"), el("span", { text: VIEWS.me.label })])
+    ]));
+  }
+
+  // ---- a section's own pages: the tabs at the top of each of them -----------------------
+  function subnav() {
+    var here = currentView();
+    var s = sections().filter(function (x) { return x.on; })[0];
+    if (!s || s.pages.length < 2) return null;
+    return el("nav", { class: "subnav", "aria-label": s.label }, s.pages.map(function (v) {
+      return el("a", { href: "#" + v, id: "sub-" + v, "aria-current": v === here ? "page" : null, onclick: navTo(v) },
+        [v === "live" && s.live ? el("span", { class: "dot-live" }) : null, VIEWS[v].tab || VIEWS[v].label]);
     }));
   }
 
-  // ---- More: the rest of the site, the theme, sharing ------------------------------------
+  // ---- the menu: every page under its section, sharing, the theme ------------------------
   var themeChoice = null;   // this visit's choice, for a phone that won't keep it
   function themePref() {
     var v = themeChoice != null ? themeChoice : stored(THEME_KEY);
@@ -2450,10 +2552,12 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
       var b = document.getElementById("more-btn");
       if (b) b.focus();
     }
-    var pref = themePref();
-    var items = moreViews().map(function (v) {
-      return el("a", { class: "item", href: "#" + v, onclick: navTo(v) }, [icon(VIEWS[v].icon),
-        el("span", {}, [VIEWS[v].label, VIEWS[v].about ? el("small", { text: VIEWS[v].about }) : null])]);
+    var pref = themePref(), here = currentView();
+    var items = sections().filter(function (s) { return s.id !== "home"; }).map(function (s) {
+      return el("div", { class: "group" }, [el("b", { text: s.label }), el("div", { class: "links" }, s.pages.map(function (v) {
+        return el("a", { href: "#" + v, "aria-current": v === here ? "page" : null, onclick: navTo(v) },
+          [icon(VIEWS[v].icon), el("span", { text: VIEWS[v].tab || VIEWS[v].label })]);
+      }))]);
     });
     if (hasMe()) {
       items.push(el("button", { class: "item", type: "button", onclick: function () { state.sheet = false; render(); shareWeek(state.me); } },
@@ -2467,9 +2571,9 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
       })),
       el("span", { class: "note", text: "Auto follows your phone, and goes dark while games are on." })
     ]);
-    var box = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "More", tabindex: "-1",
+    var box = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "Menu", tabindex: "-1",
       onkeydown: function (e) { if (e.key === "Escape") close(); } }, [
-      el("div", { class: "sh-head" }, [el("h2", { text: "More" }),
+      el("div", { class: "sh-head" }, [el("h2", { text: "Menu" }),
         el("button", { class: "btn", type: "button", "aria-label": "Close", onclick: close }, [icon("close")])])
     ].concat(items, [themes]));
     if (opening) setTimeout(function () { if (box.isConnected) box.focus(); }, 0);
@@ -2613,7 +2717,8 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     if (mods.length < 3) return null;
     var links = mods.map(function (m, i) {
       if (!m.id) m.id = "sec-" + (i + 1);
-      var label = (m.querySelector(".mhead h2").textContent || "").trim();
+      // a module with a long heading gives the link a shorter name of its own
+      var label = m.getAttribute("data-nav") || (m.querySelector(".mhead h2").textContent || "").trim();
       if (label.length > 26) label = label.slice(0, 24).trim() + "…";
       return el("a", { href: "#" + m.id, text: label,
         onclick: function (e) { e.preventDefault(); m.scrollIntoView({ behavior: smooth(), block: "start" }); } });
@@ -2659,7 +2764,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
   function finderItems() {
     var out = [];
     if (hasMe()) out.push({ kind: "You", label: state.me, sub: "Your page", name: state.me, go: function () { go("me"); } });
-    Object.keys(VIEWS).filter(function (v) { return v !== "me" && available(v); }).forEach(function (v) {
+    pageList().forEach(function (v) {
       out.push({ kind: "Page", label: VIEWS[v].label, sub: VIEWS[v].about || "", icon: VIEWS[v].icon, go: function () { go(v); } });
     });
     DATA.weeks.slice().sort(function (a, b) { return b.week - a.week; }).forEach(function (w) {
@@ -2798,6 +2903,8 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     var main = el("main", { id: "main" });
     if (updateBar) main.appendChild(updateBar);
     var view = viewNode();
+    var tabs = subnav();
+    if (tabs) main.appendChild(tabs);
     main.appendChild(view);
     app.appendChild(main);
     app.appendChild(footer());
@@ -3445,7 +3552,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
         ]);
       })) : el("p", { class: "note", text: "None of the games still to finish changes much for " + (you ? "you" : whom) + " now." }),
       shrug.length ? el("p", { class: "note", text: "Doesn’t matter: " + shrug.map(function (r) { return r.x.g.ac.toUpperCase() + "–" + r.x.g.hc.toUpperCase(); }).join(", ") }) : null
-    ], { "data-card": fixed ? "rooting-own" : "rooting" });
+    ], { "data-card": fixed ? "rooting-own" : "rooting", "data-nav": fixed ? null : "Rooting guide" });
   }
   // The rooting guide on a coach's own page, while there's a game left to root for.
   function rootingFor(name) {
@@ -3478,7 +3585,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
         el("span", { class: "had num", style: "color:var(--ink)", text: Math.round(r.moved * 100) + "% swings" }),
         el("span", { class: "how", text: (r.whoH ? r.g.h + " helps " + r.whoH : "") + (r.whoA ? " · " + r.g.a + " helps " + r.whoA : "") })
       ]);
-    }), { "data-card": "swing" });
+    }), { "data-card": "swing", "data-nav": "Deciding games" });
   }
 
   // What changed while this page was open.
@@ -4148,7 +4255,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
         el("span", { class: "had num", text: u.right + " of " + u.entrants + " had it" }),
         el("span", { class: "how", text: u.line ? "Credited to " + u.winner + " · pool line " + u.line : u.winner + " won" })
       ]);
-    }) : [el("p", { class: "note", text: "No upsets: most of the pool had every winner." })], { "data-card": "upsets" });
+    }) : [el("p", { class: "note", text: "No upsets: most of the pool had every winner." })], { "data-card": "upsets", "data-nav": "Upsets" });
     var results = scroller(el("table", { id: "week-results" }, [
       el("thead", {}, [el("tr", {}, [el("th", { text: "Game" }), el("th", { text: "Credited to" }),
         el("th", { class: "hide-narrow", text: "Pool line" }), el("th", { class: "n", text: "Had it" })])]),
