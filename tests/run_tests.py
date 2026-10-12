@@ -503,6 +503,8 @@ def main() -> int:
     suite.addTests(loader.loadTestsFromModule(test_lab_history))
     import test_lab_walkforward  # the Model Lab's walk-forward backtest tests
     suite.addTests(loader.loadTestsFromModule(test_lab_walkforward))
+    import test_lab_archive_backtest  # the Model Lab's phase 3 backtest tests
+    suite.addTests(loader.loadTestsFromModule(test_lab_archive_backtest))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

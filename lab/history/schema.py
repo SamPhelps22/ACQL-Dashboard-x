@@ -59,7 +59,7 @@ CREATE TABLE odds_snapshots (
     market              TEXT NOT NULL CHECK (market IN ('spread', 'total', 'moneyline')),
     home_value          REAL,              -- spread: home margin; total: points; moneyline: home price
     away_value          REAL,              -- moneyline: away price
-    timing              TEXT NOT NULL,     -- snapshot / file_market / file_opening / typed / unspecified
+    timing              TEXT NOT NULL,     -- snapshot / file_market / file_opening / typed / unspecified / archive_*
     as_of               REAL,
     available_at        REAL,
     available_at_basis  TEXT NOT NULL,

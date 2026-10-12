@@ -444,6 +444,89 @@ class TestImport(LabCase):
         conn.close()
 
 
+class TestSeasonArchive(unittest.TestCase):
+    """The Prediction Tracker's season archives (nflYY.csv): undated, so they
+    must never reach a verified field, and must change nothing else."""
+
+    HEADER = ["Home", "Road", "line", "linemed", "linesag", "linemidweek", "lineopen",
+              "lineavg", "linestd", "rscore", "hscore", "week"]
+    ROWS = [
+        ["Kansas City", "Baltimore", 4.0, 3.0, 5.0, 3.5, 2.5, 3.0, 2.0, 20, 27, 1],
+        ["San Francisco", "Seattle", -4.5, -3.0, -6.0, -3.5, -3.0, -3.0, 2.0, 28, 31, 1],  # flipped
+        ["LA Chargers", "Los Angeles", 1.0, 1.5, 2.0, 1.0, 1.0, 1.0, 1.0, 21, 20, 1],      # two LA teams
+        ["Miami", "New England", 7.0, 6.0, 8.0, 6.5, 7.0, 7.0, 1.0, 14, 24, ""],          # no week
+        ["Kansas City", "Baltimore", 9.0, 9.0, 9.0, 9.0, 9.0, 9.0, 1.0, 20, 27, 1],      # twice
+        ["Kansas City", "Buffalo", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1, 2, 19],          # playoffs
+    ]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.folder = Path(tempfile.mkdtemp(prefix="lab-archive-"))
+        plain = write_fixtures(cls.folder)
+        cls.archive = cls.folder / "nfl30.csv"
+        with open(cls.archive, "w", newline="", encoding="utf-8") as handle:
+            out = csv.writer(handle)
+            out.writerow(cls.HEADER)
+            out.writerows(cls.ROWS)
+        cls.without, cls.with_ = cls.folder / "without.db", cls.folder / "with.db"
+        build.build(plain, cls.without)
+        plain.pt_archives = [cls.archive]
+        cls.result = build.build(plain, cls.with_)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.folder, ignore_errors=True)
+
+    def test_season_names(self):
+        self.assertEqual(build.archive_season(Path("nfl10.csv")), 2010)
+        self.assertEqual(build.archive_season(Path("nfl99.csv")), 1999)
+        self.assertIsNone(build.archive_season(Path("nflpredictions week 3.csv")))
+
+    def test_no_verified_field_changes_only_a_flag_is_added(self):
+        before, after = records(sqlite3.connect(self.without)), records(sqlite3.connect(self.with_))
+        self.assertEqual(set(before), set(after))
+        for rid in before:
+            for key in before[rid]:
+                if key in ("flags", "inputs_hash"):
+                    continue
+                self.assertEqual(before[rid][key], after[rid][key], (rid, key))
+        for gid in ("2030_01_BAL_KC", "2030_01_SF_SEA", "2030_01_LA_LAC"):
+            added = (set(json.loads(after[f"{gid}|kickoff"]["flags"]))
+                     - set(json.loads(before[f"{gid}|kickoff"]["flags"])))
+            self.assertEqual(added, {"MODEL_FORECAST_TIME_UNVERIFIED"}, gid)
+
+    def test_archive_rows_are_undated(self):
+        conn = sqlite3.connect(self.with_)
+        for table in ("odds_snapshots", "model_forecasts"):
+            dated = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE source_id = 'ptarchive:nfl30.csv' "
+                                 f"AND available_at IS NOT NULL").fetchone()[0]
+            self.assertEqual(dated, 0, table)
+        self.assertIsNone(conn.execute("SELECT published_at FROM model_forecasts WHERE source_id = "
+                                       "'ptarchive:nfl30.csv' LIMIT 1").fetchone()[0])
+
+    def test_columns_signs_and_names(self):
+        conn = sqlite3.connect(self.with_)
+        models = dict(conn.execute("SELECT model, home_margin FROM model_forecasts WHERE "
+                                   "forecast_id LIKE 'ptarchive:nfl30.csv:2030_01_SF_SEA:%'"))
+        # linemed is the site's median (a summary), linemidweek is counted the way production counts it
+        self.assertEqual(models, {"linesag": 6.0, "linemidweek": 3.5})     # SEA home: signs turned round
+        lines = dict(conn.execute("SELECT timing, home_value FROM odds_snapshots WHERE "
+                                  "snapshot_id LIKE 'ptarchive:nfl30.csv:2030_01_SF_SEA:%'"))
+        self.assertEqual(lines, {"archive_latest": 4.5, "archive_midweek": 3.5, "archive_opening": 3.0})
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM model_forecasts WHERE game_id = '2030_01_LA_LAC' "
+                                      "AND source_id = 'ptarchive:nfl30.csv'").fetchone()[0], 2)
+        first = conn.execute("SELECT home_margin FROM model_forecasts WHERE "
+                             "forecast_id = 'ptarchive:nfl30.csv:2030_01_BAL_KC:linesag'").fetchone()[0]
+        self.assertEqual(first, 5.0)                                       # the first of two rows is kept
+        self.assertEqual(self.result["archived"], {2030: 3})
+
+    def test_rows_left_out_are_said_so(self):
+        notes = "\n".join(self.result["notes"])
+        self.assertIn("New England @ Miami has no week", notes)
+        self.assertIn("2030_01_BAL_KC appears twice", notes)
+        self.assertNotIn("Buffalo", notes)                                 # playoffs: expected, not noted
+
+
 class TestAppDatabaseIsOnlyRead(unittest.TestCase):
     def test_reading_the_store_changes_nothing_and_leaves_secrets_behind(self):
         folder = Path(tempfile.mkdtemp(prefix="lab-store-"))

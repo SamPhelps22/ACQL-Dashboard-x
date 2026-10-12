@@ -47,6 +47,12 @@ REPORT_FILE = ROOT / "lab" / "reports" / "coverage.md"
 STORE_DB = ROOT / "data" / "acql.db"
 SCORES_CSV = ROOT / "acql" / "data" / "nfl_scores_2010_2026.csv"
 PT_DROP = RAW / "predictiontracker"     # archived Prediction Tracker files, by hand
+PT_SEASONS = PT_DROP / "seasons"        # its season archives, nfl10.csv ... nfl26.csv
+PT_ARCHIVE_URL = "https://www.thepredictiontracker.com/{name}"
+#: The season archives call the models' median "linemed"; the weekly files
+#: (and acql.predictions) call it "linemedian". Renamed on reading, so the
+#: same columns count as models whichever file a game came from.
+PT_ARCHIVE_RENAMES = {"linemed": "linemedian"}
 #: Bumped when the extract takes more from the store, so an older extract is
 #: kept as it was rather than overwritten.
 EXTRACT_VERSION = 2
@@ -211,6 +217,12 @@ class Inputs:
     store_extract: Path | None
     scores_csv: Path | None
     pt_files: list[Path] = field(default_factory=list)
+    pt_archives: list[Path] = field(default_factory=list)
+
+
+def default_pt_archives() -> list[Path]:
+    return sorted(p for p in PT_SEASONS.glob("nfl*.csv") if archive_season(p) is not None) \
+        if PT_SEASONS.is_dir() else []
 
 
 def default_inputs() -> Inputs:
@@ -219,7 +231,8 @@ def default_inputs() -> Inputs:
     digest = sha256(STORE_DB)
     extract = RAW / f"store_extract-v{EXTRACT_VERSION}-{digest[:16]}.json"
     return Inputs(games_csv, meta, extract if extract.exists() else None,
-                  SCORES_CSV if SCORES_CSV.exists() else None, default_pt_files())
+                  SCORES_CSV if SCORES_CSV.exists() else None, default_pt_files(),
+                  default_pt_archives())
 
 
 # ---- importers ----------------------------------------------------------------------------
@@ -346,25 +359,44 @@ def import_outcomes(conn, inputs: Inputs) -> dict:
     return tally
 
 
-def read_pt_models(path: Path) -> list[dict]:
+def read_pt_models(path: Path, renames: dict[str, str] | None = None) -> list[dict]:
     """A Prediction Tracker file row by row, keeping each model's column name.
 
     The same columns as acql.predictions.read_csv counts as models: every
-    "line..." column that is not the market or a summary.
+    "line..." column that is not the market or a summary. (That includes
+    "linemidweek", which is the site's midweek market line, not a model -
+    production counts it among the models, and so does this, so the lab
+    prices a game the way production does. It is also kept as a line.)
     """
     out = []
     skip = predictions.MARKET_COLUMNS + predictions.SUMMARY_COLUMNS
+    renames = renames or {}
     with open(path, newline="", encoding="utf-8-sig") as handle:
         for raw in csv.DictReader(handle):
-            row = {(k or "").strip().casefold(): v for k, v in raw.items()}
+            row = {}
+            for k, v in raw.items():
+                key = (k or "").strip().casefold()
+                row[renames.get(key, key)] = v
             road, home = str(row.get("road") or "").strip(), str(row.get("home") or "").strip()
             if not road or not home:
                 continue
             models = [(k, number(v)) for k, v in row.items()
                       if k.startswith("line") and k not in skip and number(v) is not None]
+            week = number(row.get("week"))
             out.append({"road": road, "home": home, "line": number(row.get("line")),
-                        "lineopen": number(row.get("lineopen")), "models": models})
+                        "lineopen": number(row.get("lineopen")),
+                        "linemidweek": number(row.get("linemidweek")),
+                        "week": None if week is None else int(week), "models": models})
     return out
+
+
+def archive_season(path: Path) -> int | None:
+    """nfl99.csv -> 1999, nfl10.csv -> 2010; None for any other name."""
+    found = re.fullmatch(r"nfl(\d{2})\.csv", Path(path).name, flags=re.IGNORECASE)
+    if not found:
+        return None
+    two = int(found.group(1))
+    return 1900 + two if two >= 90 else 2000 + two
 
 
 def _same_file(entry: dict, path: Path) -> bool:
@@ -478,6 +510,98 @@ def import_forecasts(conn, inputs: Inputs, slates: Slates, store: dict, notes: l
                 "orientation": orientation, "source_id": source_id,
                 "raw": json.dumps({"road": g.get("road"), "home": g.get("home"), "market": g.get("market")})})
     return seasons
+
+
+def _archive_codes(slates: Slates, season: int, week: int, road: str, home: str) -> tuple[str, str]:
+    """Team codes for an archive row. A name that fits two teams ("Los Angeles"
+    in 2016) is settled by the schedule: the opponent the other team actually
+    played that week, if its full name starts with the name given."""
+    away, home_code = predictions.team_code(road), predictions.team_code(home)
+    if bool(away) == bool(home_code):
+        return away, home_code
+    known, name = (away, home) if away else (home_code, road)
+    words = predictions._words(name)
+    opponents = [code for pair in slates.weeks.get((season, week), set()) if known in pair
+                 for code in pair if code != known]
+    if len(opponents) == 1 and words and \
+            predictions._words(predictions.DISPLAY.get(opponents[0], "")).startswith(words):
+        return (known, opponents[0]) if away else (opponents[0], known)
+    return away, home_code
+
+
+def import_pt_archives(conn, inputs: Inputs, slates: Slates, notes: list[str]) -> dict[int, int]:
+    """The Prediction Tracker's season archives (nflYY.csv): every model's
+    number for every game, plus the site's opening, midweek and latest lines.
+
+    None of it is dated. The files do not say when each number was published
+    or whether it was revised later, and the `line` column of a finished
+    week is updated after the week's own download (checked against 2026
+    week 3: `linemidweek` matched the weekly file's line, `line` had moved).
+    So every row goes in with no `available_at`: it can never fill a
+    verified field of a record. Its lines carry their own timings
+    (asof.ARCHIVE_TIMINGS), which the records' quarantined fields leave out
+    too, so a backtest has to opt in to them by name.
+    Returns season -> games imported.
+    """
+    counts: dict[int, int] = {}
+    for path in inputs.pt_archives:
+        season = archive_season(path)
+        if season is None:
+            notes.append(f"{rel(path)}: not a season archive name (nflYY.csv) - not imported")
+            continue
+        meta_path = path.with_name(path.name + ".meta.json")
+        meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        retrieved = meta.get("retrieved_at")
+        basis = meta.get("retrieved_at_basis") or "not recorded"
+        source_id = f"ptarchive:{path.name}"
+        insert(conn, "sources", {
+            "source_id": source_id, "kind": "model_forecasts+market",
+            "description": f"The Prediction Tracker season archive, {season}",
+            "location": meta.get("url") or PT_ARCHIVE_URL.format(name=path.name),
+            "sha256": sha256(path), "bytes": path.stat().st_size,
+            "retrieved_at": retrieved, "retrieved_at_basis": basis,
+            "note": "Undated: publication times are not in the file, and lines may be later "
+                    "updates. " + str(meta.get("note") or "")})
+        seen: set[str] = set()
+        for index, row in enumerate(read_pt_models(path, PT_ARCHIVE_RENAMES), start=2):
+            week = row["week"]
+            if week is None:
+                notes.append(f"{rel(path)} line {index}: {row['road']} @ {row['home']} has no week - "
+                             f"not imported")
+                continue
+            away, home = _archive_codes(slates, season, week, row["road"], row["home"])
+            game, flipped = slates.find(season, week, away, home)
+            if game is None:
+                if (season, week) in slates.weeks:     # past the regular season: expected, not noted
+                    notes.append(f"{rel(path)} line {index}: {row['road']} @ {row['home']} not on the "
+                                 f"{season} week {week} schedule - not imported")
+                continue
+            gid = game["game_id"]
+            if gid in seen:
+                notes.append(f"{rel(path)} line {index}: {gid} appears twice - second row not imported")
+                continue
+            seen.add(gid)
+            counts[season] = counts.get(season, 0) + 1
+            sign, orientation = (-1.0, "flipped") if flipped else (1.0, "as_source")
+            undated = "season archive: when this number was posted is not in the file"
+            for column, timing in (("line", "archive_latest"), ("linemidweek", "archive_midweek"),
+                                   ("lineopen", "archive_opening")):
+                if row[column] is None:
+                    continue
+                insert(conn, "odds_snapshots", {
+                    "snapshot_id": f"{source_id}:{gid}:{column}", "game_id": gid, "market": "spread",
+                    "home_value": sign * row[column], "away_value": None, "timing": timing,
+                    "as_of": None, "available_at": None, "available_at_basis": undated,
+                    "orientation": orientation, "source_id": source_id,
+                    "raw": json.dumps({"road": row["road"], "home": row["home"], column: row[column]})})
+            for model, margin in row["models"]:
+                insert(conn, "model_forecasts", {
+                    "forecast_id": f"{source_id}:{gid}:{model}", "game_id": gid, "model": model,
+                    "home_margin": sign * margin, "published_at": None,
+                    "published_at_basis": "not stated in the season archive",
+                    "retrieved_at": retrieved, "retrieved_at_basis": basis,
+                    "available_at": None, "orientation": orientation, "source_id": source_id})
+    return counts
 
 
 def import_app_odds(conn, slates: Slates, store: dict, notes: list[str]) -> None:
@@ -670,6 +794,7 @@ def build(inputs: Inputs, dest: Path = DB_FILE) -> dict:
                 "retrieved_at_basis": "entries carry the app's own times",
                 "note": f"from {extract['database']} sha256 {extract['database_sha256']}"})
         seasons = import_forecasts(conn, inputs, slates, store, notes)
+        archived = import_pt_archives(conn, inputs, slates, notes)
         import_app_odds(conn, slates, store, notes)
         import_typed_spreads(conn, slates, store, seasons, notes)
         import_pool_sheets(conn, slates, store, notes)
@@ -683,7 +808,7 @@ def build(inputs: Inputs, dest: Path = DB_FILE) -> dict:
     finally:
         conn.close()
     os.replace(tmp, dest)
-    return {"games": games, "crosscheck": crosscheck, "notes": notes}
+    return {"games": games, "crosscheck": crosscheck, "notes": notes, "archived": archived}
 
 
 def verify(path: Path = DB_FILE) -> tuple[int, list[str]]:

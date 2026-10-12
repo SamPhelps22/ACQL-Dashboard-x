@@ -44,7 +44,10 @@ documents grouped by kind (`forecasts`, `odds`, `spreads`, `picks`, `cards`,
 **Model Lab** is `lab/`, which production never imports. `lab/history/` builds
 the as-of-cutoff backtest dataset into `lab/data/history.db` (gitignored).
 What each source can vouch for is in `lab/reports/data-audit.md`, and the
-coverage is in `lab/reports/coverage.md`.
+coverage is in `lab/reports/coverage.md`. The Prediction Tracker's season
+archives (`nfl10.csv` … `nfl26.csv`) go in
+`lab/data/raw/predictiontracker/seasons/` with a `.meta.json`; they are
+undated, so they never fill a verified field (`asof.ARCHIVE_TIMINGS`).
 
 ## Commands
 
@@ -55,6 +58,7 @@ QT_QPA_PLATFORM=offscreen python tests/run_tests.py   # whole test suite (unitte
 python -m acql.backtest          # replays history AND overwrites the tracked acql/data/backtest_results.json
 python -m lab.history.build      # fetch pinned inputs, build lab/data/history.db, verify, write coverage report
 python -m lab.walkforward        # phase 2 backtests from that dataset -> lab/reports/walkforward.md
+python -m lab.archive_backtest   # phase 3: market vs Deadeye 2010-2026 -> lab/reports/archive_backtest.md
 python packaging/build.py        # PyInstaller build into dist/
 ```
 
@@ -64,12 +68,18 @@ GitHub Release, so pushing a `v*` tag is a release.
 
 ## Known state and traps (as of 2026-10-12)
 
-- **Test baseline.** 73 tests run: 39 app tests, plus 34 lab tests from
-  `tests/test_lab_history.py` and `tests/test_lab_walkforward.py`. 2 app
-  tests already fail with no changes made
-  (`test_big_loser_slots_round_trip`, `test_wins_include_big_loser_points`),
-  and 1 is skipped. Compare results against this baseline; don't assume a
-  green suite.
+- **Test baseline.** 86 tests run: 39 app tests, plus 47 lab tests from
+  `tests/test_lab_history.py`, `tests/test_lab_walkforward.py` and
+  `tests/test_lab_archive_backtest.py`. 3 app tests already fail with no
+  changes made (`test_big_loser_slots_round_trip`,
+  `test_wins_include_big_loser_points`, and, since 2026-10-12,
+  `test_stats_file_declares_its_own_week`), and 1 is skipped. Compare results
+  against this baseline; don't assume a green suite.
+- **`linemidweek` counts as a model.** It is the Prediction Tracker's midweek
+  market line, but `predictions.read_csv` only leaves out `MARKET_COLUMNS` and
+  `SUMMARY_COLUMNS`, so production averages it in with the models. The lab
+  mirrors this to price as production does. Changing it is a production
+  change.
 - **Untested modules.** No tests cover `predictions.py`, `pricing.py`, the
   probability functions in `analytics.py`, `backtest.py`, `oddslock.py`, or
   what `poolpage.snapshot()` publishes.
@@ -79,9 +89,12 @@ GitHub Release, so pushing a `v*` tag is a release.
   creates `data/backups/`. After any run, check `git status`, and restore with
   `git checkout -- data/acql.db` unless the change was intended.
 - **Historical data is thin.**
-  - Market lines and Prediction Tracker forecasts exist only for weeks the app
-    has stored this season: 2026 weeks 1–5, with model columns for weeks 3–5
-    only.
+  - **Dated** market lines and Prediction Tracker forecasts exist only for
+    weeks the app has stored this season: 2026 weeks 1–5, with model columns
+    for weeks 3–5 only.
+  - The Prediction Tracker season archives cover 2010–2026 (all models, plus
+    opening, midweek and latest lines), but **undated**. They are in the lab
+    dataset only, and are never committed.
   - `acql/data/nfl_scores_2010_2026.csv` has final scores but **no historical
     lines or forecasts**.
   - `backtest.py` prices history with an Elo-style rating proxy, not the

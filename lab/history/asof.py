@@ -38,6 +38,10 @@ _TIMING_RANK = ("CASE timing WHEN 'snapshot' THEN 0 WHEN 'file_market' THEN 1 "
 _UNDATED_RANK = ("CASE timing WHEN 'unspecified' THEN 0 WHEN 'file_market' THEN 1 "
                  "WHEN 'typed' THEN 2 ELSE 3 END")
 
+# The Prediction Tracker season archives' lines (lab.history.build). Never in a
+# record: a backtest that wants them asks for them by these names.
+ARCHIVE_TIMINGS = ("archive_latest", "archive_midweek", "archive_opening")
+
 # The rules are recorded in pool_rules; these are their ids.
 LINED_RULE = "pool_line_v1"
 STRAIGHT_RULE = "straight_up_v1"
@@ -114,10 +118,11 @@ def opening_snapshot(conn, game_id: str, cutoff: float | None) -> dict | None:
 
 def undated_snapshot(conn, game_id: str, market: str) -> dict | None:
     """The quarantined undated line for a market, or None."""
+    left_out = ("file_opening",) + ARCHIVE_TIMINGS
     cur = conn.execute(
         f"SELECT * FROM odds_snapshots WHERE game_id = ? AND market = ? "
-        f"AND available_at IS NULL AND timing != 'file_opening' "
-        f"ORDER BY {_UNDATED_RANK}, snapshot_id LIMIT 1", (game_id, market))
+        f"AND available_at IS NULL AND timing NOT IN ({','.join('?' * len(left_out))}) "
+        f"ORDER BY {_UNDATED_RANK}, snapshot_id LIMIT 1", (game_id, market, *left_out))
     return _dict(cur, cur.fetchone())
 
 

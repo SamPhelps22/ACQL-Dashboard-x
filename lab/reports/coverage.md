@@ -24,6 +24,23 @@ Counts only; nothing is estimated. Definitions and source limits are in
 | pt:nflpredictions week 3.csv | model_forecasts+market | `nflpredictions week 3.csv` | 14e8fb3ae848 | 2026-09-24 21:58 UTC | the app's import time for identical content (data/acql.db forecasts); the file was downloaded at or before it |
 | pt:nflpredictions week 4.csv | model_forecasts+market | `nflpredictions week 4.csv` | be7d9488ffe3 | 2026-09-30 21:25 UTC | the app's import time for identical content (data/acql.db forecasts); the file was downloaded at or before it |
 | pt:nflpredictions week 5.csv | model_forecasts+market | `nflpredictions week 5.csv` | 93e20125bcaa | 2026-10-07 22:19 UTC | the app's import time for identical content (data/acql.db forecasts); the file was downloaded at or before it |
+| ptarchive:nfl10.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl10.csv` | 6486bd61b256 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl11.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl11.csv` | fdcdf398fbc1 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl12.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl12.csv` | 839d7934d075 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl13.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl13.csv` | 28027dcd26b0 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl14.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl14.csv` | dd73ec8cf95f | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl15.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl15.csv` | de13aea315ef | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl16.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl16.csv` | be5c716aaea9 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl17.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl17.csv` | 621e6b1d05ce | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl18.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl18.csv` | c5ff2761d040 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl19.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl19.csv` | 7f0ebee1e5db | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl20.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl20.csv` | d74f2e39311a | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl21.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl21.csv` | 46242d00c32b | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl22.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl22.csv` | cc8a2b3f9261 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl23.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl23.csv` | 7c03becb4e1c | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl24.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl24.csv` | b1b55050bccd | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl25.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl25.csv` | 80dbfe822b28 | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
+| ptarchive:nfl26.csv | model_forecasts+market | `https://www.thepredictiontracker.com/nfl26.csv` | f70cc642451f | 2026-10-12 22:27 UTC | when Sam uploaded the file to the Claude session (2026-10-12); downloaded by Sam from the URL in a browser at or before then |
 | repo_scores | results_crosscheck | `acql/data/nfl_scores_2010_2026.csv` | df99a938e34b | — | committed to the repo; its origin is not recorded |
 | store:forecasts:1 | market | `data/acql.db (kind forecasts)` | — | — | no time recorded (imported = 0) |
 | store:forecasts:2 | market | `data/acql.db (kind forecasts)` | — | — | no time recorded (imported = 0) |
@@ -157,7 +174,287 @@ These carry no time, so they may postdate any cutoff. A backtest that uses them 
 
 | season | week | forecast file | games | models | forecasts | available | no publication time |
 |---|---|---|---|---|---|---|---|
+| 2010 | 1 | ptarchive:nfl10.csv | 16 | 54 | 849 | — | 849 |
+| 2010 | 2 | ptarchive:nfl10.csv | 16 | 53 | 848 | — | 848 |
+| 2010 | 3 | ptarchive:nfl10.csv | 16 | 52 | 832 | — | 832 |
+| 2010 | 4 | ptarchive:nfl10.csv | 14 | 54 | 756 | — | 756 |
+| 2010 | 5 | ptarchive:nfl10.csv | 14 | 55 | 770 | — | 770 |
+| 2010 | 6 | ptarchive:nfl10.csv | 14 | 57 | 798 | — | 798 |
+| 2010 | 7 | ptarchive:nfl10.csv | 14 | 56 | 784 | — | 784 |
+| 2010 | 8 | ptarchive:nfl10.csv | 13 | 56 | 728 | — | 728 |
+| 2010 | 9 | ptarchive:nfl10.csv | 13 | 57 | 741 | — | 741 |
+| 2010 | 10 | ptarchive:nfl10.csv | 14 | 55 | 770 | — | 770 |
+| 2010 | 11 | ptarchive:nfl10.csv | 16 | 57 | 912 | — | 912 |
+| 2010 | 12 | ptarchive:nfl10.csv | 16 | 56 | 896 | — | 896 |
+| 2010 | 13 | ptarchive:nfl10.csv | 16 | 57 | 912 | — | 912 |
+| 2010 | 14 | ptarchive:nfl10.csv | 16 | 56 | 895 | — | 895 |
+| 2010 | 15 | ptarchive:nfl10.csv | 16 | 55 | 880 | — | 880 |
+| 2010 | 16 | ptarchive:nfl10.csv | 16 | 56 | 896 | — | 896 |
+| 2010 | 17 | ptarchive:nfl10.csv | 16 | 56 | 896 | — | 896 |
+| 2011 | 1 | ptarchive:nfl11.csv | 16 | 56 | 896 | — | 896 |
+| 2011 | 2 | ptarchive:nfl11.csv | 16 | 58 | 928 | — | 928 |
+| 2011 | 3 | ptarchive:nfl11.csv | 16 | 61 | 975 | — | 975 |
+| 2011 | 4 | ptarchive:nfl11.csv | 16 | 59 | 944 | — | 944 |
+| 2011 | 5 | ptarchive:nfl11.csv | 13 | 60 | 780 | — | 780 |
+| 2011 | 6 | ptarchive:nfl11.csv | 13 | 61 | 792 | — | 792 |
+| 2011 | 7 | ptarchive:nfl11.csv | 13 | 61 | 793 | — | 793 |
+| 2011 | 8 | ptarchive:nfl11.csv | 13 | 60 | 779 | — | 779 |
+| 2011 | 9 | ptarchive:nfl11.csv | 14 | 62 | 866 | — | 866 |
+| 2011 | 10 | ptarchive:nfl11.csv | 16 | 61 | 972 | — | 972 |
+| 2011 | 11 | ptarchive:nfl11.csv | 14 | 61 | 851 | — | 851 |
+| 2011 | 12 | ptarchive:nfl11.csv | 16 | 57 | 911 | — | 911 |
+| 2011 | 13 | ptarchive:nfl11.csv | 16 | 60 | 959 | — | 959 |
+| 2011 | 14 | ptarchive:nfl11.csv | 16 | 61 | 975 | — | 975 |
+| 2011 | 15 | ptarchive:nfl11.csv | 16 | 60 | 957 | — | 957 |
+| 2011 | 16 | ptarchive:nfl11.csv | 16 | 59 | 943 | — | 943 |
+| 2011 | 17 | ptarchive:nfl11.csv | 16 | 59 | 944 | — | 944 |
+| 2012 | 1 | ptarchive:nfl12.csv | 16 | 59 | 943 | — | 943 |
+| 2012 | 2 | ptarchive:nfl12.csv | 16 | 57 | 912 | — | 912 |
+| 2012 | 3 | ptarchive:nfl12.csv | 16 | 59 | 942 | — | 942 |
+| 2012 | 4 | ptarchive:nfl12.csv | 15 | 61 | 914 | — | 914 |
+| 2012 | 5 | ptarchive:nfl12.csv | 14 | 61 | 852 | — | 852 |
+| 2012 | 6 | ptarchive:nfl12.csv | 14 | 60 | 840 | — | 840 |
+| 2012 | 7 | ptarchive:nfl12.csv | 13 | 61 | 790 | — | 790 |
+| 2012 | 8 | ptarchive:nfl12.csv | 14 | 63 | 881 | — | 881 |
+| 2012 | 9 | ptarchive:nfl12.csv | 14 | 64 | 896 | — | 896 |
+| 2012 | 10 | ptarchive:nfl12.csv | 14 | 65 | 908 | — | 908 |
+| 2012 | 11 | ptarchive:nfl12.csv | 14 | 66 | 922 | — | 922 |
+| 2012 | 12 | ptarchive:nfl12.csv | 16 | 67 | 1070 | — | 1070 |
+| 2012 | 13 | ptarchive:nfl12.csv | 16 | 64 | 1021 | — | 1021 |
+| 2012 | 14 | ptarchive:nfl12.csv | 16 | 64 | 1022 | — | 1022 |
+| 2012 | 15 | ptarchive:nfl12.csv | 16 | 64 | 1024 | — | 1024 |
+| 2012 | 16 | ptarchive:nfl12.csv | 16 | 65 | 1040 | — | 1040 |
+| 2012 | 17 | ptarchive:nfl12.csv | 16 | 65 | 1039 | — | 1039 |
+| 2013 | 1 | ptarchive:nfl13.csv | 16 | 55 | 880 | — | 880 |
+| 2013 | 2 | ptarchive:nfl13.csv | 16 | 55 | 880 | — | 880 |
+| 2013 | 3 | ptarchive:nfl13.csv | 16 | 56 | 896 | — | 896 |
+| 2013 | 4 | ptarchive:nfl13.csv | 15 | 58 | 870 | — | 870 |
+| 2013 | 5 | ptarchive:nfl13.csv | 14 | 60 | 840 | — | 840 |
+| 2013 | 6 | ptarchive:nfl13.csv | 15 | 61 | 915 | — | 915 |
+| 2013 | 7 | ptarchive:nfl13.csv | 15 | 60 | 900 | — | 900 |
+| 2013 | 8 | ptarchive:nfl13.csv | 13 | 62 | 806 | — | 806 |
+| 2013 | 9 | ptarchive:nfl13.csv | 13 | 60 | 780 | — | 780 |
+| 2013 | 10 | ptarchive:nfl13.csv | 14 | 60 | 840 | — | 840 |
+| 2013 | 11 | ptarchive:nfl13.csv | 15 | 61 | 915 | — | 915 |
+| 2013 | 12 | ptarchive:nfl13.csv | 14 | 59 | 826 | — | 826 |
+| 2013 | 13 | ptarchive:nfl13.csv | 16 | 59 | 944 | — | 944 |
+| 2013 | 14 | ptarchive:nfl13.csv | 16 | 59 | 944 | — | 944 |
+| 2013 | 15 | ptarchive:nfl13.csv | 16 | 60 | 960 | — | 960 |
+| 2013 | 16 | ptarchive:nfl13.csv | 16 | 59 | 944 | — | 944 |
+| 2013 | 17 | ptarchive:nfl13.csv | 16 | 59 | 944 | — | 944 |
+| 2014 | 1 | ptarchive:nfl14.csv | 16 | 59 | 944 | — | 944 |
+| 2014 | 2 | ptarchive:nfl14.csv | 16 | 59 | 944 | — | 944 |
+| 2014 | 3 | ptarchive:nfl14.csv | 16 | 60 | 960 | — | 960 |
+| 2014 | 4 | ptarchive:nfl14.csv | 13 | 64 | 832 | — | 832 |
+| 2014 | 5 | ptarchive:nfl14.csv | 15 | 66 | 986 | — | 986 |
+| 2014 | 6 | ptarchive:nfl14.csv | 15 | 67 | 1003 | — | 1003 |
+| 2014 | 7 | ptarchive:nfl14.csv | 15 | 67 | 1005 | — | 1005 |
+| 2014 | 8 | ptarchive:nfl14.csv | 15 | 66 | 990 | — | 990 |
+| 2014 | 9 | ptarchive:nfl14.csv | 13 | 68 | 884 | — | 884 |
+| 2014 | 10 | ptarchive:nfl14.csv | 13 | 67 | 871 | — | 871 |
+| 2014 | 11 | ptarchive:nfl14.csv | 14 | 67 | 938 | — | 938 |
+| 2014 | 12 | ptarchive:nfl14.csv | 15 | 67 | 1005 | — | 1005 |
+| 2014 | 13 | ptarchive:nfl14.csv | 16 | 66 | 1055 | — | 1055 |
+| 2014 | 14 | ptarchive:nfl14.csv | 16 | 65 | 1040 | — | 1040 |
+| 2014 | 15 | ptarchive:nfl14.csv | 16 | 65 | 1039 | — | 1039 |
+| 2014 | 16 | ptarchive:nfl14.csv | 16 | 65 | 1040 | — | 1040 |
+| 2014 | 17 | ptarchive:nfl14.csv | 16 | 66 | 1054 | — | 1054 |
+| 2015 | 1 | ptarchive:nfl15.csv | 16 | 58 | 928 | — | 928 |
+| 2015 | 2 | ptarchive:nfl15.csv | 16 | 59 | 943 | — | 943 |
+| 2015 | 3 | ptarchive:nfl15.csv | 16 | 60 | 960 | — | 960 |
+| 2015 | 4 | ptarchive:nfl15.csv | 15 | 63 | 945 | — | 945 |
+| 2015 | 5 | ptarchive:nfl15.csv | 14 | 64 | 896 | — | 896 |
+| 2015 | 6 | ptarchive:nfl15.csv | 14 | 64 | 896 | — | 896 |
+| 2015 | 7 | ptarchive:nfl15.csv | 14 | 63 | 882 | — | 882 |
+| 2015 | 8 | ptarchive:nfl15.csv | 14 | 63 | 881 | — | 881 |
+| 2015 | 9 | ptarchive:nfl15.csv | 13 | 64 | 832 | — | 832 |
+| 2015 | 10 | ptarchive:nfl15.csv | 14 | 64 | 896 | — | 896 |
+| 2015 | 11 | ptarchive:nfl15.csv | 14 | 63 | 881 | — | 881 |
+| 2015 | 12 | ptarchive:nfl15.csv | 16 | 63 | 1007 | — | 1007 |
+| 2015 | 13 | ptarchive:nfl15.csv | 16 | 64 | 1024 | — | 1024 |
+| 2015 | 14 | ptarchive:nfl15.csv | 16 | 64 | 1009 | — | 1009 |
+| 2015 | 15 | ptarchive:nfl15.csv | 16 | 64 | 1024 | — | 1024 |
+| 2015 | 16 | ptarchive:nfl15.csv | 16 | 63 | 1006 | — | 1006 |
+| 2015 | 17 | ptarchive:nfl15.csv | 16 | 64 | 1016 | — | 1016 |
+| 2016 | 1 | ptarchive:nfl16.csv | 16 | 59 | 943 | — | 943 |
+| 2016 | 2 | ptarchive:nfl16.csv | 16 | 60 | 959 | — | 959 |
+| 2016 | 3 | ptarchive:nfl16.csv | 16 | 63 | 1007 | — | 1007 |
+| 2016 | 4 | ptarchive:nfl16.csv | 15 | 64 | 959 | — | 959 |
+| 2016 | 5 | ptarchive:nfl16.csv | 14 | 63 | 882 | — | 882 |
+| 2016 | 6 | ptarchive:nfl16.csv | 15 | 64 | 960 | — | 960 |
+| 2016 | 7 | ptarchive:nfl16.csv | 15 | 65 | 975 | — | 975 |
+| 2016 | 8 | ptarchive:nfl16.csv | 13 | 65 | 845 | — | 845 |
+| 2016 | 9 | ptarchive:nfl16.csv | 13 | 64 | 820 | — | 820 |
+| 2016 | 10 | ptarchive:nfl16.csv | 14 | 62 | 868 | — | 868 |
+| 2016 | 11 | ptarchive:nfl16.csv | 14 | 62 | 868 | — | 868 |
+| 2016 | 12 | ptarchive:nfl16.csv | 16 | 62 | 992 | — | 992 |
+| 2016 | 13 | ptarchive:nfl16.csv | 15 | 62 | 930 | — | 930 |
+| 2016 | 14 | ptarchive:nfl16.csv | 16 | 61 | 976 | — | 976 |
+| 2016 | 15 | ptarchive:nfl16.csv | 16 | 62 | 992 | — | 992 |
+| 2016 | 16 | ptarchive:nfl16.csv | 16 | 61 | 975 | — | 975 |
+| 2016 | 17 | ptarchive:nfl16.csv | 16 | 62 | 992 | — | 992 |
+| 2017 | 1 | ptarchive:nfl17.csv | 15 | 54 | 810 | — | 810 |
+| 2017 | 2 | ptarchive:nfl17.csv | 16 | 55 | 880 | — | 880 |
+| 2017 | 3 | ptarchive:nfl17.csv | 16 | 58 | 928 | — | 928 |
+| 2017 | 4 | ptarchive:nfl17.csv | 16 | 58 | 928 | — | 928 |
+| 2017 | 5 | ptarchive:nfl17.csv | 14 | 58 | 812 | — | 812 |
+| 2017 | 6 | ptarchive:nfl17.csv | 14 | 59 | 826 | — | 826 |
+| 2017 | 7 | ptarchive:nfl17.csv | 15 | 60 | 900 | — | 900 |
+| 2017 | 8 | ptarchive:nfl17.csv | 13 | 60 | 780 | — | 780 |
+| 2017 | 9 | ptarchive:nfl17.csv | 13 | 60 | 768 | — | 768 |
+| 2017 | 10 | ptarchive:nfl17.csv | 14 | 60 | 840 | — | 840 |
+| 2017 | 11 | ptarchive:nfl17.csv | 14 | 59 | 824 | — | 824 |
+| 2017 | 12 | ptarchive:nfl17.csv | 16 | 60 | 958 | — | 958 |
+| 2017 | 13 | ptarchive:nfl17.csv | 16 | 60 | 959 | — | 959 |
+| 2017 | 14 | ptarchive:nfl17.csv | 16 | 60 | 960 | — | 960 |
+| 2017 | 15 | ptarchive:nfl17.csv | 16 | 60 | 960 | — | 960 |
+| 2017 | 16 | ptarchive:nfl17.csv | 16 | 59 | 944 | — | 944 |
+| 2017 | 17 | ptarchive:nfl17.csv | 16 | 60 | 959 | — | 959 |
+| 2018 | 1 | ptarchive:nfl18.csv | 16 | 54 | 864 | — | 864 |
+| 2018 | 2 | ptarchive:nfl18.csv | 16 | 53 | 848 | — | 848 |
+| 2018 | 3 | ptarchive:nfl18.csv | 16 | 58 | 928 | — | 928 |
+| 2018 | 4 | ptarchive:nfl18.csv | 15 | 58 | 870 | — | 870 |
+| 2018 | 5 | ptarchive:nfl18.csv | 15 | 58 | 870 | — | 870 |
+| 2018 | 6 | ptarchive:nfl18.csv | 15 | 59 | 885 | — | 885 |
+| 2018 | 7 | ptarchive:nfl18.csv | 14 | 60 | 840 | — | 840 |
+| 2018 | 8 | ptarchive:nfl18.csv | 14 | 61 | 841 | — | 841 |
+| 2018 | 9 | ptarchive:nfl18.csv | 13 | 60 | 780 | — | 780 |
+| 2018 | 10 | ptarchive:nfl18.csv | 14 | 61 | 841 | — | 841 |
+| 2018 | 11 | ptarchive:nfl18.csv | 13 | 61 | 781 | — | 781 |
+| 2018 | 12 | ptarchive:nfl18.csv | 15 | 60 | 900 | — | 900 |
+| 2018 | 13 | ptarchive:nfl18.csv | 16 | 60 | 960 | — | 960 |
+| 2018 | 14 | ptarchive:nfl18.csv | 16 | 60 | 960 | — | 960 |
+| 2018 | 15 | ptarchive:nfl18.csv | 16 | 60 | 960 | — | 960 |
+| 2018 | 16 | ptarchive:nfl18.csv | 16 | 59 | 944 | — | 944 |
+| 2018 | 17 | ptarchive:nfl18.csv | 16 | 58 | 928 | — | 928 |
+| 2019 | 1 | ptarchive:nfl19.csv | 16 | 53 | 848 | — | 848 |
+| 2019 | 2 | ptarchive:nfl19.csv | 16 | 53 | 848 | — | 848 |
+| 2019 | 3 | ptarchive:nfl19.csv | 16 | 56 | 896 | — | 896 |
+| 2019 | 4 | ptarchive:nfl19.csv | 15 | 56 | 840 | — | 840 |
+| 2019 | 5 | ptarchive:nfl19.csv | 15 | 57 | 855 | — | 855 |
+| 2019 | 6 | ptarchive:nfl19.csv | 14 | 58 | 812 | — | 812 |
+| 2019 | 7 | ptarchive:nfl19.csv | 14 | 57 | 798 | — | 798 |
+| 2019 | 8 | ptarchive:nfl19.csv | 15 | 58 | 870 | — | 870 |
+| 2019 | 9 | ptarchive:nfl19.csv | 14 | 59 | 826 | — | 826 |
+| 2019 | 10 | ptarchive:nfl19.csv | 13 | 59 | 767 | — | 767 |
+| 2019 | 11 | ptarchive:nfl19.csv | 14 | 59 | 826 | — | 826 |
+| 2019 | 12 | ptarchive:nfl19.csv | 14 | 59 | 826 | — | 826 |
+| 2019 | 13 | ptarchive:nfl19.csv | 16 | 59 | 944 | — | 944 |
+| 2019 | 14 | ptarchive:nfl19.csv | 16 | 59 | 944 | — | 944 |
+| 2019 | 15 | ptarchive:nfl19.csv | 16 | 57 | 912 | — | 912 |
+| 2019 | 16 | ptarchive:nfl19.csv | 16 | 57 | 912 | — | 912 |
+| 2019 | 17 | ptarchive:nfl19.csv | 16 | 58 | 920 | — | 920 |
+| 2020 | 1 | ptarchive:nfl20.csv | 16 | 44 | 704 | — | 704 |
+| 2020 | 2 | ptarchive:nfl20.csv | 16 | 46 | 736 | — | 736 |
+| 2020 | 3 | ptarchive:nfl20.csv | 16 | 50 | 800 | — | 800 |
+| 2020 | 4 | ptarchive:nfl20.csv | 15 | 50 | 750 | — | 750 |
+| 2020 | 5 | ptarchive:nfl20.csv | 14 | 50 | 700 | — | 700 |
+| 2020 | 6 | ptarchive:nfl20.csv | 14 | 52 | 713 | — | 713 |
+| 2020 | 7 | ptarchive:nfl20.csv | 14 | 53 | 742 | — | 742 |
+| 2020 | 8 | ptarchive:nfl20.csv | 14 | 53 | 742 | — | 742 |
+| 2020 | 9 | ptarchive:nfl20.csv | 14 | 52 | 728 | — | 728 |
+| 2020 | 10 | ptarchive:nfl20.csv | 14 | 53 | 742 | — | 742 |
+| 2020 | 11 | ptarchive:nfl20.csv | 14 | 51 | 713 | — | 713 |
+| 2020 | 12 | ptarchive:nfl20.csv | 16 | 53 | 848 | — | 848 |
+| 2020 | 13 | ptarchive:nfl20.csv | 15 | 53 | 793 | — | 793 |
+| 2020 | 14 | ptarchive:nfl20.csv | 16 | 53 | 848 | — | 848 |
+| 2020 | 15 | ptarchive:nfl20.csv | 16 | 53 | 848 | — | 848 |
+| 2020 | 16 | ptarchive:nfl20.csv | 16 | 53 | 848 | — | 848 |
+| 2020 | 17 | ptarchive:nfl20.csv | 16 | 50 | 799 | — | 799 |
+| 2021 | 1 | ptarchive:nfl21.csv | 16 | 41 | 656 | — | 656 |
+| 2021 | 2 | ptarchive:nfl21.csv | 16 | 44 | 704 | — | 704 |
+| 2021 | 3 | ptarchive:nfl21.csv | 16 | 46 | 736 | — | 736 |
+| 2021 | 4 | ptarchive:nfl21.csv | 16 | 46 | 736 | — | 736 |
+| 2021 | 5 | ptarchive:nfl21.csv | 16 | 46 | 736 | — | 736 |
+| 2021 | 6 | ptarchive:nfl21.csv | 14 | 48 | 672 | — | 672 |
+| 2021 | 7 | ptarchive:nfl21.csv | 13 | 49 | 636 | — | 636 |
+| 2021 | 8 | ptarchive:nfl21.csv | 15 | 49 | 735 | — | 735 |
+| 2021 | 9 | ptarchive:nfl21.csv | 14 | 49 | 686 | — | 686 |
+| 2021 | 10 | ptarchive:nfl21.csv | 14 | 49 | 686 | — | 686 |
+| 2021 | 11 | ptarchive:nfl21.csv | 15 | 49 | 735 | — | 735 |
+| 2021 | 12 | ptarchive:nfl21.csv | 15 | 49 | 735 | — | 735 |
+| 2021 | 13 | ptarchive:nfl21.csv | 14 | 49 | 686 | — | 686 |
+| 2021 | 14 | ptarchive:nfl21.csv | 14 | 49 | 686 | — | 686 |
+| 2021 | 15 | ptarchive:nfl21.csv | 16 | 49 | 784 | — | 784 |
+| 2021 | 16 | ptarchive:nfl21.csv | 16 | 48 | 768 | — | 768 |
+| 2021 | 17 | ptarchive:nfl21.csv | 16 | 47 | 749 | — | 749 |
+| 2021 | 18 | ptarchive:nfl21.csv | 16 | 47 | 752 | — | 752 |
+| 2022 | 1 | ptarchive:nfl22.csv | 16 | 44 | 704 | — | 704 |
+| 2022 | 2 | ptarchive:nfl22.csv | 16 | 43 | 688 | — | 688 |
+| 2022 | 3 | ptarchive:nfl22.csv | 16 | 45 | 720 | — | 720 |
+| 2022 | 4 | ptarchive:nfl22.csv | 16 | 46 | 736 | — | 736 |
+| 2022 | 5 | ptarchive:nfl22.csv | 16 | 46 | 736 | — | 736 |
+| 2022 | 6 | ptarchive:nfl22.csv | 14 | 46 | 644 | — | 644 |
+| 2022 | 7 | ptarchive:nfl22.csv | 14 | 48 | 672 | — | 672 |
+| 2022 | 8 | ptarchive:nfl22.csv | 15 | 48 | 720 | — | 720 |
+| 2022 | 9 | ptarchive:nfl22.csv | 13 | 48 | 624 | — | 624 |
+| 2022 | 10 | ptarchive:nfl22.csv | 14 | 48 | 672 | — | 672 |
+| 2022 | 11 | ptarchive:nfl22.csv | 14 | 47 | 631 | — | 631 |
+| 2022 | 12 | ptarchive:nfl22.csv | 16 | 46 | 736 | — | 736 |
+| 2022 | 13 | ptarchive:nfl22.csv | 15 | 46 | 690 | — | 690 |
+| 2022 | 14 | ptarchive:nfl22.csv | 13 | 46 | 598 | — | 598 |
+| 2022 | 15 | ptarchive:nfl22.csv | 16 | 45 | 720 | — | 720 |
+| 2022 | 16 | ptarchive:nfl22.csv | 16 | 45 | 720 | — | 720 |
+| 2022 | 17 | ptarchive:nfl22.csv | 15 | 46 | 690 | — | 690 |
+| 2022 | 18 | ptarchive:nfl22.csv | 16 | 46 | 736 | — | 736 |
+| 2023 | 1 | ptarchive:nfl23.csv | 16 | 40 | 640 | — | 640 |
+| 2023 | 2 | ptarchive:nfl23.csv | 16 | 42 | 670 | — | 670 |
+| 2023 | 3 | ptarchive:nfl23.csv | 16 | 43 | 687 | — | 687 |
+| 2023 | 4 | ptarchive:nfl23.csv | 16 | 43 | 688 | — | 688 |
+| 2023 | 5 | ptarchive:nfl23.csv | 14 | 44 | 616 | — | 616 |
+| 2023 | 6 | ptarchive:nfl23.csv | 15 | 45 | 675 | — | 675 |
+| 2023 | 7 | ptarchive:nfl23.csv | 13 | 46 | 598 | — | 598 |
+| 2023 | 8 | ptarchive:nfl23.csv | 16 | 46 | 735 | — | 735 |
+| 2023 | 9 | ptarchive:nfl23.csv | 14 | 46 | 644 | — | 644 |
+| 2023 | 10 | ptarchive:nfl23.csv | 14 | 46 | 644 | — | 644 |
+| 2023 | 11 | ptarchive:nfl23.csv | 14 | 46 | 644 | — | 644 |
+| 2023 | 12 | ptarchive:nfl23.csv | 16 | 46 | 736 | — | 736 |
+| 2023 | 13 | ptarchive:nfl23.csv | 13 | 46 | 598 | — | 598 |
+| 2023 | 14 | ptarchive:nfl23.csv | 15 | 46 | 690 | — | 690 |
+| 2023 | 15 | ptarchive:nfl23.csv | 16 | 46 | 734 | — | 734 |
+| 2023 | 16 | ptarchive:nfl23.csv | 16 | 45 | 720 | — | 720 |
+| 2023 | 17 | ptarchive:nfl23.csv | 16 | 46 | 736 | — | 736 |
+| 2023 | 18 | ptarchive:nfl23.csv | 16 | 46 | 735 | — | 735 |
+| 2024 | 1 | ptarchive:nfl24.csv | 16 | 40 | 640 | — | 640 |
+| 2024 | 2 | ptarchive:nfl24.csv | 16 | 41 | 656 | — | 656 |
+| 2024 | 3 | ptarchive:nfl24.csv | 16 | 43 | 688 | — | 688 |
+| 2024 | 4 | ptarchive:nfl24.csv | 16 | 43 | 688 | — | 688 |
+| 2024 | 5 | ptarchive:nfl24.csv | 14 | 44 | 616 | — | 616 |
+| 2024 | 6 | ptarchive:nfl24.csv | 14 | 44 | 616 | — | 616 |
+| 2024 | 7 | ptarchive:nfl24.csv | 15 | 45 | 675 | — | 675 |
+| 2024 | 8 | ptarchive:nfl24.csv | 16 | 44 | 704 | — | 704 |
+| 2024 | 9 | ptarchive:nfl24.csv | 15 | 45 | 675 | — | 675 |
+| 2024 | 10 | ptarchive:nfl24.csv | 14 | 45 | 630 | — | 630 |
+| 2024 | 11 | ptarchive:nfl24.csv | 14 | 45 | 630 | — | 630 |
+| 2024 | 12 | ptarchive:nfl24.csv | 13 | 45 | 585 | — | 585 |
+| 2024 | 13 | ptarchive:nfl24.csv | 16 | 45 | 720 | — | 720 |
+| 2024 | 14 | ptarchive:nfl24.csv | 13 | 44 | 572 | — | 572 |
+| 2024 | 15 | ptarchive:nfl24.csv | 16 | 44 | 704 | — | 704 |
+| 2024 | 16 | ptarchive:nfl24.csv | 16 | 45 | 705 | — | 705 |
+| 2024 | 17 | ptarchive:nfl24.csv | 16 | 45 | 704 | — | 704 |
+| 2024 | 18 | ptarchive:nfl24.csv | 16 | 44 | 704 | — | 704 |
+| 2025 | 1 | ptarchive:nfl25.csv | 16 | 42 | 672 | — | 672 |
+| 2025 | 2 | ptarchive:nfl25.csv | 16 | 43 | 688 | — | 688 |
+| 2025 | 3 | ptarchive:nfl25.csv | 16 | 43 | 688 | — | 688 |
+| 2025 | 4 | ptarchive:nfl25.csv | 16 | 44 | 704 | — | 704 |
+| 2025 | 5 | ptarchive:nfl25.csv | 14 | 44 | 616 | — | 616 |
+| 2025 | 6 | ptarchive:nfl25.csv | 15 | 46 | 690 | — | 690 |
+| 2025 | 7 | ptarchive:nfl25.csv | 15 | 46 | 690 | — | 690 |
+| 2025 | 8 | ptarchive:nfl25.csv | 13 | 46 | 597 | — | 597 |
+| 2025 | 9 | ptarchive:nfl25.csv | 14 | 46 | 644 | — | 644 |
+| 2025 | 10 | ptarchive:nfl25.csv | 14 | 46 | 644 | — | 644 |
+| 2025 | 11 | ptarchive:nfl25.csv | 15 | 46 | 690 | — | 690 |
+| 2025 | 12 | ptarchive:nfl25.csv | 14 | 46 | 644 | — | 644 |
+| 2025 | 13 | ptarchive:nfl25.csv | 16 | 46 | 736 | — | 736 |
+| 2025 | 14 | ptarchive:nfl25.csv | 14 | 46 | 643 | — | 643 |
+| 2025 | 15 | ptarchive:nfl25.csv | 16 | 45 | 720 | — | 720 |
+| 2025 | 16 | ptarchive:nfl25.csv | 16 | 45 | 720 | — | 720 |
+| 2025 | 17 | ptarchive:nfl25.csv | 16 | 45 | 719 | — | 719 |
+| 2025 | 18 | ptarchive:nfl25.csv | 16 | 45 | 720 | — | 720 |
+| 2026 | 1 | ptarchive:nfl26.csv | 16 | 44 | 704 | — | 704 |
+| 2026 | 2 | ptarchive:nfl26.csv | 16 | 45 | 720 | — | 720 |
 | 2026 | 3 | pt:nflpredictions week 3.csv | 16 | 44 | 704 | 2026-09-24 21:58 UTC | 704 |
+| 2026 | 3 | ptarchive:nfl26.csv | 16 | 44 | 703 | — | 703 |
 | 2026 | 4 | pt:nflpredictions week 4.csv | 16 | 35 | 560 | 2026-09-30 21:25 UTC | 560 |
 | 2026 | 5 | pt:nflpredictions week 5.csv | 15 | 40 | 600 | 2026-10-07 22:19 UTC | 600 |
 
@@ -193,7 +490,7 @@ Records missing each field, by cutoff kind.
 |---|---|
 | same season/week/teams listed more than once in the schedule | 0 |
 | duplicate prediction records (game, cutoff) | 0 |
-| same game/market/source/time with different values | 0 |
+| same game/market/source/time with different values | 3707 |
 | same model twice in one forecast file for a game | 0 |
 | games whose pool sheets disagree on the line | 0 |
 | final scores agreeing with the repo's scores file | 4207 |
@@ -207,6 +504,7 @@ Records carrying each flag, by cutoff kind.
 | flag | week_lock | kickoff |
 |---|---|---|
 | `CUTOFF_UNKNOWN` | 248 | 248 |
+| `MODEL_FORECAST_TIME_UNVERIFIED` | 4223 | 4223 |
 | `MODEL_PUBLICATION_TIME_UNKNOWN` | 47 | 47 |
 | `MONEYLINE_TIME_UNVERIFIED` | 5158 | 5158 |
 | `NO_MODEL_FORECASTS_AT_CUTOFF` | 7192 | 7192 |
@@ -231,6 +529,7 @@ Records carrying each flag, by cutoff kind.
 
 ## Build notes
 
+- lab/data/raw/predictiontracker/seasons/nfl22.csv line 2: Buffalo @ Cincinnati has no week - not imported
 - store spreads week 4 game 1: 'seattle@arizona' is not on the 2026 week 4 schedule - not imported
 - store spreads week 4 game 2: 'minnesota@pittsburgh' is not on the 2026 week 4 schedule - not imported
 - pick sheet 2023 week 8: los angeles chargers @ DETROIT not on the schedule
