@@ -53,7 +53,6 @@ from .pages.recipe import RecipePage
 from .pages.computers import ComputersPage
 from .pages.hitsmisses import HitsMissesPage
 from .pages.radar import RadarPage
-from .pages.acqlpicks import AcqlPicksPage
 from .pages.nextweek import NextWeekPage
 from .pages.player import PlayerPage
 from .pages.pools import PoolsPage
@@ -74,8 +73,7 @@ NAV = (
     # Second, and on Ctrl+2: the question most visits are here to answer is
     # "what do I play this week", and it should not be four clicks away.
     GroupSpec(places.THIS_WEEK, "calendar", "What to play this week: your card, every game priced, and where the card could be wrong",
-              ((places.CARD, BriefingPage), (places.EVERY_GAME, NextWeekPage), (places.RADAR, RadarPage),
-               (places.ACQL_PICKS, AcqlPicksPage))),
+              ((places.CARD, BriefingPage), (places.EVERY_GAME, NextWeekPage), (places.RADAR, RadarPage))),
     # While the games are on: every score against the pool's lines, live.
     GroupSpec(places.GAME_DAY, "football", "The games as they happen: live scores against the pool's lines, and what you need to go your way",
               (("Game day", GameDayPage), (places.EVERYONE, EveryonePage))),

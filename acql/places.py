@@ -25,7 +25,6 @@ THIS_WEEK = "This Week"             # the week's card, and why
 CARD = "Your card"
 EVERY_GAME = "Every game"           # every game on the slate, priced
 RADAR = "Radar"                     # every game by how it could go
-ACQL_PICKS = "A.C.Q.L. Picks"       # all three contests, by the league's rules, and your official picks
 GAME_DAY = "Game Day"               # the games as they happen
 EVERYONE = "Everyone's picks"       # the whole pool's cards for the week, side by side
 RESULTS = "Results"                 # how the week went

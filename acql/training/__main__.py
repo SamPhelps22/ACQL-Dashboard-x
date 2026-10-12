@@ -7,7 +7,6 @@
     python -m acql.training check      only the check that no result can leak backwards
     python -m acql.training fetch      the season archives from The Prediction Tracker (about 2 MB;
                                        the one thing here that goes online, and only when asked)
-    python -m acql.training contests   the three A.C.Q.L. contests replayed 2010-2025 (contests.md)
 
 Everything is written under data/training. The dashboard's database is read
 from a copy, the dashboard can be open, and nothing here changes a pick.
@@ -182,17 +181,6 @@ def fetch(args) -> int:
     return 0
 
 
-def contests(args) -> int:
-    from . import contests as replay
-    result = replay.run(args.first, args.last)
-    md, _ = replay.write(result)
-    if "error" in result:
-        print(result["error"])
-        return 1
-    print(f"{result['games']:,} games replayed. Report: {md}")
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m acql.training", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -210,13 +198,10 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("check", help="the check that no result can leak backwards")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
-    c = commands.add_parser("contests", help="the main game, Big Loser and suicide pool replayed season by season")
-    c.add_argument("--first", type=int, default=2010)
-    c.add_argument("--last", type=int, default=2025)
     args = parser.parse_args(argv)
     _logging(args.verbose)
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check,
-            "fetch": fetch, "contests": contests}.get(args.command)
+            "fetch": fetch}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0
