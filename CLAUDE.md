@@ -41,7 +41,10 @@ documents grouped by kind (`forecasts`, `odds`, `spreads`, `picks`, `cards`,
 - `acql/siteextras.py`: the site's extra content.
 - `acql/mailer.py`: the recap email.
 
-**Model Lab** does not exist yet.
+**Model Lab** is `lab/`, which production never imports. `lab/history/` builds
+the as-of-cutoff backtest dataset into `lab/data/history.db` (gitignored).
+What each source can vouch for is in `lab/reports/data-audit.md`, and the
+coverage is in `lab/reports/coverage.md`.
 
 ## Commands
 
@@ -50,6 +53,7 @@ python run.py                    # launch; the first run builds .venv from requi
 python run.py --check            # report dependency status; installs nothing
 QT_QPA_PLATFORM=offscreen python tests/run_tests.py   # whole test suite (unittest, no pytest)
 python -m acql.backtest          # replays history AND overwrites the tracked acql/data/backtest_results.json
+python -m lab.history.build      # fetch pinned inputs, build lab/data/history.db, verify, write coverage report
 python packaging/build.py        # PyInstaller build into dist/
 ```
 
@@ -59,7 +63,8 @@ GitHub Release, so pushing a `v*` tag is a release.
 
 ## Known state and traps (as of 2026-10-12)
 
-- **Test baseline.** 39 tests run. 2 already fail with no changes made
+- **Test baseline.** 62 tests run: 39 app tests, plus 23 lab tests from
+  `tests/test_lab_history.py`. 2 app tests already fail with no changes made
   (`test_big_loser_slots_round_trip`, `test_wins_include_big_loser_points`),
   and 1 is skipped. Compare results against this baseline; don't assume a
   green suite.

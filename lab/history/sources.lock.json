@@ -1,0 +1,10 @@
+{
+  "nflverse_games": {
+    "description": "nflverse nfldata games.csv: schedule, kickoff times, final scores, and undated spread/total/moneyline",
+    "url": "https://raw.githubusercontent.com/nflverse/nfldata/76dcc8587f9402449dd1faa9a9469c85d98ad74c/data/games.csv",
+    "commit": "76dcc8587f9402449dd1faa9a9469c85d98ad74c",
+    "sha256": "54024613da63c97face2c01f59abfeab77c783b8f325adc26e49799e33f6bd93",
+    "bytes": 2184055,
+    "license": "none stated in the nfldata repository (no LICENSE file) - kept out of git; re-download by the pinned URL"
+  }
+}

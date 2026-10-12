@@ -12,6 +12,9 @@ dist/
 acql-settings.json
 backups/
 
+# Model Lab raw inputs and built datasets (rebuilt from lab/history/sources.lock.json)
+lab/data/
+
 # Weekly spreadsheets dropped in by users; the samples at the repo root stay.
 data/*.xls
 data/*.xlsx
