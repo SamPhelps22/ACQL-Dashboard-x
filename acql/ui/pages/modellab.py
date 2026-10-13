@@ -1,14 +1,19 @@
-"""The Model Lab: every recipe on the same games, closing line value, and what has changed."""
+"""The Model Lab: every recipe on the same games, its form, the week's misses, the record kept, and what has changed."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtWidgets import (
+    QApplication, QFrame, QGridLayout, QLabel, QPushButton, QTabBar, QVBoxLayout, QWidget,
+)
 
-from ... import closing, contenders, modellab, nflverse, results
+import time
+
+from ... import closing, contenders, ledger, modellab, nflverse, oddslock, results
 from ...places import LAB as title_
-from ...version import MODEL_NAME
+from ...version import MODEL_NAME, VERSION
 from ...wording import plural as _plural
+from ..modelcharts import FormChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
@@ -28,8 +33,55 @@ SEASONS_TITLE = "Season by season - taught on the seasons before, asked about th
 SEASONS_HEADERS = ["Season", "Games", "Ratings alone", contenders.ANALYST, contenders.MACHINE, "Avg miss (points)"]
 VALUE_HEADERS = ["Week", "Game", "Took", "Line at the deadline", "Line at kickoff", "Moved"]
 LAB_TITLE = "Every recipe, on the same games"
+FORM_TITLE = "Straight up, and against the pool's line - the season beside the last four weeks"
+FORM_HEADERS = ["Recipe", "Winners", "Winners, last 4 wks", "On pool lines", "Pool lines, last 4 wks", "Winners lately",
+                "Right when most missed"]
+SHOCKS_TITLE = "The week's biggest misses - every recipe, not only the one in service"
+SHOCKS_HEADERS = ["Week", "What", "Game", "Most recipes took", "They expected", "It finished", "Had it right"]
+RECORD_TITLE = "The record - each recipe's number, written down when the cards went in"
+RECORD_HEADERS = ["Week", "Odds locked", "Written down", "Standing", "Games", "Against today's replay"]
+#: Weeks of misses listed, newest first.
+SHOCK_WEEKS = 4
+#: A record on fewer games than this is shown in grey: too few to rank on.
+FEW = 20
 VALUE_TITLE = "Closing line value - did the line come round to the picks?"
 WEEKS_TITLE = "Week by week - each recipe's record, on the games it priced"
+#: The page's views. It had grown to eight tiles and sixteen cards on one
+#: scroll, answering four different questions; each now has a view of its own.
+VIEWS = (
+    ("Scoreboard", "Every recipe on the same games: who leads, head to head, and week by week"),
+    ("Form & misses", "Straight up and against the pool's line, the last four weeks, and each week's biggest misses"),
+    ("Long run", "Market, football or both: every season since 2011, on games none of them had seen"),
+    ("The record", "What was written down before kickoff, the closing line, coverage, and what has changed"),
+)
+SCORE, FORM, LONG, RECORD = range(len(VIEWS))
+#: Which view was open last.
+VIEW_KEY = "modellab/view"
+
+
+def _record(tally: modellab.Tally, none: str) -> str:
+    """A record with its size and how far luck alone moves one that size: "49 of 77, 64%, give or take 11"."""
+    if not tally.games:
+        return none
+    return f"{tally.right} of {tally.games} \u00b7 {tally.rate:.0%} \u00b1{tally.reach * 100:.0f}"
+
+
+def _by(points: float | None, none: str, *, behind: str = "lost by", places: int = 0) -> str:
+    """A margin from one side: "by 7", "lost by 3", "level"."""
+    if points is None:
+        return none
+    if abs(points) < 0.25:
+        return "level"
+    return f"{'by' if points > 0 else behind} {abs(points):.{places}f}"
+
+
+def _when(at: float) -> str:
+    """"Thu Oct 8, 6:04 PM" on this computer's clock."""
+    if not at:
+        return ""
+    t = time.localtime(at)
+    return (f"{time.strftime('%a %b', t)} {t.tm_mday}, {t.tm_hour % 12 or 12}:{t.tm_min:02d} "
+            f"{'AM' if t.tm_hour < 12 else 'PM'}")
 
 
 def _line(margin: float, team: str) -> str:
@@ -47,13 +99,23 @@ class ModelLabPage(Page):
 
     def build(self) -> None:
         self.layout_.addWidget(section(self.title, self.subtitle))
+        self.views = QTabBar()
+        self.views.setDrawBase(False)
+        self.views.setExpanding(False)
+        for label, about in VIEWS:
+            self.views.setTabToolTip(self.views.addTab(label.replace("&", "&&")), about)
+        self.layout_.addWidget(self.views)
 
         self.tile_service = StatTile("In Service")
         self.tile_challenger = StatTile("Best Challenger So Far")
         self.tile_value = StatTile("Closing Line Value")
         self.tile_ratings = StatTile("Own Ratings, 2011-2025")
+        self.tile_winners = StatTile("Best Straight Up")
+        self.tile_lines = StatTile("Best On Pool Lines")
+        self.tile_agreed = StatTile("Recipes Agreed")
+        self.tile_upset = StatTile("Biggest Miss")
         self._tiles = (self.tile_service, self.tile_challenger, self.tile_value, self.tile_ratings)
-        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=4))
+        self._more_tiles = (self.tile_winners, self.tile_lines, self.tile_agreed, self.tile_upset)
 
         self.lab_card = Card(LAB_TITLE)
         self.lab_box = QVBoxLayout()
@@ -62,7 +124,6 @@ class ModelLabPage(Page):
         self.lab_note.setObjectName("Muted")
         self.lab_note.setWordWrap(True)
         self.lab_card.add(self.lab_note)
-        self.layout_.addWidget(self.lab_card)
 
         self.recipes_card = Card("What each recipe is")
         self.recipes_box = QGridLayout()
@@ -70,17 +131,17 @@ class ModelLabPage(Page):
         self.recipes_box.setVerticalSpacing(6)
         self.recipes_box.setColumnStretch(2, 1)
         self.recipes_card.body().addLayout(self.recipes_box)
-        self.layout_.addWidget(self.recipes_card)
 
         self.extra = {}
-        for key, heading in (("duel", DUEL_TITLE), ("parts", PARTS_TITLE), ("calib", CALIB_TITLE),
-                             ("cover", COVER_TITLE)):
+        self.form_chart = FormChart(self.palette, height=2.9)
+        self.extra["form"] = self._card(FORM_TITLE, self.form_chart)
+        for key, heading in (("duel", DUEL_TITLE), ("shocks", SHOCKS_TITLE), ("parts", PARTS_TITLE),
+                             ("calib", CALIB_TITLE), ("cover", COVER_TITLE)):
             self.extra[key] = self._card(heading)
 
         self.weeks_card = Card(WEEKS_TITLE)
         self.weeks_box = QVBoxLayout()
         self.weeks_card.body().addLayout(self.weeks_box)
-        self.layout_.addWidget(self.weeks_card)
 
         self.extra["kinds"] = self._card(KINDS_TITLE)
         self.extra["kinds_by_season"] = self._card(KINDS_BY_SEASON)
@@ -100,27 +161,63 @@ class ModelLabPage(Page):
         self.value_note.setObjectName("Muted")
         self.value_note.setWordWrap(True)
         self.value_card.add(self.value_note)
-        self.layout_.addWidget(self.value_card)
+
+        self.extra["record"] = self._card(RECORD_TITLE)
 
         self.versions_card = Card(f"What has changed in {MODEL_NAME}")
         self.versions_label = QLabel("")
         self.versions_label.setWordWrap(True)
         self.versions_label.setTextFormat(Qt.TextFormat.RichText)
         self.versions_card.add(self.versions_label)
-        self.layout_.addWidget(self.versions_card)
         self.table: QWidget | None = None
 
-    def _card(self, heading: str):
-        """A card with room for a table and a note under it: (card, the table's box, the note)."""
+        # Each view: its tiles, then its cards in the order they are read.
+        card = lambda key: self.extra[key][0]  # noqa: E731
+        self._view_holders: list[QWidget] = []
+        for tiles, cards in (
+            (self._tiles, (self.lab_card, card("duel"), card("parts"), self.weeks_card, self.recipes_card)),
+            (self._more_tiles, (card("form"), card("shocks"), card("calib"))),
+            ((), (card("kinds"), card("kinds_by_season"), card("seasons"))),
+            ((), (card("record"), self.value_card, card("cover"), self.versions_card)),
+        ):
+            holder = QWidget()
+            box = QVBoxLayout(holder)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(self.layout_.spacing())
+            if tiles:
+                box.addLayout(tile_grid(list(tiles), per_row=4))
+            for each in cards:
+                box.addWidget(each)
+            self.layout_.addWidget(holder)
+            self._view_holders.append(holder)
+        try:
+            wanted = int(QSettings().value(VIEW_KEY, SCORE))
+        except (TypeError, ValueError):
+            wanted = SCORE
+        self.views.setCurrentIndex(wanted if 0 <= wanted < len(VIEWS) else SCORE)
+        self._show_view(self.views.currentIndex(), remember=False)
+        self.views.currentChanged.connect(self._show_view)
+
+    def _show_view(self, index: int, remember: bool = True) -> None:
+        for n, holder in enumerate(self._view_holders):
+            holder.setVisible(n == index)
+        if remember:
+            QSettings().setValue(VIEW_KEY, index)
+            self._scroll.verticalScrollBar().setValue(0)        # a new view is read from its top
+
+    def _card(self, heading: str, chart=None):
+        """A card with room for a table and a note under it: (card, the table's box, the note).
+        It is set out in its view at the end of build."""
         card = Card(heading)
         box = QVBoxLayout()
         card.body().addLayout(box)
+        if chart is not None:
+            card.add(chart, 1)
         note = QLabel("")
         note.setObjectName("Muted")
         note.setWordWrap(True)
         note.setTextFormat(Qt.TextFormat.RichText)
         card.add(note)
-        self.layout_.addWidget(card)
         return card, box, note
 
     def _fill(self, key: str, headers, rows, note: str = "", **options) -> None:
@@ -135,16 +232,21 @@ class ModelLabPage(Page):
         label.setText(note)
 
     def restyle(self) -> None:
+        self.form_chart.set_palette(self.palette)
         self.refresh_now()
 
     def refresh(self) -> None:
         season = self.season
         assert season is not None  # guaranteed by Page.refresh_now()
-        lab = modellab.run(season)
+        lab = modellab.run(season)      # the record is written by the scheduled jobs, never by looking
         value = closing.value(season)
         self._update_lab(lab)
         self._update_recipes(lab)
+        self._update_form(lab)
         self._update_duel(lab)
+        self._update_shocks(lab)
+        self._update_record(lab)
+        self._update_more_tiles(lab)
         self._update_parts(lab)
         self._update_calibration(lab)
         self._update_coverage(lab)
@@ -264,6 +366,199 @@ class ModelLabPage(Page):
             "coin flip is 0.693."
         )
         self.lab_note.setTextFormat(Qt.TextFormat.RichText)
+
+    # ---- two questions kept apart, each beside its last few weeks ------------------------------
+    def _update_more_tiles(self, lab: modellab.Lab) -> None:
+        if not lab.entries:
+            for tile in self._more_tiles:
+                tile.update_values(self.NO_VALUE, "Awaiting graded games")
+            return
+        common = len(lab.common)
+        for tile, what, noun in ((self.tile_winners, "winners", "winners picked"),
+                                 (self.tile_lines, "lined", "credited, pool-line games only")):
+            leaders, record = lab.best(what)
+            if not leaders:
+                tile.update_values(self.NO_VALUE, "no game every recipe priced yet" if what == "winners"
+                                   else "no pool-line game every recipe priced yet")
+                continue
+            names = ", ".join(e.name for e in leaders[:3]) + (f" and {len(leaders) - 3} more" if len(leaders) > 3 else "")
+            few = record.games < FEW
+            tile.update_values(
+                leaders[0].name if len(leaders) == 1 else f"{len(leaders)} level",
+                (f"{names}\n" if len(leaders) > 1 else "")
+                + f"{record.right} of {record.games} {noun} \u00b7 {record.rate:.0%} \u00b1{record.reach * 100:.0f}\n"
+                + (f"only {_plural(record.games, 'game')}: too few to rank on" if few else
+                   f"on the {common} games every recipe priced"),
+            )
+        agreed, rooms, came = lab.agreement()
+        if rooms:
+            self.tile_agreed.update_values(
+                f"{agreed / rooms:.0%}",
+                f"every recipe took the same side in {agreed} of {_plural(rooms, 'game')}\n"
+                + (f"that side was credited in {came} of them" if agreed else "they never all agreed"),
+            )
+        else:
+            self.tile_agreed.update_values(self.NO_VALUE, "Awaiting graded games")
+        worst = lab.upset()
+        if worst is None:
+            self.tile_upset.update_values(self.NO_VALUE, "no game most recipes had wrong, with a score kept")
+        else:
+            finished = "tied" if not worst.actual else f"{'won' if worst.actual > 0 else 'lost'} by {abs(worst.actual):g}"
+            self.tile_upset.update_values(
+                f"{worst.off:.0f} pts",
+                f"Week {worst.fixture.week}: {worst.fixture.matchup}\n"
+                f"{worst.took} of {worst.priced} recipes took {worst.side} "
+                f"{_by(worst.margin, '', behind='behind by', places=1)}; it {finished}",
+                "bad",
+            )
+
+    def _update_form(self, lab: modellab.Lab) -> None:
+        forms = lab.form()
+        room = lab.against_the_room()
+        rows, tones, tips = [], {}, {}
+        for r, f in enumerate(forms):
+            most, alone = room.get(f.name, (0, 0))
+            rows.append([f.name, _record(f.winners, self.NO_VALUE), _record(f.winners_late, self.NO_VALUE),
+                         _record(f.lined, self.NO_VALUE), _record(f.lined_late, self.NO_VALUE), f.reading,
+                         f"{most}" + (f" \u00b7 {alone} alone" if alone else "")])
+            for c, tally in ((1, f.winners), (2, f.winners_late), (3, f.lined), (4, f.lined_late)):
+                if tally.games < FEW:
+                    tones[(r, c)] = "muted"
+                    tips[(r, c)] = f"Fewer than {FEW} games: too few to rank a recipe on."
+            tones[(r, 5)] = {modellab.BETTER: "good", modellab.WORSE: "bad"}.get(f.reading, "muted")
+            tips[(r, 5)] = (
+                f"On winners: {f.late.right} of {f.late.games} over the last {modellab.FORM_WEEKS} graded weeks, "
+                f"{f.early.right} of {f.early.games} in the weeks before them. "
+                + (f"Needs {modellab.FORM_GAMES} games on each side before the two are compared."
+                   if f.luck is None else
+                   f"That is {abs(f.luck):.1f} spreads of luck apart; {modellab.FORM_LUCK:g} are needed to call "
+                   "it a change."))
+            tones[(r, 6)] = "" if most else "muted"
+        moved = [f for f in forms if f.reading in (modellab.BETTER, modellab.WORSE)]
+        early = bool(forms) and all(f.reading == modellab.EARLY for f in forms)
+        now = ("too few weeks are graded to set the last four against the ones before. " if early else
+               "no recipe's last four weeks differ from the weeks before by more than luck - a good month so far "
+               "is a good month, not an improvement. " if not moved else
+               "; ".join(f"{f.name} is {f.reading}" for f in moved) + ", by more than luck alone explains. ")
+        self._fill("form", FORM_HEADERS, rows, numeric_columns={1, 2, 3, 4, 6}, tones=tones, tooltips=tips,
+                   bold_columns={0}, stretch=0, note=(
+            ("<b>Right now:</b> " + now +
+             "<b>Winners</b> is straight up: it had the team that won. <b>On pool lines</b> is against the "
+             "spread, on the games the pool put a line on and no others. The two are never added together. "
+             "<b>Winners lately</b> sets the winners of the last four weeks against the winners of the weeks "
+             f"before; with ten recipes looked at every week it takes {modellab.FORM_LUCK:g} spreads of luck, "
+             "not the usual two, to call one a change. "
+             "The \u00b1 is how far luck alone moves a record that size: 8 of 10 is 80% \u00b125 and 120 of 200 is "
+             "60% \u00b17, so the second is the one to trust. Grey is fewer than "
+             f"{FEW} games. <b>Right when most missed</b> counts the games it had right when most of the "
+             "other recipes that priced them did not. The chart follows three of them.") if rows else ""))
+        self._draw_form(lab)
+
+    def _draw_form(self, lab: modellab.Lab) -> None:
+        service, line = lab.service, lab.entry(modellab.LINE)
+        third = lab.front_runner or max(
+            (e for e in lab.entries if e is not service and e is not line),
+            key=lambda e: (e.games, e.rate), default=None)
+        chosen = [e for e in (service, line, third) if e is not None]
+        seen, series = set(), []
+        for e in chosen:
+            if e.name in seen:
+                continue
+            seen.add(e.name)
+            series.append((e.name, [(week, lately.right, lately.games, season.right, season.games)
+                                    for week, lately, season in lab.rolling(e.name)]))
+        self.form_chart.plot(series, modellab.FORM_WEEKS)
+
+    # ---- the week's misses, across every recipe -----------------------------------------------
+    def _update_shocks(self, lab: modellab.Lab) -> None:
+        shocks = lab.shocks()
+        weeks = sorted({s.week for s in shocks}, reverse=True)
+        rows, tones = [], {}
+        for s in (s for s in shocks if s.week in weeks[:SHOCK_WEEKS]):
+            room, r = s.room, len(rows)
+            won = (room.actual or 0) > 0
+            finished = (self.NO_VALUE if room.actual is None else "tied" if not room.actual else
+                        f"{'won' if won else 'lost'} by {abs(room.actual):g}")
+            right = len(room.right)
+            rows.append([
+                s.week, s.kind, room.fixture.matchup,
+                f"{room.side}, {room.took} of {room.priced} \u00b7 {room.sure:.0%}",
+                _by(room.margin, self.NO_VALUE, behind="behind by", places=1)
+                + (f" \u00b7 {room.spread:.1f} apart" if s.kind == modellab.SPLIT and room.spread is not None else ""),
+                finished + ("" if not room.fixture.lined or room.missed != won else
+                            " \u00b7 not by the pool's line" if won else " \u00b7 inside the pool's line"),
+                "none" if not right else "all" if right == room.priced else
+                f"{right} of {room.priced}" + (f": {', '.join(room.right)}" if right <= 2 else ""),
+            ])
+            tones[(r, 1)] = "muted"
+            tones[(r, 5)] = "bad" if room.missed else "good"
+            tones[(r, 6)] = "muted" if not right or right == room.priced else ""
+        surest = [s for s in shocks if s.kind == modellab.SUREST]
+        shared = sum(1 for s in surest if s.room.agreed)
+        split = [s for s in shocks if s.kind == modellab.SPLIT]
+        split_right = sum(1 for s in split if not s.room.missed)
+        graded = len({s.week for s in shocks})
+        self._fill("shocks", SHOCKS_HEADERS, rows, numeric_columns={0}, tones=tones, bold_columns={2}, stretch=2,
+                   note=(
+            (f"<b>Right now:</b> in {shared} of {_plural(len(surest), 'week')} with a miss, the surest pick that "
+             f"missed was one every recipe had the same side of - no recipe in the lab would have saved it. "
+             f"On the most disputed game the side most recipes took was credited in {split_right} of "
+             f"{_plural(len(split), 'week')}. "
+             "Each week's three: the pick the recipes were surest of that missed (surest miss), the result "
+             "furthest from the margin they expected (furthest off), and the game their numbers were furthest "
+             "apart on (most disputed). \u201cMost recipes "
+             "took\u201d gives the side, how many took it and the average chance they gave it. A row says "
+             "what kind of miss a game was, never why: one game is one game."
+             + (f" The last {SHOCK_WEEKS} of {graded} graded weeks are listed." if graded > SHOCK_WEEKS else ""))
+            if rows else ""))
+
+    # ---- the record: what was written down, and whether the replay still says the same ---------
+    def _update_record(self, lab: modellab.Lab) -> None:
+        year = results.season_year(self.season)
+        try:
+            record = ledger.check(lab, year)
+        except Exception:  # noqa: BLE001 - the page stands without it
+            record = ledger.Record()
+        rows, tones = [], {}
+        for r, line in enumerate(sorted(record.lines, key=lambda line: -line.week)):
+            rows.append([
+                line.week, oddslock.when(year, line.week) if not line.lock else _when(line.lock), _when(line.at),
+                line.standing, line.games,
+                "not graded yet" if not line.numbers else
+                f"all {line.numbers} numbers the same" if not line.changed else
+                f"{line.changed} of {line.numbers} have changed, {line.worst} most"
+                + ("" if not line.version else
+                   f" \u00b7 written under version {line.version}, this is {VERSION}" if line.version != VERSION else
+                   f" \u00b7 same version ({VERSION}), so not from an update"),
+            ])
+            tones[(r, 3)] = ("good" if line.before == line.games else
+                             "warning" if line.before or line.unknown else "muted")
+            tones[(r, 5)] = "muted" if not line.numbers else "warning" if line.changed else "good"
+        replayed = record.graded - record.at_the_time - record.unknown
+        note = ""
+        if lab.entries:
+            note = (
+                f"<b>Right now:</b> {record.at_the_time} of the {_plural(record.graded, 'graded game')} "
+                f"{'was' if record.at_the_time == 1 else 'were'} written down before kickoff. "
+                + (f"The other {replayed} are a replay: each week priced again from the lines and files kept "
+                   f"at the time. The Scoreboard's tables count both. " if replayed else "")
+                + (f"{_plural(record.unknown, 'game')} had no kickoff time on file when "
+                   f"{'it was' if record.unknown == 1 else 'they were'} written, so "
+                   f"{'it is' if record.unknown == 1 else 'they are'} not counted as before kickoff. "
+                   if record.unknown else "")
+                + ("Since they were written, some replayed numbers have changed - the rows in yellow. Each says "
+                   "which version wrote it: a different version means the recipe was changed on purpose; the "
+                   "same version means something it reads has changed. "
+                   if record.changed else "")
+                + "From here on a week's numbers are written when its cards are due, and never written again. "
+                "The nightly job and the game-day job do it; looking at this page writes nothing. In the two "
+                "days before the cards are due they also keep a draft, so a game whose numbers did not move "
+                "after its draft is dated from the draft - a computer asleep at the deadline does not make the "
+                "week late. A week first written after its games is kept too, so the past stops moving, but it "
+                "is marked as that."
+            )
+        self._fill("record", RECORD_HEADERS, rows, note, numeric_columns={0, 4}, tones=tones, bold_columns={0},
+                   stretch=5)
 
     # ---- head to head: only the games two recipes split can tell them apart -----------
     def _update_duel(self, lab: modellab.Lab) -> None:

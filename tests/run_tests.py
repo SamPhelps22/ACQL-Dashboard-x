@@ -2561,6 +2561,207 @@ class TestLongRecord(unittest.TestCase):
         self.assertIsNone(computers.form_check(board[:4], form))
 
 
+class TestModelLabForm(unittest.TestCase):
+    """Straight up and the pool's line are two records; a record carries its size; a miss is one game."""
+
+    def _lab(self):
+        from acql import modellab
+        # three recipes over six weeks of two games; game 1 of each week has a pool line
+        sides = {"A": lambda w, i: True, "B": lambda w, i: w <= 2, "C": lambda w, i: i == 2}
+        entries, fixtures = [], {}
+        for name, takes_home in sides.items():
+            entry = modellab.Entry(name, "", incumbent=name == "A")
+            for week in range(1, 7):
+                for index in (1, 2):
+                    home_credited = not (week == 6 and index == 1)      # one upset, in the last week
+                    home = takes_home(week, index)
+                    hit = home == home_credited
+                    chance = 0.70 if home else 0.30
+                    entry.log[(week, index)] = modellab.Play(week, index, chance, hit, 0.5, hit, index == 1,
+                                                             6.0 if home else -4.0)
+                    tally = entry.by_week.setdefault(week, [0, 0])
+                    tally[0] += hit
+                    tally[1] += 1
+                    entry.games += 1
+                    entry.right += hit
+                    fixtures[(week, index)] = modellab.Fixture(
+                        week, index, f"Road{index} @ Home{index}", f"Home{index}", f"Road{index}", home_credited,
+                        7.0 if home_credited else -21.0, index == 1)
+            entries.append(entry)
+        return modellab.Lab(entries, 12, tuple(range(1, 7)), decided=12, fixtures=fixtures)
+
+    def test_a_record_carries_how_far_luck_moves_it(self):
+        from acql import modellab
+        small, large = modellab.Tally(8, 10), modellab.Tally(120, 200)
+        self.assertGreater(small.rate, large.rate)
+        self.assertGreater(small.reach, 3 * large.reach)        # 8 of 10 is the less sure of the two
+        self.assertIsNone(modellab.Tally().reach)
+        self.assertGreater(modellab.Tally(8, 8).reach, 0)       # a perfect record is not a certainty
+        self.assertEqual(small + large, modellab.Tally(128, 210))
+
+    def test_winners_and_pool_lines_are_counted_apart(self):
+        lab = self._lab()
+        a = lab.entry("A")
+        self.assertEqual((a.tally("winners").games, a.tally("lined").games), (12, 6))
+        self.assertEqual((a.tally("winners").right, a.tally("lined").right), (11, 5))
+        leaders, record = lab.best("lined")
+        self.assertEqual(([e.name for e in leaders], record.right, record.games), (["A"], 5, 6))
+        self.assertEqual([e.name for e in lab.best("winners")[0]], ["A"])
+
+    def test_form_sets_the_last_weeks_beside_the_ones_before(self):
+        from acql import modellab
+        lab = self._lab()
+        form = {f.name: f for f in lab.form(weeks=4)}
+        self.assertEqual((form["B"].early.right, form["B"].early.games), (4, 4))
+        self.assertEqual((form["B"].late.right, form["B"].late.games), (1, 8))
+        self.assertEqual(form["B"].reading, modellab.EARLY)     # four games before is too few to say
+        hot = modellab.Form("X", *[modellab.Tally()] * 4, early=modellab.Tally(20, 40), late=modellab.Tally(36, 40))
+        level = modellab.Form("Y", *[modellab.Tally()] * 4, early=modellab.Tally(24, 40), late=modellab.Tally(27, 40))
+        self.assertEqual((hot.reading, level.reading), (modellab.BETTER, modellab.STEADY))
+        # the verdict is on the winners the table shows, and two spreads of luck is not enough
+        self.assertEqual(form["B"].late, form["B"].winners_late)
+        nearly = modellab.Form("Z", *[modellab.Tally()] * 4, early=modellab.Tally(20, 40), late=modellab.Tally(29, 40))
+        self.assertTrue(2 < nearly.luck < modellab.FORM_LUCK)
+        self.assertEqual(nearly.reading, modellab.STEADY)
+        rolling = lab.rolling("A", weeks=4)
+        self.assertEqual([week for week, _l, _s in rolling], [1, 2, 3, 4, 5, 6])
+        self.assertEqual((rolling[-1][1].games, rolling[-1][2].games), (8, 12))
+        self.assertEqual((rolling[-1][1].right, rolling[-1][2].right), (7, 11))
+
+    def test_the_room_and_who_stood_against_it(self):
+        from acql import modellab
+        lab = self._lab()
+        rooms = {(r.fixture.week, r.fixture.index): r for r in lab.rooms()}
+        upset = rooms[(6, 1)]           # A took the home side; B and C the road side, which was credited
+        self.assertEqual((upset.home, upset.took, upset.priced, upset.missed), (False, 2, 3, False))
+        self.assertEqual(set(upset.right), {"B", "C"})
+        agreed, games, came = lab.agreement()
+        self.assertEqual((agreed, games, came), (2, 12, 2))     # only weeks 1 and 2, game 2: all three at home
+        against = lab.against_the_room()
+        self.assertEqual(against["A"], (3, 3))                  # weeks 3-5, game 1: nobody else had it
+        self.assertEqual(against["B"][1], 0)
+        kinds = [(s.week, s.kind) for s in lab.shocks() if s.week == 3]
+        self.assertIn((3, modellab.SUREST), kinds)
+        self.assertIn((3, modellab.SPLIT), kinds)
+        worst = lab.upset()
+        self.assertTrue(worst is not None and worst.missed and worst.off > 0)
+
+
+class TestLedger(_ScratchStore):
+    """A locked week's numbers are written once, marked by whether each game had kicked off."""
+
+    NOW = 1_791_000_000.0       # early October 2026
+
+    def _season(self):
+        from acql.models import Game, Season, Week
+        season = Season(title="ACQL 2026")
+        season.weeks[4] = Week(4, games=[
+            Game(1, home="Denver", away="Seattle", winner="Seattle", home_points=17, away_points=24),
+            Game(2, home="Dallas", away="Miami"),
+            Game(3, home="Buffalo", away="Chicago"),
+        ])
+        season.weeks[12] = Week(12, games=[Game(1, home="Detroit", away="Green Bay")])
+        return season
+
+    @staticmethod
+    def _numbers(value):
+        return lambda season, week: {1: {"Deadeye": value, "Betting line only": value + 0.5},
+                                     2: {"Deadeye": -1.0, "Betting line only": None}, 3: {}}
+
+    def test_a_locked_week_is_written_once(self):
+        from acql import ledger
+        season = self._season()
+        self.assertEqual(ledger.keep(season, self.NOW, self._numbers(3.0)), [4])    # week 12 is still open
+        self.assertIsNone(ledger.kept(2026, 12))
+        rows = {row["index"]: row for row in ledger.kept(2026, 4)["games"]}
+        self.assertEqual(sorted(rows), [1, 2])                  # a game no recipe priced is not written
+        # game 1 was played; game 2 has no kickoff time on file, so "before" cannot be claimed
+        self.assertEqual((rows[1]["before"], rows[2]["before"]), (False, None))
+        self.assertEqual(rows[2]["margins"], {"Deadeye": -1.0})
+        # asked again with different numbers: what was written stands
+        self.assertEqual(ledger.keep(season, self.NOW + 86400, self._numbers(9.0)), [])
+        self.assertEqual({r["index"]: r for r in ledger.kept(2026, 4)["games"]}[1]["margins"]["Deadeye"], 3.0)
+
+    def test_the_replay_is_set_beside_what_was_written(self):
+        from acql import ledger, modellab
+        ledger.keep(self._season(), self.NOW, self._numbers(3.0))
+
+        def lab(deadeye):
+            entries = []
+            for name, margin in (("Deadeye", deadeye), ("Betting line only", 3.5)):
+                entry = modellab.Entry(name, "")
+                entry.log[(4, 1)] = modellab.Play(4, 1, 0.6, False, 0.9, False, False, margin)
+                entries.append(entry)
+            fixture = modellab.Fixture(4, 1, "Seattle @ Denver", "Denver", "Seattle", False, -7.0)
+            return modellab.Lab(entries, 1, (4,), fixtures={(4, 1): fixture})
+
+        same = ledger.check(lab(3.0), 2026)
+        self.assertEqual((same.graded, same.at_the_time, same.changed), (1, 0, 0))
+        self.assertEqual((same.lines[0].numbers, same.lines[0].standing),
+                         (2, "0 of 2 before kickoff \u00b7 1 not known"))
+        self.assertEqual(same.lines[0].unknown, 1)
+        moved = ledger.check(lab(4.5), 2026)
+        self.assertEqual((moved.changed, moved.lines[0].worst), (1, "Deadeye"))
+
+    def test_before_kickoff_is_only_claimed_with_a_kickoff(self):
+        from acql import ledger
+        self.assertIs(ledger.written_before({"before": True, "kickoff": 1_791_100_000.0}), True)
+        self.assertIs(ledger.written_before({"before": False, "kickoff": None}), False)
+        self.assertIsNone(ledger.written_before({"before": None, "kickoff": None}))
+        # a row written before this was fixed: marked "before" with no kickoff to show for it
+        self.assertIsNone(ledger.written_before({"before": True, "kickoff": None}))
+        every = ledger.Line(4, 0.0, 0.0, "", 3, 0, unknown=3)
+        self.assertEqual(every.standing, "kickoff times not known")
+        self.assertEqual(ledger.Line(4, 0.0, 0.0, "", 3, 3).standing, "written before kickoff")
+        self.assertEqual(ledger.Line(4, 0.0, 0.0, "", 3, 0).standing, "written after the games")
+
+    def test_a_draft_dates_the_numbers_that_did_not_move(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from acql import ledger, oddslock
+        season = self._season()
+        del season.weeks[4]                 # only the week still open
+        lock = oddslock.lock_time(2026, 12)
+        kickoff = lock + 7200
+        numbers = lambda value: (lambda season, week: {1: {"Deadeye": value, "Betting line only": 1.0}})  # noqa: E731
+        found = mock.patch.object(ledger.results, "find",
+                                  lambda scores, away, home: (SimpleNamespace(kickoff=kickoff), False))
+        with found:
+            # three days out: too early for a draft; an hour out: a draft, and nothing written for good
+            self.assertEqual(ledger.keep(season, lock - 3 * 86400, numbers(2.0)), [])
+            self.assertEqual(ledger.drafted(2026, 12), {})
+            self.assertEqual(ledger.keep(season, lock - 3600, numbers(2.0)), [])
+            self.assertIsNone(ledger.kept(2026, 12))
+            self.assertEqual(ledger.drafted(2026, 12)[1]["at"], lock - 3600)
+            # the computer slept through the deadline and the game: the numbers are the draft's, so its date stands
+            self.assertEqual(ledger.keep(season, kickoff + 86400, numbers(2.0)), [12])
+        row = ledger.kept(2026, 12)["games"][0]
+        self.assertEqual((row["at"], row["before"]), (lock - 3600, True))
+        self.assertIs(ledger.written_before(row), True)
+
+    def test_a_draft_that_moved_dates_nothing(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from acql import ledger, oddslock
+        season = self._season()
+        del season.weeks[4]                 # only the week still open
+        lock = oddslock.lock_time(2026, 12)
+        kickoff = lock + 7200
+        numbers = lambda value: (lambda season, week: {1: {"Deadeye": value}})  # noqa: E731
+        with mock.patch.object(ledger.results, "find",
+                               lambda scores, away, home: (SimpleNamespace(kickoff=kickoff), False)):
+            ledger.keep(season, lock - 3600, numbers(2.0))
+            ledger.keep(season, kickoff + 86400, numbers(2.5))      # the number moved after the draft
+        row = ledger.kept(2026, 12)["games"][0]
+        self.assertEqual((row["at"], row["before"], row["margins"]), (kickoff + 86400, False, {"Deadeye": 2.5}))
+
+    def test_the_cheap_look_waits_between_tries(self):
+        from acql import ledger
+        self.assertFalse(ledger.due(2026, 1_780_000_000.0))     # June: no week has locked
+        ledger.tried(self.NOW)
+        self.assertFalse(ledger.due(2026, self.NOW + 60))
+
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")

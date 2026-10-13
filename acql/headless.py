@@ -112,7 +112,10 @@ def _poll_due() -> bool:
     if results.due(year, weeks):
         return True
     finished = [w for w in sorted(weeks) if results.over(year, w)]
-    return (bool(finished) and timeline.due(year, finished)) or _lines_due() is not None
+    if (bool(finished) and timeline.due(year, finished)) or _lines_due() is not None:
+        return True
+    from . import ledger
+    return ledger.due(year)             # a week's cards are in and its numbers aren't written down yet
 
 
 # ---- the week ahead's lines -----------------------------------------------------------
@@ -250,6 +253,19 @@ def _seasons() -> None:
             _log(f"model lab: market, football and hybrid worked out over {len(found.seasons)} seasons")
     except Exception as exc:  # noqa: BLE001 - the page says it isn't there yet
         _log(f"model lab: season-by-season record not worked out: {exc}")
+
+
+def _ledger(season) -> None:
+    """Every recipe's number for a week, written down once its cards are in (the Model Lab's record)."""
+    try:
+        from . import ledger
+        done = ledger.keep(season)
+        ledger.tried()
+        if done:
+            _log(f"model lab: every recipe's numbers written down for week{'s' if len(done) != 1 else ''} "
+                 f"{', '.join(str(w) for w in done)}")
+    except Exception as exc:  # noqa: BLE001 - the lab replays the week instead
+        _log(f"model lab: the week's numbers not written down: {exc}")
 
 
 def _autopsy(season) -> None:
@@ -438,6 +454,7 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     _injuries()
     _weather()
     _autopsy(season)
+    _ledger(season)
     _seasons()
     _known(season)
     _computers()

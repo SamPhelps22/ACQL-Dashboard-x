@@ -355,3 +355,44 @@ class FlightChart(Chart):
         if abs(line) < 0.25:
             return "pick'em"
         return f"{'\u2212' if line > 0 else '+'}{abs(line):g}"
+
+
+class FormChart(Chart):
+    """A few recipes week by week: the last few weeks (solid) beside the season so far (dashed)."""
+
+    def _draw(self, series: list[tuple[str, list[tuple[int, int, int, int, int]]]], window: int = 4) -> None:
+        """`series` is [(recipe, [(week, right over the window, its games, right all season, its games)])]."""
+        series = [(name, rows) for name, rows in series if rows][:3]
+        if not series:
+            self.empty("Appears once a week with betting lines has been graded")
+            return
+        p = self.palette
+        ax = self.new_axes()
+        rates = []
+        for (name, rows), colour in zip(series, model_series(p)):
+            weeks = [week for week, *_rest in rows]
+            lately = [right / games * 100 if games else 0.0 for _w, right, games, _r, _g in rows]
+            season = [right / games * 100 if games else 0.0 for _w, _r, _g, right, games in rows]
+            rates += lately + season
+            ax.plot(weeks, season, color=colour, linewidth=1.1, linestyle=(0, (4, 3)), zorder=2)
+            (drawn,) = ax.plot(weeks, lately, color=colour, linewidth=LINE_WIDTH, marker="o", markersize=5,
+                               markeredgecolor=p.surface, markeredgewidth=1.0, label=name, zorder=3,
+                               solid_capstyle="round")
+            self.register_hover(drawn, [
+                f"{name}, week {week}\n"
+                f"last {min(window, n)} week{'s' if min(window, n) != 1 else ''}: {right} of {games} ({right / games:.0%})\n"
+                f"season so far: {all_right} of {all_games} ({all_right / all_games:.0%})"
+                for n, (week, right, games, all_right, all_games) in enumerate(rows, 1) if games and all_games])
+        weeks = sorted({week for _name, rows in series for week, *_rest in rows})
+        ax.axhline(50, color=p.baseline, linewidth=0.9, zorder=1)
+        ax.set_xlim(weeks[0] - 0.4, weeks[-1] + 0.4)
+        ax.set_ylim(min(35.0, min(rates) - 6), max(90.0, max(rates) + 6))
+        ax.set_xticks(weeks)
+        ax.set_xticklabels([f"Wk {week}" for week in weeks])
+        ax.yaxis.set_major_formatter(PercentFormatter(100, decimals=0))
+        ax.set_ylabel("Credited", fontsize=LABEL_SIZE)
+        ax.text(0.995, 0.03, f"solid: the last {window} weeks   dashed: the season so far", transform=ax.transAxes,
+                color=p.ink_muted, fontsize=LABEL_SIZE, ha="right")
+        self.grid(ax, "y")
+        self.legend(ax)
+        self.draw_idle()
