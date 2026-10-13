@@ -2591,12 +2591,22 @@ a.weekpill { text-decoration: none; }
     ]);
   }
   function footer() {
-    return el("footer", {}, [
+    var foot = el("footer", {}, [
       hasLogo() ? el("div", { class: "fbrand" }, [logoImg("logo"), "Arm Chair Quarterback League"]) : null,
       "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every number comes from the pool’s own sheets.",
       typeof ownerFooter === "function" ? ownerFooter() : null,
       homeScreenTip()
     ]);
+    // five quick taps down here open a page that is no use without its passphrase
+    var taps = 0, since = 0;
+    foot.addEventListener("click", function (event) {
+      if (event.target.closest && event.target.closest("a, button")) return;
+      var now = Date.now();
+      if (now - since > 2500) { taps = 0; since = now; }
+      taps += 1;
+      if (taps >= 5) { taps = 0; window.location.href = "locker.html"; }
+    });
+    return foot;
   }
   function homeScreenTip() {
     if (!LIVE.hosted) return null;
