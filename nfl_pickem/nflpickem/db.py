@@ -210,6 +210,15 @@ def connect(path: str | Path, read_only: bool = False) -> duckdb.DuckDBPyConnect
 MIGRATIONS = [
     "ALTER TABLE backtest_predictions ADD COLUMN IF NOT EXISTS residual DOUBLE",
     "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS residual_home_probability DOUBLE",
+    "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS pool_line_team VARCHAR",
+    "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS pool_line DOUBLE",
+    "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS line_source VARCHAR",
+    "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS credited_home_probability DOUBLE",
+    "ALTER TABLE backtest_predictions ADD COLUMN IF NOT EXISTS market_home_spread DOUBLE",
+    """CREATE TABLE IF NOT EXISTS pool_lines (
+        season INTEGER NOT NULL, week INTEGER NOT NULL, game_id VARCHAR NOT NULL,
+        favourite_team VARCHAR NOT NULL, line DOUBLE NOT NULL, entered_at TIMESTAMP,
+        PRIMARY KEY (season, week, game_id))""",
 ]
 
 

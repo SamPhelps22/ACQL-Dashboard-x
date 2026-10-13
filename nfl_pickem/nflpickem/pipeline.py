@@ -171,6 +171,14 @@ def predict_week(con, cfg: dict, season: int | None = None, week: int | None = N
     rules = ScoringRules.from_config(cfg["pool"])
     # Standard pool: every game of the week is picked before the slate cutoff, so all are eligible.
     pick_col = PICK_SOURCES.get(cfg["models"].get("pick_model", "blend"), "blended_home_probability")
+    if rules.line_rule == "acql":
+        from . import poollines
+        slate = slate.drop(columns=[c for c in ("pool_line_team", "pool_line", "line_source") if c in slate])
+        slate = slate.merge(poollines.lines_for_slate(con, slate, cfg["pool"]), on="game_id", how="left")
+        slate["credited_home_probability"] = poollines.apply(slate, pick_col).to_numpy()
+        slate["data_flags"] = [f if s != "estimated" else ("POOL_LINE_ESTIMATED" if f == "ok" else f + ", POOL_LINE_ESTIMATED")
+                               for f, s in zip(slate["data_flags"], slate["line_source"])]
+        pick_col = "credited_home_probability"
     picks = allocate(slate, rules, prob_col=pick_col)
     validate_allocation(picks, rules)
     data_cutoff = pd.Timestamp(slate["cutoff"].min()).to_pydatetime()
@@ -234,7 +242,8 @@ PRED_COLUMNS = [
     "run_id", "game_id", "generated_at", "model_version", "season", "week", "home_team", "away_team",
     "kickoff_utc", "market_home_probability", "elo_home_probability", "logistic_home_probability",
     "gradient_boosting_home_probability", "residual_home_probability", "blended_home_probability", "selected_team",
-    "selected_team_probability", "confidence_points", "expected_points", "odds_captured_at",
+    "selected_team_probability", "confidence_points", "expected_points", "pool_line_team", "pool_line",
+    "line_source", "credited_home_probability", "odds_captured_at",
     "odds_status", "injury_status", "data_flags",
 ]
 
@@ -302,7 +311,8 @@ def submitted_run(con, season: int, week: int) -> str | None:
 
 EXPORT_COLUMNS = [
     "season", "week", "game_id", "kickoff_utc", "away_team", "home_team", "selected_team",
-    "confidence_points", "selected_team_probability", "expected_points", "blended_home_probability",
+    "confidence_points", "selected_team_probability", "expected_points", "pool_line_team", "pool_line",
+    "line_source", "blended_home_probability",
     "market_home_probability", "elo_home_probability", "logistic_home_probability",
     "gradient_boosting_home_probability", "odds_status", "odds_captured_at", "injury_status", "data_flags",
     "model_version", "generated_at", "run_id",
@@ -328,6 +338,15 @@ def grade_week(con, cfg: dict, season: int, week: int, run_id: str | None = None
     results = con.execute("SELECT game_id, home_score, away_score, game_status FROM games WHERE season=? AND week=?",
                           [season, week]).df()
     rules = ScoringRules.from_config(cfg["pool"])
+    if rules.line_rule == "acql":
+        # The commissioner's posted line is what gets graded, even if the run used an estimate.
+        from . import poollines
+        posted = poollines.entered(con, season, week).set_index("game_id")
+        if len(posted):
+            picks = picks.copy()
+            hit = picks["game_id"].isin(posted.index)
+            picks.loc[hit, "pool_line_team"] = picks.loc[hit, "game_id"].map(posted["favourite_team"])
+            picks.loc[hit, "pool_line"] = picks.loc[hit, "game_id"].map(posted["line"])
     g = grade_sheet(picks, results, rules)
     pool_id = cfg["pool"]["pool_id"]
     out = pd.DataFrame({"pool_id": pool_id, "season": season, "week": week, "game_id": g["game_id"],

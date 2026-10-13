@@ -98,7 +98,14 @@ def simulate_pool(preds: pd.DataFrame, model: str, rules: ScoringRules) -> pd.Da
     rows = []
     for (season, week), wk in d.groupby(["season", "week"], sort=True):
         slate = wk.rename(columns={model: "_p"})[["game_id", "home_team", "away_team", "kickoff_utc", "_p",
-                                                  "home_score", "away_score", "game_status"]]
+                                                  "home_score", "away_score", "game_status"]
+                                                 + [c for c in ("market_home_spread", "market") if c in wk and c != model]]
+        if rules.line_rule == "acql" and "market_home_spread" in slate:
+            from .poollines import apply, lines_for_slate
+            slate = slate.merge(lines_for_slate(None, slate, {"lined_from": rules.lined_from,
+                                                              "smallest_line": rules.smallest_line}),
+                                on="game_id", how="left")
+            slate["_p"] = apply(slate, "_p").to_numpy()   # P(home credited) under the estimated pool line
         alloc = allocate(slate, rules, prob_col="_p")
         g = grade_sheet(alloc, wk[["game_id", "home_score", "away_score", "game_status"]], rules)
         rows.append({"season": season, "week": week, "model": model, "games": len(g),

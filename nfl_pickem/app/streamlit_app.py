@@ -147,6 +147,7 @@ def page_weekly() -> None:
     c3.markdown(f"**As of:** {now:%Y-%m-%d %H:%M} UTC  \n"
                 + ("🟢 Upcoming slate" if is_current else "🕘 Past or future week (predicted as of its own cutoff)"))
 
+    pool_lines_editor(season, week)
     with connection() as con:
         runs = pipeline.list_runs(con, season, week)
     b1, b2 = st.columns([1, 3])
@@ -187,6 +188,10 @@ def page_weekly() -> None:
         "Matchup": picks.away_team + " @ " + picks.home_team,
         "Kickoff (UTC)": pd.to_datetime(picks.kickoff_utc).dt.strftime("%a %m-%d %H:%M"),
         "Pick": picks.selected_team,
+        "Pool line": [("" if not isinstance(t, str) or not t else f"{t} by {l:g}" + (" (est.)" if src == "estimated" else ""))
+                      for t, l, src in zip(picks.get("pool_line_team", pd.Series([None] * len(picks))),
+                                           picks.get("pool_line", pd.Series([np.nan] * len(picks))),
+                                           picks.get("line_source", pd.Series([""] * len(picks))))],
         "Win prob": picks.selected_team_probability,
         "Exp pts": picks.expected_points,
         "Blend (home)": picks.blended_home_probability,
@@ -199,7 +204,9 @@ def page_weekly() -> None:
         "Flags": picks.data_flags,
     })
     st.dataframe(view, hide_index=True, width="stretch", column_config={
-        "Win prob": st.column_config.ProgressColumn(format="percent", min_value=0.5, max_value=1.0),
+        "Win prob": st.column_config.ProgressColumn("P(credited)", format="percent", min_value=0.5, max_value=1.0,
+                                                   help="Chance the pick is credited under the pool's rules "
+                                                        "(on a lined game: the favourite must win by the line)"),
         "Exp pts": st.column_config.NumberColumn(format="%.2f"),
         "Blend (home)": st.column_config.NumberColumn(format="%.3f"),
         "Market (home)": st.column_config.NumberColumn(format="%.3f"),
@@ -221,6 +228,46 @@ def page_weekly() -> None:
             with connection(write=True) as con:
                 pipeline.freeze_run(con, run_id)
             st.rerun()
+
+
+def pool_lines_editor(season: int, week: int) -> None:
+    """Enter the commissioner's posted pool lines for the week (ACQL rule)."""
+    from nflpickem import poollines
+    with connection() as con:
+        if effective_cfg(con)["pool"].get("line_rule", "none") != "acql":
+            return
+        games = con.execute("SELECT game_id, away_team, home_team FROM games WHERE season=? AND week=? "
+                            "ORDER BY kickoff_utc", [season, week]).df()
+        posted = poollines.entered(con, season, week).set_index("game_id") if Path(st.session_state["db_path"]).exists() else pd.DataFrame()
+    with st.expander(f"Pool lines for week {week} ({len(posted)} entered)", expanded=False):
+        st.caption("Type the commissioner's line where he posted one: the favourite must win by at least it. "
+                   "Leave blank for straight-up games. Lines not entered are estimated from his habit "
+                   "(next whole number above the spread, favourites of 6.5+) and marked (est.).")
+        table = pd.DataFrame({
+            "game_id": games.game_id, "Game": games.away_team + " @ " + games.home_team,
+            "Favourite": [posted.loc[g, "favourite_team"] if g in posted.index else "" for g in games.game_id],
+            "Line": [float(posted.loc[g, "line"]) if g in posted.index else None for g in games.game_id],
+        })
+        edited = st.data_editor(table, hide_index=True, width="stretch", disabled=["game_id", "Game"],
+                                column_config={"game_id": None,
+                                               "Favourite": st.column_config.TextColumn(help="Team code, e.g. KC"),
+                                               "Line": st.column_config.NumberColumn(min_value=0.0, step=0.5)},
+                                key=f"lines_{season}_{week}")
+        if st.button("Save pool lines"):
+            entries = []
+            for r, g in zip(edited.itertuples(), games.itertuples()):
+                fav = str(r.Favourite or "").strip()
+                line = r.Line if r.Line is not None and not pd.isna(r.Line) else 0
+                if fav and line:
+                    entries.append((fav, float(line)))
+                elif g.game_id in posted.index:
+                    entries.append((posted.loc[g.game_id, "favourite_team"], 0))   # cleared
+            try:
+                with connection(write=True) as con:
+                    poollines.set_lines(con, season, week, entries)
+                st.success("Saved. Click 'Generate new prediction run' to pick with these lines.")
+            except ValueError as exc:
+                st.error(str(exc))
 
 
 # --------------------------------------------------------------- page 2

@@ -98,6 +98,31 @@ models are retrained as of that week's cutoff, so later results can't leak in.
 The default allocation gives N points to the highest-probability pick down to 1. Ties are
 broken by earlier kickoff, then by `game_id`. Expected points = P(pick wins) × points.
 
+## Your pool's rules: 1 point a game, pool lines
+
+The defaults match the ACQL pool (`[pool]` in `config.toml`):
+
+* **Scoring:** `points_mode = "flat"`, every game is worth 1 point.
+* **Lines:** `line_rule = "acql"`. A favourite of 6.5 or more must win by at least the
+  commissioner's line, or the underdog is credited. A win by exactly the line counts.
+
+**Enter his lines** each week, once they're posted:
+
+```bash
+python -m nflpickem lines --set "KC 9" "SF 8" "NE 8"   # favourite and line; next upcoming week by default
+python -m nflpickem lines                              # show what's entered
+python -m nflpickem predict                            # re-pick with them
+```
+
+You can also enter them in the **Pool lines** box on the Weekly Picks page.
+
+**How lines are used:**
+
+* **Before he posts:** lines are estimated from his habit (the next whole number above the
+  spread) and marked `(est.)` / `POOL_LINE_ESTIMATED`.
+* **Choosing a side:** each pick is the side more likely to be *credited*, shown as P(credited).
+* **Grading:** always uses the line you entered, even if the frozen picks used an estimate.
+
 ## Matchup reports and the weekly review
 
 ```bash

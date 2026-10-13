@@ -194,6 +194,36 @@ def cmd_review(cfg, args):
     print(systematic_check(con, cfg).to_string(index=False))
 
 
+def cmd_lines(cfg, args):
+    from . import poollines
+    from .pipeline import effective_now, next_slate
+    con = _connect(cfg, args)
+    season, week = args.season, args.week
+    if season is None or week is None:
+        nxt = next_slate(con, effective_now(con))
+        if nxt is None:
+            raise RuntimeError("No upcoming week; pass --season and --week")
+        season, week = nxt
+    if args.set:
+        entries = []
+        for item in args.set:
+            parts = item.replace("=", " ").split()
+            if len(parts) != 2:
+                raise ValueError(f"Use 'TEAM LINE', e.g. 'KC 7' (got {item!r})")
+            entries.append((parts[0], float(parts[1])))
+        poollines.set_lines(con, season, week, entries)
+    games = con.execute("SELECT game_id, away_team, home_team FROM games WHERE season=? AND week=? "
+                        "ORDER BY kickoff_utc", [season, week]).df()
+    posted = poollines.entered(con, season, week).set_index("game_id")
+    print(f"Pool lines for {season} week {week} (entered by you; others are straight or estimated at predict time):")
+    for r in games.itertuples():
+        line = f"{posted.loc[r.game_id, 'favourite_team']} by {posted.loc[r.game_id, 'line']:g}" \
+            if r.game_id in posted.index else "-"
+        print(f"  {r.away_team:>3} @ {r.home_team:<3}  {line}")
+    if args.set:
+        print("Re-run `python -m nflpickem predict` to pick with these lines.")
+
+
 def cmd_freeze(cfg, args):
     from .pipeline import freeze_run
     con = _connect(cfg, args)
@@ -295,6 +325,12 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--season", type=int, required=True)
     rv.add_argument("--week", type=int, required=True)
     rv.set_defaults(fn=cmd_review)
+
+    ln = sub.add_parser("lines", help="enter/show the commissioner's pool lines for a week")
+    ln.add_argument("--season", type=int)
+    ln.add_argument("--week", type=int)
+    ln.add_argument("--set", nargs="*", help="favourite and line, e.g. --set \"KC 7\" \"BUF 13\" (0 clears)")
+    ln.set_defaults(fn=cmd_lines)
 
     f = sub.add_parser("freeze", help="freeze a prediction run as submitted")
     f.add_argument("run_id")

@@ -208,7 +208,7 @@ def _store_predictions(con, backtest_id: str, preds: pd.DataFrame) -> None:
     d = preds.rename(columns={"cutoff": "prediction_cutoff"}).assign(backtest_id=backtest_id)
     cols = ["backtest_id", "game_id", "season", "week", "game_type", "kickoff_utc", "prediction_cutoff",
             "home_team", "away_team", "market", "elo", "logistic", "gbm", "residual", "ml_only", "blend", "logistic_raw",
-            "gbm_raw", "odds_status", "blend_weights", "predicted_at"]
+            "gbm_raw", "odds_status", "market_home_spread", "blend_weights", "predicted_at"]
     db.upsert(con, "backtest_predictions", d, cols)
 
 

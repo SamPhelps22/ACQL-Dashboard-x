@@ -67,6 +67,13 @@ custom_points = []           # e.g. [16,15,...] when points_mode = "custom"
 tie_rule = "half"            # "zero", "half", "full" points for a tied game
 postponed_rule = "void"      # "void" (no points either way) or "loss"
 include_postseason = false
+# Pool lines (ACQL rule): a favourite of lined_from+ points must win by at least the posted line
+# or the underdog is credited. Enter posted lines with `python -m nflpickem lines` or on Weekly Picks;
+# until then they are estimated from the commissioner's habit (next whole number above the spread).
+line_rule = "acql"           # "acql" or "none"
+lined_from = 6.5
+smallest_line = 7
+estimate_lines = true
 cutoff_mode = "slate"        # "slate": picks lock before first kickoff of the week; "per_game"
 cutoff_offset_hours = 1.0
 

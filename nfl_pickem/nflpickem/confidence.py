@@ -25,6 +25,9 @@ class ScoringRules:
     tie_rule: str = "half"                      # zero | half | full
     postponed_rule: str = "void"                # void | loss
     include_postseason: bool = False
+    line_rule: str = "none"                     # "acql": favourites of 6.5+ must win by the pool line
+    lined_from: float = 6.5
+    smallest_line: float = 7.0
 
     @classmethod
     def from_config(cls, pool_cfg: dict) -> "ScoringRules":
@@ -145,12 +148,20 @@ def validate_allocation(alloc: pd.DataFrame, rules: ScoringRules | None = None) 
 
 
 def grade_pick(selected_team: str, home_team: str, away_team: str, home_score, away_score,
-               points: int, rules: ScoringRules, game_status: str = "final") -> tuple[str, float]:
-    """Return (actual_result, points_earned) for one pick."""
+               points: int, rules: ScoringRules, game_status: str = "final",
+               line_team: str | None = None, line: float | None = None) -> tuple[str, float]:
+    """Return (actual_result, points_earned) for one pick. With a pool line (line_team =
+    the favourite), the favourite is credited only if it wins by at least the line."""
     if game_status in ("canceled", "postponed"):
         return ("void", 0.0) if rules.postponed_rule == "void" else ("loss", 0.0)
     if game_status != "final" or pd.isna(home_score) or pd.isna(away_score):
         return "pending", 0.0
+    if line_team:
+        from .poollines import credited_side
+        fav = "home" if line_team == home_team else "away"
+        side = credited_side(home_score, away_score, fav, line)
+        credited = home_team if side == "home" else away_team
+        return ("win", float(points)) if selected_team == credited else ("loss", 0.0)
     if home_score == away_score:
         frac = {"zero": 0.0, "half": 0.5, "full": 1.0}[rules.tie_rule]
         return "tie", frac * points
@@ -162,8 +173,15 @@ def grade_sheet(alloc: pd.DataFrame, results: pd.DataFrame, rules: ScoringRules)
     """Grade an allocation against a results frame (game_id, home_score, away_score, game_status)."""
     cols = ["game_id", "home_score", "away_score", "game_status"]
     m = alloc.drop(columns=[c for c in cols[1:] if c in alloc.columns]).merge(results[cols], on="game_id", how="left")
+    def _line(r):
+        team = getattr(r, "pool_line_team", None)
+        if not isinstance(team, str) or not team:
+            return None, None
+        return team, float(r.pool_line)
+
     graded = [grade_pick(r.selected_team, r.home_team, r.away_team, r.home_score, r.away_score,
-                         r.confidence_points, rules, r.game_status if isinstance(r.game_status, str) else "scheduled")
+                         r.confidence_points, rules, r.game_status if isinstance(r.game_status, str) else "scheduled",
+                         *_line(r))
               for r in m.itertuples(index=False)]
     m["actual_result"] = [g[0] for g in graded]
     m["points_earned"] = [g[1] for g in graded]
