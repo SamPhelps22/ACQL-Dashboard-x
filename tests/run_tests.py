@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import contextlib
 import tempfile
 import time
 import unittest
@@ -1234,6 +1235,86 @@ class TestTeamStrength(unittest.TestCase):
         self.assertEqual(strength.margin("Dallas", "Miami"), 8.0)
         self.assertEqual(strength.margin("Miami", "Dallas"), -4.0)
         self.assertIsNone(strength.margin("Dallas", "Seattle"))        # a team never seen
+
+
+class TestLockedPage(unittest.TestCase):
+    """The card on the website is scrambled before it leaves, and only then."""
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _scratch_store():
+        from acql import store
+        previous = store._OVERRIDE
+        with tempfile.TemporaryDirectory() as scratch:
+            store.use(Path(scratch) / "test.db")
+            try:
+                yield
+            finally:
+                store.use(previous)
+
+    def test_the_cipher_is_the_standards(self):
+        from acql.site import lockedpage as L
+        h = bytes.fromhex
+        # NIST's own AES-GCM test cases 2, 13, 14 and 16
+        self.assertEqual(L.encrypt(bytes(16), bytes(12), bytes(16)).hex(),
+                         "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf")
+        self.assertEqual(L.encrypt(bytes(32), bytes(12), b"").hex(), "530f8afbc74536b9a963b4f1c4cb738b")
+        self.assertEqual(L.encrypt(bytes(32), bytes(12), bytes(16)).hex(),
+                         "cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919")
+        key = h("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308")
+        plain = h("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525"
+                  "b16aedf5aa0de657ba637b39")
+        out = L.encrypt(key, h("cafebabefacedbaddecaf888"), plain, h("feedfacedeadbeeffeedfacedeadbeefabaddad2"))
+        self.assertEqual(out.hex(), "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3d"
+                                    "a7b08b1056828838c5f61e6393ba7a0abcc9f66276fc6ece0f4e1768cddf8853bb2d551b")
+
+    def test_the_page_says_nothing_of_what_it_holds(self):
+        from acql.site import lockedpage as L
+        from acql.version import MODEL_NAME
+        page = L.page(f"<h2>{MODEL_NAME}: Week 6</h2><p>Kansas City 71%</p>", "plum anchor violin seventeen", rounds=1000)
+        for told in (MODEL_NAME, "Week 6", "Kansas City", "71%", "plum anchor"):
+            self.assertNotIn(told, page)
+        self.assertIn("noindex", page)
+        one = L.lock(b"the same card", "plum anchor violin seventeen", rounds=1000)
+        two = L.lock(b"the same card", "plum anchor violin seventeen", rounds=1000)
+        self.assertNotEqual(one["data"], two["data"])               # a fresh salt and iv every time
+
+    def test_a_short_passphrase_is_refused(self):
+        from acql.site import lockedpage as L
+        self.assertTrue(L.weak("football"))
+        self.assertTrue(L.weak("aaaaaaaaaaaaaaaaaaaa"))
+        self.assertEqual(L.weak("plum anchor violin seventeen"), "")
+
+    def test_nothing_goes_up_without_a_passphrase_and_nothing_twice(self):
+        from acql.site import lockedpage as L, webpublish
+        sent = []
+        real_put = webpublish.put_file
+        webpublish.put_file = lambda web, name, body, **k: sent.append((name, body)) or "https://x.github.io/pool/"
+        try:
+            with self._scratch_store():
+                web = webpublish.WebSettings(user="x", repo="pool")
+                web.set_token("t")
+                web.save()
+                self.assertIsNone(L.put("<p>zebra</p>"))                         # no passphrase: nothing
+                self.assertEqual(sent, [])
+                settings = L.LockedSettings.load()
+                settings.set_passphrase("plum anchor violin seventeen")
+                settings.save()
+                real_rounds, L.ROUNDS = L.ROUNDS, 1000
+                try:
+                    self.assertEqual(L.put("<p>zebra</p>"), "https://x.github.io/pool/" + L.FILE)
+                    self.assertIsNone(L.put("<p>zebra</p>"))                     # the same card: not again
+                    self.assertIsNotNone(L.put("<p>zebra, changed</p>"))
+                finally:
+                    L.ROUNDS = real_rounds
+                self.assertEqual([name for name, _ in sent], [L.FILE, L.FILE])
+                self.assertNotIn(b"zebra", sent[0][1])                          # scrambled before it left
+                settings = L.LockedSettings.load()
+                settings.on = False
+                settings.save()
+                self.assertIsNone(L.put("<p>another</p>"))                      # switched off: nothing
+        finally:
+            webpublish.put_file = real_put
 
 
 class TestModelLab(unittest.TestCase):

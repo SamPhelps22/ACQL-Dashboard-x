@@ -149,7 +149,7 @@ class ModelLabPage(Page):
         self.taught_lead = QLabel("")
         self.taught_lead.setWordWrap(True)
         self.taught_lead.setTextFormat(Qt.TextFormat.RichText)
-        self.extra["taught"][0].body().insertWidget(0, self.taught_lead)
+        self.extra["taught"][0].body().insertWidget(1, self.taught_lead)      # under the card's title
         self.extra["kinds"] = self._card(KINDS_TITLE)
         self.extra["kinds_by_season"] = self._card(KINDS_BY_SEASON)
         self.extra["seasons"] = self._card(SEASONS_TITLE)
@@ -693,8 +693,8 @@ class ModelLabPage(Page):
         self.taught_lead.setText(f"<b>{found.call}</b>")
         tones = {(r, 6): "good" for r in found.cases} | {(r, 6): "bad" for r in found.behind}
         span = f"{found.seasons[0]}–{found.seasons[-1]}" if found.seasons else "no seasons"
-        held = (f" The last column but three is the newest seasons on their own "
-                f"({found.held_back[0]}–{found.held_back[-1]}): a lead has to hold there too."
+        held = (f" Newest seasons is {found.held_back[0]}–{found.held_back[-1]} on their own: "
+                f"a lead has to hold there too."
                 if found.held_back else "")
         doubts = []
         if found.stale():
@@ -708,9 +708,9 @@ class ModelLabPage(Page):
         self._fill("taught", challengers.HEADERS, found.rows, numeric_columns={1, 2, 3, 4, 5}, tones=tones,
                    bold_columns={0}, stretch=0, note=" ".join([
             f"Each challenger against {found.in_use}, the rule in use, on {found.games:,} games from "
-            f"{span}, every one priced by a model taught only on earlier games. A plus is log loss a game "
-            f"better than the rule; the range is where that could plausibly lie, and only a range wholly "
-            f"above zero counts.{held}",
+            f"{span}, every one priced by a model taught only on earlier games. Each number is log loss a "
+            f"game (the Model Lab's own measure); a plus is better than the rule. Could be from is where "
+            f"it could plausibly lie, and only a range wholly above zero counts.{held}",
             f"This season is {found.now_games} games on the lines as they stood at each deadline."
             if found.now_games else "",
             f"Worked out {_when(found.made)} by the weekly training job. A case here is a reason to look, "

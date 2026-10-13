@@ -21,8 +21,8 @@ from ..store import data_dir
 WHERE = ("training", "latest", "verdict.json")
 #: Older than this, the answer is shown as stale: the weekly job has not run.
 STALE_S = 9 * 86400
-HEADERS = ["Challenger", "Past seasons: log loss better", "Could be anywhere from", "Seasons held back",
-           "This season", "Weeks ahead", "Reading"]
+HEADERS = ["Challenger", "Past seasons", "Could be from", "Newest seasons", "This season", "Weeks ahead",
+           "Reading"]
 
 
 @dataclass
