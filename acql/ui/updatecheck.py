@@ -27,7 +27,7 @@ def current_version() -> str:
 class _Checker(QThread):
     """Asks the repository what's newest and, if it's newer, downloads it."""
 
-    done = Signal(object)       # (Available | None, the zip | None, what went wrong)
+    done = Signal(object)       # (Available | None, the zip | None, what went wrong, whether that is no news)
 
     def __init__(self, settings: autoupdate.UpdateSettings, here: str) -> None:
         super().__init__()
@@ -38,15 +38,23 @@ class _Checker(QThread):
             found = autoupdate.latest(self.settings)
             autoupdate.note_checked()
             if not autoupdate.newer(found, self.here):
-                self.done.emit((found, None, ""))
+                self.done.emit((found, None, "", False))
                 return
             from .. import store
             path = autoupdate.download(self.settings, found, store.data_dir() / "updates")
-            self.done.emit((found, path, ""))
+            self.done.emit((found, path, "", False))
+        except autoupdate.NothingPublished as exc:
+            # No release has been published: nothing is wrong, so nothing is logged,
+            # and the next look waits its usual turn rather than coming at every launch.
+            try:
+                autoupdate.note_checked()
+            except Exception:  # noqa: BLE001 - bookkeeping only
+                pass
+            self.done.emit((None, None, str(exc), True))
         except autoupdate.UpdateCheckError as exc:
-            self.done.emit((None, None, str(exc)))
+            self.done.emit((None, None, str(exc), False))
         except Exception as exc:  # noqa: BLE001 - a missed look is no matter
-            self.done.emit((None, None, f"The look for updates stopped: {exc}"))
+            self.done.emit((None, None, f"The look for updates stopped: {exc}", False))
 
 
 def check(window, *, by_hand: bool = False) -> None:
@@ -78,11 +86,12 @@ def _release(window, thread) -> None:
 
 
 def _finished(window, result, by_hand: bool) -> None:
-    found, path, why = result
+    found, path, why, no_news = result
     if why:
-        write_log(f"update check: {why}")
+        if not no_news:
+            write_log(f"update check: {why}")
         if by_hand:
-            QMessageBox.warning(window, "Check for updates", why)
+            (QMessageBox.information if no_news else QMessageBox.warning)(window, "Check for updates", why)
         return
     if path is None:
         if by_hand:

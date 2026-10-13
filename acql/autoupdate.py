@@ -38,6 +38,10 @@ class UpdateCheckError(Exception):
     """Something the person can act on, in plain English."""
 
 
+class NothingPublished(UpdateCheckError):
+    """The repository has no list of updates yet: no release has been made. Not a fault."""
+
+
 @dataclass
 class UpdateSettings:
     owner: str = ""             # blank: the website's GitHub user
@@ -120,7 +124,7 @@ def _get(settings: UpdateSettings, path: str, *, opener=None) -> bytes:
             raise UpdateCheckError("GitHub didn't accept the token for updates - it may have expired. "
                                    "Make a new one and enter it under Updates from GitHub.") from exc
         if exc.code == 404:
-            raise UpdateCheckError(
+            raise (NothingPublished if path.endswith(MANIFEST) else UpdateCheckError)(
                 f"Nothing to update from in {where} yet: it has no {path}. A release puts it "
                 "there. (If the repository is private, the token also needs read access to "
                 "its Contents.)"

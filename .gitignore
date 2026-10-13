@@ -25,6 +25,15 @@ Thumbs.db
 
 # Written by the scheduled job (acql/headless.py) and the self-check as they run
 data/headless.lock
+# The app's own database and log: this computer's, rewritten every few minutes,
+# and no business of a public repository
+data/acql.db
+data/acql.db-*
+data/acql-log.txt
+# Written by the app as it runs (cards kept, email and odds settings): this computer's own too
+data/acql-cards.json
+data/acql-email.json
+data/acql-odds.json
 data/selfcheck/
 predictions/
 data/site-preview/
