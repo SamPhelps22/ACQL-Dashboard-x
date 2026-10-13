@@ -200,3 +200,15 @@ def logistic_coefficients(models: FittedModels) -> pd.DataFrame:
     coef = models.logistic.named_steps["model"].coef_[0]
     return pd.DataFrame({"feature": names, "coefficient": coef}).sort_values(
         "coefficient", key=np.abs, ascending=False)
+
+
+def logistic_contributions(models: FittedModels, X: pd.DataFrame) -> pd.DataFrame:
+    """Per-feature contribution (standardised value x coefficient, in log-odds) for
+    each row. Describes what moved this model's output; it is not causal."""
+    if models.logistic is None:
+        return pd.DataFrame()
+    pipe = models.logistic
+    Z = pipe.named_steps["scale"].transform(pipe.named_steps["impute"].transform(X[models.feature_columns].astype(float)))
+    names = list(pipe.named_steps["impute"].get_feature_names_out(models.feature_columns))
+    coef = pipe.named_steps["model"].coef_[0]
+    return pd.DataFrame(Z * coef, columns=names, index=X.index)

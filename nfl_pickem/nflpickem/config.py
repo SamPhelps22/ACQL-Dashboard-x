@@ -83,5 +83,7 @@ def validate_config(cfg: dict) -> None:
         raise ValueError("pool.points_mode must be 1_to_n or custom")
     if p["cutoff_mode"] not in {"slate", "per_game"}:
         raise ValueError("pool.cutoff_mode must be slate or per_game")
+    if cfg["models"].get("pick_model", "blend") not in {"blend", "market", "elo", "logistic", "gbm"}:
+        raise ValueError("models.pick_model must be blend, market, elo, logistic or gbm")
     if cfg["models"]["calibration"] not in {"none", "platt", "isotonic", "auto"}:
         raise ValueError("models.calibration must be none, platt, isotonic or auto")

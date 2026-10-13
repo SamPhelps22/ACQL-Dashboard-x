@@ -33,6 +33,13 @@ from .models.ml import FittedModels, choose_calibration, tune_and_fit
 log = logging.getLogger(__name__)
 
 
+PICK_SOURCES = {
+    "blend": "blended_home_probability", "market": "market_home_probability",
+    "elo": "elo_home_probability", "logistic": "logistic_home_probability",
+    "gbm": "gradient_boosting_home_probability",
+}
+
+
 class FrozenRunError(RuntimeError):
     """Attempt to modify a frozen (submitted) prediction run."""
 
@@ -161,7 +168,8 @@ def predict_week(con, cfg: dict, season: int | None = None, week: int | None = N
     slate["data_flags"] = data_flags(slate)
     rules = ScoringRules.from_config(cfg["pool"])
     # Standard pool: every game of the week is picked before the slate cutoff, so all are eligible.
-    picks = allocate(slate, rules)
+    pick_col = PICK_SOURCES.get(cfg["models"].get("pick_model", "blend"), "blended_home_probability")
+    picks = allocate(slate, rules, prob_col=pick_col)
     validate_allocation(picks, rules)
     data_cutoff = pd.Timestamp(slate["cutoff"].min()).to_pydatetime()
     picks["generated_at"] = utcnow()
@@ -272,10 +280,10 @@ def list_runs(con, season: int | None = None, week: int | None = None) -> pd.Dat
     q, args = "SELECT * FROM prediction_runs WHERE 1=1", []
     if season is not None:
         q += " AND season = ?"
-        args.append(season)
+        args.append(int(season))
     if week is not None:
         q += " AND week = ?"
-        args.append(week)
+        args.append(int(week))
     return con.execute(q + " ORDER BY generated_at DESC", args).df()
 
 

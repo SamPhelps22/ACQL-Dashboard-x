@@ -1,0 +1,16 @@
+season,week,participant,points,is_me
+2108,5,me,26,True
+2108,5,Alex,15,False
+2108,5,Jordan,16,False
+2108,5,Sam,17,False
+2108,5,Taylor,16,False
+2108,6,me,26,True
+2108,6,Alex,27,False
+2108,6,Jordan,23,False
+2108,6,Sam,14,False
+2108,6,Taylor,15,False
+2108,7,me,19,True
+2108,7,Alex,20,False
+2108,7,Jordan,23,False
+2108,7,Sam,21,False
+2108,7,Taylor,18,False

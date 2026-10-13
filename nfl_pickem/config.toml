@@ -37,6 +37,7 @@ use_qb_features = true
 ml_include_market_features = false  # keep ML models independent of the market so blending adds information
 
 [models]
+pick_model = "blend"         # probability used to make picks: blend, market, elo, logistic, gbm
 gbm_library = "auto"         # "auto" (lightgbm > xgboost > sklearn), "lightgbm", "xgboost", "sklearn"
 calibration = "auto"         # "none", "platt", "isotonic", "auto" (only if it improves held-out log loss)
 random_seed = 42
