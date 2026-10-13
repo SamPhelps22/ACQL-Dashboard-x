@@ -159,6 +159,31 @@ next opens the file.
 Close the workbook in Excel before saving, then reopen it so Excel recalculates,
 save it there, and press **Refresh**.
 
+## Quarterback check and the commissioner's line habit
+
+**Starting-QB check** (`acql/feeds/starters.py`, shown on Game Day)
+
+* **What it flags:** before kickoff, each game card flags a projected starter who isn't the
+  team's usual one (most starts in its last three games). It also shows any quarterback on
+  ESPN's injury report, and a projected starter who is himself listed out, doubtful or on IR.
+* **Where it shows:** a red **CHECK QB** badge for a starter change or a hurt starter, grey for
+  information only. A count also appears in the status line.
+* **Data:** projected starters come from nflverse's schedule, fetched by the loader and the
+  scheduled runs (never on screen) and kept for three hours. The injury report is the ESPN feed
+  the dashboard already keeps.
+
+**The commissioner's line habit** (`acql/model/linehabit.py`, `python -m acql.model.linehabit`;
+summary on Deadeye > Report card)
+
+* **What it checks:** each posted pool line against that game's betting spread. It uses the
+  predictions file when there is one, otherwise nflverse's close.
+* **What it reports:** how often "next whole number above the spread" gives the posted line,
+  and which other rules would have matched better.
+* **When it calls drift:** with at least 15 lined games, if the rule matches under half of them,
+  or another rule matches 15 points more often.
+* **What it doesn't do:** change the rule. That's left to you, because it moves the replay's
+  numbers.
+
 ## Building the standalone executable
 
 ```bash

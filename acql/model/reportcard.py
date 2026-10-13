@@ -73,6 +73,7 @@ class Report:
     graded_hits: int = 0
     long_run: dict | None = None
     pool_weeks: list[dict] = field(default_factory=list)
+    line_habit: str = ""                 # the commissioner's pool-line habit, re-checked (linehabit.py)
     headline: str = ""
     reasons: list[str] = field(default_factory=list)
     tone: str = ""                       # "good" when the answer is to follow it
@@ -247,6 +248,11 @@ def build(season: Season, coach_key: str | None, coach: str = "you") -> Report:
     stored = backtest.stored_results()
     report.long_run = stored.raw if stored is not None else None
     report.pool_weeks = pool_weeks()
+    try:
+        from . import linehabit
+        report.line_habit = linehabit.measure(season).verdict
+    except Exception:  # noqa: BLE001 - a side note; never stops the report card
+        report.line_habit = ""
     _verdict(report)
     return report
 
@@ -330,6 +336,9 @@ def _verdict(report: Report) -> None:
     real = pool_weeks_line(report.pool_weeks)
     if real:
         reasons.append(real)
+    habit = getattr(report, "line_habit", "")
+    if habit:
+        reasons.append(habit)
     if long_run:
         reasons.append(long_run)
 

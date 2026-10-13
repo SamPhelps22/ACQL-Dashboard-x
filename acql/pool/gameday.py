@@ -579,6 +579,9 @@ class Board:
     entrants: int
     has_sheet: bool
     checked: float | None              # when ESPN was last asked about the week
+    #: Starting-quarterback notes for games still to kick off (feeds/starters.py), by game index.
+    qbs: dict = field(default_factory=dict)
+    qb_problem: str = ""
 
     @property
     def live(self) -> list[GameNow]:
@@ -805,13 +808,28 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
                     roots.append(Root(states[g], side, "loser", float(yours[hit].mean()),
                                       float(yours[~hit].mean()), float(hit.mean())))
             roots.sort(key=lambda r: -abs(r.swing))
+    qbs, qb_problem = _qb_notes(year, week, states)
     return Board(
         year=year, week=week, states=states, standings=standings,
         you=you_standing, ghost=ghost_standing, roots=roots,
         entrants=sum(1 for c in every if c.in_field),
         has_sheet=any(c.in_field for c in every),
         checked=results.checked_at(year, week) if states else None,
+        qbs=qbs, qb_problem=qb_problem,
     )
+
+
+def _qb_notes(year: int, week: int, states: list[GameNow]) -> tuple[dict, str]:
+    """Starting-QB check for games not yet kicked off, from kept copies only (no network)."""
+    pre = [(st.index, team_code(st.game.away), team_code(st.game.home)) for st in states if st.state == "pre"]
+    if not pre:
+        return {}, ""
+    try:
+        from ..feeds import starters
+        got = starters.check(year, week, pre)
+    except Exception:  # noqa: BLE001 - the check is optional
+        return {}, ""
+    return got.games, got.problem
 
 
 # ---- the side pools, as they stand -----------------------------------------------------------

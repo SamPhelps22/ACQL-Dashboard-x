@@ -169,6 +169,11 @@ class GameCard(QFrame):
         top.addStretch(1)
         if st.red_zone:
             top.addWidget(Pill("RED ZONE", "bad"))
+        qb = bd.qbs.get(st.index) if st.state == "pre" else None
+        if qb is not None and qb.flags:
+            badge = Pill("CHECK QB", "bad" if qb.worrying else "")
+            badge.setToolTip(qb.note())
+            top.addWidget(badge)
         if st.broadcast:
             tv = QLabel(st.broadcast)
             tv.setObjectName("GameMeta")
@@ -263,6 +268,15 @@ class GameCard(QFrame):
         layout.addLayout(picks)
         if pool is not None:
             layout.addWidget(pool)
+
+        # before kickoff: the starting-quarterback check (feeds/starters.py)
+        if qb is not None:
+            text = qb.note() if qb.flags else qb.summary()
+            qb_label = ElidedLabel(text)
+            qb_label.setObjectName("GameNote" if qb.flags else "GameMeta")
+            qb_label.setToolTip(qb.summary() + ("\n" + "\n".join(qb.flags) if qb.flags else "")
+                                + "\nProjected starters can change: confirm before locking.")
+            layout.addWidget(qb_label)
 
         # down and distance, and the last play
         if st.state == "in" and (st.situation or st.last_play):
@@ -486,6 +500,12 @@ class GameDayPage(Page):
             parts.insert(0, f"Next kickoff {GD.kickoff_text(bd.next_kickoff)} ({_countdown(bd.next_kickoff)})")
         if bd.live:
             parts.append("updating every minute")
+        flagged = sum(1 for q in bd.qbs.values() if q.flags)
+        if bd.qbs:
+            checked = min(q.checked_at for q in bd.qbs.values())
+            parts.append(f"QBs checked {_ago(checked)}" + (f" ({flagged} to look at)" if flagged else ""))
+        elif bd.qb_problem and bd.upcoming:
+            parts.append(bd.qb_problem)
         self.status.setText("  ·  ".join(parts))
 
     def _show_no_games(self, week: int) -> None:

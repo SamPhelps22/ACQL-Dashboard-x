@@ -213,6 +213,12 @@ def _injuries() -> None:
             _log(f"injury report read: {injuries.refresh()} players listed")
     except Exception as exc:  # noqa: BLE001 - the picks don't wait on it
         _log(f"injury report not read: {exc}")
+    try:                                     # projected starting quarterbacks (feeds/starters.py)
+        from .feeds import starters
+        if starters.refresh(results.season_year()):
+            _log("starting quarterbacks read")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"starting quarterbacks not read: {exc}")
 
 
 def _known(season) -> None:
