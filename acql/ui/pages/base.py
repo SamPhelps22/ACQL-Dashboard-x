@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import threading
 import time
 import traceback
 from collections.abc import Callable
@@ -79,6 +80,12 @@ def log_path() -> Path:
     except Exception:  # noqa: BLE001 - a log location is never worth a crash
         folder = Path.home() / ".acql"
     return folder / LOG_NAME
+
+
+#: Held while a page works its numbers out, and by the warm-up that does a
+#: page's sums ahead of time off the window's thread (workers.py): the two
+#: share what they remember, so they take turns instead of racing.
+WORKING = threading.RLock()
 
 
 def write_log(entry: str) -> None:
@@ -214,8 +221,21 @@ class StatePanel(QWidget):
         actions: list[Action] | None = None,
         details: str = "",
     ) -> None:
-        """Fill the panel with one state, replacing whatever it showed before."""
-        self.icon.setText(icon)
+        """Fill the panel with one state, replacing whatever it showed before.
+
+        `icon` is the name of one of the dashboard's own icons (icons.py),
+        drawn in the gold - or the red, for a failure; anything else is shown
+        as the character it is.
+        """
+        from .. import icons
+        from ..widgets import theme_palette
+
+        if icon in icons.ICONS and icons.QSvgRenderer is not None:
+            p = theme_palette()
+            colour = p.critical if tone == "bad" else (p.brand or p.accent)
+            self.icon.setPixmap(icons.pixmap(icon, colour, size=52, weight=1.2))
+        else:
+            self.icon.setText(icon)
         self.heading.setText(title)
         self.message.setText(message)
         for label in (self.icon, self.heading):
@@ -378,7 +398,8 @@ class Page(QWidget):
         started = time.perf_counter()
         self.setUpdatesEnabled(False)
         try:
-            self.refresh()
+            with WORKING:
+                self.refresh()
         except Exception as exc:  # noqa: BLE001 - shown on the page, and logged
             self._dirty = False     # retrying on every show would fail every time
             self._page_failed(exc)
@@ -428,7 +449,7 @@ class Page(QWidget):
 
     def _page_loading(self) -> None:
         self._page_state.show_state(
-            icon=self.icon or "\N{HOURGLASS WITH FLOWING SAND}",
+            icon="mark",                # the dashboard's own, while it reads
             title=self.title,
             message="Reading the spreadsheets\N{HORIZONTAL ELLIPSIS}",
             busy=True,
@@ -437,7 +458,7 @@ class Page(QWidget):
 
     def _page_empty(self) -> None:
         self._page_state.show_state(
-            icon="\N{OPEN FILE FOLDER}",
+            icon="folder",
             title="No pool data yet",
             message=(
                 "Put the week's pick sheet and stats.xls in the data folder (pick "
@@ -469,7 +490,7 @@ class Page(QWidget):
             self._page_state.details.setVisible(not self._page_state.details.isVisible())
 
         self._page_state.show_state(
-            icon="\N{WARNING SIGN}",
+            icon="alert",
             title=f"{self.title} couldn't finish drawing",
             message=(
                 f"{summary}\n{where}\n\n"

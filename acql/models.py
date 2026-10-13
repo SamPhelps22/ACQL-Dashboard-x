@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 from .config import BIG_LOSER_PICKS
@@ -20,8 +21,14 @@ def same_team(a: object, b: object) -> bool:
     case following home or away, while results are stored cleanly. Two names
     are the same team when they match after collapsing spaces and case.
     """
-    norm = lambda s: " ".join(str(s or "").split()).casefold()
-    return bool(norm(a)) and norm(a) == norm(b)
+    a = _team_text(str(a or ""))
+    return bool(a) and a == _team_text(str(b or ""))
+
+
+@lru_cache(maxsize=4096)
+def _team_text(name: str) -> str:
+    # the same few dozen spellings, asked about tens of thousands of times a page
+    return " ".join(name.split()).casefold()
 
 
 @dataclass

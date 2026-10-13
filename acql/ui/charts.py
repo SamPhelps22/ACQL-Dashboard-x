@@ -37,14 +37,21 @@ from matplotlib.collections import PolyCollection
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator, PercentFormatter
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QSizePolicy
+from shiboken6 import isValid
 
 from .theme import Palette, mix, ramp_color, ramp_direction
+
+# Charts are set in the window's own face. Left to itself matplotlib draws in
+# DejaVu Sans, a third typeface that made every chart look pasted in from
+# somewhere else; where the window's face is missing it still falls back there.
+matplotlib.rcParams["font.family"] = ["Segoe UI", "DejaVu Sans"]
 
 GRID_KW = dict(linewidth=0.7, alpha=0.9, zorder=0)
 LINE_WIDTH = 2.0
 MARKER_SIZE = 6.0        # ~8px at 100 dpi, the floor for a hit target
-BAR_HEIGHT = 0.68
+BAR_HEIGHT = 0.62
 LABEL_SIZE = 9
 TICK_SIZE = 9
 MAX_X_TICKS = 14         # past this, thin the ticks rather than overprint them
@@ -121,6 +128,23 @@ def _mark(value, callables: bool = False):
         return None
 
 
+#: Charts owed a drawing: on the page being looked at, but scrolled out of sight.
+_OWED: list = []
+#: The wait before the first of them is drawn, and between one and the next (ms).
+CATCH_UP_FIRST, CATCH_UP_NEXT = 250, 30
+
+
+def _catch_up() -> None:
+    """Draw one chart that is owed a drawing, and come back for the next."""
+    while _OWED:
+        chart = _OWED.pop(0)
+        if isValid(chart) and chart.isVisible() and getattr(chart, "_draw_pending", False):
+            chart._draw_owed()
+            break
+    if _OWED:
+        QTimer.singleShot(CATCH_UP_NEXT, _catch_up)
+
+
 class Chart(FigureCanvasQTAgg):
     """Base canvas: themed surface, tight layout, and a shared hover tooltip."""
 
@@ -176,6 +200,47 @@ class Chart(FigureCanvasQTAgg):
 
     def _same_again(self, *args, **kwargs) -> None:
         """Asked for what is already drawn: take anything new that isn't drawn."""
+
+    # ---- drawn when looked at --------------------------------------------
+    # A page of seven charts shows two of them, and drawing all seven was two
+    # seconds of a still window each time such a page was opened. A chart
+    # nobody can see keeps its drawing owed instead: it is drawn the moment
+    # it is painted (scrolled to, or pictured), and the ones further down the
+    # open page are drawn one at a time just after, so scrolling finds them
+    # ready. A chart on a page that isn't open waits until the page is.
+    _wanted = False
+
+    def _draw_idle(self) -> None:
+        if not self._wanted and self.visibleRegion().isEmpty():
+            if self.isVisible():
+                self._owe()
+            return                              # still pending: paintEvent picks it up
+        super()._draw_idle()
+
+    def _owe(self) -> None:
+        if not any(chart is self for chart in _OWED):
+            if not _OWED:
+                QTimer.singleShot(CATCH_UP_FIRST, _catch_up)
+            _OWED.append(self)
+
+    def _draw_owed(self) -> None:
+        self._wanted = True
+        try:
+            super()._draw_idle()
+        finally:
+            self._wanted = False
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        self._wanted = True                     # Qt wants its pixels: draw whatever is owed
+        try:
+            super().paintEvent(event)
+        finally:
+            self._wanted = False
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().showEvent(event)
+        if getattr(self, "_draw_pending", False):
+            self._owe()
 
     def empty(self, message: str = "No data yet") -> None:
         self._replay = ("_draw_empty", (message,), {})

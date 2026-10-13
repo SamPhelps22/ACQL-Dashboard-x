@@ -7,7 +7,7 @@ import sys
 import traceback
 from datetime import datetime
 
-from PySide6.QtCore import QPoint, QSettings, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QPoint, QSettings, QSize, Qt, QThread, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -158,7 +158,7 @@ def failure_summary(trace: str) -> str:
     return lines_[-1].strip() if lines_ else "Unknown error"
 
 
-from .workers import Loader, ResultsCheck, TimelineFetch  # noqa: E402 - here so tests can stand them in
+from .workers import Loader, ResultsCheck, TimelineFetch, Warmer  # noqa: E402 - here so tests can stand them in
 from .palette import Command, CommandPalette  # noqa: E402
 
 
@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
         self.palette_ = PALETTES.get(self.settings.theme, PALETTES["dark"])
         self.season = Season(buy_in=self.settings.buy_in)
         self._loader: Loader | None = None
+        self._warmer: Warmer | None = None
         self._closing = False
         self._close_when_published = False   # closed mid-upload: close once it's done
         self._loaded_at: datetime | None = None
@@ -699,6 +700,9 @@ class MainWindow(QMainWindow):
 
         loader = Loader(self.settings)
         loader.force_results = force_results
+        # With a season already on the screen, This Week's sums are done before
+        # the new one is handed over; the first load fills the window first (_warm_up).
+        loader.warm = self.auto_warm and not self.season.is_empty
         loader.finished_ok.connect(self._on_loaded)
         loader.failed.connect(self._on_failed)
         loader.finished.connect(lambda l=loader: self._on_loader_finished(l))
@@ -878,6 +882,7 @@ class MainWindow(QMainWindow):
     def _on_loaded(self, season: Season) -> None:
         if self._closing:
             return
+        first = self.season.is_empty        # nothing was on the screen until now
         self.season = season
         self._retried = False
         self._set_loading(False)
@@ -929,6 +934,27 @@ class MainWindow(QMainWindow):
             # New results or a new pick sheet: the website follows by itself.
             self.update_site()
         self.check_updates()
+        if first and not season.is_empty:
+            QTimer.singleShot(300, self._warm_up)       # once the opening page is drawn
+
+    #: Off for the smoke test and the self-check, which quit as soon as they are done.
+    auto_warm = True
+
+    def _warm_up(self) -> None:
+        """This Week's sums, off the window's thread (workers.warm_this_week)."""
+        if self._closing or not self.auto_warm or self._warmer is not None:
+            return
+        warmer = Warmer(self.season)
+        warmer.finished.connect(lambda w=warmer: self._on_warmed(w))
+        self._warmer = warmer
+        warmer.start(QThread.Priority.LowPriority)
+
+    def _on_warmed(self, warmer: Warmer) -> None:
+        if self._warmer is warmer:
+            self._warmer = None
+        warmer.deleteLater()
+        if getattr(self, "_close_when_published", False):
+            self.close()
 
     # ---- updates that find themselves (autoupdate.py, updatecheck.py) ------------
     def check_updates(self, *, by_hand: bool = False) -> None:
@@ -1032,7 +1058,7 @@ class MainWindow(QMainWindow):
         loader = self._loader
         site = getattr(self, "_site_worker", None)
         check = getattr(self, "_results_worker", None)
-        busy = [w for w in (loader, site, check) if w is not None and w.isRunning()]
+        busy = [w for w in (loader, site, check, self._warmer) if w is not None and w.isRunning()]
         if busy and not all(w.wait(5_000 if w is loader else 3_000) for w in busy):
             # Still loading, uploading or asking the scoreboard, and a thread
             # can't be torn down mid-way without crashing: the window goes
@@ -1081,6 +1107,7 @@ def main(argv: list[str] | None = None) -> int:
     if smoke_test or self_check:
         window.auto_site = False        # checking the app must never publish the website
         window.auto_results = False     # nor go online by itself
+        window.auto_warm = False        # nor leave a thread working when it quits
     if background and window._tray is not None and not (smoke_test or self_check):
         app.setQuitOnLastWindowClosed(False)    # started with Windows: straight to the tray
     else:

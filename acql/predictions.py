@@ -218,6 +218,14 @@ TRIM_SHARE = 0.2     # how much of each end of the models to ignore
 MIN_KEPT = 5         # below this there is nothing to trim
 
 
+@lru_cache(maxsize=4096)
+def _spread_of(middle: tuple[float, ...]) -> float:
+    """How far apart a set of opinions is. Remembered: a stored week is read
+    afresh on every load, and the same few hundred games were being measured
+    again each time - a sixth of the time the week's card took to open."""
+    return statistics.pstdev(middle)
+
+
 def trimmed(values: list[float], share: float = TRIM_SHARE) -> list[float]:
     """The middle of a set of opinions, with the wildest at each end dropped.
 
@@ -298,7 +306,7 @@ class Forecast:
         """
         middle = trimmed(list(self.opinions))
         if len(middle) > 1:
-            return statistics.pstdev(middle)
+            return _spread_of(tuple(middle))
         return self.file_spread
 
     @property

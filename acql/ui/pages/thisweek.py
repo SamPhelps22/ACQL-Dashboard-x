@@ -139,6 +139,7 @@ class BriefingPage(Page):
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
         self._brief: briefing.Brief | None = None
+        self._why_showing: tuple | None = None      # what the reasons card was last filled from (_update_why)
 
         self._fetcher: _Fetcher | None = None
         self._week_shown = 0
@@ -455,6 +456,7 @@ class BriefingPage(Page):
         self.glance_note.setText("")
         self.why_intro.setText("")
         self.clear_layout(self.why_box)
+        self._why_showing = None
         self.score_card.hide()
         for box, message in (
             (self.swing_box, "The swings appear once the week is priced."),
@@ -671,12 +673,19 @@ class BriefingPage(Page):
         )
 
     def _update_why(self, season: Season, brief: briefing.Brief, cases: list[evidence.Case]) -> None:
-        self.clear_layout(self.why_box)
         p = self.palette
+        stale = evidence.overruled(season, brief.week) if cases else []
+        # The reasons are seven hundred labels, and making them again was most
+        # of what a refresh cost. Most refreshes change none of them - a score
+        # came in somewhere, the clock moved - so what is up is left up.
+        showing = (p, brief.week, tuple(cases), tuple(stale))
+        if showing == self._why_showing:
+            return
+        self._why_showing = showing
+        self.clear_layout(self.why_box)
         if not cases:
             self.why_intro.setText("The reasons appear once the week's lines are in.")
             return
-        stale = evidence.overruled(season, brief.week)
         intro = (
             f"{MARKS[evidence.FOR]} backs the pick \u00b7 {MARKS[evidence.AGAINST]} points the "
             f"other way \u00b7 {MARKS[evidence.INFO]} worth knowing. The chance is made from "

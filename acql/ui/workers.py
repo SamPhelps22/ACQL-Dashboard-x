@@ -26,6 +26,9 @@ class Loader(QThread):
         self.settings = settings
         #: Ask the scoreboard about every unfinished week now, whatever the time.
         self.force_results = False
+        #: Do This Week's sums before handing the season over (warm_this_week).
+        #: For a reload, when the last season is still on the screen meanwhile.
+        self.warm = False
 
     def run(self) -> None:
         try:
@@ -55,7 +58,72 @@ class Loader(QThread):
                 )
         except Exception as exc:                      # noqa: BLE001
             season.warnings.append(f"Couldn't read the predictions file: {exc}")
+        if self.warm:
+            warm_this_week(season)
         self.finished_ok.emit(season)
+
+
+def warm_this_week(season) -> None:
+    """This Week's sums, done ahead of time so the page opens on them.
+
+    The card is simulated, planned for money and argued game by game, and
+    that was two seconds of a still window the first time the page was opened
+    after every load - on a game day, every few minutes. Everything here is
+    remembered by what it was worked out from, so the page asks the same
+    questions and finds the answers waiting. Nothing is written or fetched.
+
+    A step at a time, letting go of WORKING between them: a page opened
+    meanwhile waits for one step, not for all of them.
+    """
+    from PySide6.QtCore import QSettings
+
+    from .. import bigloser, briefing, evidence, survivor
+    from .. import me as owner
+    from .pages.base import WORKING
+    from .pages.thisweek import ME_KEY, BriefingPage
+
+    found: dict = {}
+
+    def card() -> None:
+        style = QSettings().value(BriefingPage.STYLE_KEY, briefing.DEFAULT_STYLE)
+        if style not in (briefing.STYLE_STRAIGHT, briefing.STYLE_MONEY, briefing.STYLE_WIN):
+            style = briefing.STYLE_STRAIGHT         # as the page's own picker falls back
+        found["week"] = week = analytics.upcoming_week(season)
+        found["me"] = owner.key(season) or QSettings().value(ME_KEY, "") or None
+        if week:
+            found["brief"] = briefing.build(season, week, style)
+
+    def reasons() -> None:
+        evidence.build(season, found["brief"], found["me"])
+        evidence.scoreboard(season)
+
+    def pools() -> None:
+        bigloser.board(season, found["week"], found["brief"])
+        bigloser.review(season)
+        key = owner.key(season) or QSettings().value(BriefingPage.SUICIDE_KEY, "")
+        if key:
+            survivor.advise(season, key, found["week"])
+
+    for step in (card, reasons, pools):
+        try:
+            with WORKING:
+                step()
+        except Exception as exc:  # noqa: BLE001 - the page works it out itself, as it always did
+            write_log(f"warm-up: {step.__name__} not done ahead of time: {exc!r}")
+            return
+        if not getattr(found.get("brief"), "choices", None):
+            return
+
+
+class Warmer(QThread):
+    """The warm-up on its own, for the first load: the window fills first."""
+
+    def __init__(self, season) -> None:
+        super().__init__()
+        self.season = season
+
+    def run(self) -> None:
+        warm_this_week(self.season)
 
 
 def _finals(year: int, weeks: list[int]) -> int:
