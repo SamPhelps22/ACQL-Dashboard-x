@@ -10,6 +10,10 @@
 #    ACQL Deadeye email  Tue, Wed and Thu at 12:00 noon: Deadeye's card for
 #                        the week ahead, on the freshest lines, emailed to
 #                        the dashboard's own address - and nobody else.
+#    ACQL Training       Tue, Wed and Thu at 12:30 PM: freezes the week's
+#                        numbers as they stand before the deadline, and once
+#                        a week teaches the challengers again and writes the
+#                        answer the Model Lab shows. Changes no pick.
 #
 #  Run it again after moving the folder. To take them all away:
 #      powershell -ExecutionPolicy Bypass -File schedule.ps1 -Remove
@@ -19,7 +23,7 @@ param([switch]$Remove)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$names = "ACQL Daily", "ACQL Game-day poll", "ACQL Deadeye email"
+$names = "ACQL Daily", "ACQL Game-day poll", "ACQL Deadeye email", "ACQL Training"
 
 foreach ($name in $names) {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
@@ -62,8 +66,15 @@ Register-ScheduledTask -TaskName "ACQL Deadeye email" -Action $mail -Settings $w
     -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday, Wednesday, Thursday -At 12:00PM) `
     -Description "ACQL Dashboard: Deadeye's card for the week ahead, emailed to you." | Out-Null
 
+# The training ground: half an hour after the email, so it freezes the lines that fetched.
+$train = New-ScheduledTaskAction -Execute $python -Argument "-m acql.training weekly" -WorkingDirectory $root
+Register-ScheduledTask -TaskName "ACQL Training" -Action $train -Settings $wake `
+    -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday, Wednesday, Thursday -At 12:30PM) `
+    -Description "ACQL Dashboard: the week's numbers frozen before the deadline, and the challengers' weekly test." | Out-Null
+
 Write-Host "  Scheduled:"
 Write-Host "    ACQL Daily          every day at 3:00 AM"
 Write-Host "    ACQL Game-day poll  Thu/Sun/Mon, every 10 min, 9 AM - midnight"
 Write-Host "    ACQL Deadeye email  Tue/Wed/Thu at 12:00 noon"
+Write-Host "    ACQL Training       Tue/Wed/Thu at 12:30 PM"
 Write-Host "  Runs while you're signed in to Windows. Log: data\acql-log.txt"

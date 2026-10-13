@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 from acql.config import Settings           # noqa: E402
 from acql.names import AliasTable          # noqa: E402
 from acql.repository import load_season    # noqa: E402
-from acql import picks                     # noqa: E402
+from acql.pool import picks                     # noqa: E402
 
 
 def main() -> int:

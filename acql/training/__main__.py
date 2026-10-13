@@ -4,6 +4,8 @@
     python -m acql.training report     the newest run's report, written again (nothing is run again)
     python -m acql.training audit      what data there is to learn from - nothing taught
     python -m acql.training snapshot   freeze this week's numbers as they stand (before the deadline)
+    python -m acql.training weekly     what the scheduled task runs: the snapshot, and a fresh run
+                                       when the newest is a week old (the Model Lab shows its verdict)
     python -m acql.training check      only the check that no result can leak backwards
     python -m acql.training fetch      the season archives from The Prediction Tracker (about 2 MB;
                                        the one thing here that goes online, and only when asked)
@@ -130,6 +132,36 @@ def snapshot(args) -> int:
     return 0
 
 
+#: A run is this old before the weekly job makes another.
+RUN_EVERY_S = 6 * 86400
+
+
+def weekly(args) -> int:
+    """The scheduled job. The snapshot every time - the last one before the
+    deadline is the one that stands - and the whole run about once a week.
+    It goes online only if data/training/settings.json says
+    {"refresh_archive": true}: then this season's archive file is fetched
+    again first (one small file from The Prediction Tracker)."""
+    import json
+    from . import verdict
+    args.quiet = args.no_trees = args.no_check = args.no_books = False
+    done = snapshot(args)
+    newest = verdict.latest()
+    age = time.time() - float(newest.get("made", 0)) if newest else None
+    if not args.force and age is not None and age < RUN_EVERY_S:
+        print(f"The newest run is {age / 86400:.1f} days old - not run again yet.")
+        return done
+    try:
+        settings = json.loads((data.folder() / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        settings = {}
+    if isinstance(settings, dict) and settings.get("refresh_archive") is True:
+        args.refresh = True
+        fetch(args)
+    args.quiet = True
+    return run(args)
+
+
 def check(args) -> int:
     from . import features, recipes, walkforward
     notes = data.Notes()
@@ -195,12 +227,14 @@ def main(argv: list[str] | None = None) -> int:
     a = commands.add_parser("audit", help="what data there is to learn from")
     a.add_argument("--no-books", action="store_true")
     commands.add_parser("snapshot", help="freeze this week's numbers as they stand")
+    w = commands.add_parser("weekly", help="the scheduled job: the snapshot, and a run when one is due")
+    w.add_argument("--force", action="store_true", help="run now, however new the last run is")
     commands.add_parser("check", help="the check that no result can leak backwards")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
     args = parser.parse_args(argv)
     _logging(args.verbose)
-    todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check,
+    todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
             "fetch": fetch}.get(args.command)
     if todo is None:
         parser.print_help()

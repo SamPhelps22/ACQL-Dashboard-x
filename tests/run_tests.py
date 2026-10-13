@@ -1239,6 +1239,31 @@ class TestTeamStrength(unittest.TestCase):
 class TestModelLab(unittest.TestCase):
     """A challenger takes Deadeye's place only on enough games, and clearly better."""
 
+    def test_the_training_grounds_answer_is_read_or_is_nothing(self):
+        import json
+        from acql.model import challengers
+        clear = {"games": 900, "edge": 0.004, "low": 0.001, "high": 0.007}
+        body = {"call": "A has a case.", "in_use": "Deadeye at 25%", "best": "A", "made": 100.0,
+                "archive": {"games": 900, "seasons": [2002, 2026], "held_back": [2024, 2025, 2026], "challengers": {
+                    "A": {"all": clear, "held_back": {"games": 300, "edge": 0.002}},
+                    "B": {"all": {**clear, "low": -0.001}},
+                    "C": {"all": {"games": 900, "edge": -0.004, "low": -0.007, "high": -0.001}},
+                    "D": {"all": clear, "held_back": {"games": 300, "edge": -0.002}}}},
+                "this_season": {"games": 14, "challengers": {"A": {"games": 14, "edge": 0.01, "weeks": 1, "ahead": 1}}}}
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "verdict.json"
+            self.assertIsNone(challengers.read(path))                       # no file: no answer
+            path.write_text("{not json", encoding="utf-8")
+            self.assertIsNone(challengers.read(path))                       # a damaged one: no answer
+            path.write_text(json.dumps(body), encoding="utf-8")
+            found = challengers.read(path)
+        self.assertEqual([row[0] for row in found.rows], ["A", "B", "C", "D"])
+        self.assertEqual((found.cases, found.behind), ({0}, {2}))           # D led, but not on the held-back seasons
+        self.assertEqual(found.rows[0][4:6], ["+0.0100 on 14", "1 of 1"])
+        self.assertEqual(found.rows[1][3:6], ["-", "-", "-"])
+        self.assertTrue(found.stale(now=100.0 + challengers.STALE_S + 1))
+        self.assertFalse(found.stale(now=101.0))
+
     def _entry(self, shared, right, deadeye_right, logloss, deadeye_logloss):
         from acql.model import modellab
         return modellab.Entry("Challenger", "", games=shared, right=right, shared=shared,

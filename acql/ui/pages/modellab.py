@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 
 import time
 
-from ...model import closing, contenders, ledger, modellab
+from ...model import challengers, closing, contenders, ledger, modellab
 from ...feeds import nflverse, oddslock, results
 from ...places import LAB as title_
 from ...version import MODEL_NAME, VERSION
@@ -46,6 +46,7 @@ SHOCK_WEEKS = 4
 #: A record on fewer games than this is shown in grey: too few to rank on.
 FEW = 20
 VALUE_TITLE = "Closing line value - did the line come round to the picks?"
+TAUGHT_TITLE = "Challengers taught on past seasons - is any clearly better than the rule in use?"
 WEEKS_TITLE = "Week by week - each recipe's record, on the games it priced"
 #: The page's views. It had grown to eight tiles and sixteen cards on one
 #: scroll, answering four different questions; each now has a view of its own.
@@ -144,6 +145,11 @@ class ModelLabPage(Page):
         self.weeks_box = QVBoxLayout()
         self.weeks_card.body().addLayout(self.weeks_box)
 
+        self.extra["taught"] = self._card(TAUGHT_TITLE)
+        self.taught_lead = QLabel("")
+        self.taught_lead.setWordWrap(True)
+        self.taught_lead.setTextFormat(Qt.TextFormat.RichText)
+        self.extra["taught"][0].body().insertWidget(0, self.taught_lead)
         self.extra["kinds"] = self._card(KINDS_TITLE)
         self.extra["kinds_by_season"] = self._card(KINDS_BY_SEASON)
         self.extra["seasons"] = self._card(SEASONS_TITLE)
@@ -178,7 +184,7 @@ class ModelLabPage(Page):
         for tiles, cards in (
             (self._tiles, (self.lab_card, card("duel"), card("parts"), self.weeks_card, self.recipes_card)),
             (self._more_tiles, (card("form"), card("shocks"), card("calib"))),
-            ((), (card("kinds"), card("kinds_by_season"), card("seasons"))),
+            ((), (card("taught"), card("kinds"), card("kinds_by_season"), card("seasons"))),
             ((), (card("record"), self.value_card, card("cover"), self.versions_card)),
         ):
             holder = QWidget()
@@ -252,6 +258,7 @@ class ModelLabPage(Page):
         self._update_calibration(lab)
         self._update_coverage(lab)
         self._update_weeks(lab)
+        self._update_taught()
         self._update_kinds()
         self._update_seasons()
         self._update_value(value)
@@ -673,6 +680,43 @@ class ModelLabPage(Page):
             if rows else "")))
 
     # ---- market, football, hybrid: many seasons, not one ---------------------------------------
+    def _update_taught(self) -> None:
+        """The training ground's weekly answer. Read from the file it leaves; nothing is run here."""
+        found = challengers.read()
+        if found is None:
+            self.taught_lead.setText("")
+            self._fill("taught", challengers.HEADERS, [], note=(
+                "No answer yet. The weekly training job (the \"ACQL Training\" scheduled task) teaches "
+                f"challengers on past seasons, tests them on games they had not seen, and says here whether "
+                f"any is clearly better than {MODEL_NAME}'s rule. It changes no pick."))
+            return
+        self.taught_lead.setText(f"<b>{found.call}</b>")
+        tones = {(r, 6): "good" for r in found.cases} | {(r, 6): "bad" for r in found.behind}
+        span = f"{found.seasons[0]}–{found.seasons[-1]}" if found.seasons else "no seasons"
+        held = (f" The last column but three is the newest seasons on their own "
+                f"({found.held_back[0]}–{found.held_back[-1]}): a lead has to hold there too."
+                if found.held_back else "")
+        doubts = []
+        if found.stale():
+            doubts.append("<b>This answer is more than a week old</b> - the weekly job has not run since.")
+        if found.sealed is False:
+            doubts.append("<b>The run's own check failed</b> (a result could have leaked backwards): "
+                          "do not act on it.")
+        if found.problems:
+            doubts.append(f"{found.problems} problem{'s' if found.problems != 1 else ''} left rows out "
+                          "(the run's report says which).")
+        self._fill("taught", challengers.HEADERS, found.rows, numeric_columns={1, 2, 3, 4, 5}, tones=tones,
+                   bold_columns={0}, stretch=0, note=" ".join([
+            f"Each challenger against {found.in_use}, the rule in use, on {found.games:,} games from "
+            f"{span}, every one priced by a model taught only on earlier games. A plus is log loss a game "
+            f"better than the rule; the range is where that could plausibly lie, and only a range wholly "
+            f"above zero counts.{held}",
+            f"This season is {found.now_games} games on the lines as they stood at each deadline."
+            if found.now_games else "",
+            f"Worked out {_when(found.made)} by the weekly training job. A case here is a reason to look, "
+            f"never a switch: the rule above ({modellab.ENOUGH_GAMES} games priced live) is untouched.",
+            *doubts]))
+
     def _update_kinds(self) -> None:
         try:
             found = nflverse.families()

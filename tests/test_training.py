@@ -487,6 +487,58 @@ class Kept(unittest.TestCase):
                 snapshots.folder = real
 
 
+# ---- the one-line answer -----------------------------------------------------------------------------------
+class Verdict(unittest.TestCase):
+    def reached(self, knows: float) -> dict:
+        from acql.training import verdict
+        result = walked(knows)
+        found = study.Study(data.Notes(), pd.DataFrame(), pd.DataFrame())
+        found.trials["updated"] = study.Trial(result, study.chances_for(result), pd.DataFrame())
+        return verdict.reach(found, now=1.0)
+
+    def test_a_planted_edge_makes_a_case_and_no_more(self):
+        from acql.training import verdict
+        said = self.reached(1.0)
+        self.assertIsNotNone(said["best"])
+        row = said["archive"]["challengers"][said["best"]]
+        self.assertTrue(verdict.has_a_case(row))
+        self.assertGreater(row["all"]["low"], 0)
+        self.assertIn("not a switch", said["call"])                 # a reason to look, never the switch itself
+        self.assertNotIn(verdict.IN_USE, said["archive"]["challengers"])
+        json.dumps(said)                                            # plain data, all of it
+
+    def test_models_that_know_nothing_make_the_case_for_believing_them_less(self):
+        from acql.training import verdict
+        said = self.reached(0.0)
+        self.assertTrue(verdict.has_a_case(said["archive"]["challengers"][recipes.LINE]))
+
+    def test_a_case_needs_the_whole_range_and_the_held_back_seasons(self):
+        from acql.training import verdict
+        clear = {"games": 900, "edge": 0.004, "low": 0.001, "high": 0.007}
+        self.assertTrue(verdict.has_a_case({"all": clear}))
+        self.assertFalse(verdict.has_a_case({"all": {**clear, "low": -0.001}}))        # the range takes in zero
+        self.assertFalse(verdict.has_a_case({"all": {**clear, "low": None}}))           # no range to speak of
+        self.assertFalse(verdict.has_a_case({"all": clear, "held_back": {"edge": -0.002}}))
+        said, best = verdict._call({"A": {"all": {**clear, "low": -0.001}}}, {}, {})
+        self.assertIsNone(best)
+        self.assertIn("Nothing to change", said)
+
+    def test_no_archives_is_said_not_guessed(self):
+        from acql.training import verdict
+        said = verdict.reach(study.Study(data.Notes(), pd.DataFrame(), pd.DataFrame()), now=1.0)
+        self.assertIsNone(said["best"])
+        self.assertEqual(said["archive"]["challengers"], {})
+        self.assertIn("not on disk", said["call"])
+
+    def test_this_season_prices_the_share_in_use(self):
+        from acql.training import verdict
+        now = made_up(seasons=1, weeks=5)
+        now["credited_home"] = (now["actual"] > 0).astype(float)
+        found = study.this_season(now, "updated", data.Notes())
+        if found is not None:
+            self.assertIn(verdict.IN_USE, found.margins)
+
+
 # ---- the live model is out of reach ---------------------------------------------------------------------
 class Apart(unittest.TestCase):
     def test_nothing_in_the_dashboard_imports_the_training_ground(self):

@@ -348,6 +348,10 @@ class MainWindow(QMainWindow):
         from . import webpage
         webpage.edit_extras(self)
 
+    def pool_page_private(self) -> None:
+        from . import webpage
+        webpage.edit_private(self)
+
     # ---- the website keeping itself up to date (webpage.auto_publish) -----------
     #: Off for the smoke test and the self-check, which must never publish.
     auto_site = True
@@ -603,6 +607,7 @@ class MainWindow(QMainWindow):
             Command("Publish the pool page", "", self.export_pool_page),
             Command("Pool page website settings\u2026", "", self.pool_page_settings),
             Command("What the website says (announcement, champions)\u2026", "", self.pool_page_extras),
+            Command("Private page (your card on your phone, locked)\u2026", "", self.pool_page_private),
             Command("Run self-check (photograph every page)", "", self.run_self_check),
             Command("Install update\u2026", "", self.install_update),
             Command("Undo last update", "", lambda: self._page_action(UNDO_UPDATE)),

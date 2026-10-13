@@ -130,6 +130,48 @@ def blob_sha(content: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(content) + content).hexdigest()
 
 
+def _where(settings: WebSettings, opener=None) -> tuple[str, str, str]:
+    """(the repository's API path, its default branch, the site's link)."""
+    if not settings.ready:
+        raise WebPublishError("The pool's website isn't set up yet.")
+    repo = f"/repos/{settings.user}/{settings.repo}"
+    status, info = _call(settings, "GET", repo, opener=opener)
+    if status != 200:
+        raise _explain(status, settings, "read the repository")
+    link = site_url((info.get("owner") or {}).get("login") or settings.user, info.get("name") or settings.repo)
+    return repo, info.get("default_branch") or "main", link
+
+
+def put_file(settings: WebSettings, name: str, content: bytes, *, message: str = "Update", opener=None) -> str:
+    """One file beside the page, uploaded on its own - nothing else on the
+    site is touched. Returns the site's link."""
+    repo, branch, link = _where(settings, opener)
+    status, current = _call(settings, "GET", f"{repo}/contents/{name}?ref={branch}", opener=opener)
+    sha = current.get("sha") if status == 200 else None
+    if not (sha and sha == blob_sha(content)):
+        body = {"message": message, "content": base64.b64encode(content).decode("ascii"), "branch": branch,
+                **({"sha": sha} if sha else {})}
+        status, _ = _call(settings, "PUT", f"{repo}/contents/{name}", body, opener=opener)
+        if status not in (200, 201):
+            raise _explain(status, settings, "write the page")
+    return link
+
+
+def remove_file(settings: WebSettings, name: str, *, message: str = "Update", opener=None) -> bool:
+    """Take one file off the site. True when it was there."""
+    repo, branch, _ = _where(settings, opener)
+    status, current = _call(settings, "GET", f"{repo}/contents/{name}?ref={branch}", opener=opener)
+    if status == 404:
+        return False
+    if status != 200 or not current.get("sha"):
+        raise _explain(status, settings, "read the page")
+    status, _ = _call(settings, "DELETE", f"{repo}/contents/{name}",
+                      {"message": message, "sha": current["sha"], "branch": branch}, opener=opener)
+    if status != 200:
+        raise _explain(status, settings, "remove the page")
+    return True
+
+
 def publish(settings: WebSettings, page: str, *, message: str = "Update the pool page",
             files: dict[str, bytes] | None = None, opener=None) -> str:
     """Upload `page` as index.html (and any `files` beside it), and make sure

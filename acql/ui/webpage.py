@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..site import mailer, siteextras, webpublish
+from ..site import lockedpage, mailer, siteextras, webpublish
 from . import poolpage
 from .pages.base import write_log
 
@@ -354,6 +354,121 @@ def edit_extras(window) -> bool:
     # Straight onto the site when it updates itself; the button does it otherwise.
     if auto_publish(window, getattr(window, "season", None)):
         window.statusBar().showMessage("Saved - updating the website…")
+    return True
+
+
+class PrivateDialog(QDialog):
+    """The locked page: the card on the phone, encrypted before it leaves this computer."""
+
+    def __init__(self, settings: lockedpage.LockedSettings, site: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Private page")
+        self.setMinimumWidth(560)
+        self._settings = settings
+        self.take_down = False
+        layout = QVBoxLayout(self)
+        about = QLabel(
+            "Your card, on your phone - and nobody else's. It is encrypted on this computer with your "
+            "passphrase before it is uploaded, so the website and its public repository only ever hold "
+            "scrambled text. Your phone's browser unlocks it when you type the passphrase.<br><br>"
+            "<b>The passphrase is the only lock.</b> Use four or five unrelated words. There is no way to "
+            "recover it - if you forget it, set a new one here.")
+        about.setWordWrap(True)
+        layout.addWidget(about)
+        form = QFormLayout()
+        self.first = QLineEdit()
+        self.first.setEchoMode(QLineEdit.EchoMode.Password)
+        self.first.setPlaceholderText("leave blank to keep the one that is set" if settings.sealed_passphrase
+                                      else f"at least {lockedpage.SHORTEST} characters")
+        self.again = QLineEdit()
+        self.again.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Passphrase", self.first)
+        form.addRow("Again", self.again)
+        layout.addLayout(form)
+        self.on = QCheckBox("Keep the private page up to date (with each card email and the nightly run)")
+        self.on.setChecked(settings.on)
+        layout.addWidget(self.on)
+        where = QLabel(
+            (f"Address: <b>{lockedpage.address(site)}</b><br>" if site else
+             "The pool page's website isn't set up yet - do that first (Pool page website settings).<br>")
+            + "Or tap the line at the very bottom of the website five times.<br>"
+            + ("A passphrase is set." if settings.sealed_passphrase else "No passphrase is set: nothing is uploaded.")
+            + (" Last uploaded " + _ago(settings.shown_at) + "." if settings.shown_at else ""))
+        where.setWordWrap(True)
+        where.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        where.setObjectName("Muted")
+        layout.addWidget(where)
+        self.problems = QLabel("")
+        self.problems.setWordWrap(True)
+        self.problems.setStyleSheet("color:#d03b3b")
+        layout.addWidget(self.problems)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        remove = buttons.addButton("Take it off the website", QDialogButtonBox.ButtonRole.DestructiveRole)
+        remove.setEnabled(bool(settings.shown_at))
+        remove.clicked.connect(self._remove)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _remove(self) -> None:
+        self.take_down = True
+        self._settings.on = False
+        self.accept()
+
+    def _save(self) -> None:
+        typed = self.first.text()
+        if typed or self.again.text():
+            if typed != self.again.text():
+                self.problems.setText("The two don't match.")
+                return
+            problem = lockedpage.weak(typed)
+            if problem:
+                self.problems.setText(problem)
+                return
+            self._settings.set_passphrase(typed)
+        self._settings.on = self.on.isChecked()
+        self.first.clear()
+        self.again.clear()
+        self.accept()
+
+
+def _ago(at: float) -> str:
+    import time
+    return time.strftime("%a %b %d, %I:%M %p", time.localtime(at)).replace(" 0", " ")
+
+
+def edit_private(window) -> bool:
+    """The "Private page" dialog; True when something was saved."""
+    try:
+        settings = lockedpage.LockedSettings.load()
+        web = webpublish.WebSettings.load()
+    except Exception as exc:  # noqa: BLE001
+        QMessageBox.warning(window, "Private page", f"Couldn't read the settings: {exc}")
+        return False
+    dialog = PrivateDialog(settings, web.url if web.ready else "", window)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return False
+    settings.save()
+    season = getattr(window, "season", None)
+    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+    try:
+        if dialog.take_down:
+            gone = lockedpage.take_down()
+            said = "The private page is off the website." if gone else "There was no private page on the website."
+        elif not settings.ready or not web.ready:
+            said = "Saved. Nothing is uploaded until a passphrase is set and the website is set up."
+        elif season is None or getattr(season, "is_empty", True) or not getattr(window, "auto_site", True):
+            said = "Saved. The page goes up with the next card."
+        else:
+            done = lockedpage.refresh(season)
+            said = (f"Saved and uploaded: {done} (give the website a minute)." if done else
+                    "Saved. Nothing new to upload right now; the page goes up with the next card.")
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+        write_log(f"private page failed: {exc!r}")
+        said = f"Saved, but the upload didn't work: {exc}"
+    finally:
+        QApplication.restoreOverrideCursor()
+    QMessageBox.information(window, "Private page", said)
     return True
 
 

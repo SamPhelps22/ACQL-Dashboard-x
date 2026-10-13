@@ -16,6 +16,7 @@ data/training/latest:
     fits.json               what each recipe had settled on as each season
                             began - the weights it would have had that day
     summary.json            the headline numbers, for anything that reads them
+    verdict.json            the one-line answer the Model Lab shows (verdict.py)
     issues.json             everything left out or doubted, and why
 
 The report says what the numbers can bear and no more: a gap is given with
@@ -905,6 +906,12 @@ def write(study: Study) -> Path:
     (folder / "fits.json").write_text(json.dumps(fits, indent=1, default=float), encoding="utf-8")
     (folder / "summary.json").write_text(json.dumps(summary(study), indent=1, default=float), encoding="utf-8")
     (folder / "issues.json").write_text(json.dumps(study.notes.as_rows(), indent=1), encoding="utf-8")
+    try:
+        from . import verdict
+        verdict.write(study, folder)
+    except Exception:  # noqa: BLE001 - the report stands without its one-line answer
+        import logging
+        logging.getLogger("acql.training").exception("the verdict could not be written")
     for recipe in study.taught:
         registry.save(recipe, setting=study.taught_key, before=study.taught_before)
     latest = root / "latest"

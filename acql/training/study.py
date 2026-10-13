@@ -350,7 +350,9 @@ def this_season(now: pd.DataFrame, key: str, notes: Notes, taught: list[recipes.
         return None
     games = prepared.sort_values(["order", "game"], kind="stable").reset_index(drop=True)
     asked = features.question(games)
-    made: list[recipes.Recipe] = [recipes.Line()] + [recipes.Deadeye(share) for share in recipes.SHARES]
+    # the share in use is priced whether or not it is one of the round ones tried
+    shares = sorted({*recipes.SHARES, recipes.predictions.CONSENSUS_WEIGHT})
+    made: list[recipes.Recipe] = [recipes.Line()] + [recipes.Deadeye(share) for share in shares]
     margins = {recipe.name: recipe.predict(asked) for recipe in made}
     for recipe in taught or []:
         try:

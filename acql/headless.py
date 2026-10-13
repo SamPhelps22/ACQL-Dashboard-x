@@ -432,6 +432,7 @@ def email_card(*, dry_run: bool = False) -> int:
         _log(f"card email (dry run): \"{card.subject}\" written to {EMAIL_PREVIEW.name}, "
              f"would go to {len(cardmail.recipients())} address(es); nothing sent")
         return 0
+    _private_page(card.html)
     try:
         to = cardmail.send(card)
     except mailer.MailError as exc:
@@ -440,6 +441,18 @@ def email_card(*, dry_run: bool = False) -> int:
     _log(f"card email sent: \"{card.subject}\" to {len(to)} address(es)"
          + (f"; {len(card.changes)} change(s) since the last one" if card.changes else ""))
     return 0
+
+
+def _private_page(inside: str | None = None, season=None) -> None:
+    """The locked page on the website (site/lockedpage.py): the card, encrypted
+    before it leaves. Only when a passphrase has been set; never the cause of a failed run."""
+    try:
+        from .site import lockedpage
+        done = lockedpage.put(inside) if inside is not None else lockedpage.refresh(season)
+        if done:
+            _log("private page updated")
+    except Exception as exc:  # noqa: BLE001 - reported, and the run goes on
+        _log(f"private page not updated: {exc}")
 
 
 def run(*, force: bool, dry_run: bool = False) -> int:
@@ -474,6 +487,7 @@ def run(*, force: bool, dry_run: bool = False) -> int:
         _log(f"website update failed: {exc}\n{traceback.format_exc()}")
         _ran(False, f"the website update failed: {exc}")
         return 1
+    _private_page(season=season)
     _log(f"done in {time.monotonic() - started:.0f}s")
     _ran(True, f"took {time.monotonic() - started:.0f}s")
     return 0
