@@ -1,0 +1,37 @@
+variant,model,vs,a,b,weeks,mean_diff,ci_low,ci_high
+base,logistic,market,logistic@base,market,207,-3.3067632850241546,-4.527499196320688,-2.086027373727621
+base,gbm,market,gbm@base,market,207,-3.5434782608695654,-4.850183147103179,-2.236773374635952
+base,residual,market,residual@base,market,207,-0.14492753623188406,-0.5659559959777302,0.276100923513962
+base,blend,market,blend@base,market,207,-0.20531400966183574,-0.5723714268508864,0.16174340752721492
+base+units,logistic,"same model, base features",logistic@base+units,logistic@base,207,0.036231884057971016,-0.40289770277072484,0.47536147088666686
+base+units,logistic,market,logistic@base+units,market,207,-3.2705314009661834,-4.48425763459409,-2.0568051673382772
+base+units,gbm,"same model, base features",gbm@base+units,gbm@base,207,-0.12560386473429952,-0.8973864676841423,0.6461787382155433
+base+units,gbm,market,gbm@base+units,market,207,-3.6690821256038646,-4.877423662998757,-2.4607405882089726
+base+units,residual,"same model, base features",residual@base+units,residual@base,207,-0.18115942028985507,-0.4446173994707432,0.08229855889103307
+base+units,residual,market,residual@base+units,market,207,-0.32608695652173914,-0.7923569502347729,0.1401830371912946
+base+units,blend,"same model, base features",blend@base+units,blend@base,207,0.007246376811594203,-0.14108905868164656,0.15558181230483498
+base+units,blend,market,blend@base+units,market,207,-0.19806763285024154,-0.5564135833497177,0.16027831764923461
+base+qb_rating,logistic,"same model, base features",logistic@base+qb_rating,logistic@base,207,0.40096618357487923,0.06415379166024177,0.7377785754895168
+base+qb_rating,logistic,market,logistic@base+qb_rating,market,207,-2.9057971014492754,-4.076702941224799,-1.734891261673752
+base+qb_rating,gbm,"same model, base features",gbm@base+qb_rating,gbm@base,207,0.8333333333333334,0.21565268431215323,1.4510139823545134
+base+qb_rating,gbm,market,gbm@base+qb_rating,market,207,-2.710144927536232,-3.9274013362719065,-1.4928885188005574
+base+qb_rating,residual,"same model, base features",residual@base+qb_rating,residual@base,207,0.021739130434782608,-0.1138779194688909,0.1573561803384561
+base+qb_rating,residual,market,residual@base+qb_rating,market,207,-0.12318840579710146,-0.5701598173410785,0.3237830057468755
+base+qb_rating,blend,"same model, base features",blend@base+qb_rating,blend@base,207,0.11594202898550725,-0.01375489437415324,0.24563895234516775
+base+qb_rating,blend,market,blend@base+qb_rating,market,207,-0.0893719806763285,-0.45074928340064585,0.27200532204798883
+base+matchup,logistic,"same model, base features",logistic@base+matchup,logistic@base,207,-0.06521739130434782,-0.42942222407226727,0.2989874414635716
+base+matchup,logistic,market,logistic@base+matchup,market,207,-3.3719806763285023,-4.597452222479792,-2.1465091301772135
+base+matchup,gbm,"same model, base features",gbm@base+matchup,gbm@base,207,-0.33816425120772947,-0.9342329262483204,0.25790442383286155
+base+matchup,gbm,market,gbm@base+matchup,market,207,-3.8816425120772946,-5.172156977395634,-2.5911280467589553
+base+matchup,residual,"same model, base features",residual@base+matchup,residual@base,207,-0.1473429951690821,-0.3349677499115667,0.040281759573402465
+base+matchup,residual,market,residual@base+matchup,market,207,-0.2922705314009662,-0.7759271196732078,0.19138605687127547
+base+matchup,blend,"same model, base features",blend@base+matchup,blend@base,207,-0.03864734299516908,-0.15222551599570483,0.07493083000536668
+base+matchup,blend,market,blend@base+matchup,market,207,-0.24396135265700483,-0.6065001657966163,0.11857746048260656
+base+all,logistic,"same model, base features",logistic@base+all,logistic@base,207,0.3502415458937198,-0.1552545109058281,0.8557376026932677
+base+all,logistic,market,logistic@base+all,market,207,-2.9565217391304346,-4.117603266396914,-1.7954402118639545
+base+all,gbm,"same model, base features",gbm@base+all,gbm@base,207,0.7125603864734299,-0.12308166142360544,1.5482024343704652
+base+all,gbm,market,gbm@base+all,market,207,-2.8309178743961354,-4.020909685157334,-1.640926063634937
+base+all,residual,"same model, base features",residual@base+all,residual@base,207,-0.16183574879227053,-0.4452867285506237,0.12161523096608262
+base+all,residual,market,residual@base+all,market,207,-0.30676328502415456,-0.7536502202434612,0.14012365019515205
+base+all,blend,"same model, base features",blend@base+all,blend@base,207,0.00966183574879227,-0.15582379016086578,0.1751474616584503
+base+all,blend,market,blend@base+all,market,207,-0.1956521739130435,-0.5361365724090082,0.14483222458292125

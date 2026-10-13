@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nflpickem"
+version = "1.0.0"
+description = "NFL weekly confidence pick'em prediction system: Elo, ML, market baseline, blending, confidence-point allocation and walk-forward backtesting."
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=2.1", "numpy>=1.26", "scikit-learn>=1.4", "lightgbm>=4.1",
+  "xgboost>=2.0", "duckdb>=1.0", "pyarrow>=14", "streamlit>=1.36",
+  "plotly>=5.18", "joblib>=1.3", "requests>=2.31",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+nflpickem = "nflpickem.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["nflpickem*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["network: tests that download real data (skipped unless NFLPICKEM_NETWORK_TESTS=1)"]

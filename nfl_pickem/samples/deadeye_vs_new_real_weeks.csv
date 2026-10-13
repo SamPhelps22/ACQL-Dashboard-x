@@ -1,0 +1,53 @@
+season,week,entrant,right,games,place,coaches,best_coach,pool_average
+2023,8,new_blend (plain),11,15,1,35,11,7.74
+2023,8,new_blend (planner),8,15,12,35,11,7.74
+2023,8,new_ml_only (plain),8,15,12,35,11,7.74
+2023,8,new_ml_only (planner),7,15,24,35,11,7.74
+2023,8,market line (plain),9,15,4,35,11,7.74
+2023,8,market line (planner),10,15,2,35,11,7.74
+2023,10,new_blend (plain),11,14,1,33,10,7.82
+2023,10,new_blend (planner),12,14,1,33,10,7.82
+2023,10,new_ml_only (plain),11,14,1,33,10,7.82
+2023,10,new_ml_only (planner),9,14,6,33,10,7.82
+2023,10,market line (plain),11,14,1,33,10,7.82
+2023,10,market line (planner),12,14,1,33,10,7.82
+2023,11,new_blend (plain),9,14,7,36,10,7.75
+2023,11,new_blend (planner),8,14,12,36,10,7.75
+2023,11,new_ml_only (plain),8,14,12,36,10,7.75
+2023,11,new_ml_only (planner),7,14,22,36,10,7.75
+2023,11,market line (plain),10,14,1,36,10,7.75
+2023,11,market line (planner),10,14,1,36,10,7.75
+2023,13,new_blend (plain),10,13,3,34,13,7.44
+2023,13,new_blend (planner),11,13,3,34,13,7.44
+2023,13,new_ml_only (plain),9,13,5,34,13,7.44
+2023,13,new_ml_only (planner),7,13,16,34,13,7.44
+2023,13,market line (plain),10,13,3,34,13,7.44
+2023,13,market line (planner),11,13,3,34,13,7.44
+2025,3,new_blend (plain),11,16,2,38,12,8.92
+2025,3,new_blend (planner),9,16,16,38,12,8.92
+2025,3,new_ml_only (plain),9,16,16,38,12,8.92
+2025,3,new_ml_only (planner),8,16,26,38,12,8.92
+2025,3,market line (plain),10,16,6,38,12,8.92
+2025,3,market line (planner),10,16,6,38,12,8.92
+2025,4,new_blend (plain),11,16,2,38,12,8.71
+2025,4,new_blend (planner),10,16,5,38,12,8.71
+2025,4,new_ml_only (plain),7,16,30,38,12,8.71
+2025,4,new_ml_only (planner),10,16,5,38,12,8.71
+2025,4,market line (plain),10,16,5,38,12,8.71
+2025,4,market line (planner),12,16,1,38,12,8.71
+2026,1,new_blend (plain),13,16,1,35,13,9.66
+2026,1,new_blend (planner),9,16,20,35,13,9.66
+2026,1,new_ml_only (plain),11,16,5,35,13,9.66
+2026,1,new_ml_only (planner),9,16,20,35,13,9.66
+2026,1,market line (plain),13,16,1,35,13,9.66
+2026,1,market line (planner),11,16,5,35,13,9.66
+2026,1,Deadeye live (submitted card),13,16,1,35,13,9.66
+2026,1,Deadeye live (plain),12,16,2,35,13,9.66
+2026,2,new_blend (plain),13,16,1,35,12,8.71
+2026,2,new_blend (planner),13,16,1,35,12,8.71
+2026,2,new_ml_only (plain),9,16,12,35,12,8.71
+2026,2,new_ml_only (planner),11,16,4,35,12,8.71
+2026,2,market line (plain),13,16,1,35,12,8.71
+2026,2,market line (planner),12,16,1,35,12,8.71
+2026,2,Deadeye live (submitted card),13,16,1,35,12,8.71
+2026,2,Deadeye live (plain),13,16,1,35,12,8.71
