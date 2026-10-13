@@ -79,8 +79,8 @@ def validate_config(cfg: dict) -> None:
         raise ValueError("pool.tie_rule must be zero, half or full")
     if p["postponed_rule"] not in {"void", "loss"}:
         raise ValueError("pool.postponed_rule must be void or loss")
-    if p["points_mode"] not in {"1_to_n", "custom"}:
-        raise ValueError("pool.points_mode must be 1_to_n or custom")
+    if p["points_mode"] not in {"1_to_n", "flat", "custom"}:
+        raise ValueError("pool.points_mode must be 1_to_n, flat or custom")
     if p["cutoff_mode"] not in {"slate", "per_game"}:
         raise ValueError("pool.cutoff_mode must be slate or per_game")
     if cfg["models"].get("pick_model", "blend") not in {"blend", "market", "elo", "logistic", "gbm", "residual"}:

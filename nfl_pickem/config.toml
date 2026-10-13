@@ -62,7 +62,7 @@ learned_step = 0.1           # simplex grid step for learned weights
 
 [pool]
 pool_id = "my_pool"
-points_mode = "1_to_n"       # "1_to_n" or "custom"
+points_mode = "flat"         # "flat": every game worth 1 point (this pool); "1_to_n": confidence points; "custom"
 custom_points = []           # e.g. [16,15,...] when points_mode = "custom"
 tie_rule = "half"            # "zero", "half", "full" points for a tied game
 postponed_rule = "void"      # "void" (no points either way) or "loss"

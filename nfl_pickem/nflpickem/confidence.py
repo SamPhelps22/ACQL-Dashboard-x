@@ -20,7 +20,7 @@ import pandas as pd
 
 @dataclass
 class ScoringRules:
-    points_mode: str = "1_to_n"                 # "1_to_n" or "custom"
+    points_mode: str = "1_to_n"                 # "1_to_n", "flat" (1 point per correct pick) or "custom"
     custom_points: list[int] = field(default_factory=list)
     tie_rule: str = "half"                      # zero | half | full
     postponed_rule: str = "void"                # void | loss
@@ -31,7 +31,9 @@ class ScoringRules:
         return cls(**{k: pool_cfg[k] for k in cls.__dataclass_fields__ if k in pool_cfg})
 
     def point_values(self, n_games: int) -> list[int]:
-        """Distinct point values, highest first, for an n-game slate."""
+        """Point values, highest first, for an n-game slate (distinct unless flat)."""
+        if self.points_mode == "flat":
+            return [1] * n_games
         if self.points_mode == "1_to_n":
             return list(range(n_games, 0, -1))
         pts = sorted(self.custom_points, reverse=True)
@@ -128,6 +130,10 @@ def allocate(slate: pd.DataFrame, rules: ScoringRules | None = None,
 def validate_allocation(alloc: pd.DataFrame, rules: ScoringRules | None = None) -> None:
     rules = rules or ScoringRules()
     used = alloc.loc[alloc["confidence_points"] > 0, "confidence_points"]
+    if rules.points_mode == "flat":
+        if not (used == 1).all() or len(used) != int((alloc["confidence_points"] > 0).sum()):
+            raise ValueError("Flat scoring must give every eligible game exactly 1 point")
+        return
     if used.duplicated().any():
         raise ValueError("Confidence points are not unique")
     expected = sorted(rules.point_values(len(used)))

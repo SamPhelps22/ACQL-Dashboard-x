@@ -20,6 +20,7 @@ def cfg():
                      "min_train_seasons": 2},
         "data": {"model_dir": str(Path(__file__).parent / ".." / "data" / "test_models")},
         "models": {"logistic_C_grid": [0.1, 1.0]},
+        "pool": {"points_mode": "1_to_n"},
     })
 
 

@@ -110,3 +110,16 @@ def test_pool_win_probability_simulation():
     same = mine.copy()
     p = s.set_index("game_id")["blended_home_probability"]
     assert simulate_pool_win_probability(mine, [same], p, n_sims=500) == pytest.approx(0.5)
+
+
+def test_flat_scoring_one_point_per_game():
+    rules = ScoringRules(points_mode="flat")
+    a = allocate(slate([0.9, 0.3, 0.55, 0.5]), rules)
+    assert list(a.confidence_points) == [1, 1, 1, 1]
+    assert list(a.sort_values("game_id").selected_team) == ["H0", "A1", "H2", "H3"]
+    assert a.expected_points.sum() == pytest.approx(0.9 + 0.7 + 0.55 + 0.5)
+    validate_allocation(a, rules)
+    res = pd.DataFrame({"game_id": ["g0", "g1", "g2", "g3"], "home_score": [20, 10, 3, 7],
+                        "away_score": [10, 20, 9, 7], "game_status": ["final"] * 4})
+    g = grade_sheet(a, res, ScoringRules(points_mode="flat", tie_rule="zero"))
+    assert g.points_earned.sum() == 2  # g0 and g1 right, g2 wrong, g3 tie

@@ -662,8 +662,9 @@ def page_settings() -> None:
         tie = c1.selectbox("Tie", ["zero", "half", "full"], index=["zero", "half", "full"].index(cfg["pool"]["tie_rule"]))
         post = c2.selectbox("Postponed after submission", ["void", "loss"],
                             index=["void", "loss"].index(cfg["pool"]["postponed_rule"]))
-        pmode = c3.selectbox("Point values", ["1_to_n", "custom"],
-                             index=["1_to_n", "custom"].index(cfg["pool"]["points_mode"]))
+        pmode = c3.selectbox("Point values", ["flat", "1_to_n", "custom"],
+                             index=["flat", "1_to_n", "custom"].index(cfg["pool"]["points_mode"]),
+                             help="flat = every game worth 1 point; 1_to_n = confidence points N..1")
         incl_post = c4.checkbox("Include postseason", bool(cfg["pool"]["include_postseason"]))
         custom = st.text_input("Custom points (comma-separated, used when Point values = custom)",
                                ",".join(map(str, cfg["pool"]["custom_points"])))
