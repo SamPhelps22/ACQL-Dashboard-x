@@ -96,7 +96,44 @@ def generate(n_teams: int = 16, n_seasons: int = 6, weeks: int = 14, seed: int =
     st = pd.DataFrame(stats)
     st = _attach_defense(st, pd.DataFrame(games))
     st["source"] = SOURCE
-    return {"games": pd.DataFrame(games), "odds": pd.DataFrame(odds), "team_game_stats": st, "now": now}
+    detail, qbs = _detail(st, pd.DataFrame(games), rng)
+    return {"games": pd.DataFrame(games), "odds": pd.DataFrame(odds), "team_game_stats": st,
+            "team_game_detail": detail, "qb_game_stats": qbs, "now": now}
+
+
+def _detail(st: pd.DataFrame, games: pd.DataFrame, rng) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Synthetic unit-level aggregates consistent with the team-game stats."""
+    epa_pp = st["off_epa_sum"] / st["plays"]
+    db = st["pass_plays"] + 2
+    rush = st["plays"] - db
+    sacks = rng.poisson(np.clip(2.5 - 6 * epa_pp, 0.3, 6))
+    d = pd.DataFrame({
+        "game_id": st["game_id"], "team": st["team"], "dropbacks": db,
+        "dropback_epa_sum": st["pass_epa_sum"] * db / st["pass_plays"], "sacks": sacks,
+        "qb_hits": sacks + rng.poisson(4, len(st)), "interceptions": rng.poisson(0.8, len(st)),
+        "cpoe_sum": (epa_pp * 20 + rng.normal(0, 4, len(st))) * (db - 4), "cpoe_n": db - 4,
+        "explosive_passes": rng.poisson(np.clip(3 + 8 * epa_pp, 0.5, 9)),
+        "rush_plays": rush, "rush_epa_sum": (st["off_epa_sum"] - st["pass_epa_sum"] * db / st["pass_plays"]),
+        "rush_success_sum": rush * np.clip(0.4 + epa_pp * 0.5, 0.2, 0.7),
+        "early_plays": (st["plays"] * 0.65).astype(int), "early_epa_sum": st["off_epa_sum"] * 0.6,
+        "early_success_sum": st["off_success_sum"] * 0.65, "early_pass": (db * 0.55).astype(int),
+        "third_att": rng.integers(10, 16, len(st)),
+    })
+    d["third_conv"] = np.clip(np.round(d["third_att"] * np.clip(0.4 + epa_pp, 0.1, 0.8)), 0, d["third_att"]).astype(int)
+    d["rz_drives"] = rng.integers(1, 6, len(st))
+    d["rz_td_drives"] = np.minimum(d["rz_drives"], rng.binomial(d["rz_drives"], np.clip(0.55 + epa_pp, 0.1, 0.9)))
+    d["neutral_plays"] = (st["plays"] * 0.8).astype(int)
+    d["neutral_epa_sum"] = st["off_epa_sum"] * 0.8
+    d["source"] = SOURCE
+    side = pd.concat([games[["game_id", "home_team", "home_qb_id"]].set_axis(["game_id", "team", "qb_id"], axis=1),
+                      games[["game_id", "away_team", "away_qb_id"]].set_axis(["game_id", "team", "qb_id"], axis=1)])
+    q = d[["game_id", "team", "dropbacks", "dropback_epa_sum", "cpoe_sum", "cpoe_n", "sacks", "interceptions"]] \
+        .merge(side, on=["game_id", "team"]).rename(columns={"dropback_epa_sum": "epa_sum"})
+    q["qb_name"] = q["qb_id"]
+    q["scrambles"] = 0
+    q["scramble_epa_sum"] = 0.0
+    q["source"] = SOURCE
+    return d, q
 
 
 def _attach_defense(st: pd.DataFrame, games: pd.DataFrame) -> pd.DataFrame:
@@ -121,6 +158,8 @@ def load_into(con, **kwargs) -> datetime:
     db.upsert_games(con, games)
     db.upsert_odds(con, data["odds"])
     db.upsert_team_stats(con, data["team_game_stats"])
+    db.upsert(con, "team_game_detail", data["team_game_detail"], db.DETAIL_COLUMNS)
+    db.upsert(con, "qb_game_stats", data["qb_game_stats"], db.QB_COLUMNS)
     db.set_meta(con, "data_mode", "synthetic")
     db.set_meta(con, "synthetic_now", data["now"].isoformat())
     db.log_ingestion(con, SOURCE, "synthetic league", len(games), "ok", "SYNTHETIC DEMO DATA")

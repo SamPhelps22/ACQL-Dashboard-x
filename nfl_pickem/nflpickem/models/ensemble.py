@@ -16,7 +16,7 @@ import pandas as pd
 
 from .ml import clip, logit, safe_log_loss
 
-COMPONENTS = ["market", "elo", "logistic", "gbm"]
+COMPONENTS = ["market", "elo", "logistic", "gbm", "residual"]
 
 
 def weights_from_config(blend_cfg: dict) -> dict[str, float]:
@@ -74,7 +74,7 @@ def learn_weights(oos: pd.DataFrame, components: list[str] | None = None, step: 
     Deterministic: ties in log loss resolve to the first grid point (market-heavy
     orderings come first because 'market' is the first component).
     """
-    components = components or COMPONENTS
+    components = components or ["market", "elo", "logistic", "gbm"]
     d = oos[oos[y_col].isin([0.0, 1.0])].dropna(subset=components)
     if len(d) < 100:
         raise ValueError("Need at least 100 out-of-sample games to learn blend weights")
@@ -87,3 +87,17 @@ def learn_weights(oos: pd.DataFrame, components: list[str] | None = None, step: 
         if ll < best_ll - 1e-12:
             best, best_ll = w, ll
     return best, best_ll
+
+
+FALLBACK_WEIGHTS = {"elo": 1.0, "logistic": 1.0, "gbm": 1.0}
+
+
+def blend_with_fallback(probs: pd.DataFrame | dict, weights: dict[str, float], space: str = "probability",
+                        fallback: dict[str, float] | None = None) -> np.ndarray:
+    """Blend; rows where every weighted component is missing (e.g. weights are all on
+    the market and there are no odds) fall back to an equal-weight ML ensemble."""
+    out = blend(probs, weights, space)
+    if np.isnan(out).any():
+        fb = blend(probs, fallback or FALLBACK_WEIGHTS, space)
+        out = np.where(np.isnan(out), fb, out)
+    return out

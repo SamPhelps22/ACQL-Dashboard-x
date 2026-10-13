@@ -63,14 +63,23 @@ class FeatureSettings:
     use_weather: bool = False
     use_qb_features: bool = True
     ml_include_market_features: bool = False
+    groups: tuple = ()
 
     @classmethod
     def from_config(cls, cfg: dict) -> "FeatureSettings":
-        return cls(**{k: cfg[k] for k in cls.__dataclass_fields__ if k in cfg})
+        kw = {k: cfg[k] for k in cls.__dataclass_fields__ if k in cfg}
+        kw["groups"] = tuple(cfg.get("groups", ()))
+        return cls(**kw)
 
 
-def model_feature_columns(fs: FeatureSettings) -> list[str]:
+def model_feature_columns(fs: FeatureSettings, groups: list[str] | None = None) -> list[str]:
+    """Columns fed to the ML models: base features plus the configured football groups."""
+    from .football import FEATURE_GROUPS
     cols = list(BASE_FEATURES)
+    for g in groups if groups is not None else fs.groups:
+        if g not in FEATURE_GROUPS:
+            raise ValueError(f"Unknown feature group {g!r}; choose from {list(FEATURE_GROUPS)}")
+        cols += FEATURE_GROUPS[g]
     if fs.use_qb_features:
         cols += QB_FEATURES
     if fs.ml_include_market_features:
@@ -171,7 +180,8 @@ def team_season_means(tg: pd.DataFrame) -> pd.DataFrame:
 # ------------------------------------------------------------------ main builder
 def build_features(games: pd.DataFrame, stats: pd.DataFrame, odds: pd.DataFrame,
                    cfg: dict, as_of: pd.Timestamp | None = None,
-                   target_game_ids: list[str] | None = None) -> pd.DataFrame:
+                   target_game_ids: list[str] | None = None,
+                   detail: pd.DataFrame | None = None, qbs: pd.DataFrame | None = None) -> pd.DataFrame:
     """Return one row per target game with point-in-time features and the label.
 
     ``games`` must contain the full history needed (all seasons used for states).
@@ -301,6 +311,8 @@ def build_features(games: pd.DataFrame, stats: pd.DataFrame, odds: pd.DataFrame,
     hs, as_ = out["home_score"].astype(float), out["away_score"].astype(float)
     final = out["game_status"] == "final"
     out["home_result"] = np.where(final, np.where(hs > as_, 1.0, np.where(hs < as_, 0.0, 0.5)), np.nan)
+    from .football import add_football_features
+    out = add_football_features(out, games, detail, qbs, cfg.get("football", {}))
     return out.sort_values(["kickoff_utc", "game_id"]).reset_index(drop=True)
 
 
@@ -338,6 +350,11 @@ def validate_point_in_time(features: pd.DataFrame) -> None:
         bad = ts.notna() & (ts >= features["cutoff"])
         if bad.any():
             problems.append(f"{side} team state after cutoff in {list(features.loc[bad, 'game_id'][:3])}")
+    if "football_feature_ts" in features:
+        ft = pd.to_datetime(features["football_feature_ts"])
+        bad = ft.notna() & (ft >= features["cutoff"])
+        if bad.any():
+            problems.append(f"football state after cutoff in {list(features.loc[bad, 'game_id'][:3])}")
     if "odds_captured_at" in features:
         oc = pd.to_datetime(features["odds_captured_at"])
         bad = oc.notna() & (oc > features["cutoff"])

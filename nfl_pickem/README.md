@@ -98,6 +98,44 @@ models are retrained as of that week's cutoff, so later results can't leak in.
 The default allocation gives N points to the highest-probability pick down to 1. Ties are
 broken by earlier kickoff, then by `game_id`. Expected points = P(pick wins) × points.
 
+## Matchup reports and the weekly review
+
+```bash
+python -m nflpickem report                         # markdown reports for the latest run
+python -m nflpickem report --out week6_reports.md  # or a specific run with --run-id
+python -m nflpickem review --season 2026 --week 6  # results vs predictions, vs market sheet, miss causes
+```
+
+**What a report contains (one per game):**
+
+* winner and both teams' probabilities
+* de-vigged market probabilities and the model − market gap
+* up to 5 measured matchup factors, ranked by historical impact
+* QB and offensive-line injury designations
+* uncertainties and missing data
+* data timestamps and sources
+* the suggested confidence rank
+
+**What the review does:**
+
+* grades the submitted (frozen) run against results
+* compares it with a market-only sheet for the same slate
+* labels each miss: `data_issue`, `lineup_change`, `market_moved`, `model_deviation`,
+  `coin_flip` or `variance`
+* prints a calibration table across all graded weeks
+
+Only a calibration bucket flagged `investigate` is evidence of a systematic problem.
+
+## Feature ablation
+
+```bash
+python -m nflpickem ablation --report data/exports/abl   # ~10 min on real data
+```
+
+This runs the same walk-forward backtest with each football feature group added (units, QB
+rating, matchups, all). It reports log loss and paired weekly point differences against the
+base features and against the market. Groups are enabled in `config.toml` only if they help.
+
 ## Running backtests
 
 ```bash

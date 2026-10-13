@@ -186,7 +186,8 @@ def ingest_pbp(con, seasons: list[int], cache_dir: Path | None = None,
         if not force:
             missing = con.execute(
                 """SELECT count(*) FROM games g WHERE season=? AND game_status='final'
-                   AND NOT EXISTS (SELECT 1 FROM team_game_stats s WHERE s.game_id=g.game_id)""",
+                   AND (NOT EXISTS (SELECT 1 FROM team_game_stats s WHERE s.game_id=g.game_id)
+                        OR NOT EXISTS (SELECT 1 FROM team_game_detail d WHERE d.game_id=g.game_id))""",
                 [season]).fetchone()[0]
             if missing == 0:
                 log.info("Season %s play-by-play already complete; skipping", season)
@@ -200,19 +201,103 @@ def ingest_pbp(con, seasons: list[int], cache_dir: Path | None = None,
                 if cache and keep_cache:
                     cache.parent.mkdir(parents=True, exist_ok=True)
                     cache.write_bytes(content)
-                cols = ["game_id", "posteam", "defteam", "play_type", "epa", "success", "yards_gained",
-                        "interception", "fumble_lost", "qb_kneel", "qb_spike", "two_point_attempt"]
-                pbp = pd.read_parquet(io.BytesIO(content), columns=cols)
+                import pyarrow.parquet as pq
+                avail = set(pq.ParquetFile(io.BytesIO(content)).schema.names)
+                pbp = pd.read_parquet(io.BytesIO(content), columns=[c for c in DETAIL_PBP_COLUMNS if c in avail])
         except FileNotFoundError:
             log.warning("No play-by-play published for %s", season)
             db.log_ingestion(con, PROVIDER, f"pbp_{season}", 0, "missing", "404")
             continue
         agg = aggregate_pbp(pbp)
         n = db.upsert_team_stats(con, agg)
+        if {"qb_dropback", "down", "wp"}.issubset(pbp.columns):
+            detail, qb = aggregate_pbp_detail(pbp)
+            db.upsert(con, "team_game_detail", detail, db.DETAIL_COLUMNS)
+            db.upsert(con, "qb_game_stats", qb, db.QB_COLUMNS)
         db.log_ingestion(con, PROVIDER, f"pbp_{season}", n, "ok")
         total += n
         log.info("Season %s: %d team-game rows", season, n)
     return total
+
+
+DETAIL_PBP_COLUMNS = [
+    "game_id", "posteam", "defteam", "play_type", "epa", "success", "yards_gained", "interception",
+    "fumble_lost", "qb_kneel", "qb_spike", "two_point_attempt", "qb_dropback", "sack", "qb_hit", "cpoe",
+    "down", "yardline_100", "drive", "fixed_drive_result", "wp", "passer_player_id", "passer_player_name",
+    "qb_scramble", "third_down_converted", "third_down_failed", "rusher_player_id",
+]
+
+
+def aggregate_pbp_detail(pbp: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Unit-level offensive aggregates per team-game and per-QB aggregates.
+
+    Definitions (offence; defensive versions are the opponent's offence):
+      dropbacks: qb_dropback == 1 (passes, sacks, scrambles); dropback EPA includes sacks.
+      rush plays: designed runs (play_type run, not a QB scramble).
+      early downs: 1st and 2nd down pass/run plays; early_pass counts dropbacks among them.
+      third downs: attempts = converted + failed; red-zone drives: drives with a snap inside the 20,
+      TD drives: those with fixed_drive_result == 'Touchdown'.
+      neutral plays: win probability between 0.10 and 0.90 (removes garbage time).
+    """
+    p = pbp.copy()
+    p = p[p["posteam"].notna() & p["epa"].notna()]
+    for col in ("qb_kneel", "qb_spike", "two_point_attempt"):
+        if col in p:
+            p = p[p[col].fillna(0) == 0]
+    p = p[p["play_type"].isin(["pass", "run"])].copy()
+    p["posteam"] = p["posteam"].map(normalize_team)
+    db_ = p["qb_dropback"].fillna(0) == 1
+    scr = p["qb_scramble"].fillna(0) == 1
+    rush = (p["play_type"] == "run") & ~scr & ~db_
+    early = p["down"].isin([1, 2])
+    neutral = p["wp"].between(0.10, 0.90)
+    p["_db"] = db_.astype(int)
+    p["_db_epa"] = np.where(db_, p["epa"], 0.0)
+    p["_sack"] = p["sack"].fillna(0).astype(int)
+    p["_hit"] = (p["qb_hit"].fillna(0).astype(int) | p["_sack"]).clip(0, 1)
+    p["_int"] = p["interception"].fillna(0).astype(int)
+    p["_cpoe"] = p["cpoe"].fillna(0.0)
+    p["_cpoe_n"] = p["cpoe"].notna().astype(int)
+    p["_xpass"] = (db_ & (p["yards_gained"] >= 20)).astype(int)
+    p["_rush"] = rush.astype(int)
+    p["_rush_epa"] = np.where(rush, p["epa"], 0.0)
+    p["_rush_succ"] = np.where(rush, p["success"].fillna(0), 0.0)
+    p["_early"] = early.astype(int)
+    p["_early_epa"] = np.where(early, p["epa"], 0.0)
+    p["_early_succ"] = np.where(early, p["success"].fillna(0), 0.0)
+    p["_early_pass"] = (early & db_).astype(int)
+    p["_3c"] = p["third_down_converted"].fillna(0).astype(int)
+    p["_3a"] = p["_3c"] + p["third_down_failed"].fillna(0).astype(int)
+    p["_neu"] = neutral.astype(int)
+    p["_neu_epa"] = np.where(neutral, p["epa"], 0.0)
+    g = p.groupby(["game_id", "posteam"])
+    out = g.agg(dropbacks=("_db", "sum"), dropback_epa_sum=("_db_epa", "sum"), sacks=("_sack", "sum"),
+                qb_hits=("_hit", "sum"), interceptions=("_int", "sum"), cpoe_sum=("_cpoe", "sum"),
+                cpoe_n=("_cpoe_n", "sum"), explosive_passes=("_xpass", "sum"), rush_plays=("_rush", "sum"),
+                rush_epa_sum=("_rush_epa", "sum"), rush_success_sum=("_rush_succ", "sum"),
+                early_plays=("_early", "sum"), early_epa_sum=("_early_epa", "sum"),
+                early_success_sum=("_early_succ", "sum"), early_pass=("_early_pass", "sum"),
+                third_att=("_3a", "sum"), third_conv=("_3c", "sum"), neutral_plays=("_neu", "sum"),
+                neutral_epa_sum=("_neu_epa", "sum")).reset_index()
+    rz = p[p["yardline_100"] <= 20].groupby(["game_id", "posteam", "drive"])["fixed_drive_result"].first().reset_index()
+    rz["td"] = (rz["fixed_drive_result"] == "Touchdown").astype(int)
+    rz = rz.groupby(["game_id", "posteam"]).agg(rz_drives=("td", "size"), rz_td_drives=("td", "sum")).reset_index()
+    out = out.merge(rz, on=["game_id", "posteam"], how="left").rename(columns={"posteam": "team"})
+    out[["rz_drives", "rz_td_drives"]] = out[["rz_drives", "rz_td_drives"]].fillna(0).astype(int)
+    out["source"] = PROVIDER
+    # Per quarterback: dropbacks attributed to the passer (sacks/scrambles included when id present).
+    q = p[db_].copy()
+    q["qb_id"] = q["passer_player_id"].fillna(q["rusher_player_id"])
+    q = q[q["qb_id"].notna()]
+    q["_scr"] = (q["qb_scramble"].fillna(0) == 1).astype(int)
+    q["_scr_epa"] = np.where(q["_scr"] == 1, q["epa"], 0.0)
+    qb = q.groupby(["game_id", "posteam", "qb_id"]).agg(
+        qb_name=("passer_player_name", "first"), dropbacks=("_db", "sum"), epa_sum=("epa", "sum"),
+        cpoe_sum=("_cpoe", "sum"), cpoe_n=("_cpoe_n", "sum"), sacks=("_sack", "sum"),
+        interceptions=("_int", "sum"), scrambles=("_scr", "sum"), scramble_epa_sum=("_scr_epa", "sum"),
+    ).reset_index().rename(columns={"posteam": "team"})
+    qb["source"] = PROVIDER
+    return out, qb
 
 
 # ---------------------------------------------------------------------- injuries

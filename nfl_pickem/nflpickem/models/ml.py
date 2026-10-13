@@ -47,6 +47,56 @@ def make_logistic(C: float = 0.1, seed: int = 42) -> Pipeline:
     ])
 
 
+# ------------------------------------------------------------ market residual
+class MarketResidualModel:
+    """P(home) = sigmoid(a + b * market_logit + X @ w), ridge penalty on w only.
+
+    The market slope and intercept are unpenalised, so with a strong penalty the
+    model reduces to (a recalibrated) market; football features can only move the
+    prediction if they reduce held-out log loss. Imputation/scaling of X are fit
+    on training rows only.
+    """
+
+    def __init__(self, alpha: float = 10.0):
+        self.alpha = alpha
+        self.prep = Pipeline([("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
+                              ("scale", StandardScaler())])
+        self.coef_: np.ndarray | None = None
+
+    def _design(self, X: pd.DataFrame, market: np.ndarray, fit: bool) -> np.ndarray:
+        Z = self.prep.fit_transform(X) if fit else self.prep.transform(X)
+        return np.column_stack([np.ones(len(Z)), logit(market), Z])
+
+    def fit(self, X: pd.DataFrame, market: np.ndarray, y: np.ndarray) -> "MarketResidualModel":
+        from scipy.optimize import minimize
+        D = self._design(X, market, fit=True)
+        y = np.asarray(y, dtype=float)
+        pen = np.r_[0.0, 0.0, np.full(D.shape[1] - 2, 1.0)]
+        n = len(y)
+
+        def f(w):
+            z = D @ w
+            loss = np.sum(np.logaddexp(0, z) - y * z) / n + self.alpha * np.sum(pen * w * w) / n
+            grad = D.T @ (1 / (1 + np.exp(-z)) - y) / n + 2 * self.alpha * pen * w / n
+            return loss, grad
+
+        w0 = np.r_[0.0, 1.0, np.zeros(D.shape[1] - 2)]
+        self.coef_ = minimize(f, w0, jac=True, method="L-BFGS-B").x
+        return self
+
+    def predict_proba_market(self, X: pd.DataFrame, market: np.ndarray) -> np.ndarray:
+        market = np.asarray(market, dtype=float)
+        out = np.full(len(market), np.nan)
+        ok = ~np.isnan(market)
+        if ok.any():
+            D = self._design(X[ok], market[ok], fit=False)
+            out[ok] = 1 / (1 + np.exp(-(D @ self.coef_)))
+        return out
+
+
+RESIDUAL_ALPHA_GRID = [3.0, 30.0, 300.0, 3000.0]
+
+
 # ----------------------------------------------------------------------- gbm
 def resolve_gbm_library(preference: str = "auto") -> str:
     order = ["lightgbm", "xgboost", "sklearn"] if preference == "auto" else [preference]
@@ -134,11 +184,13 @@ class FittedModels:
     logistic: Pipeline | None = None
     gbm: object | None = None
     gbm_library: str = "sklearn"
+    residual: MarketResidualModel | None = None
+    residual_columns: list = field(default_factory=list)
     params: dict = field(default_factory=dict)
     calibrators: dict = field(default_factory=dict)
 
-    def predict(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
-        X = X[self.feature_columns].astype(float)
+    def predict(self, frame: pd.DataFrame) -> dict[str, np.ndarray]:
+        X = frame[self.feature_columns].astype(float)
         out = {}
         if self.logistic is not None:
             out["logistic"] = self.logistic.predict_proba(X)[:, 1]
@@ -146,6 +198,9 @@ class FittedModels:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 out["gbm"] = self.gbm.predict_proba(X)[:, 1]
+        if self.residual is not None and "market_home_prob" in frame.columns:
+            out["residual"] = self.residual.predict_proba_market(
+                X[self.residual_columns], frame["market_home_prob"].to_numpy(dtype=float))
         for k, cal in self.calibrators.items():
             if k in out:
                 out[k] = cal.transform(out[k])
@@ -182,13 +237,44 @@ def tune_and_fit(train: pd.DataFrame, valid: pd.DataFrame | None, cols: list[str
             best_gbm = {"max_leaves": leaves, "n_estimators": n, "learning_rate": lr}
         full = pd.concat([train, valid])
         Xtr, ytr = _xy(full, cols)
+    residual, best_alpha, rcols = _fit_residual(train, valid, cols, mcfg)
     logistic = make_logistic(best_C, seed).fit(Xtr, ytr)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         gbm = make_gbm(lib, seed=seed, **best_gbm).fit(Xtr, ytr)
     return FittedModels(feature_columns=cols, logistic=logistic, gbm=gbm, gbm_library=lib,
+                        residual=residual, residual_columns=rcols,
                         params={"logistic_C": best_C, "gbm": best_gbm, "gbm_library": lib,
-                                "train_rows": int(len(ytr))})
+                                "residual_alpha": best_alpha, "train_rows": int(len(ytr))})
+
+
+def _market_rows(df: pd.DataFrame) -> pd.DataFrame:
+    return df[df["home_result"].isin([0.0, 1.0]) & df["market_home_prob"].notna()]
+
+
+def _fit_residual(train, valid, cols, mcfg):
+    """Choose the residual ridge penalty on the validation season, refit on train+valid."""
+    if "market_home_prob" not in train.columns:
+        return None, None, []
+    rcols = [c for c in cols if c not in ("market_home_prob", "market_home_spread")]
+    tr = _market_rows(train)
+    if len(tr) < 200:
+        return None, None, rcols
+    grid = mcfg.get("residual_alpha_grid", RESIDUAL_ALPHA_GRID)
+    best = grid[len(grid) // 2]
+    va = _market_rows(valid) if valid is not None else pd.DataFrame()
+    if len(va) >= 30:
+        scores = {}
+        for a in grid:
+            m = MarketResidualModel(a).fit(tr[rcols].astype(float), tr["market_home_prob"].to_numpy(),
+                                           tr["home_result"].to_numpy())
+            p = m.predict_proba_market(va[rcols].astype(float), va["market_home_prob"].to_numpy())
+            scores[a] = safe_log_loss(va["home_result"].astype(int), p)
+        best = min(scores, key=scores.get)
+        tr = pd.concat([tr, va])
+    m = MarketResidualModel(best).fit(tr[rcols].astype(float), tr["market_home_prob"].to_numpy(),
+                                      tr["home_result"].to_numpy())
+    return m, best, rcols
 
 
 def logistic_coefficients(models: FittedModels) -> pd.DataFrame:

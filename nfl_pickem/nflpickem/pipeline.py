@@ -22,12 +22,12 @@ import numpy as np
 import pandas as pd
 
 from . import __version__, db
-from .backtest import latest_backtest, load_inputs
+from .backtest import latest_backtest, load_football_inputs, load_inputs
 from .confidence import ScoringRules, allocate, grade_sheet, validate_allocation
 from .config import resolve_path
 from .features import (FeatureSettings, build_features, model_feature_columns, save_team_features,
                        validate_point_in_time)
-from .models.ensemble import blend, learn_weights, weights_from_config
+from .models.ensemble import blend, blend_with_fallback, learn_weights, weights_from_config
 from .models.ml import FittedModels, choose_calibration, tune_and_fit
 
 log = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 PICK_SOURCES = {
     "blend": "blended_home_probability", "market": "market_home_probability",
     "elo": "elo_home_probability", "logistic": "logistic_home_probability",
-    "gbm": "gradient_boosting_home_probability",
+    "gbm": "gradient_boosting_home_probability", "residual": "residual_home_probability",
 }
 
 
@@ -83,7 +83,7 @@ def train_production(con, cfg: dict, now: datetime, features: pd.DataFrame | Non
                      save: bool = True) -> ProductionModel:
     games, stats, odds = load_inputs(con)
     if features is None:
-        features = build_features(games, stats, odds, cfg, as_of=pd.Timestamp(now))
+        features = build_features(games, stats, odds, cfg, as_of=pd.Timestamp(now), **load_football_inputs(con))
     fs = FeatureSettings.from_config(cfg["features"])
     cols = model_feature_columns(fs)
     done = features[(features["game_status"] == "final") & (features["kickoff_utc"] < pd.Timestamp(now))]
@@ -105,7 +105,7 @@ def train_production(con, cfg: dict, now: datetime, features: pd.DataFrame | Non
                                                        cfg["models"]["calibration"])
         if cfg["blend"]["mode"] == "learned":
             try:
-                weights, _ = learn_weights(d, step=float(cfg["blend"].get("learned_step", 0.1)),
+                weights, _ = learn_weights(d, components=cfg["blend"].get("learned_components"), step=float(cfg["blend"].get("learned_step", 0.1)),
                                            space=cfg["blend"]["space"])
                 wsrc = f"learned from backtest {meta['backtest_id']}"
             except ValueError as exc:
@@ -149,7 +149,7 @@ def predict_week(con, cfg: dict, season: int | None = None, week: int | None = N
     if pd.Timestamp(now) > slate_cut:
         now = pd.Timestamp(slate_cut).to_pydatetime()
         model = None if model is None or retrain else model
-    feats = build_features(games, stats, odds, cfg, as_of=pd.Timestamp(now))
+    feats = build_features(games, stats, odds, cfg, as_of=pd.Timestamp(now), **load_football_inputs(con))
     validate_point_in_time(feats)
     if model is None:
         model = (None if retrain else load_latest_model(cfg)) or train_production(con, cfg, now, feats)
@@ -161,9 +161,11 @@ def predict_week(con, cfg: dict, season: int | None = None, week: int | None = N
     slate["elo_home_probability"] = slate["elo_home_prob"]
     slate["logistic_home_probability"] = probs["logistic"]
     slate["gradient_boosting_home_probability"] = probs["gbm"]
+    slate["residual_home_probability"] = probs.get("residual", np.full(len(slate), np.nan))
     comp = pd.DataFrame({"market": slate["market_home_prob"].to_numpy(), "elo": slate["elo_home_prob"].to_numpy(),
-                         "logistic": probs["logistic"], "gbm": probs["gbm"]})
-    slate["blended_home_probability"] = blend(comp, model.weights, cfg["blend"]["space"])
+                         "logistic": probs["logistic"], "gbm": probs["gbm"],
+                         "residual": slate["residual_home_probability"].to_numpy()})
+    slate["blended_home_probability"] = blend_with_fallback(comp, model.weights, cfg["blend"]["space"])
     slate["injury_status"] = injury_status(con, slate)
     slate["data_flags"] = data_flags(slate)
     rules = ScoringRules.from_config(cfg["pool"])
@@ -175,9 +177,14 @@ def predict_week(con, cfg: dict, season: int | None = None, week: int | None = N
     picks["generated_at"] = utcnow()
     picks["model_version"] = model.model_version
     run_id = None
+    from .reports import build_reports, save_reports
+    inj = con.execute("SELECT * FROM injuries WHERE season = ? AND week = ?", [season, week]).df()
+    reports = build_reports(slate, picks, feats[feats["game_status"] == "final"], inj)
+    picks.attrs["reports"] = reports
     if save:
         run_id = save_run(con, picks, season, week, data_cutoff, model, cfg)
         save_team_features(con, slate, model.model_version)
+        save_reports(con, run_id, reports)
     picks["run_id"] = run_id
     return run_id, picks
 
@@ -226,7 +233,7 @@ def data_flags(slate: pd.DataFrame) -> list[str]:
 PRED_COLUMNS = [
     "run_id", "game_id", "generated_at", "model_version", "season", "week", "home_team", "away_team",
     "kickoff_utc", "market_home_probability", "elo_home_probability", "logistic_home_probability",
-    "gradient_boosting_home_probability", "blended_home_probability", "selected_team",
+    "gradient_boosting_home_probability", "residual_home_probability", "blended_home_probability", "selected_team",
     "selected_team_probability", "confidence_points", "expected_points", "odds_captured_at",
     "odds_status", "injury_status", "data_flags",
 ]

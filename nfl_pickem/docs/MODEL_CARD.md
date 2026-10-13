@@ -1,4 +1,47 @@
-# Model card: NFL Confidence Pick'em Predictor v1.0.0
+# Model card: NFL Confidence Pick'em Predictor v1.1
+
+## v1.1 upgrade: what changed and what it measurably did
+
+All results come from the same walk-forward protocol: 2012–2023 development seasons,
+207 regular-season weeks, 3,247 decided games. Paired weekly point differences are shown with
+95% confidence intervals.
+
+| Change | Measured impact | Decision |
+|---|---|---|
+| Play-by-play detail tables (dropback/rush/early-down/neutral-state EPA, sacks, CPOE, third-down, red zone, per-QB stats) | Data only | Kept |
+| **QB rating group** (starter's own shrunk EPA/dropback, backup indicator) | Logistic: log loss 0.6309→0.6285, **+0.40 pts/wk [+0.06, +0.74]**. GBM: 0.6320→0.6274, **+0.83 pts/wk [+0.22, +1.45]**. 70/30 blend: +0.12 [−0.01, +0.25] | **Enabled** |
+| Opponent-adjusted unit ratings (passing, rushing, neutral, early-down, sack, third-down, red-zone, interceptions) | Logistic +0.04 [−0.40, +0.48], GBM −0.13 [−0.90, +0.65]; log loss slightly worse | Not enabled |
+| Matchup interactions (pass, rush, protection, explosive pass) | Logistic −0.07, GBM −0.34 (n.s.); log loss worse | Not enabled |
+| Market-residual model (market logit + ridge-penalised football adjustments) | Log loss 0.6120 vs market 0.6111; −0.12 pts/wk vs market [−0.57, +0.32] | Reported, not used for picks |
+| Blend weights learned from prior out-of-sample seasons (replaces fixed 70/30) | Weights converge to 90–100% market (100% from 2023). Dev: −0.16 pts/wk vs market [−0.41, +0.10]; holdout: identical to market | **Enabled** (`blend.mode = learned`) |
+| Explicit no-odds fallback (equal-weight Elo/logistic/GBM) | ML-only trails the market by ~2.5 pts/wk when odds exist, but is the best available signal when they don't | Enabled |
+| Leakage fix: the first data season's league prior no longer uses future seasons | Affected 2006 training rows only; caught by a new test | Fixed |
+
+**Bottom line.** No football feature, model or blend beat the de-vigged market out of sample.
+The validated system therefore *uses the market whenever odds exist*. The football-intelligence
+work improves the fallback models: the QB rating is a genuine, statistically significant gain
+for the ML models. It also powers the matchup reports. Each report shows the football models'
+gap to the market as an explicitly **unvalidated** hypothesis that never changes the pick.
+
+### Holdout 2024–2025, final configuration
+
+This is one continuous walk-forward from 2012, so the 2024–2025 blend weights were learned
+only from earlier seasons.
+
+| Model | Accuracy | Log loss | Avg pts/wk |
+|---|---|---|---|
+| Market | 0.684 | 0.5981 | 90.61 |
+| Blend (learned → 100% market) | 0.684 | 0.5981 | 90.61 |
+| Market residual | 0.682 | 0.5986 | 90.61 |
+| ML ensemble (with QB rating) | 0.666 | 0.6143 | 86.94 |
+| Logistic / GBM / Elo | 0.652 / 0.652 / 0.659 | 0.6152 / 0.6149 / 0.6232 | 86.9 / 86.9 / 85.8 |
+
+**Disclosure:** the 2024–2025 holdout was first evaluated with v1.0. Every v1.1 decision above
+was made from development seasons only, but this is the holdout's second viewing.
+
+---
+
+# Original v1.0 card (kept for reference)
 
 ## Purpose
 

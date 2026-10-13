@@ -58,6 +58,29 @@ DDL = [
         source VARCHAR,
         PRIMARY KEY (game_id, team)
     )""",
+    """CREATE TABLE IF NOT EXISTS team_game_detail (
+        game_id VARCHAR NOT NULL,
+        team VARCHAR NOT NULL,
+        dropbacks INTEGER, dropback_epa_sum DOUBLE, sacks INTEGER, qb_hits INTEGER,
+        interceptions INTEGER, cpoe_sum DOUBLE, cpoe_n INTEGER, explosive_passes INTEGER,
+        rush_plays INTEGER, rush_epa_sum DOUBLE, rush_success_sum DOUBLE,
+        early_plays INTEGER, early_epa_sum DOUBLE, early_success_sum DOUBLE, early_pass INTEGER,
+        third_att INTEGER, third_conv INTEGER,
+        rz_drives INTEGER, rz_td_drives INTEGER,
+        neutral_plays INTEGER, neutral_epa_sum DOUBLE,
+        source VARCHAR,
+        PRIMARY KEY (game_id, team)
+    )""",
+    """CREATE TABLE IF NOT EXISTS qb_game_stats (
+        game_id VARCHAR NOT NULL,
+        team VARCHAR NOT NULL,
+        qb_id VARCHAR NOT NULL,
+        qb_name VARCHAR,
+        dropbacks INTEGER, epa_sum DOUBLE, cpoe_sum DOUBLE, cpoe_n INTEGER,
+        sacks INTEGER, interceptions INTEGER, scrambles INTEGER, scramble_epa_sum DOUBLE,
+        source VARCHAR,
+        PRIMARY KEY (game_id, team, qb_id)
+    )""",
     """CREATE TABLE IF NOT EXISTS injuries (
         season INTEGER, week INTEGER, team VARCHAR, player_id VARCHAR,
         player_name VARCHAR, position VARCHAR, report_status VARCHAR,
@@ -162,6 +185,18 @@ STATS_COLUMNS = [
 ]
 
 
+DETAIL_COLUMNS = [
+    "game_id", "team", "dropbacks", "dropback_epa_sum", "sacks", "qb_hits", "interceptions", "cpoe_sum",
+    "cpoe_n", "explosive_passes", "rush_plays", "rush_epa_sum", "rush_success_sum", "early_plays",
+    "early_epa_sum", "early_success_sum", "early_pass", "third_att", "third_conv", "rz_drives",
+    "rz_td_drives", "neutral_plays", "neutral_epa_sum", "source",
+]
+QB_COLUMNS = [
+    "game_id", "team", "qb_id", "qb_name", "dropbacks", "epa_sum", "cpoe_sum", "cpoe_n", "sacks",
+    "interceptions", "scrambles", "scramble_epa_sum", "source",
+]
+
+
 def connect(path: str | Path, read_only: bool = False) -> duckdb.DuckDBPyConnection:
     path = Path(path)
     if str(path) != ":memory:":
@@ -172,8 +207,16 @@ def connect(path: str | Path, read_only: bool = False) -> duckdb.DuckDBPyConnect
     return con
 
 
+MIGRATIONS = [
+    "ALTER TABLE backtest_predictions ADD COLUMN IF NOT EXISTS residual DOUBLE",
+    "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS residual_home_probability DOUBLE",
+]
+
+
 def init_db(con: duckdb.DuckDBPyConnection) -> None:
     for stmt in DDL:
+        con.execute(stmt)
+    for stmt in MIGRATIONS:
         con.execute(stmt)
     con.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", [str(SCHEMA_VERSION)])
 

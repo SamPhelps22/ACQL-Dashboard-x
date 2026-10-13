@@ -90,7 +90,7 @@ def cmd_backtest(cfg, args):
     print(res.pool.round(2).to_string(index=False))
     print("\nBlend vs baselines (mean weekly point difference, 95% CI):")
     for p in res.paired:
-        print(f"  blend - {p['b']:9s}: {p['mean_diff']:+.2f}  [{p['ci_low']:+.2f}, {p['ci_high']:+.2f}]  over {p['weeks']} weeks")
+        print(f"  {p['a']:8s} - {p['b']:9s}: {p['mean_diff']:+.2f}  [{p['ci_low']:+.2f}, {p['ci_high']:+.2f}]  over {p['weeks']} weeks")
     print("\nEx-post market/ML ratio analysis (NOT used for selection):")
     print(res.blend_ratio_analysis.round(4).to_string(index=False))
     if args.report:
@@ -102,6 +102,25 @@ def cmd_backtest(cfg, args):
         res.weekly.to_csv(out.with_name(out.stem + "_weekly.csv"), index=False)
         res.blend_ratio_analysis.to_csv(out.with_name(out.stem + "_blend_ratios.csv"), index=False)
         print(f"\nCSV reports written next to {out}")
+
+
+def cmd_ablation(cfg, args):
+    from .ablation import run_ablation
+    con = _connect(cfg, args)
+    cfg = _cfg_for(con, cfg)
+    table, paired = run_ablation(con, cfg, seasons=args.seasons)
+    pd.set_option("display.width", 220)
+    print("Walk-forward ablation (development seasons, holdout excluded):")
+    print(table.pivot_table(index="variant", columns="model", values="log_loss").round(4).to_string())
+    print("\nAverage weekly pool points:")
+    print(table.pivot_table(index="variant", columns="model", values="avg_weekly_points").round(2).to_string())
+    print("\nPaired weekly point differences (95% CI):")
+    print(paired[["variant", "model", "vs", "mean_diff", "ci_low", "ci_high", "weeks"]].round(2).to_string(index=False))
+    if args.report:
+        out = resolve_path(args.report)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        table.to_csv(out.with_name(out.stem + "_ablation.csv"), index=False)
+        paired.to_csv(out.with_name(out.stem + "_ablation_paired.csv"), index=False)
 
 
 def cmd_train(cfg, args):
@@ -135,6 +154,44 @@ def cmd_predict(cfg, args):
     path = export_csv(picks, Path(args.export or resolve_path(cfg["data"]["export_dir"]) /
                                   f"picks_{s}_wk{w:02d}_{run_id}.csv"), label)
     print(f"CSV: {path}")
+
+
+def cmd_report(cfg, args):
+    from .pipeline import list_runs
+    from .reports import load_reports, to_markdown
+    con = _connect(cfg, args)
+    run_id = args.run_id or list_runs(con).run_id.iloc[0]
+    reps = load_reports(con, run_id)
+    if not reps:
+        raise RuntimeError(f"No reports stored for {run_id}")
+    order = sorted(reps.values(), key=lambda r: -r["confidence_points"])
+    text = f"# Matchup reports - run {run_id}\n\n" + "\n\n".join(to_markdown(r) for r in order)
+    if db.get_meta(con, "data_mode") == "synthetic":
+        text = "**SYNTHETIC DEMO DATA - not real NFL forecasts**\n\n" + text
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"Wrote {args.out}")
+    else:
+        print(text)
+
+
+def cmd_review(cfg, args):
+    from .review import review_week, systematic_check
+    con = _connect(cfg, args)
+    cfg = _cfg_for(con, cfg)
+    r = review_week(con, cfg, args.season, args.week)
+    if "games" not in r:
+        print(r)
+        return
+    print(f"Season {r['season']} week {r['week']} run {r['run_id']}: {r['points']:.1f} pts "
+          f"(market-only sheet {r['market_sheet_points']:.1f}, expected {r['expected_points']:.1f}) "
+          f"over {r['games_graded']} graded games")
+    print(f"Model log loss {r['model']['log_loss']:.4f} / Brier {r['model']['brier']:.4f};  "
+          f"market {r['market']['log_loss']:.4f} / {r['market']['brier']:.4f}")
+    print("Miss causes:", r["miss_causes"] or "none")
+    print(pd.DataFrame(r["games"]).round(3).to_string(index=False))
+    print("\nCalibration of submitted picks across graded weeks:")
+    print(systematic_check(con, cfg).to_string(index=False))
 
 
 def cmd_freeze(cfg, args):
@@ -211,6 +268,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--report", help="write CSV reports with this path prefix, e.g. data/exports/backtest")
     b.set_defaults(fn=cmd_backtest)
 
+    a = sub.add_parser("ablation", help="walk-forward feature-group ablation")
+    a.add_argument("--seasons", type=int, nargs="*")
+    a.add_argument("--report")
+    a.set_defaults(fn=cmd_ablation)
+
     t = sub.add_parser("train", help="train production models")
     t.add_argument("--now")
     t.set_defaults(fn=cmd_train)
@@ -223,6 +285,16 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--export", help="CSV output path")
     pr.add_argument("--use-saved-model", action="store_true")
     pr.set_defaults(fn=cmd_predict)
+
+    rp = sub.add_parser("report", help="print/write matchup reports for a run (default: latest)")
+    rp.add_argument("--run-id")
+    rp.add_argument("--out", help="write markdown to this file")
+    rp.set_defaults(fn=cmd_report)
+
+    rv = sub.add_parser("review", help="post-week review: results vs predictions, miss causes, calibration")
+    rv.add_argument("--season", type=int, required=True)
+    rv.add_argument("--week", type=int, required=True)
+    rv.set_defaults(fn=cmd_review)
 
     f = sub.add_parser("freeze", help="freeze a prediction run as submitted")
     f.add_argument("run_id")

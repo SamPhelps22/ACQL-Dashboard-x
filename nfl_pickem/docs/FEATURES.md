@@ -91,3 +91,60 @@ and they are blank for upcoming games.
 `home_result` is 1 for a home win, 0 for an away win, 0.5 for a tie, and NaN for an unplayed
 game. Ties are excluded from classifier training and from accuracy, log-loss and Brier
 calculations. In pool scoring they follow `pool.tie_rule`.
+
+## Football-intelligence features (`nflpickem/football.py`)
+
+These are built from play-by-play aggregates in `team_game_detail` and `qb_game_stats`.
+
+**Unit definitions (offence; "allowed" is the opponent's offence in that game):**
+
+* **Dropbacks** are passes, sacks and scrambles. Dropback EPA includes sacks.
+* **Designed rushes** exclude QB scrambles.
+* **Early downs** are 1st and 2nd down.
+* **Neutral plays** are plays where the win probability is between 0.10 and 0.90, which
+  removes garbage time.
+* **Red-zone drives** are drives with a snap inside the 20.
+
+**How ratings are computed:**
+
+* **Opponent adjustment.** A game's value is corrected by the opponent's rating *before* that
+  game: `adj_off = off − (opp_def_pre − league_prior)`, and symmetrically for defence.
+* **Rating.** An exponentially weighted mean across games (half-life `football.unit_halflife_games`
+  = 8). Carry-over is halved at each new season. Shrinkage adds `unit_prior_games` (= 3)
+  pseudo-games at the previous season's league mean.
+* **Point-in-time.** States are available at kickoff + 4h and are joined on the cutoff
+  (backward, strict). They are validated through `football_feature_ts`.
+
+| Group | Feature | Definition (home − away unless noted) |
+|---|---|---|
+| `units` | `off_db_epa_adj_diff`, `def_db_epa_adj_diff` | Opponent-adjusted EPA per dropback, gained / allowed |
+| `units` | `off_rush_epa_adj_diff`, `def_rush_epa_adj_diff` | Opponent-adjusted EPA per designed rush, gained / allowed |
+| `units` | `off_neutral_epa_adj_diff`, `def_neutral_epa_adj_diff` | Opponent-adjusted EPA/play in neutral game states |
+| `units` | `off_early_epa_adj_diff`, `def_early_epa_adj_diff` | Opponent-adjusted early-down EPA/play |
+| `units` | `off_sack_rate_adj_diff`, `def_sack_rate_adj_diff` | Sacks per dropback, allowed / generated (pass-protection and pass-rush proxy) |
+| `units` | `off_third_rate_diff`, `def_third_rate_diff` | Third-down conversion rate, achieved / allowed |
+| `units` | `off_rz_td_rate_diff`, `def_rz_td_rate_diff` | Red-zone drives ending in a TD, scored / allowed |
+| `units` | `off_int_rate_diff`, `def_int_rate_diff` | Interceptions per dropback, thrown / forced. Shrinkage regresses these toward league rates |
+| `units` | `off_early_pass_diff` | Early-down dropback rate (pass tendency) |
+| `qb_rating` | `qb_rating_diff` | Listed starter's rating: dropback-weighted EWMA of *his own* EPA/dropback across teams and seasons (half-life 10 games). Shrunk with 150 pseudo-dropbacks toward replacement level (previous-season league mean − 0.10). A QB with no history is assumed to be at replacement level. |
+| `qb_rating` | `home_qb_vs_team`, `away_qb_vs_team` | Starter rating − the team's adjusted dropback EPA. Strongly negative means a backup, or a QB worse than the team's recent passing. |
+| `matchup` | `pass_matchup` | (home pass offence + away pass defence allowed) − (away pass offence + home pass defence allowed) |
+| `matchup` | `rush_matchup` | The same for designed rushing |
+| `matchup` | `protection_matchup` | (away sacks allowed + home sacks generated) − (home sacks allowed + away sacks generated) |
+| `matchup` | `explosive_pass_matchup` | Explosive passing vs explosive passes allowed, home − away |
+
+**Not available from free data:** pressure rate, blitz rate, coverage shells and pass-block win
+rate. nflverse play-by-play has no `was_pressure` field for history; FTN charting covers only
+recent seasons. Sack rate and QB-hit rate are the stand-ins. Coaching and coordinator changes
+are not modelled, because there is no reliable machine-readable source with dates.
+
+Which groups the models use is set by `features.groups`. Only groups that improved the
+walk-forward ablation are enabled; see the model card.
+
+## Market-residual model (`residual`)
+
+`P(home) = sigmoid(a + b·logit(market) + X·w)`, with a ridge penalty on `w` only. The penalty
+is chosen on the previous season from {3, 30, 300, 3000}. With a heavy penalty the model
+collapses to a recalibrated market, so football features move the probability away from the
+market only as far as historical out-of-sample data supports. When a game has no odds, the
+model returns nothing and the blend renormalises across the remaining components.

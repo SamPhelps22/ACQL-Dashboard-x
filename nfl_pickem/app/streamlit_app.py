@@ -287,6 +287,32 @@ def page_matchup() -> None:
               help="How far the blend moved away from the de-vigged market probability")
     c2.caption(f"Odds: {odds_badge(g.odds_status)} · Injury data: {g.injury_status} · Flags: {g.data_flags}")
 
+    from nflpickem.reports import load_reports
+    with connection() as con:
+        rep = load_reports(con, run_id).get(gid)
+    if rep:
+        st.subheader("Matchup report")
+        r1, r2 = st.columns([3, 2])
+        r1.markdown("**Evidence (measured, ranked by historical impact)**")
+        if rep["factors"]:
+            r1.dataframe(pd.DataFrame(rep["factors"])[["factor", "favours", "value", "strength_z", "impact_logodds",
+                                                      "supports_pick"]], hide_index=True, width="stretch")
+        else:
+            r1.caption("No large measured edges between these teams.")
+        r2.markdown("**Injuries / availability**")
+        r2.write("\n".join(f"- {x}" for x in rep["injuries"]) or "None reported.")
+        r2.markdown("**Uncertainties & missing information**")
+        r2.write("\n".join(f"- {x}" for x in rep["uncertainties"]) or "None flagged.")
+        qbs = rep.get("quarterbacks", {})
+        st.caption(f"Starters assumed: {', '.join(f'{k}: {v}' for k, v in qbs.items())} · "
+                   f"cutoff {rep['data']['prediction_cutoff'][:16]} UTC · football features as of "
+                   f"{rep['data']['football_features_as_of'][:16]} · {rep['note']}")
+    unit = unit_comparison(run_id, gid)
+    if unit is not None:
+        st.subheader("Unit & quarterback comparison (opponent-adjusted, point-in-time)")
+        st.dataframe(unit, width="stretch")
+        st.caption("EPA values are per play/dropback, adjusted for opponent strength and shrunk toward league "
+                   "average for small samples. Defensive rows are 'allowed' (lower is better).")
     if not tf.empty:
         t = tf[tf.game_id == gid].set_index("team")
         if len(t) == 2:
@@ -335,11 +361,39 @@ def page_matchup() -> None:
                    "output. They are not evidence of causation.")
 
 
+@st.cache_data(show_spinner=False)
+def _run_features(path: str, run_id: str, game_id: str) -> pd.DataFrame | None:
+    from nflpickem.backtest import features_from_db
+    con = db.connect(path, read_only=True)
+    try:
+        run = con.execute("SELECT data_cutoff FROM prediction_runs WHERE run_id=?", [run_id]).fetchone()
+        cfg = effective_cfg(con)
+        return features_from_db(con, cfg, as_of=pd.Timestamp(run[0]), target_game_ids=[game_id])
+    finally:
+        con.close()
+
+
+def unit_comparison(run_id: str, game_id: str) -> pd.DataFrame | None:
+    f = _run_features(st.session_state["db_path"], run_id, game_id)
+    if f is None or f.empty or "home_off_db_epa_adj" not in f:
+        return None
+    r = f.iloc[0]
+    rows = {"QB rating (EPA/dropback, shrunk)": "qb_rating", "Pass offence EPA/dropback": "off_db_epa_adj",
+            "Pass defence EPA/dropback allowed": "def_db_epa_adj", "Rush offence EPA/rush": "off_rush_epa_adj",
+            "Rush defence EPA/rush allowed": "def_rush_epa_adj", "Sack rate allowed": "off_sack_rate_adj",
+            "Sack rate generated": "def_sack_rate_adj", "Explosive pass rate": "off_xpass_rate",
+            "Explosive passes allowed": "def_xpass_rate", "Third-down conversion": "off_third_rate",
+            "Red-zone TD rate": "off_rz_td_rate", "Interception rate (thrown)": "off_int_rate",
+            "CPOE": "off_cpoe"}
+    data = {r.away_team: [r.get(f"away_{c}") for c in rows.values()],
+            r.home_team: [r.get(f"home_{c}") for c in rows.values()]}
+    return pd.DataFrame(data, index=list(rows)).map(fmt_value)
+
+
 def logistic_factors(run_id: str, game_id: str) -> pd.DataFrame | None:
     import joblib
 
-    from nflpickem.backtest import load_inputs
-    from nflpickem.features import build_features
+    from nflpickem.backtest import features_from_db
     from nflpickem.models.ml import logistic_contributions
     with connection() as con:
         run = con.execute("SELECT model_version, data_cutoff FROM prediction_runs WHERE run_id=?", [run_id]).fetchone()
@@ -347,8 +401,7 @@ def logistic_factors(run_id: str, game_id: str) -> pd.DataFrame | None:
         path = resolve_path(cfg["data"]["model_dir"]) / f"{run[0]}.joblib"
         if not path.exists():
             return None
-        games, stats, odds = load_inputs(con)
-    feats = build_features(games, stats, odds, cfg, as_of=pd.Timestamp(run[1]), target_game_ids=[game_id])
+        feats = features_from_db(con, cfg, as_of=pd.Timestamp(run[1]), target_game_ids=[game_id])
     pm = joblib.load(path)
     c = logistic_contributions(pm.models, feats).iloc[0]
     return pd.DataFrame({"feature": c.index, "contribution": c.values}).sort_values(
@@ -447,6 +500,19 @@ def page_backtest() -> None:
                      hide_index=True, width="stretch")
         st.caption(f"Blend allocation as it would have been submitted: {gr.points_earned.sum():.1f} points earned, "
                    f"{gr.expected_points.sum():.1f} expected, of {gr.confidence_points.sum()} possible.")
+    from nflpickem.ablation import latest_ablation
+    with connection() as con:
+        abl = latest_ablation(con)
+    if abl is not None:
+        table, paired = abl
+        with st.expander("Feature-group ablation (does football intelligence help out-of-sample?)", expanded=True):
+            st.dataframe(table.pivot_table(index="variant", columns="model", values="log_loss").round(4),
+                         width="stretch")
+            st.caption("Log loss by feature-group variant (lower is better), same walk-forward protocol.")
+            st.dataframe(paired[["variant", "model", "vs", "mean_diff", "ci_low", "ci_high", "weeks"]].round(2),
+                         hide_index=True, width="stretch")
+            st.caption("Mean weekly confidence-point difference with 95% CI. A group is enabled only if it "
+                       "improved results in development seasons.")
     ratio = pd.DataFrame(s.get("blend_ratio_analysis", []))
     if len(ratio):
         with st.expander("Ex-post market/ML blend ratio analysis (not used for selection)"):
@@ -500,6 +566,37 @@ def page_tracker() -> None:
             wins = scores[scores.points == scores.groupby("week").points.transform("max")].groupby("participant").size()
             lb["weekly_wins_or_ties"] = wins.reindex(lb.index).fillna(0).astype(int)
             st.dataframe(lb, width="stretch")
+    st.subheader("Weekly review (learning loop)")
+    with connection() as con:
+        wk_runs = con.execute("SELECT DISTINCT season, week FROM prediction_runs ORDER BY 1 DESC, 2 DESC").df()
+    if len(wk_runs):
+        c1, c2 = st.columns(2)
+        rs = c1.selectbox("Review season", sorted(wk_runs.season.unique(), reverse=True), key="rv_s")
+        rw = c2.selectbox("Review week", sorted(wk_runs[wk_runs.season == rs].week.unique(), reverse=True), key="rv_w")
+        from nflpickem.review import review_week, systematic_check
+        with connection() as con:
+            rv = review_week(con, cfg, int(rs), int(rw))
+            cal = systematic_check(con, cfg)
+        if "games" in rv:
+            m = st.columns(4)
+            m[0].metric("Points", f"{rv['points']:.1f}", f"{rv['points'] - rv['market_sheet_points']:+.1f} vs market sheet")
+            m[1].metric("Expected", f"{rv['expected_points']:.1f}")
+            m[2].metric("Log loss (model / market)", f"{rv['model']['log_loss']:.3f} / {rv['market']['log_loss']:.3f}")
+            m[3].metric("Misses", sum(rv["miss_causes"].values()))
+            st.dataframe(pd.DataFrame(rv["games"]), hide_index=True, width="stretch")
+            st.caption("Miss causes: data_issue, lineup_change, market_moved, model_deviation, coin_flip, variance. "
+                       "A single upset is not evidence of a model flaw; only the calibration check below is.")
+        else:
+            st.caption(rv.get("status", ""))
+        if len(cal):
+            st.markdown("**Calibration of submitted picks (all graded weeks)**")
+            st.dataframe(cal, hide_index=True, width="stretch")
+    st.subheader("Prediction snapshots")
+    with connection() as con:
+        snaps = pipeline.list_runs(con)
+    if len(snaps):
+        st.dataframe(snaps[["run_id", "season", "week", "generated_at", "data_cutoff", "model_version", "frozen",
+                            "frozen_at", "data_source"]], hide_index=True, width="stretch")
     st.subheader("Import or enter actual pool scores")
     st.caption("CSV columns: season, week, participant, points, is_me (optional). See samples/pool_scores_template.csv.")
     up = st.file_uploader("Pool scores CSV", type="csv")

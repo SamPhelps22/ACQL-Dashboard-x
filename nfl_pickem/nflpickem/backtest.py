@@ -32,12 +32,12 @@ from .confidence import ScoringRules
 from .evaluation import (calibration_table, favorite_underdog, model_comparison, paired_week_difference,
                          pick_buckets, pool_summary, prob_metrics, simulate_pool)
 from .features import FeatureSettings, build_features, model_feature_columns, validate_point_in_time
-from .models.ensemble import blend, learn_weights, weights_from_config
+from .models.ensemble import COMPONENTS, blend, blend_with_fallback, learn_weights, weights_from_config
 from .models.ml import choose_calibration, tune_and_fit
 
 log = logging.getLogger(__name__)
 
-ALL_MODELS = ["market", "elo", "logistic", "gbm", "ml_only", "blend"]
+ALL_MODELS = ["market", "elo", "logistic", "gbm", "residual", "ml_only", "blend"]
 
 
 @dataclass
@@ -62,6 +62,18 @@ def load_inputs(con) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     stats = con.execute("SELECT * FROM team_game_stats").df()
     odds = con.execute("SELECT * FROM odds_snapshots").df()
     return games, stats, odds
+
+
+def load_football_inputs(con) -> dict:
+    """Optional play-by-play detail tables (empty frames if not ingested yet)."""
+    return {"detail": con.execute("SELECT * FROM team_game_detail").df(),
+            "qbs": con.execute("SELECT * FROM qb_game_stats").df()}
+
+
+def features_from_db(con, cfg: dict, as_of=None, target_game_ids=None) -> pd.DataFrame:
+    games, stats, odds = load_inputs(con)
+    return build_features(games, stats, odds, cfg, as_of=as_of, target_game_ids=target_game_ids,
+                          **load_football_inputs(con))
 
 
 def eval_seasons(cfg: dict, available: list[int], include_holdout: bool,
@@ -94,7 +106,7 @@ def run_backtest(con, cfg: dict, seasons: list[int] | None = None, include_holdo
     fs = FeatureSettings.from_config(cfg["features"])
     cols = model_feature_columns(fs)
     if features is None:
-        features = build_features(games, stats, odds, cfg)
+        features = build_features(games, stats, odds, cfg, **load_football_inputs(con))
     validate_point_in_time(features)
     feats = features[features["game_status"] == "final"]
 
@@ -128,6 +140,7 @@ def run_backtest(con, cfg: dict, seasons: list[int] | None = None, include_holdo
                 cal = choose_calibration([], [], "none")
             test[comp] = cal.transform(test[f"{comp}_raw"])
             cal_info[comp] = cal.method
+        test["residual"] = raw.get("residual", np.full(len(test), np.nan))
         test["market"] = test["market_home_prob"]
         test["elo"] = test["elo_home_prob"]
         test["ml_only"] = blend(test[["elo", "logistic", "gbm"]], {"elo": 1, "logistic": 1, "gbm": 1},
@@ -135,12 +148,13 @@ def run_backtest(con, cfg: dict, seasons: list[int] | None = None, include_holdo
         weights, wsrc = fixed_w, "fixed"
         if blend_cfg["mode"] == "learned" and len(prior) >= 100:
             try:
-                weights, _ = learn_weights(prior, step=float(blend_cfg.get("learned_step", 0.1)),
+                weights, _ = learn_weights(prior, components=blend_cfg.get("learned_components"),
+                                           step=float(blend_cfg.get("learned_step", 0.1)),
                                            space=blend_cfg["space"])
                 wsrc = "learned"
             except ValueError as exc:
                 log.warning("Falling back to fixed weights for %s: %s", S, exc)
-        test["blend"] = blend(test[["market", "elo", "logistic", "gbm"]], weights, blend_cfg["space"])
+        test["blend"] = blend_with_fallback(test[COMPONENTS], weights, blend_cfg["space"])
         test["blend_weights"] = json.dumps({k: round(v, 3) for k, v in weights.items()})
         test["predicted_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
         oos_parts.append(test)
@@ -163,6 +177,7 @@ def run_backtest(con, cfg: dict, seasons: list[int] | None = None, include_holdo
     fav = pd.concat([favorite_underdog(preds, m) for m in ALL_MODELS], ignore_index=True)
     ratio = blend_ratio_analysis(preds, rules, blend_cfg["space"])
     paired = [paired_week_difference(weekly, "blend", b) for b in ("market", "elo", "logistic", "gbm", "ml_only")]
+    paired += [paired_week_difference(weekly, "residual", "market")]
     result = BacktestResult(backtest_id, preds, metrics, by_season, weekly, pool, calib, buckets, fav,
                             ratio, paired, season_log, target)
     if save:
@@ -192,7 +207,7 @@ def blend_ratio_analysis(preds: pd.DataFrame, rules: ScoringRules, space: str) -
 def _store_predictions(con, backtest_id: str, preds: pd.DataFrame) -> None:
     d = preds.rename(columns={"cutoff": "prediction_cutoff"}).assign(backtest_id=backtest_id)
     cols = ["backtest_id", "game_id", "season", "week", "game_type", "kickoff_utc", "prediction_cutoff",
-            "home_team", "away_team", "market", "elo", "logistic", "gbm", "ml_only", "blend", "logistic_raw",
+            "home_team", "away_team", "market", "elo", "logistic", "gbm", "residual", "ml_only", "blend", "logistic_raw",
             "gbm_raw", "odds_status", "blend_weights", "predicted_at"]
     db.upsert(con, "backtest_predictions", d, cols)
 

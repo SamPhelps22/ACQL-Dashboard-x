@@ -14,6 +14,7 @@ MODEL_LABELS = {
     "elo": "Elo only",
     "logistic": "Logistic regression only",
     "gbm": "Gradient boosting only",
+    "residual": "Market + football residual",
     "ml_only": "ML ensemble (no market)",
     "blend": "Market + ML ensemble",
 }

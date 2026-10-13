@@ -35,6 +35,15 @@ prior_season_weight = 0.4    # carry-over of last season's EPA into season-to-da
 use_weather = false          # historical temp/wind are observed, not forecast -> off by default
 use_qb_features = true
 ml_include_market_features = false  # keep ML models independent of the market so blending adds information
+# Football-intelligence feature groups added to the ML models: "units", "qb_rating", "matchup".
+# Only groups that improved walk-forward results are enabled (see docs/MODEL_CARD.md, ablation).
+groups = ["qb_rating"]   # ablation: only QB rating improved out-of-sample results
+
+[football]
+unit_halflife_games = 8      # EWMA half-life for opponent-adjusted unit ratings
+unit_prior_games = 3         # pseudo-games of league average (shrinkage)
+qb_halflife_games = 10       # EWMA half-life (games) for QB EPA/dropback
+qb_prior_dropbacks = 150     # pseudo-dropbacks at replacement level for QB ratings
 
 [models]
 pick_model = "blend"         # probability used to make picks: blend, market, elo, logistic, gbm
@@ -45,9 +54,9 @@ logistic_C_grid = [0.01, 0.03, 0.1, 0.3, 1.0]
 
 [blend]
 # "fixed": use the weights below. "learned": choose weights from prior out-of-sample predictions only.
-mode = "fixed"
+mode = "learned"             # validated choice: weights learned from prior out-of-sample seasons
 space = "probability"        # "probability" (linear) or "logit"
-market_weight = 0.70         # baseline hypothesis: 70% market / 30% ML
+market_weight = 0.70         # used in "fixed" mode and until enough out-of-sample history exists
 ml_weights = { elo = 0.34, logistic = 0.33, gbm = 0.33 }  # split of the ML share
 learned_step = 0.1           # simplex grid step for learned weights
 

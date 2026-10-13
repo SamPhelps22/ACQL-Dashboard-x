@@ -59,3 +59,10 @@ def test_learn_weights_needs_data():
     with pytest.raises(ValueError):
         learn_weights(pd.DataFrame({"market": [0.5], "elo": [0.5], "logistic": [0.5], "gbm": [0.5],
                                     "home_result": [1.0]}))
+
+
+def test_blend_with_fallback_when_market_only_weights_and_no_odds():
+    from nflpickem.models.ensemble import blend_with_fallback
+    p = blend_with_fallback({"market": [np.nan, 0.7], "elo": [0.6, 0.6], "logistic": [0.8, 0.5], "gbm": [0.7, 0.5]},
+                            {"market": 1.0})
+    assert p[0] == pytest.approx(0.7) and p[1] == pytest.approx(0.7)
