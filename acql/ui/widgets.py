@@ -192,10 +192,8 @@ class StatTile(Card):
         # than showing it smaller.
         length = "verylong" if len(value) > 15 else ("long" if len(value) > 9 else "")
         self._restyle(self.value_label, "length", length)
-        # The tabular face is for figures: it lines digits up in a column and
-        # keeps them from shifting as they change. On words - "7-way tie",
-        # "New York Giants" - it just reads like a typewriter, so a headline
-        # with no digit in it gets the page's own face instead.
+        # Whether the headline is a figure or a phrase ("7-way tie", "New York
+        # Giants"), for a theme that wants to set the two differently.
         self._restyle(
             self.value_label, "kind",
             "text" if not any(c.isdigit() for c in value) else "",
@@ -322,9 +320,15 @@ def tile_grid(tiles: list[QWidget], per_row: int = 4, spacing: int = 12) -> QGri
     Six tiles across a laptop screen leaves each one too narrow to hold its
     own number, and the value label quietly elides. Wrapping at four keeps
     every tile readable at any window width.
+
+    The first tile is the page's headline - the leader, the week's winner,
+    your own score - and is marked as the lead so the theme can light it and
+    leave the rest quiet.
     """
     grid = QGridLayout()
     grid.setSpacing(spacing)
+    if tiles and isinstance(tiles[0], StatTile):
+        tiles[0].setProperty("lead", True)
     for index, tile in enumerate(tiles):
         grid.addWidget(tile, index // per_row, index % per_row)
     for column in range(min(per_row, len(tiles))):
@@ -375,12 +379,36 @@ class Banner(QFrame):
         if text != self._messages:
             self._expanded = False          # new notes start folded
         self._messages = text
-        self.icon.setText(icon)
+        self._mark, self._tone = icon, tone
         self.setProperty("tone", tone)
         self.style().unpolish(self)
         self.style().polish(self)
+        self._draw_icon()
         self._render()
         self.show()
+
+    def changeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.StyleChange and getattr(self, "_messages", None):
+            self._draw_icon()
+
+    def _draw_icon(self) -> None:
+        """The mark beside the notes: one of the dashboard's own icons in the
+        banner's colour, or whatever character was asked for."""
+        from . import icons
+        mark, tone = getattr(self, "_mark", "\N{WARNING SIGN}"), getattr(self, "_tone", "warning")
+        name = mark
+        if mark == "\N{WARNING SIGN}":
+            name = "info" if tone == "info" else "alert"
+        p = theme_palette()
+        colour = p.accent if tone == "info" else p.warning
+        if (name, colour) == getattr(self, "_drawn", None):
+            return
+        self._drawn = (name, colour)
+        if name in icons.ICONS and icons.QSvgRenderer is not None:
+            self.icon.setPixmap(icons.pixmap(name, colour, size=17))
+        else:
+            self.icon.setText(mark)
 
     def _flip(self) -> None:
         self._expanded = not self._expanded
@@ -435,6 +463,7 @@ class TableModel(QAbstractTableModel):
         self._bold = bold_columns or set()
         self._bold_font = QFont()
         self._bold_font.setBold(True)
+        self._sorted: tuple[int, bool] = (-1, True)     # column, ascending (mark_sorted)
 
         # Everything below is worked out once, because `data()` is called by
         # Qt for every cell, for half a dozen roles, on every paint, sort and
@@ -455,6 +484,8 @@ class TableModel(QAbstractTableModel):
             "warning": QColor(palette.warning),
             "bad": QColor(palette.critical),
             "muted": QColor(palette.ink_muted),
+            # first place: the gold, as on the name
+            "lead": QColor(palette.brand or palette.accent),
         }
         self._foreground = {
             cell: self._tone_colors.get(tone)
@@ -473,11 +504,28 @@ class TableModel(QAbstractTableModel):
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):  # noqa: N802
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.ToolTipRole:
             return self._headers[section]       # the whole label, when a narrow column elides it
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.TextAlignmentRole:
+            # A heading sits over its column's own edge: figures are set to
+            # the right, so a centred heading floated off to one side of them.
+            return self._align[section] if 0 <= section < len(self._align) else None
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
-            return self._headers[section]
+            label = self._headers[section]
+            if section == self._sorted[0]:
+                # The sort arrow is part of the heading, on the side away from
+                # the column's edge, so it can never sit on top of the label.
+                arrow = "\N{BLACK UP-POINTING SMALL TRIANGLE}" if self._sorted[1] else "\N{BLACK DOWN-POINTING SMALL TRIANGLE}"
+                return f"{arrow} {label}" if section in self._numeric else f"{label} {arrow}"
+            return label
         return section + 1
+
+    def mark_sorted(self, column: int, ascending: bool) -> None:
+        """Say which column the view is sorted by, for the arrow in its heading."""
+        was, self._sorted = self._sorted, (column, ascending)
+        for changed in {was[0], column}:
+            if 0 <= changed < len(self._headers):
+                self.headerDataChanged.emit(Qt.Orientation.Horizontal, changed, changed)
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
@@ -727,6 +775,10 @@ def make_table(
     # for a seventeen-column table of thirty-five coaches is the difference
     # between a page that opens and a window that stops answering.
     header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    # The model draws the sort arrow into the heading itself (mark_sorted).
+    header.sortIndicatorChanged.connect(
+        lambda column, order: model.mark_sorted(column, order == Qt.SortOrder.AscendingOrder)
+    )
     header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
     view.setSortingEnabled(True)
     if sort_column is not None:
@@ -766,6 +818,13 @@ def section(title: str, subtitle: str = "") -> QWidget:
     heading = QLabel(title.upper())
     heading.setObjectName("PageTitle")
     layout.addWidget(heading)
+    # the gold rule under the name, as under the dashboard's own in the sidebar
+    rule = QFrame()
+    rule.setObjectName("TitleRule")
+    rule.setFixedSize(46, 3)
+    layout.addSpacing(3)
+    layout.addWidget(rule)
+    layout.addSpacing(5)
     if subtitle:
         sub = QLabel(subtitle)
         sub.setObjectName("PageSubtitle")

@@ -172,18 +172,25 @@ def league(palette: Palette) -> Palette:
     return LEAGUE.get(palette.name, LEAGUE_DARK)
 
 FONT_STACK = '"Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif'
-# Numbers read better when they line up in a column, which the UI font's
-# proportional digits refuse to do. Every figure in a tile or a table is set
-# in this instead, so a column of them is scannable.
-NUMERIC_STACK = '"SF Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace'
+# The dashboard's own voice: the squared, engineered face of a road sign or a
+# scoreboard, for the name, page titles, labels and the one big number a tile
+# exists to show. It ships with Windows; where it is missing the UI face
+# stands in and nothing moves.
+DISPLAY_STACK = '"Bahnschrift", "Segoe UI Variable Display", "Segoe UI", sans-serif'
+# Figures that sit in a column or among words - chips, label/value lists. The
+# UI face's digits are all one width, so a column of them lines up without
+# the typewriter look a monospaced face gave "3-way tie" and "$106.50".
+NUMERIC_STACK = FONT_STACK
+# A real monospace, for the one place that shows code: a failure's details.
+MONO_STACK = '"Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace'
 
 # One scale, used everywhere. Sizes were ad hoc before - 13, 13.5, 12.5, 12,
 # 11.5 all appeared - which is invisible on one page and incoherent across
 # twelve. Each step is about 1.15x the one below it, and the names say what
 # the step is for rather than how big it is.
 TYPE = {
-    "display": 30,     # the one number a tile exists to show
-    "title": 22,       # page titles
+    "display": 32,     # the one number a tile exists to show
+    "title": 24,       # page titles
     "heading": 16,     # a name inside a card
     "body": 13,        # everything you read
     "label": 12,       # column headings, card titles
@@ -279,9 +286,11 @@ def stylesheet(p: Palette) -> str:
     # the light theme's green - whichever reads.
     on_accent = "#05070a" if _bright(p.accent) else "#ffffff"
     brand = p.brand or p.accent
-    glow = mix(p.accent, p.raised, 0.07)      # the accent, barely there: a tile's wash
     lit = mix(p.accent, p.surface, 0.26)      # the chosen place, at the edge the bar is on
     rule = mix(p.accent, p.raised, 0.40)      # a hairline in the accent
+    edge = mix(p.ink, p.surface, 0.09)        # a panel's outline: there, not drawn
+    sheen = mix(p.ink, p.surface, 0.035)      # the light a panel catches along its top
+    gilt = mix(brand, p.raised, 0.10)         # the gold, barely there: the lead tile's wash
     t = TYPE
     s = SPACE
     r = RADIUS
@@ -322,14 +331,16 @@ def stylesheet(p: Palette) -> str:
     /* The name: OPERATION in light capitals, SUNDAY under it in gold. */
     #BrandTop {{
         color: {p.ink_secondary};
+        font-family: {DISPLAY_STACK};
         font-size: 10px;
         font-weight: 500;
         letter-spacing: 5px;
     }}
     #SidebarTitle {{
         color: {brand};
-        font-size: 19px;
-        font-weight: 800;
+        font-family: {DISPLAY_STACK};
+        font-size: 21px;
+        font-weight: 700;
         letter-spacing: 3.4px;
     }}
     #BrandLine {{
@@ -393,34 +404,44 @@ def stylesheet(p: Palette) -> str:
     #Sidebar QPushButton:disabled {{ color: {p.ink_muted}; }}
 
     /* ---- cards & headings ---- */
+    /* A panel catches a little light along its top edge and has an outline
+       you sense rather than see - depth from the surface, not from a box. */
     #Card {{
-        background: {p.surface};
-        border: 1px solid {p.grid};
-        border-radius: 8px;
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                    stop:0 {sheen}, stop:0.12 {p.surface}, stop:1 {p.surface});
+        border: 1px solid {edge};
+        border-radius: {r["card"]}px;
     }}
-    /* Headline numbers sit one step above the content cards, on a panel lit
-       from its top left corner, with the accent's line across the top. */
+    /* Headline numbers sit one step above the content cards. They are quiet
+       by default: the first tile of a row is the page's headline and is the
+       only one lit (in the gold), so a row of six has somewhere to start. */
     #StatTile {{
-        background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {glow}, stop:0.5 {p.raised});
-        border: 1px solid {p.grid};
-        border-top: 2px solid {p.accent};
-        border-radius: 8px;
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {mix(p.ink, p.raised, 0.04)}, stop:0.5 {p.raised});
+        border: 1px solid {edge};
+        border-radius: {r["card"]}px;
+    }}
+    #StatTile[lead="true"] {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {gilt}, stop:0.6 {p.raised});
+        border: 1px solid {mix(brand, p.raised, 0.28)};
+        border-top: 2px solid {brand};
     }}
     /* What a tile measures, as an instrument labels its dials. */
     #StatTile #CardTitle {{
         color: {p.ink_muted};
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 1.5px;
+        font-family: {DISPLAY_STACK};
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1.6px;
         border: none;
         padding: 0;
     }}
+    #StatTile[lead="true"] #CardTitle {{ color: {brand}; }}
     /* An award tile is a stat tile with a hairline down its left edge tinted
        by tone, so a good or bad award reads at a glance without the text
        itself having to be coloured. */
     #AwardTile {{
         background: {p.raised};
-        border: 1px solid {p.grid};
+        border: 1px solid {edge};
         border-left: 3px solid {p.baseline};
         border-radius: 10px;
     }}
@@ -452,7 +473,7 @@ def stylesheet(p: Palette) -> str:
        pick stands - credited now, not, or a game on you have no pick in. */
     #GameCard {{
         background: {p.raised};
-        border: 1px solid {p.grid};
+        border: 1px solid {edge};
         border-left: 4px solid {p.baseline};
         border-radius: 10px;
     }}
@@ -469,9 +490,9 @@ def stylesheet(p: Palette) -> str:
     #GameTeam {{ font-size: {t["body"] + 1}px; font-weight: 600; color: {p.ink}; }}
     #GameTeam[faded="true"] {{ color: {p.ink_muted}; font-weight: 500; }}
     #GameScore {{
-        font-family: {NUMERIC_STACK};
+        font-family: {DISPLAY_STACK};
         font-size: {t["title"]}px;
-        font-weight: 700;
+        font-weight: 600;
         color: {p.ink};
     }}
     #GameScore[faded="true"] {{ color: {p.ink_muted}; }}
@@ -481,33 +502,41 @@ def stylesheet(p: Palette) -> str:
     #Ball {{ font-size: {t["label"]}px; }}
 
     #PageTitle {{
+        font-family: {DISPLAY_STACK};
         font-size: {t["title"]}px;
-        font-weight: 700;
-        letter-spacing: 3px;
+        font-weight: 600;
+        letter-spacing: 2.4px;
         color: {p.ink};
     }}
+    /* The gold rule under a page's name - the same line the sidebar draws
+       under the dashboard's own. */
+    #TitleRule {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {brand}, stop:1 {mix(brand, p.plane, 0.30)});
+        border: none;
+        border-radius: 1px;
+    }}
     #PageSubtitle {{ font-size: {t["body"]}px; color: {p.ink_muted}; }}
-    /* A card's title, behind a tick of the accent. */
+    /* A card's title, behind a tick of the gold: gold names things, the blue
+       is kept for what is chosen or can be pressed. */
     #CardTitle {{
-        font-size: {t["label"]}px;
-        font-weight: 700;
-        letter-spacing: 0.3px;
+        font-family: {DISPLAY_STACK};
+        font-size: {t["body"]}px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
         color: {p.ink};
-        border-left: 2px solid {p.accent};
+        border-left: 2px solid {brand};
         padding-left: 8px;
     }}
     #StatValue {{
-        font-family: {NUMERIC_STACK};
+        font-family: {DISPLAY_STACK};
         font-size: {t["display"]}px;
-        font-weight: 700;
+        font-weight: 600;
         color: {p.ink};
     }}
     /* A tile whose headline is a name rather than a number needs the room
        more than it needs the size, so it steps down instead of eliding. */
     #StatValue[length="long"] {{ font-size: {t["title"]}px; }}
-    #StatValue[length="verylong"] {{ font-size: {t["heading"]}px; }}
-    /* And a headline with no digit in it is a phrase, not a figure. */
-    #StatValue[kind="text"] {{ font-family: {FONT_STACK}; letter-spacing: -0.2px; }}
+    #StatValue[length="verylong"] {{ font-size: {t["heading"] + 1}px; }}
     #StatDetail {{ font-size: {t["caption"]}px; color: {p.ink_secondary}; }}
     #StatDetail[tone="good"] {{ color: {p.good}; font-weight: 600; }}
     #StatDetail[tone="bad"] {{ color: {p.critical}; font-weight: 600; }}
@@ -549,6 +578,9 @@ def stylesheet(p: Palette) -> str:
         font-size: 13px;
     }}
     QTableView::item {{ padding: 5px 8px; border: none; }}
+    /* A table inside a card is already framed by the card: a second outline
+       round it made every table a box in a box. */
+    #Card QTableView {{ border: none; border-radius: 0px; }}
     /* There was a hover rule here that lifted the row under the cursor. It
        reads well and costs too much: a `::item` state rule makes Qt style and
        repaint cells one at a time as the mouse moves across a table, and with
@@ -557,22 +589,23 @@ def stylesheet(p: Palette) -> str:
     QHeaderView::section {{
         background: {p.raised};
         color: {p.ink_muted};
-        padding: 9px 10px;
+        padding: 9px 8px;
         border: none;
         border-bottom: 1px solid {rule};
-        font-size: 11.5px;
-        font-weight: 700;
+        /* the narrower cut: a heading is the first thing to run out of room */
+        font-family: "Bahnschrift SemiCondensed", {DISPLAY_STACK};
+        font-size: 12.5px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
     }}
     QHeaderView::section:hover {{ color: {p.ink}; background: {mix(p.ink, p.raised, 0.05)}; }}
-    /* The sort arrow sits at the right of its heading. Left to the Windows 11
-       style it was drawn centred ABOVE the heading text, where it read as a
-       stray mark floating over every table. */
+    /* Qt's own sort arrow is not drawn: it has no room of its own, so over a
+       heading set to its column's edge it sat on top of the label. The arrow
+       is written into the heading instead (TableModel.mark_sorted). */
     QHeaderView::up-arrow, QHeaderView::down-arrow {{
-        subcontrol-origin: padding;
-        subcontrol-position: center right;
-        width: 9px;
-        height: 9px;
-        right: 2px;
+        image: none;
+        width: 0px;
+        height: 0px;
     }}
     /* The sorted column keeps a hairline under it, which is quieter than Qt's
        default arrow and survives a narrow column. */
@@ -588,7 +621,8 @@ def stylesheet(p: Palette) -> str:
         padding: 7px 15px;
         font-size: 13px;
     }}
-    QPushButton:hover, QPushButton:focus {{ border-color: {p.accent}; }}
+    QPushButton:hover {{ background: {mix(p.ink, p.raised, 0.06)}; border-color: {p.accent}; }}
+    QPushButton:focus {{ border-color: {p.accent}; }}
     QPushButton:pressed {{ background: {pressed}; }}
     QPushButton:disabled {{ color: {p.ink_muted}; border-color: {p.grid}; }}
     QPushButton#Primary {{
@@ -677,17 +711,30 @@ def stylesheet(p: Palette) -> str:
 
     /* ---- the tabs above a grouped page (groups.py) ---- */
     #GroupTabs {{
-        background: {p.plane};
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {p.surface}, stop:1 {p.plane});
         border-bottom: 1px solid {p.grid};
+    }}
+    /* Which of the sidebar's places these tabs belong to. */
+    #GroupKicker {{
+        color: {brand};
+        font-family: {DISPLAY_STACK};
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 2.2px;
+        padding: 3px 14px 0 0;
+        border-right: 1px solid {p.baseline};
+        margin: 9px 10px 9px 0;
     }}
     QTabBar#GroupTabBar {{ background: transparent; }}
     QTabBar#GroupTabBar::tab {{
-        font-size: {t["label"]}px;
-        font-weight: 700;
-        letter-spacing: 1.2px;
-        padding: 10px 18px 9px 18px;
+        font-family: {DISPLAY_STACK};
+        font-size: {t["body"]}px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        padding: 10px 16px 9px 16px;
         margin-right: 4px;
     }}
+    QTabBar#GroupTabBar::tab:hover {{ background: {hover}; }}
 
     QScrollArea {{ border: none; background: {p.plane}; }}
     QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
@@ -749,12 +796,18 @@ def stylesheet(p: Palette) -> str:
     #StatePanel, #StateColumn {{ background: {p.plane}; }}
     #StateIcon {{ font-size: 40px; color: {p.ink_muted}; }}
     #StateIcon[tone="bad"] {{ color: {p.critical}; }}
-    #StateTitle {{ font-size: {t["title"]}px; font-weight: 700; color: {p.ink}; }}
+    #StateTitle {{
+        font-family: {DISPLAY_STACK};
+        font-size: {t["title"] - 2}px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        color: {p.ink};
+    }}
     #StateMessage {{ font-size: {t["body"]}px; color: {p.ink_secondary}; }}
     #StateProgress {{ background: {p.grid}; border-radius: 3px; }}
     #StateProgress::chunk {{ background: {p.accent}; border-radius: 3px; }}
     #StateDetails {{
-        font-family: {NUMERIC_STACK};
+        font-family: {MONO_STACK};
         font-size: {t["caption"]}px;
         color: {p.ink_secondary};
     }}

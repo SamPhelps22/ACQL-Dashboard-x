@@ -299,6 +299,7 @@ class NextWeekPage(Page):
         self.tile_dogs = StatTile("Underdogs vs the Line")
         self._tiles = (self.tile_slate, self.tile_expected, self.tile_best,
                        self.tile_edge, self.tile_dogs)
+        self.tile_slate.setProperty("lead", True)       # the row's headline, as tile_grid marks it
         for tile in self._tiles:
             tiles.addWidget(tile, 2 if tile is self.tile_best else 1)
         self.layout_.addLayout(tiles)

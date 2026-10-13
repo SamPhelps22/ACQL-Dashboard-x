@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QStackedWidget, QTabBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QStackedWidget, QTabBar, QVBoxLayout, QWidget
 
 from .pages.base import Page
 
@@ -60,9 +60,13 @@ class PageGroup(QWidget):
         if len(self.pages) > 1:
             holder = QWidget()
             holder.setObjectName("GroupTabs")
-            row = QVBoxLayout(holder)
-            row.setContentsMargins(18, 8, 18, 0)
+            row = QHBoxLayout(holder)
+            row.setContentsMargins(22, 6, 18, 0)
             row.setSpacing(0)
+            # which of the sidebar's places these tabs are the pages of
+            kicker = QLabel(spec.title.upper())
+            kicker.setObjectName("GroupKicker")
+            row.addWidget(kicker)
             self.tabs = QTabBar()
             self.tabs.setObjectName("GroupTabBar")
             self.tabs.setDrawBase(False)
@@ -72,6 +76,7 @@ class PageGroup(QWidget):
                 self.tabs.setTabToolTip(index, page.subtitle or label)
             self.tabs.currentChanged.connect(self._on_tab)
             row.addWidget(self.tabs)
+            row.addStretch(1)
             layout.addWidget(holder)
 
         self.stack = QStackedWidget()

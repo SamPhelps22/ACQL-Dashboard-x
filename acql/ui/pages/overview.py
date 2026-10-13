@@ -11,6 +11,7 @@ from ...config import WEEKS_IN_SEASON
 from ...models import Player, Season
 from ...wording import plural as _plural
 from ..charts import BarChart, HistogramChart
+from ..theme import mix
 from ..widgets import Banner, Card, ElidedLabel, StatTile, section, tile_grid
 from .base import Page
 
@@ -246,8 +247,9 @@ class OverviewPage(Page):
         # The leader takes the accent, the rest a single quiet hue - colour
         # here marks position, not identity.
         best = top[0].wins
+        quiet = mix(self.palette.series[0], self.palette.surface, 0.42)
         colors = [
-            self.palette.series[0] if p.wins == best else self.palette.series[2]
+            self.palette.series[0] if p.wins == best else quiet
             for p in top
         ]
         self.leader_chart.plot(

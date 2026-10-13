@@ -97,6 +97,40 @@ ICONS = {
         '<circle cx="12" cy="12" r="8.2"/><ellipse cx="12" cy="12" rx="3.5" ry="8.2"/><path d="M3.8 12h16.4"/>'
     ),
     "theme": '<circle cx="12" cy="12" r="7.6"/><path d="M12 4.4a7.6 7.6 0 0 1 0 15.2z" fill="{colour}"/>',
+    # something wants a look
+    "alert": (
+        '<path d="M12 4.2L21 19.4H3z"/><path d="M12 10.2v4.4"/>'
+        '<circle cx="12" cy="16.9" r=".6" fill="{colour}" stroke="none"/>'
+    ),
+    # a note
+    "info": (
+        '<circle cx="12" cy="12" r="8.2"/><path d="M12 11.2v5"/>'
+        '<circle cx="12" cy="8" r=".6" fill="{colour}" stroke="none"/>'
+    ),
+    # nothing loaded yet: the data folder
+    "folder": '<path d="M3.6 7.2V18a1.6 1.6 0 0 0 1.6 1.6h13.6A1.6 1.6 0 0 0 20.4 18V9.4a1.6 1.6 0 0 0-1.6-1.6h-6.6L10 5.4H5.2a1.6 1.6 0 0 0-1.6 1.8z"/>',
+    # marks, and the season's superlatives (pages/overview.py, pages/readiness.py)
+    "check": '<path d="M5 12.6l4.6 4.6L19 7.4"/>',
+    "cross": '<path d="M6.4 6.4l11.2 11.2"/><path d="M17.6 6.4L6.4 17.6"/>',
+    "coin": '<circle cx="12" cy="12" r="8.2"/><path d="M14.6 9.6c-.5-.9-1.5-1.4-2.6-1.4-1.5 0-2.7.7-2.7 1.9s1 1.6 2.7 1.9 2.7.7 2.7 1.9-1.2 1.9-2.7 1.9c-1.1 0-2.1-.5-2.6-1.4"/><path d="M12 6.6v1.6"/><path d="M12 15.8v1.6"/>',
+    "banknote": '<rect x="3" y="6.6" width="18" height="10.8" rx="1.6"/><circle cx="12" cy="12" r="2.6"/><path d="M6.2 9.8v4.4"/><path d="M17.8 9.8v4.4"/>',
+    "hourglass": '<path d="M7 3.6h10"/><path d="M7 20.4h10"/><path d="M8 3.6v3.2c0 2 4 3.4 4 5.2s-4 3.2-4 5.2v3.2"/><path d="M16 3.6v3.2c0 2-4 3.4-4 5.2s4 3.2 4 5.2v3.2"/>',
+    "star": '<path d="M12 3.6l2.5 5.3 5.8.7-4.3 4 1.1 5.8L12 16.6l-5.1 2.8 1.1-5.8-4.3-4 5.8-.7z"/>',
+    "flame": '<path d="M12 3.4c.6 3.2 5 5.2 5 10a5 5 0 0 1-10 0c0-1.8.8-3.2 1.8-4.2.2 1.6 1 2.4 1.8 2.6-.4-3 .2-6.2 1.4-8.4z"/>',
+    "bolt": '<path d="M13.2 3.2L5.6 13.4h5.2l-1 7.4 7.6-10.2h-5.2z"/>',
+    "snowflake": '<path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M19.8 7.5l-15.6 9"/><path d="M9.8 4.6L12 6.6l2.2-2"/><path d="M9.8 19.4l2.2-2 2.2 2"/>',
+    "crown": '<path d="M4 17.6L3 8l5 4 4-6.4 4 6.4 5-4-1 9.6z"/><path d="M4.6 20.2h14.8"/>',
+    "medal": '<circle cx="12" cy="14.6" r="5.2"/><path d="M8.6 10.4L6 3.6h4l2 4.4"/><path d="M15.4 10.4L18 3.6h-4l-2 4.4"/>',
+    "sprout": '<path d="M12 20.4v-8"/><path d="M12 12.4c0-3.4-2.4-5.4-6.4-5.4 0 3.6 2.4 5.6 6.4 5.4z"/><path d="M12 10c0-3 2.2-5 6.4-5 0 3.4-2.4 5.2-6.4 5z"/>',
+    "trend-up": '<path d="M3.6 17l5.6-5.6 3.6 3.6 7.4-7.6"/><path d="M15.4 7.2h4.8V12"/>',
+    "trend-down": '<path d="M3.6 7l5.6 5.6 3.6-3.6 7.4 7.6"/><path d="M15.4 16.8h4.8V12"/>',
+    "skull": '<path d="M5.4 11.2a6.6 6.6 0 0 1 13.2 0c0 2.2-.9 3.7-2.2 4.7v2.9a1.4 1.4 0 0 1-1.4 1.4H9a1.4 1.4 0 0 1-1.4-1.4v-2.9c-1.3-1-2.2-2.5-2.2-4.7z"/><circle cx="9.4" cy="11.6" r="1.3"/><circle cx="14.6" cy="11.6" r="1.3"/><path d="M10.6 20v-2.2"/><path d="M13.4 20v-2.2"/>',
+    "dice": '<rect x="4.4" y="4.4" width="15.2" height="15.2" rx="2.6"/><circle cx="8.6" cy="8.6" r=".9" fill="{colour}" stroke="none"/><circle cx="15.4" cy="15.4" r=".9" fill="{colour}" stroke="none"/><circle cx="12" cy="12" r=".9" fill="{colour}" stroke="none"/><circle cx="15.4" cy="8.6" r=".9" fill="{colour}" stroke="none"/><circle cx="8.6" cy="15.4" r=".9" fill="{colour}" stroke="none"/>',
+    "shield": '<path d="M12 3.4l7 2.6v5.4c0 4.4-2.8 7.6-7 9.2-4.2-1.6-7-4.8-7-9.2V6z"/>',
+    "shield-check": '<path d="M12 3.4l7 2.6v5.4c0 4.4-2.8 7.6-7 9.2-4.2-1.6-7-4.8-7-9.2V6z"/><path d="M8.8 11.8l2.3 2.4 4.2-4.6"/>',
+    "down": '<path d="M5 7.4h14L12 18.6z"/>',
+    "anchor": '<circle cx="12" cy="5.6" r="2"/><path d="M12 7.6v12.6"/><path d="M8.4 11h7.2"/><path d="M4.6 13.6a7.4 7.4 0 0 0 14.8 0"/>',
+    "split": '<path d="M12 20.4v-7.6"/><path d="M12 12.8L5.6 6.4"/><path d="M12 12.8l6.4-6.4"/><path d="M5.4 10.6V6.2h4.4"/><path d="M18.6 10.6V6.2h-4.4"/>',
     # Operation Sunday's own mark: the ball in the sights
     "mark": (
         '<circle cx="12" cy="12" r="8.6"/>'

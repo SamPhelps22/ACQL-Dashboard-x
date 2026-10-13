@@ -230,6 +230,9 @@ class StandingsPage(Page):
                     "good" if lined.rate > pool_rate else "bad" if lined.rate < pool_rate else "muted"
                 )
             tones[(r, 7)] = "good" if net > 0 else ("bad" if net < 0 else "muted")
+            if player.pos == 1:
+                # First place wears the gold: its number and its name.
+                tones[(r, 0)] = tones[(r, NAME_COLUMN)] = "lead"
             if move_tone:
                 tones[(r, 10)] = move_tone
             if won > 0:
