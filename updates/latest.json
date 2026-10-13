@@ -1,0 +1,8 @@
+{
+ "version": "2.17.0",
+ "file": "ACQL-Dashboard-2.17.0-update.zip",
+ "sha256": "24a1834495dc542bc3df3c400c25add6e7fc974974e094851ae73ecd1f1da4a9",
+ "size": 1412243,
+ "notes": "Deadeye's weekly challenger test in the Model Lab, a locked private page for your card, faster pages, a record written before kickoff, and the code sorted into four folders.",
+ "commit": "d6f0ad1f3172441d8d7e635b0af4266a237b2228"
+}
