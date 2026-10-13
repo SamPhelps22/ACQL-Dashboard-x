@@ -55,6 +55,11 @@ class Loader(QThread):
                 )
         except Exception as exc:                      # noqa: BLE001
             season.warnings.append(f"Couldn't read the predictions file: {exc}")
+        try:                                          # starting QBs for Game Day (qbcheck.py)
+            from .. import qbcheck
+            qbcheck.refresh(results.season_year(season))
+        except Exception:                             # noqa: BLE001 - optional, never blocks a load
+            pass
         self.finished_ok.emit(season)
 
 

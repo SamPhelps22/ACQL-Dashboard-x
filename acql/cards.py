@@ -208,9 +208,11 @@ def record_model(season: Season, week: int, brief) -> bool:
     one would flatter it. The card from before the sheet arrived stands.
     """
     if brief is None or not brief.choices or week_started(season, week):
+        _close_archive(season, week)
         return False
     from . import oddslock
     if oddslock.locked_for(season, week):
+        _close_archive(season, week)
         return False                      # kicked off: the card stands as it was
     plan = getattr(brief, "plan", None)
     if plan is not None and getattr(plan, "field_known", False):
@@ -219,6 +221,15 @@ def record_model(season: Season, week: int, brief) -> bool:
         return False                      # the crowd was counted off the real sheet
     _put(week, "model", Snapshot.of(brief))
     return True
+
+
+def _close_archive(season: Season, week: int) -> None:
+    """Once the week is under way, archive Deadeye's card and its lines (archive.py)."""
+    try:
+        from . import archive, predictions, results
+        archive.close_week(results.season_year(season), week, model(week), predictions.load(week)[0])
+    except Exception:  # noqa: BLE001 - archiving must never break the page
+        pass
 
 
 # ---- what changed -------------------------------------------------------------

@@ -503,5 +503,125 @@ def main() -> int:
     return 0 if result.wasSuccessful() else 1
 
 
+class _ScratchStore(unittest.TestCase):
+    """Points the app's database at a temporary file for the test."""
+
+    def setUp(self):
+        from acql import store
+        self._store = store
+        self._dir = Path(tempfile.mkdtemp(prefix="acql-test-"))
+        self._previous = store._OVERRIDE
+        store.use(self._dir / "test.db")
+
+    def tearDown(self):
+        self._store.use(self._previous)
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+
+SCHEDULE_CSV = """season,game_type,week,away_team,home_team,away_score,home_score,away_qb_name,home_qb_name,spread_line
+2026,REG,1,CHI,MIN,20,24,Caleb Williams,J.J. McCarthy,3.0
+2026,REG,2,CHI,DET,17,30,Case Keenum,Jared Goff,6.5
+2026,REG,3,GB,CHI,21,14,Jordan Love,Case Keenum,-3.0
+2026,REG,4,CHI,LA,10,27,Case Keenum,Matthew Stafford,7.5
+2026,REG,5,BAL,CHI,,,Lamar Jackson,Tyson Bagent,-2.5
+"""
+INJURY_CSV = """season,week,team,position,full_name,report_status
+2026,4,BAL,QB,Lamar Jackson,Out
+2026,5,CHI,QB,Caleb Williams,Questionable
+"""
+
+
+class TestQbCheck(_ScratchStore):
+    def _fetch(self, url):
+        return INJURY_CSV if "injuries" in url else SCHEDULE_CSV
+
+    def test_usual_starter_and_change(self):
+        from acql import qbcheck
+        rows = qbcheck.schedule_rows(SCHEDULE_CSV, 2026)
+        self.assertEqual(qbcheck.usual_starter(rows, "chi", 5), "Case Keenum")
+        self.assertEqual(qbcheck.usual_starter(rows, "lar", 5), "Matthew Stafford")   # nflverse LA -> pool lar
+
+    def test_check_flags_and_reads_only_the_kept_copy(self):
+        from acql import qbcheck
+        empty = qbcheck.check(2026, 5, [(1, "bal", "chi")])          # nothing kept yet, no network
+        self.assertFalse(empty.available)
+        self.assertTrue(qbcheck.refresh(2026, fetch=self._fetch))
+        got = qbcheck.check(2026, 5, [(1, "bal", "chi")])
+        game = got.games[1]
+        self.assertTrue(game.home.changed)                            # Bagent, not Keenum
+        self.assertIn("Caleb Williams: Questionable", game.home.injured)
+        self.assertEqual(game.away.last_week, "Out")                  # Lamar Out last week, no report yet
+        self.assertTrue(game.worrying)
+        self.assertIn("Tyson Bagent expected to start", game.note())
+
+    def test_offline_refresh_is_harmless(self):
+        from acql import qbcheck
+        import urllib.error
+
+        def down(url):
+            raise urllib.error.URLError("offline")
+        self.assertFalse(qbcheck.refresh(2026, fetch=down))
+
+
+class TestArchive(_ScratchStore):
+    def test_files_kept_once_and_week_closed_once(self):
+        from acql import archive, predictions
+        src = self._dir / "nflpredictions week 5.csv"
+        src.write_text("line,road,home\n3,Chicago,Minnesota\n")
+        games = [predictions.Forecast("Chicago", "Minnesota", market=3.0, opinions=(2.0, 4.0))]
+        self.assertTrue(archive.keep_file(2026, 5, src, games))
+        self.assertFalse(archive.keep_file(2026, 5, src, games))      # same file again: kept once
+        src.write_text("line,road,home\n3.5,Chicago,Minnesota\n")
+        self.assertTrue(archive.keep_file(2026, 5, src, games))       # a changed file is a new entry
+        rec = archive.record(2026, 5)
+        self.assertEqual(len(rec["files"]), 2)
+        self.assertTrue(Path(rec["files"][0]["copy"]).exists())
+        self.assertTrue(archive.close_week(2026, 5, None, games))
+        self.assertFalse(archive.close_week(2026, 5, None, []))       # never rewritten
+        self.assertEqual(archive.record(2026, 5)["final"]["lines"][0]["market"], 3.0)
+        self.assertIn("2026-05", archive.describe())
+
+
+class TestLineHabit(unittest.TestCase):
+    def _season(self, rows):
+        from acql.models import Game, Season, Week
+        games = [Game(i + 1, home=h, away=a, line=line, line_favourite=fav)
+                 for i, (a, h, line, fav) in enumerate(rows)]
+        return Season(weeks={1: Week(number=1, games=games)})
+
+    def test_rule_and_verdict(self):
+        from acql import linehabit
+        from acql.predictions import Forecast
+        self.assertEqual(linehabit.current_rule(6.5), 7.0)
+        self.assertEqual(linehabit.current_rule(7.0), 8.0)
+        self.assertIsNone(linehabit.current_rule(6.0))
+        rows = [("Chicago", "Detroit", 8.0, "Detroit"), ("Miami", "Buffalo", 11.0, "Buffalo"),
+                ("Denver", "Kansas City", None, ""), ("Tennessee", "Houston", None, "")]
+        forecasts = {1: [Forecast("Chicago", "Detroit", market=7.0), Forecast("Miami", "Buffalo", market=10.5),
+                         Forecast("Denver", "Kansas City", market=9.5), Forecast("Tennessee", "Houston", market=3.0)]}
+        h = linehabit.measure(self._season(rows), 2026, forecasts, closing={})
+        self.assertEqual((h.lined, h.exact), (2, 2))
+        self.assertEqual(len(h.skipped_big), 1)                       # KC favoured by 9.5, no line
+        self.assertFalse(h.drifting)
+        self.assertIn("too few to judge", h.verdict)
+
+    def test_drift_detected(self):
+        from acql import linehabit
+        from acql.predictions import Forecast
+        teams = [("T%02d" % i, "H%02d" % i) for i in range(20)]
+        rows = [(a, h, 10.0, h) for a, h in teams]                    # always spread + 2.5
+        forecasts = {1: [Forecast(a, h, market=7.5) for a, h in teams]}
+        import acql.predictions as P
+        original = P.team_code
+        P.team_code = lambda name: str(name).lower()
+        try:
+            h = linehabit.measure(self._season(rows), 2026, forecasts, closing={})
+        finally:
+            P.team_code = original
+        self.assertEqual(h.lined, 20)
+        self.assertTrue(h.drifting)
+        self.assertIn("shifted", h.verdict)
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

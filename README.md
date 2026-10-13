@@ -159,6 +159,46 @@ next opens the file.
 Close the workbook in Excel before saving, then reopen it so Excel recalculates,
 save it there, and press **Refresh**.
 
+## Keeping Deadeye honest
+
+Three checks run on their own. Each feeds the pages and can also be run from the project folder.
+
+**The weekly archive** (`acql/archive.py`, `python -m acql.archive` lists it)
+
+* **Predictions files:** every new Prediction Tracker file the dashboard reads is kept, once per
+  distinct file. That means a byte-for-byte copy in `data/archive/<season>/` plus its rows in
+  the database.
+* **Closing the week:** at the week's first kickoff, the record is closed with Deadeye's card as
+  it stood and the lines it used.
+* **Why:** after a season this lets Deadeye's blend of computer models with the market be
+  replayed against a plain betting-line card. Those files aren't kept anywhere else.
+
+**The starting-QB check** (`acql/qbcheck.py`, shown on Game Day)
+
+* **What it flags before kickoff:** a projected starter who isn't the team's usual starter (most
+  starts in its last three games). Also any quarterback listed Out, Doubtful or Questionable,
+  and a starter who was Out or Doubtful last week when this week's report isn't out yet.
+* **Where it shows:** a **CHECK QB** badge and a note on the game card, plus a count in the
+  status line.
+* **Data:** nflverse's schedule (projected starters) and injury reports. They're fetched off
+  the UI thread when the season loads, and kept for three hours. Offline it says so and nothing
+  else changes.
+* **Why:** quarterback was the one football signal that measurably mattered in the pick'em
+  backtests.
+
+**The commissioner's line habit** (`acql/linehabit.py`, `python -m acql.linehabit`; summary on
+Deadeye > Report card)
+
+* **What it checks:** each posted pool line against that game's betting spread. It uses the
+  predictions file's line when there is one, otherwise nflverse's close.
+* **What it reports:** how often the assumed habit ("next whole number above the spread,
+  favourites of 6.5+") gives exactly the posted line, which other rules would have matched
+  better, and any big favourites left unlined.
+* **When it calls drift:** with at least 15 lined games, if the current rule matches under half
+  of them, or another rule matches 15 points more often.
+* **What it doesn't do:** change the rule. That's left to you, because it moves the replay's
+  numbers.
+
 ## Building the standalone executable
 
 ```bash

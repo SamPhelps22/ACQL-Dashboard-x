@@ -843,6 +843,11 @@ def refresh_from_disk(
     if not fresh:
         return kept, source, False
     save(week, fresh, str(found))
+    try:
+        from . import archive, results  # keep the file as read, for judging Deadeye later
+        archive.keep_file(results.season_year(), week, found, fresh)
+    except Exception:  # noqa: BLE001 - archiving must never stop the week loading
+        pass
     return fresh, str(found), True
 
 
