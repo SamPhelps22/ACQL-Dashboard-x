@@ -1,0 +1,67 @@
+# NFL Confidence Pick'em - configuration.
+# The Streamlit Settings page writes overrides to settings.local.json, which is
+# merged on top of this file. Delete that file to return to these defaults.
+
+[data]
+db_path = "data/nflpickem.duckdb"
+demo_db_path = "data/demo.duckdb"
+cache_dir = "data/cache"
+model_dir = "data/models"
+export_dir = "data/exports"
+first_season = 2006          # first season ingested (play-by-play EPA starts 1999; moneylines ~2006+)
+odds_provider = "nflverse"   # "nflverse" (free, closing/current lines) or "the_odds_api" (needs ODDS_API_KEY)
+injury_provider = "nflverse" # "nflverse" weekly injury reports or "none"
+stale_odds_hours = 24        # odds snapshot older than this at prediction time is flagged stale
+# nflverse historical lines carry no capture timestamp (they are closing lines).
+# When true they are used as a proxy for the pre-cutoff line (documented bias).
+closing_line_proxy = true
+
+[elo]
+initial_rating = 1505.0
+k_factor = 20.0
+home_field_advantage = 48.0  # Elo points (~1.7 pts of spread)
+season_regression = 0.333    # fraction regressed to the mean between seasons
+mov_multiplier = true        # FiveThirtyEight-style margin-of-victory multiplier
+neutral_site_hfa = 0.0
+
+[features]
+short_rest_days = 5          # rest <= this -> short week
+bye_rest_days = 13           # rest >= this -> coming off a bye
+early_season_weeks = 4
+rolling_short = 4
+rolling_long = 8
+shrinkage_games = 3.0        # pseudo-games of league average added to rolling windows
+prior_season_weight = 0.4    # carry-over of last season's EPA into season-to-date prior
+use_weather = false          # historical temp/wind are observed, not forecast -> off by default
+use_qb_features = true
+ml_include_market_features = false  # keep ML models independent of the market so blending adds information
+
+[models]
+gbm_library = "auto"         # "auto" (lightgbm > xgboost > sklearn), "lightgbm", "xgboost", "sklearn"
+calibration = "auto"         # "none", "platt", "isotonic", "auto" (only if it improves held-out log loss)
+random_seed = 42
+logistic_C_grid = [0.01, 0.03, 0.1, 0.3, 1.0]
+
+[blend]
+# "fixed": use the weights below. "learned": choose weights from prior out-of-sample predictions only.
+mode = "fixed"
+space = "probability"        # "probability" (linear) or "logit"
+market_weight = 0.70         # baseline hypothesis: 70% market / 30% ML
+ml_weights = { elo = 0.34, logistic = 0.33, gbm = 0.33 }  # split of the ML share
+learned_step = 0.1           # simplex grid step for learned weights
+
+[pool]
+pool_id = "my_pool"
+points_mode = "1_to_n"       # "1_to_n" or "custom"
+custom_points = []           # e.g. [16,15,...] when points_mode = "custom"
+tie_rule = "half"            # "zero", "half", "full" points for a tied game
+postponed_rule = "void"      # "void" (no points either way) or "loss"
+include_postseason = false
+cutoff_mode = "slate"        # "slate": picks lock before first kickoff of the week; "per_game"
+cutoff_offset_hours = 1.0
+
+[backtest]
+first_eval_season = 2012
+last_eval_season = 2023
+holdout_seasons = [2024, 2025]  # untouched final test period; run with --include-holdout
+min_train_seasons = 4
