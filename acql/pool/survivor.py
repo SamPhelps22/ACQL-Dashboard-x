@@ -208,13 +208,63 @@ def _this_week_lines(week: int, season: Season | None = None) -> dict[str, float
     return out
 
 
+# ---- starting again ---------------------------------------------------------
+#: Store kind: the weeks the pool started again in, by season. Once somebody
+#: has won it there are still weeks to play, so everyone is back in and every
+#: team can be used again; the files don't say so, and the dashboard is told.
+ROUNDS_KIND = "suicide-rounds"
+
+
+def rounds(year: int) -> list[dict]:
+    """[{"week": 6, "winners": [...]}] - each new start, earliest first."""
+    from .. import store
+    try:
+        raw = store.get(ROUNDS_KIND, str(year), [])
+    except store.StoreError:
+        return []
+    found = [r for r in raw if isinstance(r, dict) and isinstance(r.get("week"), int)] \
+        if isinstance(raw, list) else []
+    return sorted(found, key=lambda r: r["week"])
+
+
+def start_again(year: int, week: int, winners: list[str]) -> None:
+    """The pool starts again in `week`; `winners` took the round before."""
+    from .. import store
+    kept = rounds(year)
+    same = next((r for r in kept if r["week"] == week), None)
+    if same is not None:
+        return                      # told already: its winners are the ones on record
+    kept.append({"week": int(week), "winners": list(winners)})
+    store.put(ROUNDS_KIND, str(year), sorted(kept, key=lambda r: r["week"]))
+
+
+def undo_start(year: int) -> int | None:
+    """Take the latest new start back. Returns its week, or None if there was none."""
+    from .. import store
+    kept = rounds(year)
+    if not kept:
+        return None
+    gone = kept.pop()
+    if kept:
+        store.put(ROUNDS_KIND, str(year), kept)
+    else:
+        store.delete(ROUNDS_KIND, str(year))
+    return gone["week"]
+
+
+def round_picks(season: Season, player) -> dict[int, str]:
+    """A coach's picks in the round being played - all of them, if the pool never started again."""
+    start = getattr(season, "suicide_restart", 0) or 0
+    return {w: t for w, t in (player.suicide_picks or {}).items() if w >= start}
+
+
 # ---- the advice -------------------------------------------------------------
 def used_teams(season: Season, coach_key: str) -> list[tuple[int, str]]:
     player = season.players.get(coach_key)
     if player is None:
         return []
     out = []
-    for week, team in sorted((player.suicide_picks or {}).items()):
+    for week, team in sorted(round_picks(season, player).items()):
         code = predictions.team_code(team)
         if code:
             out.append((week, code))

@@ -426,6 +426,13 @@ def _money_table(season: Season, weeks: list[int], *, official: bool = True,
     return out, "workbook"
 
 
+def _round_start(season: Season, weeks: list[int]) -> int:
+    """The week the suicide round on the page began: 0 for the first, which
+    is still the one shown until a week of the new round has been played."""
+    start = getattr(season, "suicide_restart", 0) or 0
+    return start if start and max(weeks, default=0) >= start else 0
+
+
 def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
                     ) -> dict[str, tuple[bool, int | None]]:
     """key -> (still alive, week knocked out).
@@ -438,10 +445,13 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
     """
     from ..model.predictions import team_code
     latest = max(weeks, default=0)
+    # Once the page shows a week of a new round (the pool started again after
+    # somebody won it), that round is the one it tells: everyone back in.
+    start = _round_start(season, weeks)
     out: dict[str, tuple[bool, int | None]] = {}
     for key, person in season.players.items():
-        entered, knocked = False, None
-        for number in weeks:
+        entered, knocked = bool(start), None
+        for number in (w for w in weeks if w >= start):
             line = season.weeks[number].lines.get(key)
             if line is None:
                 continue
@@ -717,6 +727,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
     place_before = recap._places(before) if before else {}
     money, money_from = _money_table(season, weeks, official=official)
     suicide = _suicide_status(season, weeks, official=official)
+    round_start = _round_start(season, weeks)
     try:
         found, chaos = _patterns(season, weeks)
     except Exception:  # noqa: BLE001 - the page goes up without them
@@ -763,10 +774,10 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
                 # Played weeks only: a pick for a week still to come is
                 # nobody else's business until the games are over.
                 "picks": {str(w): display_team(t) for w, t in sorted(player.suicide_picks.items())
-                          if w in weeks},
+                          if w in weeks and w >= round_start},
                 # the same teams as codes, for the board's "teams left"
                 "used": [team_code(t) for w, t in sorted(player.suicide_picks.items())
-                         if w in weeks and team_code(t)],
+                         if w in weeks and w >= round_start and team_code(t)],
             },
             "patterns": found.get(key),
         })
