@@ -11,7 +11,8 @@ from __future__ import annotations
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
 
-from ... import grades, me, reportcard
+from ...model import grades, reportcard
+from ...pool import me
 from ..charts import LineChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
@@ -465,7 +466,7 @@ class ReportCardPage(Page):
 
     # ---- the long run -------------------------------------------------------------
     def _render_long_run(self, report: reportcard.Report) -> None:
-        from ... import backtest
+        from ...model import backtest
         self.clear_layout(self.long_box)
         if not report.long_run:
             self.long_label.setText("No long-run results are stored with this copy of the app.")

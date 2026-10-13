@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
 
 from pathlib import Path
 
-from .. import APP_NAME, __version__, analytics, oddslock, places, results
+from .. import APP_NAME, __version__, analytics, places
+from ..feeds import oddslock, results
 from ..config import DATA_DIR, ICON_FILE, Settings
 from ..models import Season
 from ..version import MODEL_NAME
@@ -781,7 +782,7 @@ class MainWindow(QMainWindow):
             return
         weeks = sorted(n for n, w in season.weeks.items() if w.games and all(g.played for g in w.games))
         try:
-            from .. import timeline
+            from ..feeds import timeline
             if not weeks or not timeline.due(year, weeks):
                 return
         except Exception as exc:  # noqa: BLE001

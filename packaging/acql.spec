@@ -44,7 +44,7 @@ a = Analysis(
     datas=[(str(ROOT / "packaging" / "icon.png"), "packaging")],
     hiddenimports=[
         "acql",
-        "acql.awards",
+        "acql.pool.awards",
         "acql.config",
         "acql.models",
         "acql.names",

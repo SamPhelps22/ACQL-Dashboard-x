@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from ... import injuries, power
+from ...feeds import injuries
+from ...model import power
 from ...wording import plural as _plural
 from ..charts import DivergingBarChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid

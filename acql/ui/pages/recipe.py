@@ -5,7 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout
 
-from ... import analytics, predictions, recipe
+from ... import analytics
+from ...model import predictions, recipe
 from ...places import RECIPE as title_
 from ...version import MODEL_NAME
 from ..charts import LineChart

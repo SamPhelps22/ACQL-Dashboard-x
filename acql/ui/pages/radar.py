@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout
 
-from ... import radar
+from ...model import radar
 from ...places import RADAR as title_
 from ...version import MODEL_NAME
 from ..widgets import Card, IconButton, StatTile, TableModel, make_table, section, tile_grid
@@ -134,7 +134,7 @@ class RadarPage(Page):
 
     def _update_fear(self, slate: radar.Slate) -> None:
         """The situation its record is worst in, when this week's slate has games in it."""
-        from ... import autopsy
+        from ...model import autopsy
         try:
             found = autopsy.fear(autopsy.graded(self.season), {g.matchup: g.tags for g in slate.games})
         except Exception:  # noqa: BLE001 - the radar stands without it
@@ -206,7 +206,7 @@ class RadarPage(Page):
         row = view.model().mapToSource(index).row()
         if not 0 <= row < len(self._shown):
             return
-        from ... import scouting
+        from ...model import scouting
         from ..scouting import ScoutingDialog
         report = scouting.report(self.season, self._shown[row].index)
         if report is None:

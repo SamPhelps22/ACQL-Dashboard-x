@@ -15,7 +15,7 @@ import matplotlib.patches as mpatches
 import matplotlib.ticker
 from matplotlib.ticker import PercentFormatter
 
-from .. import showcase
+from ..model import showcase
 from .charts import LABEL_SIZE, LINE_WIDTH, Chart, _diverging_color, _ink_on
 from .theme import mix, model_series
 

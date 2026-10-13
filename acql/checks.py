@@ -34,7 +34,7 @@ def _check_chances() -> str:
 
 
 def _check_pool_line() -> str:
-    from . import luck
+    from .model import luck
     # the favourite has to win by at least the line: an 8-point line on a
     # 7-point favourite still makes the underdog the likelier side
     fav = luck.favourite_covers(7.0, 8.0)
@@ -66,7 +66,8 @@ def _check_store() -> str:
 
 
 def _check_pricing() -> str:
-    from . import lines, predictions, pricing
+    from .feeds import lines
+    from .model import predictions, pricing
     from .models import Game
     game = Game(1, "Kansas City", "Denver")
     forecast = predictions.Forecast("Denver", "Kansas City", market=6.5, opening=5.5,
@@ -83,7 +84,7 @@ def _check_pricing() -> str:
 
 
 def _check_planner() -> str:
-    from . import weekplan
+    from .pool import weekplan
     choices = [
         weekplan.Choice(f"G{i}", f"A{i}", f"B{i}", 0.5 + 0.02 * (i % 10), 0.55 + 0.03 * (i % 12))
         for i in range(16)
@@ -96,7 +97,7 @@ def _check_planner() -> str:
 
 
 def _check_suicide_rules() -> str:
-    from . import survivor
+    from .pool import survivor
     unlined = survivor.survive_chance(6.0, survivor.assumed_line(6.0), True)
     lined = survivor.survive_chance(10.0, survivor.assumed_line(10.0), True)
     assert unlined > 0.66 and lined < 0.55, (unlined, lined)
@@ -104,7 +105,7 @@ def _check_suicide_rules() -> str:
 
 
 def _check_first_place() -> str:
-    from . import backtest
+    from .model import backtest
     alone = backtest.chance_first(10, [0.5] * 16, others=0)
     assert abs(alone - 1.0) < 1e-9, alone
     tie = backtest.chance_first(16, [1.0] * 16, others=1)

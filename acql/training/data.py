@@ -44,8 +44,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .. import backtest
-from ..predictions import team_code
+from ..model import backtest
+from ..model.predictions import team_code
 from ..store import data_dir
 
 log = logging.getLogger("acql.training")
@@ -202,7 +202,7 @@ def fair_win(home_price: float | None, away_price: float | None) -> float | None
 
 def _kickoff(day: str, clock: str) -> float | None:
     """Seconds since 1970 for nflverse's game day and its Eastern kickoff time."""
-    from ..oddslock import _eastern_hours
+    from ..feeds.oddslock import _eastern_hours
     try:
         y, m, d = (int(part) for part in day.split("-"))
         hour, minute = (int(part) for part in clock.split(":")[:2]) if clock else (13, 0)
@@ -223,7 +223,7 @@ def game_key(season: int, week: int, away: str, home: str) -> str:
 def nflverse_games(path: Path | None = None) -> pd.DataFrame:
     """Every game in nflverse's file, played or not, regular season or not.
     Empty when the file is not there."""
-    from ..nflverse import FOLDER, GAMES_FILE
+    from ..feeds.nflverse import FOLDER, GAMES_FILE
     path = path or FOLDER / GAMES_FILE
     rows = []
     try:
@@ -460,7 +460,10 @@ def this_season(season, notes: Notes | None = None) -> pd.DataFrame:
     The store must already be pointed at the database to read (a copy:
     pricing a week notes its weight down).
     """
-    from .. import cards, oddslock, odds, predictions, pricing, results, store
+    from ..pool import cards
+    from ..feeds import oddslock, odds, results
+    from ..model import predictions, pricing
+    from .. import store
     notes = notes if notes is not None else Notes()
     year = results.season_year(season)
     try:

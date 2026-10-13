@@ -27,7 +27,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .. import analytics, predictions
+from .. import analytics
+from ..model import predictions
 from . import data
 from .data import MODEL, NAMELESS, Notes, TIMINGS
 

@@ -17,8 +17,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import ghost, mailer, picks
-from ...predictions import display_team
+from ...model import ghost
+from ...site import mailer
+from ...pool import picks
+from ...model.predictions import display_team
 from ...models import Week
 from ..charts import BarChart, HistogramChart
 from .. import recap

@@ -6,7 +6,7 @@ import statistics
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
-from ... import computers, longrecord
+from ...model import computers, longrecord
 from ...places import COMPUTERS as title_
 from ...version import MODEL_NAME
 from ...wording import plural as _plural

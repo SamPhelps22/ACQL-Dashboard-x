@@ -4,7 +4,7 @@ The other pages answer questions. This one answers the question - what to
 play - and answers it in the order the decision is actually made: how the
 week looks, which few games decide it, the card itself, then the side pools.
 
-It works entirely off `acql.briefing`, which knows nothing about Qt and is
+It works entirely off `acql.pool.briefing`, which knows nothing about Qt and is
 checked against real weeks without a screen. This file is layout.
 """
 
@@ -19,13 +19,16 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from ... import analytics, bigloser, briefing, cards, evidence, odds, survivor
-from ...predictions import display_team
+from ... import analytics
+from ...pool import bigloser, briefing, cards, survivor
+from ...model import evidence
+from ...feeds import odds
+from ...model.predictions import display_team
 from ...models import Season
 from ..theme import mix
 from ..widgets import Card, IconButton, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
-from ... import oddslock
+from ...feeds import oddslock
 from .base import Page
 
 HEADERS = ["#", "Game", "Take", "Chance", "Vs pool", "If flipped", "Pool line", "Why"]
@@ -78,7 +81,7 @@ class _Fetcher(QThread):
         try:
             # The injury report rides along: it is the why behind the moves.
             try:
-                from ... import injuries
+                from ...feeds import injuries
                 injuries.refresh()
             except Exception:  # noqa: BLE001 - the lines matter more than the report
                 pass
@@ -331,7 +334,7 @@ class BriefingPage(Page):
         self.save_button.setEnabled(not cards.week_started(season, week))
         self._update_changes(week, brief)
         try:
-            from ... import me as owner
+            from ...pool import me as owner
             me = owner.key(season) or QSettings().value(ME_KEY, "") or None
             cases = evidence.build(season, brief, me)
         except Exception:  # noqa: BLE001 - the card stands without its reasons
@@ -364,7 +367,7 @@ class BriefingPage(Page):
     def _update_suicide(self, season: Season, week: int) -> None:
         """Fill the coach list - still alive first - and keep the choice."""
         self._suicide_week = week
-        from ... import me as owner
+        from ...pool import me as owner
         wanted = (self.coach_picker.currentData() or owner.key(self.season)
                   or QSettings().value(self.SUICIDE_KEY, ""))
         players = sorted(
@@ -590,7 +593,7 @@ class BriefingPage(Page):
         found = season.weeks.get(brief.week)
         games = list(found.games) if found else []
         for n, loser in enumerate(brief.losers):
-            from ...predictions import team_code
+            from ...model.predictions import team_code
             option = held.get(team_code(loser.team))
             where = (f"{abs(loser.margin):.1f}-point underdogs" if loser.margin < -0.25
                      else f"{loser.margin:.1f}-point favourites" if loser.margin > 0.25 else "a pick'em")

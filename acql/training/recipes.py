@@ -36,7 +36,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .. import contenders, predictions
+from ..model import contenders, predictions
 from ..version import MODEL_NAME
 from . import features
 from .data import MODEL

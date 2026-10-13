@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..models import Season, same_team
-from ..predictions import display_team
+from ..model.predictions import display_team
 from ..wording import ordinal as _ordinal
 from .theme import Palette, mix
 
@@ -146,7 +146,7 @@ def _suicide_lost(season: Season, week_number: int, key: str, team: str) -> bool
     recorded. Before the result is in, the next week's sheet can still say
     (DEAD there means out here; a new team means survived).
     """
-    from ..predictions import team_code
+    from ..model.predictions import team_code
 
     week = season.weeks[week_number]
     game = next(
@@ -169,8 +169,9 @@ def _suicide_lost(season: Season, week_number: int, key: str, team: str) -> bool
 
 def build(season: Season, week_number: int) -> Recap | None:
     """Everything the picture says about one week, or None if it is unscored."""
-    from .. import analytics, luck  # heavy; only needed here
-    from ..predictions import team_code
+    from .. import analytics
+    from ..model import luck  # heavy; only needed here
+    from ..model.predictions import team_code
 
     week = season.weeks.get(week_number)
     if week is None or not week.lines or not week.scored:
@@ -334,7 +335,7 @@ def _suicide_tile(recap: Recap) -> tuple[str, str, str]:
         return "SUICIDE KILLER", "-", "no suicide picks this week"
     if not recap.killer:
         return "SUICIDE KILLER", "Nobody", f"all {recap.suicide_picks} survived"
-    from ..predictions import team_code
+    from ..model.predictions import team_code
 
     # The tile is narrow: about 23 characters of note fit.
     if recap.killer_tied:

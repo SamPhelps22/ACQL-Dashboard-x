@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
 
-from ... import everyone, me
+from ...pool import everyone, me
 from ...places import EVERYONE as title_
 from ...version import MODEL_NAME
 from ...wording import plural as _plural
@@ -89,7 +89,7 @@ class EveryonePage(Page):
     def _model_card(season, board: everyone.Board):
         """The model's own card for the week, as a row like anyone's - if one was kept."""
         try:
-            from ... import cards
+            from ...pool import cards
             week = season.weeks.get(board.week)
             snap = cards.model(board.week)
             if week is None or snap is None:

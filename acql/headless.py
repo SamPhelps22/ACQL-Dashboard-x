@@ -33,7 +33,9 @@ import time
 import traceback
 from pathlib import Path
 
-from . import analytics, oddslock, predictions, results
+from . import analytics
+from .feeds import oddslock, results
+from .model import predictions
 from .config import DATA_DIR, Settings
 from .names import AliasTable
 from .repository import load_season
@@ -105,7 +107,7 @@ class _RunLock:
 def _poll_due() -> bool:
     """Cheap look, without reading a spreadsheet: is ESPN worth asking now?
     This week, next week and last week (a Monday night final lands on Tuesday)."""
-    from . import timeline
+    from .feeds import timeline
     year = results.season_year()
     weeks = set(results.calendar_weeks(year))
     weeks |= {w - 1 for w in weeks if w > 1}
@@ -114,7 +116,7 @@ def _poll_due() -> bool:
     finished = [w for w in sorted(weeks) if results.over(year, w)]
     if (bool(finished) and timeline.due(year, finished)) or _lines_due() is not None:
         return True
-    from . import ledger
+    from .model import ledger
     return ledger.due(year)             # a week's cards are in and its numbers aren't written down yet
 
 
@@ -184,7 +186,8 @@ def _download_predictions(season, week: int) -> None:
 
 def _fetch_lines(season, week: int) -> None:
     """The latest betting lines, the way Update lines on This Week fetches them."""
-    from . import briefing, cards, odds
+    from .pool import briefing, cards
+    from .feeds import odds
     key = odds.api_key()
     if not key:
         return
@@ -200,7 +203,7 @@ def _fetch_lines(season, week: int) -> None:
 
 def _injuries() -> None:
     """ESPN's injury report, a few times a day - hourly on the day the cards are due."""
-    from . import injuries
+    from .feeds import injuries
     try:
         now = time.time()
         year = results.season_year()
@@ -216,7 +219,7 @@ def _known(season) -> None:
     """Everything known about the week ahead's games, written down while it is
     open and frozen at the deadline - so nothing learned later can get into it."""
     try:
-        from . import known
+        from .model import known
         now = time.time()
         year = results.season_year(season)
         for week in results.calendar_weeks(year, now):
@@ -232,7 +235,7 @@ def _known(season) -> None:
 def _computers() -> None:
     """Each computer model's number, kept by name while the week's file is still on disk."""
     try:
-        from . import computers
+        from .model import computers
         computers.keep()
     except Exception as exc:  # noqa: BLE001 - the picks do not wait on it
         _log(f"computer models' names not kept: {exc}")
@@ -242,12 +245,12 @@ def _seasons() -> None:
     """The Model Lab's season-by-season record - several seconds' work, done here
     so the page never waits for it. It only changes when a season ends."""
     try:
-        from . import contenders
+        from .model import contenders
         year = results.season_year()
         if contenders.seasons(year) is None:
             made = contenders.seasons(year, compute=True)
             _log(f"model lab: the contenders' season-by-season record worked out ({len(made or [])} seasons)")
-        from . import nflverse
+        from .feeds import nflverse
         if nflverse.available() and nflverse.families() is None:
             found = nflverse.families(compute=True)
             _log(f"model lab: market, football and hybrid worked out over {len(found.seasons)} seasons")
@@ -258,7 +261,7 @@ def _seasons() -> None:
 def _ledger(season) -> None:
     """Every recipe's number for a week, written down once its cards are in (the Model Lab's record)."""
     try:
-        from . import ledger
+        from .model import ledger
         done = ledger.keep(season)
         ledger.tried()
         if done:
@@ -271,7 +274,7 @@ def _ledger(season) -> None:
 def _autopsy(season) -> None:
     """Each finished week's games, written down as they were picked and how they came out."""
     try:
-        from . import autopsy
+        from .model import autopsy
         from .version import MODEL_NAME
         done = autopsy.keep(season)
         if done:
@@ -283,7 +286,7 @@ def _autopsy(season) -> None:
 
 def _weather() -> None:
     """The forecast for the outdoor games still to kick off, a few times a day."""
-    from . import weather
+    from .feeds import weather
     try:
         now = time.time()
         year = results.season_year()
@@ -298,7 +301,8 @@ def _weather() -> None:
 
 def _refresh_lines(season) -> None:
     """The week ahead's numbers brought up to date, then Deadeye's card kept."""
-    from . import briefing, cards, store
+    from .pool import briefing, cards
+    from . import store
     week = _lines_due()
     if week is None or oddslock.locked_for(season, week):
         return
@@ -338,7 +342,7 @@ def _predictions(season) -> None:
 
 def _timelines(season) -> int:
     """Finished games' scoring plays, for the website's replay of each week."""
-    from . import timeline
+    from .feeds import timeline
     year = getattr(season, "results_year", 0) or 0
     weeks = sorted(n for n, w in season.weeks.items() if w.games and all(g.played for g in w.games))
     if not year or not weeks or not timeline.due(year, weeks):
@@ -354,7 +358,7 @@ def _timelines(season) -> int:
 def _publish(season) -> str | None:
     """The website, brought up to date when something it shows has changed -
     the same steps as the window's AutoPublisher, on this thread."""
-    from . import siteextras, webpublish
+    from .site import siteextras, webpublish
     from .ui import poolpage
     from .ui.webpage import published
 
@@ -392,7 +396,8 @@ def _publish(season) -> str | None:
 def email_card(*, dry_run: bool = False) -> int:
     """Deadeye's card for the week ahead, on the freshest numbers, emailed to
     the dashboard's own address. `dry_run` writes it to a file instead."""
-    from . import briefing, cardmail, cards, mailer
+    from .pool import briefing, cards
+    from .site import cardmail, mailer
     now = time.time()
     settings = Settings.load()
     season = load_season(settings, AliasTable.load())

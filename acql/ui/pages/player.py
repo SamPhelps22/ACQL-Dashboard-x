@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import analytics, patterns, picks
+from ... import analytics
+from ...pool import patterns, picks
 from ...models import Player, Season
 from ...wording import plural as _plural
 from ..charts import BarChart, LineChart, RankChart
@@ -183,7 +184,7 @@ class PlayerPage(Page):
         self._report = patterns.report(season)
 
         names = [p.display for p in season.ordered_players()]
-        from ... import me
+        from ...pool import me
         keep = self._wanted or self.picker.currentText() or me.display(season)
         self._wanted = None
         rival_keep = self.rival_picker.currentData() or ""

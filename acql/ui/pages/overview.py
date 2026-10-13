@@ -5,8 +5,9 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
 
-from ... import analytics, awards as awards_module
-from ...awards import Award
+from ... import analytics
+from ...pool import awards as awards_module
+from ...pool.awards import Award
 from ...config import WEEKS_IN_SEASON
 from ...models import Player, Season
 from ...wording import plural as _plural

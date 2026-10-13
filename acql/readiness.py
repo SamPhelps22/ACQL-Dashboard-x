@@ -136,7 +136,7 @@ def freshness(age: float | None, limit: float, *, matters: bool = True) -> str:
 
 # ---- the checks -----------------------------------------------------------------------------------
 def _scores(year: int, week: int, now: float) -> Check:
-    from . import results
+    from .feeds import results
     scores = results.load(year, week)
     at = results.checked_at(year, week)
     age = None if at is None else now - at
@@ -159,7 +159,7 @@ def _scores(year: int, week: int, now: float) -> Check:
 
 def _slate(season: Season, week: int):
     """(the week's unplayed games, each one's price) - priced from what is stored."""
-    from . import pricing
+    from .model import pricing
     found = season.weeks.get(week)
     games = sorted(found.games, key=lambda g: g.index) if found is not None else []
     ctx = pricing.context(season, week, games) if games else None
@@ -168,7 +168,9 @@ def _slate(season: Season, week: int):
 
 
 def _lines(season: Season, week: int, to_lock: float, now: float) -> list[Check]:
-    from . import headless, odds, predictions
+    from . import headless
+    from .feeds import odds
+    from .model import predictions
     games, prices, _ctx = _slate(season, week)
     at = predictions.market_time(week) or None
     age = None if at is None else now - at
@@ -230,7 +232,7 @@ def _models(season: Season, week: int, to_lock: float, now: float) -> Check:
 
 
 def _injuries(to_lock: float, now: float) -> Check:
-    from . import injuries
+    from .feeds import injuries
     at = injuries.fetched_at() or None
     age = None if at is None else now - at
     limit = (injuries.EVERY_LOCK_DAY if 0 <= to_lock < DAY else injuries.EVERY) * 2.5
@@ -254,7 +256,7 @@ def _weather(year: int, week: int, to_lock: float, now: float) -> Check:
 
 
 def _efficiency(year: int, week: int) -> Check:
-    from . import nflverse
+    from .feeds import nflverse
     found = nflverse.efficiency() if nflverse.available() else None
     if found is None:
         return Check(SOURCES, "Team efficiency", NOTE, "The nflverse files are not installed",
@@ -284,7 +286,7 @@ def _pool_files(season: Season) -> Check:
 
 
 def _inputs(season: Season, week: int, to_lock: float) -> Check:
-    from . import oddslock, results
+    from .feeds import oddslock, results
     games, prices, ctx = _slate(season, week)
     if not games:
         return Check(CARD, "Every game's inputs", NOTE, f"Week {week} has no unplayed games set up")
@@ -325,7 +327,8 @@ def _inputs(season: Season, week: int, to_lock: float) -> Check:
 
 def _kept_card(season: Season, year: int, week: int, now: float) -> Check:
     """Was Deadeye's card written down before the games began?"""
-    from . import cards, oddslock
+    from .pool import cards
+    from .feeds import oddslock
     snap = cards.model(week)
     kickoff = oddslock.kickoff_time(year, week)
     started = cards.week_started(season, week)
@@ -351,7 +354,7 @@ def _kept_card(season: Season, year: int, week: int, now: float) -> Check:
 
 
 def _known(year: int, week: int, to_lock: float, now: float) -> Check:
-    from . import known
+    from .model import known
     found = known.kept(year, week)
     if found is None:
         return Check(CARD, "What was known", NOTE if to_lock > 0 else WARN,
@@ -367,7 +370,7 @@ def _known(year: int, week: int, to_lock: float, now: float) -> Check:
 
 
 def _my_card(week: int, to_lock: float, now: float) -> Check:
-    from . import cards
+    from .pool import cards
     mine = cards.mine(week)
     if mine is not None:
         return Check(CARD, "Your own card", OK, f"Saved {ago(now - mine.at)}",
@@ -380,7 +383,7 @@ def _my_card(week: int, to_lock: float, now: float) -> Check:
 
 
 def _autopsy(season: Season, year: int) -> Check:
-    from . import autopsy
+    from .model import autopsy
     done = [n for n in sorted(season.weeks) if season.weeks[n].games and all(g.played for g in season.weeks[n].games)]
     kept = [n for n in done if autopsy.kept(year, n) is not None]
     if not done:
@@ -476,7 +479,7 @@ def _last_run(now: float) -> Check | None:
 
 
 def _website(now: float) -> Check:
-    from . import siteextras, webpublish
+    from .site import siteextras, webpublish
     if not webpublish.WebSettings.load().ready:
         return Check(AUTOMATION, "Pool website", NOTE, "Not set up", "Results > Pool page walks through it.")
     last = siteextras.last_published() or {}
@@ -491,7 +494,8 @@ def _website(now: float) -> Check:
 
 
 def _email(week: int, now: float) -> Check:
-    from . import mailer, store
+    from .site import mailer
+    from . import store
     settings = mailer.MailSettings.load()
     if not (settings.sender and settings.sealed_password):
         return Check(AUTOMATION, f"{MODEL_NAME}'s card email", NOTE, "Email isn't set up",
@@ -506,7 +510,8 @@ def _email(week: int, now: float) -> Check:
 def build(season: Season, now: float | None = None, tasks: dict[str, dict] | None | bool = True) -> Readiness:
     """Every check. `tasks` is Task Scheduler's answer when it is already to
     hand (or False to leave the scheduled jobs out); True asks Windows."""
-    from . import analytics, oddslock, results
+    from . import analytics
+    from .feeds import oddslock, results
     now = time.time() if now is None else now
     year = results.season_year(season)
     ahead = analytics.upcoming_week(season)

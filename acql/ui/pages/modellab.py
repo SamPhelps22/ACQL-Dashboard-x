@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
 
 import time
 
-from ... import closing, contenders, ledger, modellab, nflverse, oddslock, results
+from ...model import closing, contenders, ledger, modellab
+from ...feeds import nflverse, oddslock, results
 from ...places import LAB as title_
 from ...version import MODEL_NAME, VERSION
 from ...wording import plural as _plural

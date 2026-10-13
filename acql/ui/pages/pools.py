@@ -5,7 +5,9 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from ... import analytics, bigloser, oddslock
+from ... import analytics
+from ...pool import bigloser
+from ...feeds import oddslock
 from ...models import Player, Season
 from ...version import MODEL_NAME
 from ...wording import plural as _plural

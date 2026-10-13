@@ -5,7 +5,9 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from ... import analytics, ghost, picks
+from ... import analytics
+from ...model import ghost
+from ...pool import picks
 from ...models import Player, Season
 from ...wording import plural as _plural, suffix as _ordinal
 from ..charts import HeatmapChart, LineChart

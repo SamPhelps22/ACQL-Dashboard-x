@@ -29,7 +29,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .. import modellab
+from ..model import modellab
 from .probability import CEILING, FLOOR
 from .walkforward import Result
 

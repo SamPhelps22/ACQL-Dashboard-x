@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from ... import ghost
+from ...model import ghost
 from ...models import Season
 from ...wording import plural as _plural
 from ..charts import DivergingBarChart, LineChart

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .. import mailer, siteextras, webpublish
+from ..site import mailer, siteextras, webpublish
 from . import poolpage
 from .pages.base import write_log
 

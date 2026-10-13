@@ -65,16 +65,16 @@ class UpdateSettings:
         store.put("settings", "updates", asdict(self))
 
     def set_token(self, token: str) -> None:
-        from .mailer import seal
+        from .site.mailer import seal
         self.sealed_token = seal(token.strip()) if token.strip() else ""
 
     def resolved(self) -> tuple[str, str, str]:
         """(owner, repo, token), the website's filling the gaps."""
-        from .mailer import unseal
+        from .site.mailer import unseal
         owner, token = self.owner, unseal(self.sealed_token) if self.sealed_token else ""
         if not owner or not token:
             try:
-                from .webpublish import WebSettings
+                from .site.webpublish import WebSettings
                 web = WebSettings.load()
                 owner = owner or web.user
                 token = token or (web.token if web.sealed_token else "")

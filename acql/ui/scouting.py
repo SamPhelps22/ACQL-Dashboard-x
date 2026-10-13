@@ -7,7 +7,7 @@ from html import escape
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from .. import evidence, radar, scouting
+from ..model import evidence, radar, scouting
 from ..version import MODEL_NAME
 from .theme import Palette
 from .widgets import Card, StatTile, section, tile_grid

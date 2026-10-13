@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
-from ... import showcase
+from ...model import showcase
 from ...places import MODEL_CHARTS as title_
 from ...version import MODEL_NAME
 from ..modelcharts import CalibrationChart, MatrixChart, RollingChart, ScopeChart, ThinBars, TrajectoryChart

@@ -6,7 +6,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel
 
-from ... import me
+from ...pool import me
 from .. import seasoncharts as SC
 from ..charts import HeatmapChart, LineChart
 from ..funcharts import CrowdChart, FunnelChart, LandedChart, RaceChart

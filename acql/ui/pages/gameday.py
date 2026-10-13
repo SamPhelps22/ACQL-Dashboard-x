@@ -25,8 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import gameday as GD
-from ...predictions import display_team
+from ...pool import gameday as GD
+from ...model.predictions import display_team
 from ...version import MODEL_NAME
 from ...wording import ordinal as _ordinal, plural as _plural
 from ..theme import mix
@@ -409,7 +409,7 @@ class GameDayPage(Page):
         key = self.me_picker.currentData()
         if isinstance(key, str) and key:
             return key
-        from ... import me
+        from ...pool import me
         owner = me.key(self.season)
         if owner:
             return owner

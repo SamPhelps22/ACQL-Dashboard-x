@@ -31,7 +31,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ... import analytics, lines, oddslock, picks, predictions, pricing, schedule, weekplan
+from ... import analytics
+from ...feeds import lines, oddslock, schedule
+from ...pool import picks, weekplan
+from ...model import predictions, pricing
 from ...config import BIG_LOSER_PICKS, WEEKS_IN_SEASON
 from ...models import Game
 from ...wording import plural as _plural
@@ -1245,7 +1248,7 @@ class NextWeekPage(Page):
         Not held by the odds lock: they are the pool's rules, not a forecast."""
         if self.season is None or not self._games:
             return
-        from ... import results
+        from ...feeds import results
         year = results.season_year(self.season)
         week = self._week_number
         dialog = OddsDialog(

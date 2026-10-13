@@ -20,9 +20,11 @@ import json
 import time
 from pathlib import Path
 
-from .. import analytics, patterns, siteextras
+from .. import analytics
+from ..pool import patterns
+from ..site import siteextras
 from ..models import Season, same_team
-from ..predictions import DISPLAY, display_team, team_code
+from ..model.predictions import DISPLAY, display_team, team_code
 from . import recap
 
 SCHEMA = 1
@@ -102,7 +104,7 @@ def _market(season: Season, number: int) -> dict[int, tuple[str, float]]:
     week = season.weeks[number]
     out: dict[int, tuple[str, float]] = {}
     try:
-        from .. import lines as lines_
+        from ..feeds import lines as lines_
         for index, spread in lines_.load_spreads(number, week.games).items():
             game = next((g for g in week.games if g.index == index), None)
             if game is not None and spread.points > 0:
@@ -111,7 +113,7 @@ def _market(season: Season, number: int) -> dict[int, tuple[str, float]]:
     except Exception:  # noqa: BLE001 - the page goes up without the favourites
         pass
     try:
-        from .. import predictions as predictions_
+        from ..model import predictions as predictions_
         forecasts, _ = predictions_.load(number)
         priced = {}
         for f in forecasts or []:
@@ -320,7 +322,7 @@ def _week(season: Season, number: int, *, money_known: bool = True,
 def _replay(season: Season, number: int) -> tuple[dict | None, list[dict]]:
     """The week replayed after every score, and its bad beats - when every
     game's scoring plays are kept and the replay ends on the pool's scores."""
-    from .. import replay
+    from ..site import replay
     try:
         made = replay.build(season, number)
     except Exception:  # noqa: BLE001 - the week goes up without it
@@ -434,7 +436,7 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
     whose picks don't settle it, and never name a week the page doesn't
     show: a DEAD marker on next week's sheet means out THIS week.
     """
-    from ..predictions import team_code
+    from ..model.predictions import team_code
     latest = max(weeks, default=0)
     out: dict[str, tuple[bool, int | None]] = {}
     for key, person in season.players.items():
@@ -466,8 +468,8 @@ def _live(season: Season, latest: int) -> dict | None:
     """The week being played: its games, the pool's lines and everyone's
     picks, so the page can follow the games live. From the commissioner's
     pick sheet, which goes out once picks are in; None until there is one."""
-    from .. import picks as pick_sheets
-    from ..predictions import team_code
+    from ..pool import picks as pick_sheets
+    from ..model.predictions import team_code
     ahead = sorted(n for n in season.weeks if n > latest)
     number = ahead[0] if ahead else latest + 1
     week = season.weeks.get(number)
@@ -652,7 +654,7 @@ def _team_ranks(latest: int) -> dict[str, int]:
     """Team code -> 1 (best) .. 32, from this season's betting lines as the
     dashboard stored them; {} when too few games are priced to say."""
     try:
-        from .. import survivor
+        from ..pool import survivor
         rating = survivor.ratings(survivor._lines_so_far(latest + 1))
     except Exception:  # noqa: BLE001 - the board shows without it
         return {}

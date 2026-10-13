@@ -35,7 +35,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .. import analytics, modellab, predictions
+from .. import analytics
+from ..model import modellab, predictions
 from ..version import MODEL_NAME, VERSION as APP_VERSION
 from . import VERSION, data, evaluate, features, recipes, registry
 from .study import LIVE, Study, Trial

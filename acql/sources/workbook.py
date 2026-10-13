@@ -25,7 +25,7 @@ import re
 from ..config import GAMES_PER_WEEK, WEEKS_IN_SEASON
 from ..models import Game, Player, PlayerWeek, SourceFile, Week
 from ..names import AliasTable
-from ..predictions import team_code
+from ..model.predictions import team_code
 
 WEEK_SHEET = re.compile(r"^week\s*(\d{1,2})$", re.IGNORECASE)
 # The suicide column doubles as an elimination marker once a player is out.

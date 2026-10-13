@@ -24,9 +24,11 @@ from pathlib import Path
 
 from .config import Settings
 from .models import Conflict, Game, Player, Season, SourceFile, Week
-from . import analytics, lines, picks, results
+from . import analytics
+from .feeds import lines, results
+from .pool import picks
 from .names import AliasTable
-from .predictions import team_code
+from .model.predictions import team_code
 from .sources import discover, parse_stats, parse_workbook
 
 # A name this long that reads as a football team is a football team. Shorter
@@ -325,8 +327,8 @@ def _weeks_without_sheets(season: Season, year: int, now: float | None) -> list[
 def _fixtures(year: int, number: int, kept: list) -> list[Game]:
     """A week's games from the scoreboard as last read (first kickoff first),
     else from the schedule when it is this season's."""
-    from . import schedule
-    from .predictions import DISPLAY
+    from .feeds import schedule
+    from .model.predictions import DISPLAY
 
     def name(code: str) -> str:
         return DISPLAY.get(code.lower(), code)
@@ -343,7 +345,7 @@ def _fixtures(year: int, number: int, kept: list) -> list[Game]:
 def _line_differences(week, typed: dict, where: str) -> list[str]:
     """A line game typed in on Next Week that the week's own source says
     otherwise about - that source's line is the one used."""
-    from .predictions import DISPLAY, team_code
+    from .model.predictions import DISPLAY, team_code
     if week is None or not typed:
         return []
     out = []

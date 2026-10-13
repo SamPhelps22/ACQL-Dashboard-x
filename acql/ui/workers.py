@@ -8,7 +8,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from .. import analytics, oddslock, predictions, results
+from .. import analytics
+from ..feeds import oddslock, results
+from ..model import predictions
 from ..config import Settings
 from ..names import AliasTable
 from ..repository import load_season
@@ -77,8 +79,9 @@ def warm_this_week(season) -> None:
     """
     from PySide6.QtCore import QSettings
 
-    from .. import bigloser, briefing, evidence, survivor
-    from .. import me as owner
+    from ..pool import bigloser, briefing, survivor
+    from ..model import evidence
+    from ..pool import me as owner
     from .pages.base import WORKING
     from .pages.thisweek import ME_KEY, BriefingPage
 
@@ -165,7 +168,7 @@ class TimelineFetch(QThread):
 
     def run(self) -> None:
         try:
-            from .. import timeline
+            from ..feeds import timeline
             kept, problems = timeline.refresh(self.year, self.weeks)
             for problem in problems:
                 write_log(f"replay: {problem}")

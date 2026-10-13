@@ -107,7 +107,7 @@ def render(data: dict) -> bytes:
     weeks = data.get("weeks") or []
     week = next((w for w in weeks if w.get("week") == data.get("through_week")), weeks[-1] if weeks else None)
     players = data.get("players") or []
-    from .. import siteextras
+    from ..site import siteextras
     # January's page is still last autumn's season
     year = str(siteextras.season_year(data.get("generated"))) if data.get("generated") else ""
 

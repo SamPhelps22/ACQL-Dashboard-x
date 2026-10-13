@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from .. import analytics
 from ..config import WEEKS_IN_SEASON
 from ..models import Season
-from ..predictions import display_team
+from ..model.predictions import display_team
 from . import poolpage
 
 TITLE_SIMS = 2000        # per week; enough for a smooth line, quick to redraw

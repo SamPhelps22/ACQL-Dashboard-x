@@ -27,7 +27,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from acql import analytics, luck, modellab, predictions
+from acql import analytics
+from acql.model import luck, modellab, predictions
 from acql.models import Game
 from acql.training import data, evaluate, features, probability, recipes, registry, snapshots, study, walkforward
 
@@ -540,7 +541,7 @@ class Real(unittest.TestCase):
             self.assertAlmostEqual(mine.brier, theirs.mean_brier, places=6)
 
     def test_real_history_passes_its_own_checks(self):
-        from acql import nflverse
+        from acql.feeds import nflverse
         if not nflverse.available():
             self.skipTest("the nflverse files are not in data/nflverse")
         notes = data.Notes()

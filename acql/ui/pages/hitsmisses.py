@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
-from ... import autopsy
+from ...model import autopsy
 from ...places import HITS as title_
 from ...version import MODEL_NAME
 from ...wording import plural as _plural

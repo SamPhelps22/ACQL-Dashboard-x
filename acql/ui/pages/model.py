@@ -16,7 +16,9 @@ from __future__ import annotations
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
 
-from ... import analytics, cards, pricing
+from ... import analytics
+from ...pool import cards
+from ...model import pricing
 from ..charts import BarChart, LineChart
 from ..widgets import Card, TableModel, make_table, section
 from ...version import MODEL_NAME
@@ -125,7 +127,7 @@ class ModelPage(Page):
 
     # ---- following the model -------------------------------------------
     def _update_track(self, season) -> None:
-        from ... import me
+        from ...pool import me
         wanted = self.me_picker.currentData() or me.key(season) or QSettings().value(TRACK_KEY, "") \
             or QSettings().value("thisweek/suicide_coach", "")
         players = sorted(season.players.values(), key=lambda p: p.display.casefold())
@@ -309,7 +311,7 @@ class ModelPage(Page):
 
     # ---- the long run ----------------------------------------------------
     def _update_backtest(self) -> None:
-        from ... import backtest
+        from ...model import backtest
         self.clear_layout(self.backtest_box)
         found = backtest.stored_results()
         if found is None:

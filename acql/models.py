@@ -65,7 +65,7 @@ class Game:
         The workbook writes the away side in lower case and the home side in
         capitals; that convention stays in the workbook.
         """
-        from .predictions import display_matchup, display_team  # lazy: no cycle
+        from .model.predictions import display_matchup, display_team  # lazy: no cycle
 
         if self.home and self.away:
             return display_matchup(self.away, self.home)

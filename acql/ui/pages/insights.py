@@ -8,7 +8,9 @@ from collections import Counter
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
-from ... import analytics, crowd, luck, patterns, picks, predictions
+from ... import analytics
+from ...pool import crowd, patterns, picks
+from ...model import luck, predictions
 from ...wording import plural as _plural
 
 from ..charts import BarChart, DivergingBarChart, HeatmapChart, LineChart, ScatterChart

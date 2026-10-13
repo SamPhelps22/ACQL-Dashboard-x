@@ -18,7 +18,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ... import picks, predictions, results, store, updater
+from ...pool import picks
+from ...model import predictions
+from ...feeds import results
+from ... import store, updater
 from ..editor import WeekEditor
 from ..widgets import Banner, Card, TableModel, make_table, section
 from .base import CHECK_RESULTS, CHECK_UPDATES, INSTALL_UPDATE, KEEPING, SELF_CHECK, UNDO_UPDATE, UPDATE_SETTINGS, Page
