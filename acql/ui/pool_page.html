@@ -4539,14 +4539,19 @@ a.weekpill { text-decoration: none; }
       grid.appendChild(svgEl("text", { x: padL - 6, y: Y(v) + 4, "text-anchor": "end", text: v === 0 ? "lead" : "−" + v }));
     });
     svg.appendChild(grid);
-    // the days along the bottom, where each begins
-    var last = "";
+    // the days along the bottom, where each begins; the steps are one per score,
+    // not by the clock, so a day with few scores would put its name under the
+    // next day's - that one moves right to clear it (or is left off at the edge)
+    var last = "", free = 0;
     frames.forEach(function (f, i) {
       var d = frameDay(f);
       if (d === last) return;
       last = d;
       svg.appendChild(svgEl("line", { class: "day", x1: X(i), x2: X(i), y1: padT, y2: H - padB }));
-      svg.appendChild(svgEl("text", { x: X(i) + 3, y: H - 8, text: d }));
+      var lx = Math.max(X(i) + 3, free), lw = d.length * 8;
+      if (lx + lw > width) return;
+      free = lx + lw + 6;
+      svg.appendChild(svgEl("text", { x: lx, y: H - 8, text: d }));
     });
     var top = rep.coaches.slice(0, 1).concat(rep.coaches.filter(function (c, i) { return i > 0 && totals[n - 1][i] === totals[n - 1][0]; }));
     var marked = {};
