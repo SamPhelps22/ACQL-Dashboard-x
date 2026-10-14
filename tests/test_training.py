@@ -486,6 +486,42 @@ class Kept(unittest.TestCase):
             finally:
                 snapshots.folder = real
 
+    def test_every_look_is_kept_and_a_week_can_be_rebuilt_as_of_a_cutoff(self):
+        rows = pd.DataFrame([{"season": 2030, "week": 6, "home": "gb", "away": "chi", "game": "2030-06-chi@gb",
+                              "locked_at": 1000.0, "credited_home": np.nan, "line_deadline": 6.5, "m:sag": 5.0}])
+        report = {"at": 850.0, "teams": {"gb": [{"name": "A Passer", "position": "QB", "status": "out",
+                                                 "what": "Ankle", "at": 800.0}],
+                                         "chi": [{"name": "B Back", "position": "RB", "status": "questionable",
+                                                  "what": "", "at": None}]}}
+        with tempfile.TemporaryDirectory() as scratch:
+            real, snapshots.folder = snapshots.folder, lambda: Path(scratch)
+            try:
+                snapshots.take(rows, now=900.0, injuries=report)
+                self.assertIn("unchanged", snapshots.take(rows, now=905.0, injuries=report)[0][1])   # a repeat run
+                snapshots.take(rows.assign(line_deadline=6.0), now=950.0, injuries=report)
+                history = sorted(snapshots.history_for(2030, 6).glob("*.json"))
+                self.assertEqual(len(history), 2)                                    # both real looks, never overwritten
+                # an out-of-order run (its clock behind the newest look) adds history but replaces nothing
+                done = snapshots.take(rows.assign(line_deadline=7.0), now=920.0, injuries=report)
+                self.assertIn("newer than this look", done[0][1])
+                self.assertEqual(snapshots.read(snapshots.path_for(2030, 6))["games"][0]["line_deadline"], 6.0)
+                self.assertEqual(len(list(snapshots.history_for(2030, 6).glob("*.json"))), 3)
+                # as of a cutoff: only what had been frozen by then
+                self.assertIsNone(snapshots.as_of(2030, 6, 899.0))
+                self.assertEqual(snapshots.as_of(2030, 6, 910.0)["games"][0]["line_deadline"], 6.5)
+                self.assertEqual(snapshots.as_of(2030, 6, 925.0)["games"][0]["line_deadline"], 7.0)
+                self.assertEqual(snapshots.as_of(2030, 6, 10_000.0)["games"][0]["line_deadline"], 6.0)
+                body = snapshots.read(snapshots.path_for(2030, 6))
+                self.assertEqual(body["made_utc"], "1970-01-01T00:15:50+00:00")      # 950 s after 1970, in UTC
+                self.assertEqual(body["injuries_at"], 850.0)
+                hurt = body["games"][0]["injuries"]
+                self.assertEqual(hurt["home"][0]["status"], "out")
+                self.assertEqual(hurt["home"][0]["at"], 800.0)
+                self.assertIsNone(hurt["away"][0]["at"])                             # no time given: none invented
+                self.assertFalse(list(Path(scratch).glob(".*.tmp")))                 # nothing half-written left over
+            finally:
+                snapshots.folder = real
+
 
 # ---- the one-line answer -----------------------------------------------------------------------------------
 class Verdict(unittest.TestCase):
@@ -607,6 +643,134 @@ class Real(unittest.TestCase):
         # a favourite of a touchdown or more at home wins far more often than not: the sign is the home side's
         big = prepared[prepared["market"] >= 7]
         self.assertGreater(float((big["actual"] > 0).mean()), 0.7)
+
+
+class HomeUnderdogPatterns(unittest.TestCase):
+    def test_counts_covers_from_the_home_side(self):
+        from acql.training import patterns
+        sunday_sept = pd.Timestamp("2025-09-14 17:00", tz="UTC").timestamp()     # 1 pm Eastern, a Sunday
+        sunday_oct = pd.Timestamp("2025-10-12 17:00", tz="UTC").timestamp()
+        frame = pd.DataFrame({
+            "season": [2025] * 5, "week": [2, 2, 6, 6, 6], "neutral": [False] * 5,
+            "line_closing": [-2.5, -6.0, -2.0, 3.0, -3.0],      # below 0: the home side gets points
+            "actual": [-1.0, -7.0, 5.0, -10.0, -3.0],           # cover, no cover, cover, (favourite), push
+            "kickoff": [sunday_sept, sunday_sept, sunday_oct, sunday_oct, sunday_oct]})
+        dogs = patterns.home_dogs(frame)
+        self.assertEqual(len(dogs), 4)
+        found = dict((p.name, next(iter(by.values()))) for p, by in patterns.study(frame))
+        self.assertEqual((found["All home underdogs"]["wins"], found["All home underdogs"]["losses"],
+                          found["All home underdogs"]["pushes"]), (2, 1, 1))
+        self.assertEqual(found["September"]["games"], 2)
+        self.assertEqual(found["Under 3 points"]["wins"], 2)
+        self.assertAlmostEqual(patterns._p_at_least(0, 10), 1.0)
+
+
+class MarginRemoval(unittest.TestCase):
+    """Odds conversions and the four ways of taking the bookmaker's margin out."""
+
+    def test_conversions(self) -> None:
+        from acql.training import devig
+        self.assertAlmostEqual(devig.american_to_decimal(-150), 1 + 100 / 150)
+        self.assertAlmostEqual(devig.american_to_decimal(130), 2.30)
+        self.assertEqual(devig.decimal_to_american(2.30), 130.0)
+        self.assertEqual(devig.decimal_to_american(1 + 100 / 150), -150.0)
+        self.assertAlmostEqual(devig.implied(-150), 0.6)
+        self.assertAlmostEqual(devig.implied(100), 0.5)
+        with self.assertRaises(ValueError):
+            devig.american_to_decimal(50)
+
+    def test_methods(self) -> None:
+        from acql.training import data, devig
+        home, away = devig.implied(-400), devig.implied(320)
+        chances = {m: devig.fair(home, away, m) for m in devig.METHODS}
+        for m, p in chances.items():
+            self.assertTrue(0.5 < p < 1, m)
+        # the in-use method is the dashboard's own
+        self.assertAlmostEqual(chances["Proportional"], data.fair_win(-400, 320))
+        # the longshot methods leave the favourite surer than proportional does
+        for m in ("Power", "Shin", "Additive"):
+            self.assertGreater(chances[m], chances["Proportional"], m)
+        # with no margin, every method gives the chances back unchanged
+        for m in devig.METHODS:
+            self.assertAlmostEqual(devig.fair(0.7, 0.3, m), 0.7, places=6)
+        # an even game stays even
+        for m in devig.METHODS:
+            self.assertAlmostEqual(devig.fair(devig.implied(-110), devig.implied(-110), m), 0.5, places=6)
+
+    def test_study(self) -> None:
+        from acql.training import devig
+        frame = pd.DataFrame({
+            "season": [2020, 2020, 2021, 2021, 2022, 2022], "week": [1] * 6, "kind": ["REG"] * 6,
+            "home_price": [-400, -150, 200, -110, -300, 120],
+            "away_price": [320, 130, -240, -110, 250, -140],
+            "home_won": [1.0, 0.0, 0.0, 1.0, 1.0, 0.0]})
+        scores, calibration = devig.study(frame)
+        self.assertEqual([s.method for s in scores], list(devig.METHODS))
+        self.assertTrue(all(s.games == 6 for s in scores))
+        self.assertEqual(scores[0].vs_in_use, 0.0)
+        self.assertEqual(int(calibration["games"].sum()), 6)
+        self.assertIn("Verdict", devig.write_up(scores, calibration))
+
+
+class EdgeDecay(unittest.TestCase):
+    """The models' gap from each line: the consensus, the slopes and the cover count."""
+
+    def test_consensus_trims_and_needs_three(self) -> None:
+        from acql.training import decay
+        frame = pd.DataFrame({"m:a": [1.0, 1.0], "m:b": [2.0, None], "m:c": [3.0, None],
+                              "m:d": [4.0, None], "m:e": [100.0, None]})
+        found = decay.consensus(frame)
+        self.assertAlmostEqual(found[0], 3.0)        # one of five off each end: 2, 3, 4
+        self.assertTrue(np.isnan(found[1]))
+
+    def test_market_closing_the_gap_and_none_left(self) -> None:
+        from acql.training import decay
+        rng = np.random.default_rng(1)
+        n = 400
+        gap = rng.normal(0, 3, n)
+        opening = rng.normal(0, 6, n)
+        closing = opening + 0.5 * gap                      # the market closes half the gap
+        frame = pd.DataFrame({"season": np.repeat(np.arange(2000, 2010), n // 10), "m:a": opening + gap,
+                              "m:b": opening + gap, "m:c": opening + gap, "line_opening": opening,
+                              "line_closing": closing, "actual": closing + rng.normal(0, 0.01, n)})
+        found = decay.study(frame)
+        every = next(iter(found.values()))
+        self.assertAlmostEqual(every["opening"]["move"], 0.5, places=6)
+        self.assertAlmostEqual(every["opening"]["result"], 0.5, places=2)
+        self.assertAlmostEqual(every["closing"]["result"], 0.0, places=2)     # nothing left at the close
+        self.assertEqual(every["midweek"]["games"], 0)
+        self.assertIn("too few", decay.write_up(found))
+
+    def test_no_result_column_is_read_as_a_line(self) -> None:
+        """Leak guard: the gap is built from model and line columns only - never the score."""
+        from acql.training import decay
+        frame = pd.DataFrame({"m:a": [1.0], "m:b": [1.0], "m:c": [1.0], "actual": [99.0],
+                              "home_points": [99.0], "m_extra": [50.0]})
+        self.assertAlmostEqual(decay.consensus(frame)[0], 1.0)
+
+
+class QuarterbackNews(unittest.TestCase):
+    """A quarterback's status that changed after the newest line is flagged, not priced."""
+
+    def test_flag(self) -> None:
+        from unittest import mock
+        from acql.feeds import injuries
+        from acql.model import evidence
+        report = {"aaa": [injuries.Injury("A Passer", "QB", "questionable", "Ankle", 2000.0)],
+                  "bbb": [injuries.Injury("B Passer", "QB", "out", "Knee", 500.0)]}
+        with mock.patch.object(injuries, "fetched_at", return_value=2100.0), \
+                mock.patch.object(injuries, "team", side_effect=lambda code: report.get(code, [])):
+            late = evidence._quarterback("Aye", "Bee", "aaa", "bbb", market_at=1000.0)
+            fresh = evidence._quarterback("Aye", "Bee", "aaa", "bbb", market_at=3000.0)
+            unknown = evidence._quarterback("Aye", "Bee", "aaa", "bbb")
+        self.assertIn("newer than the line", late.headline)
+        self.assertIn("A Passer (questionable)", late.detail)
+        self.assertNotIn("B Passer (out)", late.detail)          # reported before the line
+        self.assertIn("Questionable is not out", late.detail)
+        self.assertEqual(late.verdict, fresh.verdict)            # the flag never changes the side it points to
+        self.assertNotIn("newer than the line", fresh.headline)
+        self.assertIn("already has it in", unknown.detail)       # no line time, no flag
+        self.assertEqual(injuries.newer_than(report["aaa"], 0.0), [])
 
 
 def main() -> int:
