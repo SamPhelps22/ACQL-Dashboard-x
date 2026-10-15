@@ -12,6 +12,8 @@ ten minutes never repeats one. With no topic set nothing is sent.
     python -m acql.site.pushalerts --topic acql-pool-xyz   set the topic
     python -m acql.site.pushalerts --test                  send a test alert
     python -m acql.site.pushalerts --off                   stop the alerts
+    python -m acql.site.pushalerts --deadline "thu 6pm"    when picks are due each week
+    python -m acql.site.pushalerts --remind 3              hours of warning before it
 
 A topic is public to anyone who knows its name, so pick one hard to guess.
 """
@@ -29,6 +31,51 @@ KIND = "alerts"
 REMIND_BEFORE = 2 * 3600
 TIMEOUT = 15
 TOPIC_RULE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
+
+
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+CLOCK = re.compile(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$")
+
+
+def parse_deadline(text: str) -> tuple[int, int, int]:
+    """'thu 6pm', 'Thursday 18:00', 'sun 12:30pm' -> (weekday, hour, minute), Monday 0."""
+    parts = text.strip().lower().split(None, 1)
+    if len(parts) != 2 or parts[0][:3] not in DAYS:
+        raise ValueError('give a day and a time, like "thu 6pm" or "sunday 12:30pm"')
+    found = CLOCK.match(parts[1].replace(" ", ""))
+    if not found:
+        raise ValueError(f"can't read the time {parts[1]!r} - try 6pm or 18:00")
+    hour, minute, half = int(found.group(1)), int(found.group(2) or 0), found.group(3)
+    if half:
+        if not 1 <= hour <= 12:
+            raise ValueError("with am/pm the hour is 1-12")
+        hour = hour % 12 + (12 if half == "pm" else 0)
+    if hour > 23 or minute > 59:
+        raise ValueError("that isn't a time of day")
+    return DAYS.index(parts[0][:3]), hour, minute
+
+
+def set_deadline(text: str) -> None:
+    from .. import store
+    weekday, hour, minute = parse_deadline(text)
+    store.put("settings", "deadline", {"weekday": weekday, "hour": hour, "minute": minute})
+
+
+def describe_deadline() -> str:
+    from ..feeds import oddslock
+    weekday, hour, minute = oddslock.deadline_clock()
+    clock = f"{hour % 12 or 12}:{minute:02d}{'pm' if hour >= 12 else 'am'}"
+    return f"{DAYS[weekday].title()} {clock}"
+
+
+def remind_before() -> float:
+    """How long before the deadline the reminder goes out (seconds)."""
+    from .. import store
+    try:
+        hours = float(store.get(KIND, "remind_hours", REMIND_BEFORE / 3600))
+    except Exception:  # noqa: BLE001
+        return REMIND_BEFORE
+    return hours * 3600 if 0.25 <= hours <= 48 else REMIND_BEFORE
 
 
 def topic() -> str:
@@ -80,9 +127,9 @@ def _once(key: str, title: str, message: str, **kw) -> bool:
     return False
 
 
-def deadline_due(deadline: float, now: float) -> bool:
-    """Inside the reminder window: under two hours to go, and not yet closed."""
-    return 0 < deadline - now <= REMIND_BEFORE
+def deadline_due(deadline: float, now: float, before: float = REMIND_BEFORE) -> bool:
+    """Inside the reminder window: close to the deadline, and not yet past it."""
+    return 0 < deadline - now <= before
 
 
 def remind_deadline(now: float | None = None, link: str = "") -> bool:
@@ -92,7 +139,7 @@ def remind_deadline(now: float | None = None, link: str = "") -> bool:
     year = results.season_year()
     for week in results.calendar_weeks(year, now):
         due = oddslock.deadline(year, week)
-        if deadline_due(due, now):
+        if deadline_due(due, now, remind_before()):
             left = max(1, round((due - now) / 3600))
             clock = time.strftime("%I:%M %p", time.localtime(due)).lstrip("0")
             return _once(f"deadline:{year}:{week}", f"Week {week} picks close in {left} hour{'s' * (left > 1)}",
@@ -112,7 +159,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--topic", help="the ntfy topic coaches subscribe to")
     parser.add_argument("--off", action="store_true", help="stop sending alerts")
     parser.add_argument("--test", action="store_true", help="send a test alert")
+    parser.add_argument("--deadline", help='when picks are due each week, like "thu 6pm"')
+    parser.add_argument("--remind", type=float, help="hours before the deadline to send the reminder")
     args = parser.parse_args(argv)
+    if args.deadline:
+        try:
+            set_deadline(args.deadline)
+        except ValueError as exc:
+            print(f"deadline not changed: {exc}")
+            return 1
+    if args.remind is not None:
+        if not 0.25 <= args.remind <= 48:
+            print("reminder not changed: give 0.25 to 48 hours")
+            return 1
+        from .. import store
+        store.put(KIND, "remind_hours", args.remind)
     if args.off:
         set_topic("")
     elif args.topic:
@@ -123,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     name = topic()
     print(f"alerts go to {subscribe_link(name)}" if name else "alerts are off (no topic)")
+    print(f"picks are due {describe_deadline()}; the reminder goes {remind_before() / 3600:g} hours before")
     if args.test and name:
         send("ACQL alerts are on", "This is a test. You'll get the picks deadline and weekly results here.",
              tags="football")
