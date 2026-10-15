@@ -393,6 +393,10 @@ main {
 .hero.sided .stat .v { font-size: 36px; letter-spacing: 0.01em; }
 .hero.sided .stat .k { margin-top: 3px; line-height: 1.25; }
 .hero .stat.money.up .v { color: #5fd391; }
+.hero .stat.lead .v { color: var(--gold); }
+.hero .stat.alarm .v { color: #ff6b5b; }
+.hero .stat.alarm .k { color: #ffb3aa; }
+.hero .hero-foot { font-size: 14px; color: var(--onair-muted); margin-top: 4px; }
 @media (min-width: 900px) {
   .hero.sided { grid-template-columns: minmax(0, 1fr) minmax(250px, 320px); column-gap: 44px; align-items: center; padding: 24px 72px 26px 28px; }
   .hero.sided .stats { margin-top: 0; background: var(--onair-2); border: 1px solid var(--onair-rule); border-radius: var(--r-sm); padding: 2px 18px; }
@@ -1117,7 +1121,7 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
   opacity: 0.14;
   pointer-events: none;
 }
-.hero.sided::before { right: auto; left: 44%; width: min(30%, 240px); opacity: 0.1; }
+.hero.sided::before { right: auto; left: 44%; width: min(30%, 240px); opacity: 0.06; }
 
 /* a module is a panel now: its own surface, a gold tick by its heading */
 .module {
@@ -3001,45 +3005,70 @@ a.weekpill { text-decoration: none; }
     return below.length ? Math.max.apply(null, below) : null;
   }
   function headline(w) {
-    var n = w.winners;
-    if (n.length === 1) return n[0] + " takes week " + w.week + " with " + w.top;
+    var n = w.winners, second = secondBest(w), gap = second == null ? 0 : w.top - second;
+    if (n.length === 1) {
+      if (w.top === w.games) return n[0] + " runs the table in week " + w.week;
+      if (gap >= 3) return n[0] + " runs away with week " + w.week;
+      if (gap === 1) return n[0] + " edges out week " + w.week;
+      return n[0] + " takes week " + w.week;
+    }
     if (n.length === 2) return n[0] + " and " + n[1] + " split week " + w.week;
     return cap((WORDS[n.length] || n.length) + "-way split of week " + w.week);
   }
+  function isTie(u) { return /^tie$/i.test(String(u.winner || "").trim()); }
   function story(w) {
     var bits = [];
     var second = secondBest(w);
     var runners = second == null ? [] : w.scores.filter(function (s) { return s.total === second; }).map(function (s) { return s.name; });
     if (w.winners.length === 1 && second != null) {
-      bits.push(plural(w.top, "win") + ", " + numberWord(w.top - second) + " clear of " + listNames(runners, 2) + ".");
+      bits.push(w.top + " of " + w.games + " was enough, " + (w.top - second === 1 ? "one game ahead of " : numberWord(w.top - second) + " games ahead of ") + listNames(runners, 2) + ".");
     } else if (w.winners.length > 1) {
-      bits.push("All on " + plural(w.top, "win") + ".");
+      bits.push("All on " + w.top + " of " + w.games + ".");
     }
     if (w.payout_each) bits.push(money(w.payout_each) + (w.winners.length > 1 ? " each." : " to the winner."));
-    bits.push("The pool averaged " + w.average.toFixed(1) + " of " + w.games + ", and the crowd’s card went " + w.crowd.right + " for " + w.crowd.games + ".");
     var u = (w.upsets || [])[0];
-    if (u) bits.push(u.winner + " sank the pool: " + (u.right ? "only " + u.right + " of " + u.entrants + " had them." : "nobody had them."));
+    if (u) {
+      var who = u.right ? "only " + u.right + " of " + u.entrants + " saw it coming" : "nobody saw it coming";
+      bits.push(isTie(u) ? "The " + u.matchup + " tie wrecked cards; " + who + "." : u.winner + " was the killer; " + who + ".");
+    }
     return bits.join(" ");
   }
   // How many coaches went out of the suicide pool in a week, whichever team did it.
   function outIn(week) {
     return DATA.players.filter(function (p) { return p.suicide.out === week; }).length;
   }
+  // The coach (or coaches) with the most Big Loser points this week.
+  function bigLoser(w) {
+    var best = w.scores.reduce(function (a, s) { return Math.max(a, s.big_loser || 0); }, 0);
+    if (!best) return null;
+    return { pts: best, names: w.scores.filter(function (s) { return (s.big_loser || 0) === best; }).map(function (s) { return s.name; }) };
+  }
   // A week's story as the lower third: on the home page the latest week (its
   // headline the page's h1), on Weeks any week.
   function heroRecap(w, onWeeks) {
     var alive = onWeeks && w.suicide && w.suicide.left != null ? w.suicide.left : aliveNames().length;
     var out = outIn(w.week);
-    return hero("Week " + w.week, [
-      el("span", { class: "kicker" }, [el("span", { text: onWeeks ? "Week " + w.week : "Week " + w.week + " in the books" })]),
+    var second = secondBest(w);
+    var crowd = w.crowd || {};
+    var loser = bigLoser(w);
+    var suicideLabel = alive === 1 ? "last one standing in suicide" : "alive in suicide";
+    if (out) suicideLabel += " · " + out + " out this week";
+    var stats = [
+      stat(w.top + "/" + w.games, w.winners.length > 1 ? "winning score" : "winning score · " + w.winners[0], "lead"),
+      second != null && w.winners.length === 1
+        ? stat("+" + (w.top - second), "margin of victory")
+        : stat(String(w.winners.length), "tied at the top"),
+      crowd.games ? stat(crowd.right + "–" + (crowd.games - crowd.right), "crowd’s record · avg " + w.average.toFixed(1))
+                  : stat(w.average.toFixed(1), "pool average"),
+      stat(String(alive), suicideLabel, alive <= 1 ? "alarm" : null)
+    ];
+    var main = [
+      el("span", { class: "kicker" }, [el("span", { text: onWeeks ? "Week " + w.week : "Week " + w.week + " · Final" })]),
       el(onWeeks ? "h2" : "h1", { text: headline(w) }),
       el("p", { class: "deck", text: story(w) })
-    ], [
-      stat(String(w.top), "winning score"),
-      stat(w.average.toFixed(1), "pool average"),
-      stat(String(alive), out ? "left in the suicide pool, " + out + " out" : "left in the suicide pool"),
-      stat(String(w.scores.reduce(function (a, s) { return a + (s.big_loser || 0); }, 0)), "Big Loser points")
-    ]);
+    ];
+    if (loser) main.push(el("p", { class: "hero-foot", text: "Big Loser: " + listNames(loser.names, 2) + ", " + plural(loser.pts, "pt") }));
+    return hero("Week " + w.week, main, stats);
   }
   // The lower third: the one loud thing on a page. Its numbers sit in a
   // panel beside the headline on a wide screen, under it on a phone.
