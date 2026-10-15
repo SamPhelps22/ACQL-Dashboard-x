@@ -11,9 +11,12 @@ from ...pool.awards import Award
 from ...config import WEEKS_IN_SEASON
 from ...models import Player, Season
 from ...wording import plural as _plural
+from .. import icons
 from ..charts import BarChart, HistogramChart
-from ..theme import mix
-from ..widgets import Banner, Card, ElidedLabel, StatTile, section, tile_grid
+from ..iconset import AWARD_ICONS
+from ..theme import mix, tone_color
+from ..tokens import SPACE
+from ..widgets import Banner, Card, ElidedLabel, StatTile, section, theme_palette, tile_grid
 from .base import Page
 
 LEADERBOARD_SIZE = 12
@@ -37,16 +40,23 @@ class AwardTile(QFrame):
         self.setMinimumHeight(104)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 11, 14, 12)
-        layout.setSpacing(5)
+        layout.setContentsMargins(SPACE["room"], SPACE["step"], SPACE["room"], SPACE["step"])
+        layout.setSpacing(SPACE["tight"])
 
         # Icon plus label: the award never relies on colour to be identified.
-        icon = QLabel(award.icon)
+        icon = QLabel()
         icon.setObjectName("AwardIcon")
+        drawn = AWARD_ICONS.get(award.key)
+        if drawn:
+            # the tone's colour, as the tile's edge wears it; otherwise the quiet ink
+            colour = tone_color(theme_palette(), award.tone)
+            icon.setPixmap(icons.pixmap(drawn, colour, 18, max(2.0, icon.devicePixelRatioF())))
+        if icon.pixmap().isNull():
+            icon.setText(award.icon)     # no drawing (or no SVG support): the emoji stands in
         title = QLabel(award.title)
         title.setObjectName("CardTitle")
         heading = QHBoxLayout()
-        heading.setSpacing(7)
+        heading.setSpacing(SPACE["snug"])
         heading.addWidget(icon)
         heading.addWidget(title, 1)
         layout.addLayout(heading)
@@ -57,7 +67,7 @@ class AwardTile(QFrame):
         value.setObjectName("AwardValue")
         value.setProperty("tone", self.property("tone"))
         headline = QHBoxLayout()
-        headline.setSpacing(8)
+        headline.setSpacing(SPACE["snug"])
         headline.addWidget(winner, 1)
         headline.addWidget(value, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(headline)

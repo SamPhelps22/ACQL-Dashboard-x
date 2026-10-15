@@ -26,7 +26,8 @@ from ...feeds import odds
 from ...model.predictions import display_team
 from ...models import Season
 from ..theme import mix
-from ..widgets import Card, IconButton, StatTile, TableModel, make_table, section, tile_grid
+from .. import explain
+from ..widgets import Card, IconButton, StatTile, TableModel, make_table, section, tile_grid, InfoIcon, with_info
 from ...version import MODEL_NAME
 from ...feeds import oddslock
 from .base import Page
@@ -201,10 +202,11 @@ class BriefingPage(Page):
         self.lines_status.setObjectName("Muted")
         self.lines_status.setWordWrap(True)
         options.addWidget(self.lines_status, 1)
+        options.addWidget(InfoIcon(explain.MARKET_MOVEMENT, "line movement"), 0, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(options)
 
         # Every pick in slate order, big enough to copy straight onto the sheet.
-        self.glance_card = Card(GLANCE_TITLE)
+        self.glance_card = Card(GLANCE_TITLE, info=explain.PROBABILITIES)
         self.glance_grid = QGridLayout()
         self.glance_grid.setHorizontalSpacing(10)
         self.glance_grid.setVerticalSpacing(10)
@@ -212,7 +214,8 @@ class BriefingPage(Page):
         # ...and its three Big Losers, which are part of the card too.
         self.losers_head = QLabel("")
         self.losers_head.setTextFormat(Qt.TextFormat.RichText)
-        self.glance_card.add(self.losers_head)
+        # its ⓘ goes with it, so it is shown only while there are Big Losers to explain
+        self.losers_row = self.glance_card.add(with_info(self.losers_head, explain.BIG_LOSERS, "Big Losers"))
         self.losers_grid = QGridLayout()
         self.losers_grid.setHorizontalSpacing(10)
         self.glance_card.body().addLayout(self.losers_grid)
@@ -227,10 +230,10 @@ class BriefingPage(Page):
         self.glance_card.add(self.glance_note)
         self.layout_.addWidget(self.glance_card)
 
-        self.tile_expected = StatTile("Expected Wins")
+        self.tile_expected = StatTile("Expected Wins", info=explain.EXPECTED_WINS)
         self.tile_swing = StatTile("Biggest Swing")
-        self.tile_pays = StatTile("Chance To Win The Week")
-        self.tile_flips = StatTile("Coin Flips")
+        self.tile_pays = StatTile("Chance To Win The Week", info=explain.WIN_THE_WEEK)
+        self.tile_flips = StatTile("Coin Flips", info=explain.HARD_TO_CALL)
         self._tiles = (
             self.tile_expected, self.tile_swing, self.tile_pays, self.tile_flips,
         )
@@ -272,13 +275,13 @@ class BriefingPage(Page):
         self.swing_card.body().addLayout(self.swing_box)
         self.layout_.addWidget(self.swing_card)
 
-        self.card = Card(CARD_TITLE)
+        self.card = Card(CARD_TITLE, info=explain.PROBABILITIES + " " + explain.CONFIDENT_NOTE)
         self.card_box = QVBoxLayout()
         self.card.body().addLayout(self.card_box)
         self.layout_.addWidget(self.card, 2)
         self.table: QWidget | None = None
 
-        self.side_card = Card("The side pools")
+        self.side_card = Card("The side pools", info=explain.BIG_LOSERS)
         self.side_box = QVBoxLayout()
         self.side_card.body().addLayout(self.side_box)
         self.layout_.addWidget(self.side_card)
@@ -455,6 +458,7 @@ class BriefingPage(Page):
         self.clear_layout(self.glance_grid)
         self.clear_layout(self.losers_grid)
         self.losers_head.setText("")
+        self.losers_row.hide()
         self.losers_note.setText("")
         self.glance_note.setText("")
         self.why_intro.setText("")
@@ -578,6 +582,7 @@ class BriefingPage(Page):
         p = self.palette
         if not brief.losers:
             self.losers_head.setText("")
+            self.losers_row.hide()
             self.losers_note.setText("")
             return
         try:
@@ -585,6 +590,7 @@ class BriefingPage(Page):
             held = {o.code: o for o in board.options}
         except Exception:  # noqa: BLE001 - the three stand without the pool's share
             board, held = None, {}
+        self.losers_row.show()
         self.losers_head.setText(
             f"<span style='font-weight:700; color:{p.ink}'>{MODEL_NAME}'s three Big Losers</span>"
             f"<span style='color:{p.ink_muted}'> \u00b7 a point each when the team loses by 15 or more"

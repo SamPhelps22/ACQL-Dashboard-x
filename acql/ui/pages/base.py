@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from ...models import Season
 from ..theme import Palette
+from ..tokens import SPACE
 
 #: A refresh slower than this is written to the log, so "it feels slow" can
 #: be answered with which page and how slow rather than a guess.
@@ -150,7 +151,7 @@ class StatePanel(QWidget):
         column.setMaximumWidth(560)
         body = QVBoxLayout(column)
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(10)
+        body.setSpacing(SPACE["step"])
         self._body = body
         self._details: QPlainTextEdit | None = None
 
@@ -339,8 +340,8 @@ class Page(QWidget):
         self._content = QWidget()
         self._content.setObjectName("PageContent")
         self.layout_ = QVBoxLayout(self._content)
-        self.layout_.setContentsMargins(22, 18, 22, 22)
-        self.layout_.setSpacing(14)
+        self.layout_.setContentsMargins(SPACE["gap"], SPACE["room"], SPACE["gap"], SPACE["gap"])
+        self.layout_.setSpacing(SPACE["room"])
         self._scroll.setWidget(self._content)
         self._scroll.verticalScrollBar().rangeChanged.connect(self._page_range_changed)
 

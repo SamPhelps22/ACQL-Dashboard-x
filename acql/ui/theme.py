@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .tokens import HOVER_TINT, LABEL, RADIUS, SPACE, tracking_px
+
 
 @dataclass(frozen=True)
 class Palette:
@@ -196,9 +198,8 @@ TYPE = {
     "label": 12,       # column headings, card titles
     "caption": 11.5,   # footnotes, units, the small print
 }
-# Spacing steps, so margins and gaps come from a ladder rather than taste.
-SPACE = {"hair": 2, "tight": 4, "snug": 8, "step": 12, "room": 18, "gap": 24}
-RADIUS = {"chip": 6, "control": 7, "card": 10, "tile": 12}
+# Spacing, corners and the label style come from tokens.py, which the pool's
+# website reads too, so the window and the site are cut from the same cloth.
 
 
 def mix(fg: str, bg: str, amount: float) -> str:
@@ -288,7 +289,12 @@ def stylesheet(p: Palette) -> str:
     brand = p.brand or p.accent
     lit = mix(p.accent, p.surface, 0.26)      # the chosen place, at the edge the bar is on
     rule = mix(p.accent, p.raised, 0.40)      # a hairline in the accent
-    edge = mix(p.ink, p.surface, 0.09)        # a panel's outline: there, not drawn
+    # One hairline for every edge - panels, tables and controls alike - and
+    # one hovered edge: hover leans toward the accent, focus commits to it.
+    # The website does the same with its --rule and --rule-hover.
+    line = p.grid
+    line_hover = mix(p.accent, p.raised, HOVER_TINT)
+    label_tracking = tracking_px(LABEL["size"])
     sheen = mix(p.ink, p.surface, 0.035)      # the light a panel catches along its top
     gilt = mix(brand, p.raised, 0.10)         # the gold, barely there: the lead tile's wash
     t = TYPE
@@ -390,15 +396,15 @@ def stylesheet(p: Palette) -> str:
     /* Refresh / theme / jump: quiet outlines, so the nav stays the loudest thing. */
     #Sidebar QPushButton {{
         background: transparent;
-        border: 1px solid {p.grid};
-        border-radius: 6px;
+        border: 1px solid {line};
+        border-radius: {r["sm"]}px;
         color: {p.ink_secondary};
         text-align: left;
         padding: 7px 11px;
     }}
     #Sidebar QPushButton:hover {{
         background: {hover};
-        border-color: {rule};
+        border-color: {line_hover};
         color: {p.ink};
     }}
     #Sidebar QPushButton:disabled {{ color: {p.ink_muted}; }}
@@ -409,16 +415,16 @@ def stylesheet(p: Palette) -> str:
     #Card {{
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                     stop:0 {sheen}, stop:0.12 {p.surface}, stop:1 {p.surface});
-        border: 1px solid {edge};
-        border-radius: {r["card"]}px;
+        border: 1px solid {line};
+        border-radius: {r["md"]}px;
     }}
     /* Headline numbers sit one step above the content cards. They are quiet
        by default: the first tile of a row is the page's headline and is the
        only one lit (in the gold), so a row of six has somewhere to start. */
     #StatTile {{
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {mix(p.ink, p.raised, 0.04)}, stop:0.5 {p.raised});
-        border: 1px solid {edge};
-        border-radius: {r["card"]}px;
+        border: 1px solid {line};
+        border-radius: {r["md"]}px;
     }}
     #StatTile[lead="true"] {{
         background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {gilt}, stop:0.6 {p.raised});
@@ -429,9 +435,9 @@ def stylesheet(p: Palette) -> str:
     #StatTile #CardTitle {{
         color: {p.ink_muted};
         font-family: {DISPLAY_STACK};
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 1.6px;
+        font-size: {LABEL["size"]}px;
+        font-weight: {LABEL["weight"]};
+        letter-spacing: {label_tracking}px;
         border: none;
         padding: 0;
     }}
@@ -441,9 +447,9 @@ def stylesheet(p: Palette) -> str:
        itself having to be coloured. */
     #AwardTile {{
         background: {p.raised};
-        border: 1px solid {edge};
+        border: 1px solid {line};
         border-left: 3px solid {p.baseline};
-        border-radius: 10px;
+        border-radius: {r["md"]}px;
     }}
     #AwardTile[tone="good"] {{ border-left-color: {p.good}; }}
     #AwardTile[tone="bad"] {{ border-left-color: {p.critical}; }}
@@ -453,8 +459,8 @@ def stylesheet(p: Palette) -> str:
     /* The number reads as a chip so it never competes with the name. */
     #AwardValue {{
         background: {mix(p.ink, p.raised, 0.08)};
-        border-radius: 6px;
-        padding: 2px 8px;
+        border-radius: {r["sm"]}px;
+        padding: {s["hair"]}px {s["snug"]}px;
         font-family: {NUMERIC_STACK};
         font-size: {t["label"]}px;
         font-weight: 700;
@@ -473,9 +479,9 @@ def stylesheet(p: Palette) -> str:
        pick stands - credited now, not, or a game on you have no pick in. */
     #GameCard {{
         background: {p.raised};
-        border: 1px solid {edge};
+        border: 1px solid {line};
         border-left: 4px solid {p.baseline};
-        border-radius: 10px;
+        border-radius: {r["md"]}px;
     }}
     #GameCard[tone="good"] {{ border-left-color: {p.good}; }}
     #GameCard[tone="bad"] {{ border-left-color: {p.critical}; }}
@@ -545,8 +551,8 @@ def stylesheet(p: Palette) -> str:
        read next to words without shouting over them. */
     #Pill {{
         background: {mix(p.ink, p.raised, 0.08)};
-        border-radius: {r["chip"]}px;
-        padding: 2px 8px;
+        border-radius: {r["sm"]}px;
+        padding: {s["hair"]}px {s["snug"]}px;
         font-family: {NUMERIC_STACK};
         font-size: {t["caption"]}px;
         font-weight: 700;
@@ -571,8 +577,8 @@ def stylesheet(p: Palette) -> str:
         background: {p.surface};
         alternate-background-color: {p.raised};
         gridline-color: {p.grid};
-        border: 1px solid {p.grid};
-        border-radius: 8px;
+        border: 1px solid {line};
+        border-radius: {r["md"]}px;
         selection-background-color: {p.selection};
         selection-color: {p.ink};
         font-size: 13px;
@@ -594,9 +600,9 @@ def stylesheet(p: Palette) -> str:
         border-bottom: 1px solid {rule};
         /* the narrower cut: a heading is the first thing to run out of room */
         font-family: "Bahnschrift SemiCondensed", {DISPLAY_STACK};
-        font-size: 12.5px;
-        font-weight: 600;
-        letter-spacing: 0.3px;
+        font-size: {t["label"]}px;
+        font-weight: {LABEL["weight"]};
+        letter-spacing: {tracking_px(t["label"], 0.04)}px;
     }}
     QHeaderView::section:hover {{ color: {p.ink}; background: {mix(p.ink, p.raised, 0.05)}; }}
     /* Qt's own sort arrow is not drawn: it has no room of its own, so over a
@@ -616,15 +622,15 @@ def stylesheet(p: Palette) -> str:
     QPushButton {{
         background: {p.raised};
         color: {p.ink};
-        border: 1px solid {p.grid};
-        border-radius: 7px;
-        padding: 7px 15px;
-        font-size: 13px;
+        border: 1px solid {line};
+        border-radius: {r["sm"]}px;
+        padding: {s["snug"] - 1}px {s["room"]}px;
+        font-size: {t["body"]}px;
     }}
-    QPushButton:hover {{ background: {mix(p.ink, p.raised, 0.06)}; border-color: {p.accent}; }}
+    QPushButton:hover {{ background: {hover}; border-color: {line_hover}; }}
     QPushButton:focus {{ border-color: {p.accent}; }}
     QPushButton:pressed {{ background: {pressed}; }}
-    QPushButton:disabled {{ color: {p.ink_muted}; border-color: {p.grid}; }}
+    QPushButton:disabled {{ color: {p.ink_muted}; border-color: {line}; }}
     QPushButton#Primary {{
         background: {p.accent};
         border-color: {p.accent};
@@ -642,14 +648,14 @@ def stylesheet(p: Palette) -> str:
     QComboBox, QLineEdit, QAbstractSpinBox {{
         background: {p.raised};
         color: {p.ink};
-        border: 1px solid {p.grid};
-        border-radius: 7px;
-        padding: 6px 10px;
+        border: 1px solid {line};
+        border-radius: {r["sm"]}px;
+        padding: {s["snug"] - 2}px {s["step"] - 2}px;
         min-height: 18px;
         selection-background-color: {p.selection};
         selection-color: {p.ink};
     }}
-    QComboBox:hover, QLineEdit:hover, QAbstractSpinBox:hover {{ border-color: {p.baseline}; }}
+    QComboBox:hover, QLineEdit:hover, QAbstractSpinBox:hover {{ border-color: {line_hover}; }}
     QComboBox:focus, QLineEdit:focus, QAbstractSpinBox:focus {{ border-color: {p.accent}; }}
     QComboBox:disabled, QLineEdit:disabled, QAbstractSpinBox:disabled {{ color: {p.ink_muted}; }}
     QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
@@ -661,10 +667,10 @@ def stylesheet(p: Palette) -> str:
     /* Inputs living inside a table row: inset so they sit in the middle of
        the row with a little air, instead of filling it edge to edge. */
     QTableView QComboBox, QTableView QAbstractSpinBox {{
-        margin: 4px 6px;
-        padding: 2px 8px;
+        margin: {s["tight"]}px {s["snug"] - 2}px;
+        padding: {s["hair"]}px {s["snug"]}px;
         min-height: 0px;
-        border-radius: 6px;
+        border-radius: {r["xs"]}px;
     }}
 
     /* Multi-line text (the predictions paste box, error details) sat on the
@@ -672,37 +678,38 @@ def stylesheet(p: Palette) -> str:
     QPlainTextEdit, QTextEdit {{
         background: {p.raised};
         color: {p.ink};
-        border: 1px solid {p.grid};
-        border-radius: 8px;
-        padding: 6px;
+        border: 1px solid {line};
+        border-radius: {r["sm"]}px;
+        padding: {s["snug"] - 2}px;
         selection-background-color: {p.selection};
         selection-color: {p.ink};
     }}
+    QPlainTextEdit:hover, QTextEdit:hover {{ border-color: {line_hover}; }}
     QPlainTextEdit:focus, QTextEdit:focus {{ border-color: {p.accent}; }}
     QComboBox::drop-down {{ border: none; width: 22px; }}
     QComboBox QAbstractItemView {{
         background: {p.raised};
         color: {p.ink};
-        border: 1px solid {p.grid};
+        border: 1px solid {line};
         selection-background-color: {p.selection};
         outline: none;
     }}
 
     QListWidget {{
         background: {p.surface};
-        border: 1px solid {p.grid};
-        border-radius: 8px;
+        border: 1px solid {line};
+        border-radius: {r["md"]}px;
         outline: none;
     }}
-    QListWidget::item {{ padding: 8px 12px; border-radius: 6px; }}
+    QListWidget::item {{ padding: {s["snug"]}px {s["step"]}px; border-radius: {r["sm"]}px; }}
     QListWidget::item:hover {{ background: {hover}; }}
     QListWidget::item:selected {{ background: {p.selection}; color: {p.ink}; }}
 
-    QTabWidget::pane {{ border: 1px solid {p.grid}; border-radius: 8px; top: -1px; }}
+    QTabWidget::pane {{ border: 1px solid {line}; border-radius: {r["md"]}px; top: -1px; }}
     QTabBar::tab {{
         background: transparent;
         color: {p.ink_muted};
-        padding: 8px 16px;
+        padding: {s["snug"]}px {s["room"]}px;
         border: none;
         border-bottom: 2px solid transparent;
     }}
@@ -718,9 +725,9 @@ def stylesheet(p: Palette) -> str:
     #GroupKicker {{
         color: {brand};
         font-family: {DISPLAY_STACK};
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 2.2px;
+        font-size: {LABEL["size"]}px;
+        font-weight: {LABEL["weight"]};
+        letter-spacing: {label_tracking}px;
         padding: 3px 14px 0 0;
         border-right: 1px solid {p.baseline};
         margin: 9px 10px 9px 0;
@@ -731,8 +738,8 @@ def stylesheet(p: Palette) -> str:
         font-size: {t["body"]}px;
         font-weight: 600;
         letter-spacing: 1px;
-        padding: 10px 16px 9px 16px;
-        margin-right: 4px;
+        padding: {s["step"] - 2}px {s["room"]}px {s["snug"] + 1}px {s["room"]}px;
+        margin-right: {s["tight"]}px;
     }}
     QTabBar#GroupTabBar::tab:hover {{ background: {hover}; }}
 
@@ -746,8 +753,8 @@ def stylesheet(p: Palette) -> str:
     QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
     QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
-    QProgressBar {{ background: {p.grid}; border: none; border-radius: 4px; }}
-    QProgressBar::chunk {{ background: {p.accent}; border-radius: 4px; }}
+    QProgressBar {{ background: {p.grid}; border: none; border-radius: {r["sm"]}px; }}
+    QProgressBar::chunk {{ background: {p.accent}; border-radius: {r["sm"]}px; }}
 
     /* A slider: a hairline track, lit up to the handle. */
     QSlider::groove:horizontal {{ height: 4px; background: {p.grid}; border-radius: 2px; }}
@@ -763,19 +770,32 @@ def stylesheet(p: Palette) -> str:
 
     /* Tooltips carry a lot of the explanation in this app, so they are set
        for reading rather than for glancing. */
+    /* The \u24d8 beside a figure: quiet until hovered or focused. */
+    QToolButton#InfoIcon {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {r["chip"]}px;
+        color: {p.ink_muted};
+        font-size: {t["body"]}px;
+        padding: 0 2px;
+    }}
+    QToolButton#InfoIcon:hover, QToolButton#InfoIcon:focus {{
+        color: {p.accent};
+        border-color: {p.accent};
+    }}
     QToolTip {{
         background: {p.raised};
         color: {p.ink};
         border: 1px solid {rule};
-        border-radius: {r["chip"]}px;
+        border-radius: {r["sm"]}px;
         padding: {s["snug"]}px {s["step"]}px;
         font-size: {t["body"]}px;
     }}
     #Banner {{
         background: {mix(p.warning, p.raised, 0.07)};
         border: 1px solid {mix(p.warning, p.raised, 0.55)};
-        border-radius: 8px;
-        padding: 2px;
+        border-radius: {r["md"]}px;
+        padding: {s["hair"]}px;
     }}
     #Banner[tone="info"] {{
         background: {mix(p.accent, p.raised, 0.07)};
@@ -804,8 +824,8 @@ def stylesheet(p: Palette) -> str:
         color: {p.ink};
     }}
     #StateMessage {{ font-size: {t["body"]}px; color: {p.ink_secondary}; }}
-    #StateProgress {{ background: {p.grid}; border-radius: 3px; }}
-    #StateProgress::chunk {{ background: {p.accent}; border-radius: 3px; }}
+    #StateProgress {{ background: {p.grid}; border-radius: {r["xs"]}px; }}
+    #StateProgress::chunk {{ background: {p.accent}; border-radius: {r["xs"]}px; }}
     #StateDetails {{
         font-family: {MONO_STACK};
         font-size: {t["caption"]}px;
