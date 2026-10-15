@@ -723,13 +723,17 @@ def _alerts_link() -> str:
         return ""
 
 
-def _texts_on() -> bool:
-    """Whether the pool's alerts go out by text."""
+#: Where coaches send their number to get the text alerts.
+TEXT_SIGNUP = "Sam522p@gmail.com"
+
+
+def _texts_on() -> str:
+    """Where to sign up for the text alerts, when they're on."""
     try:
         from ..site import pushalerts
-        return bool(pushalerts.text_number())
+        return TEXT_SIGNUP if pushalerts.text_number() else ""
     except Exception:  # noqa: BLE001
-        return False
+        return ""
 
 
 def snapshot(season: Season, *, generated: str | None = None, strict: bool = False) -> dict:
