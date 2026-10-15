@@ -17,6 +17,7 @@ from ...wording import plural as _plural
 from ..modelcharts import FormChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
+from .forecastlog import ForecastLogView
 
 HEADERS = ["Recipe", "Credited", "Winners", "On pool lines", "Avg miss", "Log loss", "Standing", "Goes on"]
 DUEL_TITLE = f"Head to head with {MODEL_NAME} - the games they split"
@@ -55,8 +56,10 @@ VIEWS = (
     ("Form & misses", "Straight up and against the pool's line, the last four weeks, and each week's biggest misses"),
     ("Long run", "Market, football or both: every season since 2011, on games none of them had seen"),
     ("The record", "What was written down before kickoff, the closing line, coverage, and what has changed"),
+    ("Outside forecasts", "Any model's forecasts, kept with the time they were made, scored on the same games - "
+                          "CSV in and out"),
 )
-SCORE, FORM, LONG, RECORD = range(len(VIEWS))
+SCORE, FORM, LONG, RECORD, OUTSIDE = range(len(VIEWS))
 #: Which view was open last.
 VIEW_KEY = "modellab/view"
 
@@ -197,6 +200,9 @@ class ModelLabPage(Page):
                 box.addWidget(each)
             self.layout_.addWidget(holder)
             self._view_holders.append(holder)
+        self.outside = ForecastLogView(self)
+        self.layout_.addWidget(self.outside)
+        self._view_holders.append(self.outside)
         try:
             wanted = int(QSettings().value(VIEW_KEY, SCORE))
         except (TypeError, ValueError):
@@ -240,6 +246,7 @@ class ModelLabPage(Page):
 
     def restyle(self) -> None:
         self.form_chart.set_palette(self.palette)
+        self.outside.restyle()
         self.refresh_now()
 
     def refresh(self) -> None:
@@ -263,6 +270,7 @@ class ModelLabPage(Page):
         self._update_seasons()
         self._update_value(value)
         self._update_tiles(lab, value)
+        self.outside.refresh(results.season_year(season))
         self.versions_label.setText("<br><br>".join(
             f"<b>{version}</b> · {when}<br>{what}" for version, when, what in modellab.VERSIONS))
 

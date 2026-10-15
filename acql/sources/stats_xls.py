@@ -30,6 +30,8 @@ from ..names import AliasTable
 # Main standings block.
 C_POS, C_COACH, C_W, C_L, C_PCT, C_GB = 0, 1, 2, 3, 4, 5
 C_NEG_PTS, C_POS_PTS, C_NET_PTS, C_CUR_WK_WINS = 6, 7, 8, 9
+#: "Pie Splits" (suicide + BL + top 10): side-pool money paid so far. Blank is none.
+C_PIE_SPLITS = 11
 C_LINE_GAMES = 13
 # Side pools.
 C_BL_COACH, C_BL_POINTS = 15, 17
@@ -186,6 +188,14 @@ def parse_stats(
             three = _int(cell(r, C_3WK))
             if three is not None:
                 person.three_week_wins = three
+            # Snapshots are layered oldest first, so what the total grew by
+            # since the last one was paid in this snapshot's week.
+            pie = _num(cell(r, C_PIE_SPLITS))
+            if pie is not None:
+                grew = round(pie - person.pie_splits, 2)
+                if grew > 0 and week:
+                    person.weekly_pie[week] = round(person.weekly_pie.get(week, 0.0) + grew, 2)
+                person.pie_splits = pie
 
         # --- big loser pool -------------------------------------------------
         bl_person = player_for(cell(r, C_BL_COACH))

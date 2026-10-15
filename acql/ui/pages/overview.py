@@ -193,8 +193,9 @@ class OverviewPage(Page):
         cashed = sum(1 for v in leader.weekly_winnings.values() if v and v > 0)
         self.tile_winnings.update_values(
             self.money(leader.total_winnings),
-            f"{self.money(net, signed=True)} net after the {self.money(season.buy_in)} buy-in"
-            f"\ncashed in {_plural(cashed, 'week')}",
+            (f"{self.money(net, signed=True)} net on the season" if leader.has_totals else
+             f"{self.money(net, signed=True)} net after the {self.money(season.buy_in)} buy-in")
+            + f"\ncashed in {_plural(cashed, 'week')}",
             "good" if net > 0 else ("bad" if net < 0 else ""),
         )
 

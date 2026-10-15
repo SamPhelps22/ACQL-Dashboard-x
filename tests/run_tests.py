@@ -3051,6 +3051,82 @@ class TestLedger(_ScratchStore):
         self.assertFalse(ledger.due(2026, self.NOW + 60))
 
 
+class TestPieSplits(unittest.TestCase):
+    """stats.xls's Pie Splits column (suicide + BL + top 10): side-pool money,
+    read as a season total and, between weekly exports, by the week it was paid."""
+
+    class _Sheet:
+        def __init__(self, week, rows):
+            grid = {(2, 5): f"Week {week}", (3, 11): "(suicide + BL + top 10)", (4, 1): "Coach",
+                    (4, 11): "Pie Splits"}
+            for r, (coach, won, pie) in enumerate(rows, start=5):
+                grid.update({(r, 0): r - 4, (r, 1): coach, (r, 7): won, (r, 11): pie})
+            self.grid, self.nrows, self.ncols = grid, 5 + len(rows), 40
+
+        def cell_value(self, r, c):
+            return self.grid.get((r, c), "")
+
+    def _read(self, snapshots):
+        from unittest import mock
+        from acql.models import SourceFile
+        from acql.names import AliasTable
+        from acql.sources import stats_xls
+        people = {}
+        for week, rows in snapshots:
+            sheet = self._Sheet(week, rows)
+            book = mock.Mock(sheet_names=lambda: ["stats"], sheet_by_name=lambda name, s=sheet: s)
+            with mock.patch("xlrd.open_workbook", lambda path, b=book: b):
+                stats_xls.parse_stats(SourceFile(Path(f"stats wk{week}.xls"), "stats", week), AliasTable(), people)
+        return people
+
+    def test_payout_lands_in_its_week(self):
+        people = self._read([(4, [("Gr8granpa", 0, ""), ("Line-Pony", 75.5, "")]),
+                             (5, [("Gr8granpa", 45, 45), ("Line-Pony", 103.5, "")])])
+        gr8 = next(p for p in people.values() if p.display == "Gr8granpa")
+        self.assertEqual((gr8.pie_splits, gr8.weekly_pie), (45.0, {5: 45.0}))
+        pony = next(p for p in people.values() if p.display == "Line-Pony")
+        self.assertEqual((pony.pie_splits, pony.weekly_pie), (0.0, {}))
+
+    def test_running_total_is_split_by_week(self):
+        people = self._read([(5, [("Gr8granpa", 45, 45)]), (8, [("Gr8granpa", 75, 75)])])
+        gr8 = next(iter(people.values()))
+        self.assertEqual(gr8.weekly_pie, {5: 45.0, 8: 30.0})
+
+    def test_winnings_page_counts_it(self):
+        try:
+            from acql.ui.pages.winnings import WinningsPage
+        except Exception as exc:  # noqa: BLE001
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        from acql.models import Season
+        people = self._read([(5, [("Gr8granpa", 45, 45)])])
+        season = Season()
+        season.players = people
+        standings, source = WinningsPage._standings(season)
+        self.assertEqual((source, standings[0].won, standings[0].weekly), ("stats", 45.0, {5: 45.0}))
+
+    def test_net_is_stats_net_pts(self):
+        """stats.xls is the pool's own book: its NET PTS is the net everywhere, whatever the weeks add up to."""
+        from acql.models import Player, Season
+        gr8 = Player(key="gr8", display="Gr8granpa", points_won=45.0, points_paid=-62.0, net_points=-17.0,
+                     weekly_pie={5: 45.0})
+        zach = Player(key="zach", display="Zach N", points_won=176.0, points_paid=-59.0, net_points=117.0,
+                      weekly_winnings={3: 167.0})
+        self.assertEqual((gr8.net(40.0), gr8.total_winnings), (-17.0, 45.0))
+        self.assertEqual((zach.net(40.0), zach.total_winnings), (117.0, 176.0))
+        # with no standings export, the weeks against the buy-in, as before
+        self.assertEqual(Player(key="x", display="X", weekly_winnings={1: 50.0}).net(40.0), 10.0)
+        try:
+            from acql.ui.pages.winnings import WinningsPage
+        except Exception as exc:  # noqa: BLE001
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        season = Season()
+        season.players = {"gr8": gr8, "zach": zach}
+        standings, source = WinningsPage._standings(season)
+        self.assertEqual(source, "stats")
+        self.assertEqual({s.name: (s.won, s.paid, s.net) for s in standings},
+                         {"Gr8granpa": (45.0, 62.0, -17.0), "Zach N": (176.0, 59.0, 117.0)})
+
+
 class SurvivorFieldTests(unittest.TestCase):
     """The suicide pool field: shares among unspent teams, and the fit."""
 

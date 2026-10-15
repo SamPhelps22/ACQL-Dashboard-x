@@ -395,12 +395,12 @@ def _merge_duplicates(season: Season) -> None:
 
     weekly = (
         "weekly_wins", "weekly_regular", "weekly_big_loser", "weekly_winnings",
-        "weekly_rank", "provisional_wins", "suicide_picks",
+        "weekly_rank", "provisional_wins", "suicide_picks", "weekly_pie",
     )
     totals = (
         "wins", "losses", "pct", "games_behind", "net_points", "points_won",
         "points_paid", "big_loser_points", "current_week_wins",
-        "three_week_wins", "line_game_pct",
+        "three_week_wins", "line_game_pct", "pie_splits",
     )
     # The workbook is the pool's own roster, so its spelling of a name is the
     # one the coach should be called by - an export that shouts "BOB H." does

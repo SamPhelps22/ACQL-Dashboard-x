@@ -135,7 +135,7 @@ class WinningsPage(Page):
         """
         people = list(season.players.values())
         weekly_known = any(
-            v for p in people for v in p.weekly_winnings.values() if v and v > 0
+            v for p in people for v in (*p.weekly_winnings.values(), *p.weekly_pie.values()) if v and v > 0
         )
         totals_known = any(
             p.points_won or p.points_paid or p.net_points for p in people
@@ -147,11 +147,21 @@ class WinningsPage(Page):
             for p in people:
                 # Weekly values can be None or 0 for weeks a player wasn't paid.
                 weekly = {w: v for w, v in p.weekly_winnings.items() if v and v > 0}
+                # side-pool money (stats.xls's Pie Splits) is paid in its week too
+                for w, v in p.weekly_pie.items():
+                    if v and v > 0:
+                        weekly[w] = round(weekly.get(w, 0.0) + v, 2)
+                if totals_known:
+                    # stats.xls's +PTS, -PTS and NET PTS are the pool's own figures
+                    won, paid = p.points_won, abs(p.points_paid)
+                    net = p.net_points if p.net_points else round(won - paid, 2)
+                    standings.append(_Standing(p.display, won, round(net, 2), weekly, paid))
+                    continue
                 won = sum(weekly.values())
                 standings.append(
                     _Standing(p.display, won, round(won - buy_in, 2), weekly, buy_in)
                 )
-            source = "weekly" if weekly_known else "none"
+            source = ("stats" if totals_known else "weekly") if weekly_known else "none"
         else:
             for p in people:
                 won, paid = p.points_won, abs(p.points_paid)
@@ -186,12 +196,14 @@ class WinningsPage(Page):
             return None
         paid_by_week = {w.week: w.payout for w in record.weeks if w.payout}
         buy_in = season.buy_in
-        net = record.net if season_only else round(record.won - buy_in, 2)
+        official = self._source in ("season", "stats")
+        net = record.net if official else round(record.won - buy_in, 2)
         if season_only:
             row = [self.NO_VALUE, ghost.LABEL, self.money(record.won), self.money(record.paid),
                    self.money(net, signed=True)]
         else:
-            row = [self.NO_VALUE, ghost.LABEL, self.money(buy_in), self.money(record.won),
+            row = [self.NO_VALUE, ghost.LABEL, self.money(record.paid if official else buy_in),
+                   self.money(record.won),
                    self.money(net, signed=True), len(paid_by_week)]
             row += [self._dollars(paid_by_week[w]) if paid_by_week.get(w) else "" for w in weeks]
         r = len(rows)
@@ -199,7 +211,8 @@ class WinningsPage(Page):
         for column in range(len(row)):
             tones[(r, column)] = "muted"
         nets = [s.net for s in standings]
-        values = {0: 1 + sum(1 for v in nets if v > net) - 0.5, 2: record.won if season_only else buy_in,
+        values = {0: 1 + sum(1 for v in nets if v > net) - 0.5,
+                  2: record.won if season_only else (record.paid if official else buy_in),
                   3: record.paid if season_only else record.won, 4: net}
         for column, week in enumerate(weeks, start=FIRST_WEEK_COLUMN):
             values[column] = paid_by_week.get(week, 0.0)
@@ -277,7 +290,7 @@ class WinningsPage(Page):
         verb = "is" if count == 1 else "are"
         against = (
             f"past the {self.money(season.buy_in)} buy-in"
-            if self._source != "season" else "ahead on the season"
+            if self._source not in ("season", "stats") else "ahead on the season"
         )
         self.tile_up.update_values(
             str(ahead),
@@ -376,7 +389,7 @@ class WinningsPage(Page):
             f"{s.name}\nWon {self.money(s.won)}\n"
             + (
                 f"Paid out {self.money(s.paid)}\n"
-                if self._source == "season"
+                if self._source in ("season", "stats")
                 else f"Buy-in {self.money(season.buy_in)}\n"
             )
             + f"Net {self.money(s.net, signed=True)}"
@@ -397,7 +410,8 @@ class WinningsPage(Page):
         headers = (
             list(SEASON_HEADERS)
             if season_only
-            else FIXED_HEADERS + [f"Wk {w}" for w in weeks]
+            else ["Paid out" if h == "Buy-in" and self._source == "stats" else h for h in FIXED_HEADERS]
+            + [f"Wk {w}" for w in weeks]
         )
 
         rows, tones = [], {}
@@ -414,7 +428,7 @@ class WinningsPage(Page):
                 row = [
                     rank,
                     s.name,
-                    self.money(buy_in),
+                    self.money(s.paid if self._source == "stats" else buy_in),
                     self.money(s.won),
                     self.money(s.net, signed=True),
                     len(s.weekly),
@@ -439,7 +453,7 @@ class WinningsPage(Page):
         else:
             sort_values = {
                 0: ranks,
-                2: [buy_in] * len(standings),
+                2: [s.paid for s in standings] if self._source == "stats" else [buy_in] * len(standings),
                 3: [s.won for s in standings],
                 4: [s.net for s in standings],
             }
@@ -491,6 +505,16 @@ class WinningsPage(Page):
             text = (
                 "Season totals from stats.xls. The week-by-week split appears "
                 "here once the weeks have their pick sheets and results."
+            )
+        elif self._source == "stats":
+            text = (
+                "Won, paid out and net are stats.xls's season totals - the pool's own "
+                "figures. The week columns show what each week paid: the week's pot by "
+                "the pool's rule"
+                + (f" (worked out from the scores for {', '.join(f'week {w}' for w in computed)})"
+                   if computed else "")
+                + ", plus the side pools (Pie Splits). Where they don't add up to Won, "
+                "stats.xls is the one to go by."
             )
         elif computed:
             # Nothing gives these as numbers (the workbook kept them as

@@ -1365,6 +1365,30 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
     radial-gradient(130% 150% at 0% 0%, color-mix(in srgb, var(--turf) 34%, var(--onair)) 0%, var(--onair) 62%);
 }
 .hero::after { display: none; }
+/* the week's banner: the winning number lit gold, thin meters out of the card,
+   the logo off the headline and tucked behind the figures on the right */
+.hero h1 { text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55); }
+.hero .deck b { color: var(--gold); font-weight: 600; }
+.hero .stat.lead .v { color: var(--gold); text-shadow: 0 0 18px var(--glow); }
+.hero .stat .meter { display: block; height: 3px; margin: 7px 0 2px; max-width: 120px; background: color-mix(in srgb, var(--onair-ink) 12%, transparent); border-radius: 2px; overflow: hidden; }
+.hero .stat .meter i { display: block; height: 100%; background: var(--onair-muted); border-radius: inherit; }
+.hero .stat.lead .meter i { background: var(--gold); box-shadow: 0 0 8px var(--glow); }
+@media (min-width: 720px) {
+  .hero.sided .stats { border-top: 1px solid color-mix(in srgb, var(--gold) 55%, transparent); }
+}
+.hero .deck + .deck { margin-top: 4px; }
+.hero .kicker .hello { color: var(--onair-ink); }
+.maxweeks .r { grid-template-columns: 44px 74px minmax(0,1fr) 44px; }
+.maxweeks .r.best .num b { color: var(--gold); }
+@media (prefers-reduced-motion: no-preference) {
+  /* a number that just changed glows once, then settles; nothing repeats */
+  @keyframes ticked {
+    0%, 25% { color: var(--gold); text-shadow: 0 0 16px var(--glow); background-color: color-mix(in srgb, var(--gold) 18%, transparent); }
+    100% { background-color: transparent; }
+  }
+  .ticked { animation: ticked 1400ms ease-out 1; border-radius: 2px; }
+}
+.hero .deck.more { font-size: 15px; }
 @media (prefers-reduced-motion: no-preference) {
   @keyframes wipe {
     from { clip-path: polygon(0 0, 0 0, 0 0, 0 100%, 0 100%, 0 100%); }
@@ -2847,6 +2871,24 @@ a.weekpill { text-decoration: none; }
   });
 
   var heroShown = false;    // the lower third wipes in once a visit, not on every refresh
+  // Numbers tagged data-tick flash once when they differ from what this viewer
+  // last saw. Within a visit only a redraw of the same page counts (moving to
+  // another week or tab is not news); the official standings ("s:") are also
+  // remembered between visits, so a new week's totals flash on arrival.
+  var TICK_KEY = "acql-pool-seen", seen = {}, drawnOnce = false, drawnWeek = null;
+  (function () { var s = storedJSON(TICK_KEY); if (s && typeof s === "object") seen = s; })();
+  function ticks(sameView) {
+    var keep = {};
+    Array.prototype.forEach.call(app.querySelectorAll("[data-tick]"), function (n) {
+      var k = n.getAttribute("data-tick"), v = n.textContent;
+      var counts = sameView || (!drawnOnce && k.indexOf("s:") === 0);
+      if (counts && Object.prototype.hasOwnProperty.call(seen, k) && seen[k] !== v) n.classList.add("ticked");
+      seen[k] = v;
+    });
+    Object.keys(seen).forEach(function (k) { if (k.indexOf("s:") === 0) keep[k] = seen[k]; });
+    storeJSON(TICK_KEY, keep);
+    drawnOnce = true;
+  }
   var shown = "";           // the page last drawn
   function render(opts) {
     opts = opts || {};
@@ -2887,6 +2929,8 @@ a.weekpill { text-decoration: none; }
     var hero = view.querySelector(".hero");
     if (hero && !heroShown) { hero.classList.add("enter"); heroShown = true; }
     drawCharts();
+    ticks(drawnOnce && here === shown && state.week === drawnWeek);
+    drawnWeek = state.week;
     var wide = app.querySelectorAll(".scroll");
     if (slid.length === wide.length) slid.forEach(function (left, i) { if (left) wide[i].scrollLeft = left; });
     shown = state.coach ? "coach=" + state.coach : state.view;
@@ -2916,6 +2960,8 @@ a.weekpill { text-decoration: none; }
     var below = w.scores.map(function (s) { return s.total; }).filter(function (v) { return v < w.top; });
     return below.length ? Math.max.apply(null, below) : null;
   }
+  // The most a card could score that week (games plus Big Loser picks), from the official sheet.
+  function weekMost(w) { return w && w.most > 0 ? w.most : null; }
   function headline(w) {
     var n = w.winners;
     if (n.length === 1) return n[0] + " takes week " + w.week + " with " + w.top;
@@ -2932,9 +2978,42 @@ a.weekpill { text-decoration: none; }
       bits.push("All on " + plural(w.top, "win") + ".");
     }
     if (w.payout_each) bits.push(money(w.payout_each) + (w.winners.length > 1 ? " each." : " to the winner."));
-    bits.push("The pool averaged " + w.average.toFixed(1) + " of " + w.games + ", and the crowd’s card went " + w.crowd.right + " for " + w.crowd.games + ".");
+    bits.push("The pool averaged " + w.average.toFixed(1) + " of " + (weekMost(w) ? weekMost(w) + " possible" : w.games) + ", and the crowd’s card went " + w.crowd.right + " for " + w.crowd.games + ".");
     var u = (w.upsets || [])[0];
-    if (u) bits.push(u.winner + " sank the pool: " + (u.right ? "only " + u.right + " of " + u.entrants + " had them." : "nobody had them."));
+    if (u) bits.push((u.winner === "Tie" ? "A tie" : u.winner) + " sank the pool: " + (u.right ? "only " + u.right + " of " + u.entrants + " had them." : "nobody had them."));
+    return bits.join(" ");
+  }
+  // The rest of the week, for the home banner: how it was won, how the games
+  // went, who went home. Each line only when the week has the facts for it.
+  function weekTold(w) {
+    var bits = [];
+    var lc = function (s) { return s ? s.charAt(0).toLowerCase() + s.slice(1) : s; };
+    var beat = function (kind) { return (w.beats || []).filter(function (b) { return b.kind === kind; })[0]; };
+    var dec = beat("decider"), bad = beat("bad-beat");
+    if (dec) bits.push(dec.who + " was " + lc(dec.detail).replace(/\.?$/, "."));
+    if (bad && (!dec || bad.who !== dec.who)) bits.push(bad.who + " was " + lc(bad.detail).replace(/\.?$/, "."));
+    var climb = (w.awards || []).filter(function (a) { return a.title === "Biggest climber"; })[0];
+    if (climb) bits.push(climb.who + " moved " + climb.detail + ".");
+    var c = w.chaos;
+    if (c && c.upsets != null) {
+      bits.push(cap(plural(c.upsets, "upset")) + " against " + c.expected.toFixed(1) + " expected" +
+        (c.label ? ", a " + c.label.toLowerCase() + " week" : "") + (c.biggest ? "; the biggest was " + c.biggest + "." : "."));
+    }
+    var res = (w.results || []).filter(function (g) { return g.right != null; });
+    if (res.length) {
+      var best = res.reduce(function (a, g) { return g.right > a.right ? g : a; });
+      bits.push("Best-called game: " + best.winner + " over " + best.loser + ", " + best.right + " of " + w.entrants + " had it.");
+    }
+    if (w.scores && w.scores.length) {
+      var low = Math.min.apply(null, w.scores.map(function (s) { return s.total; }));
+      var lows = w.scores.filter(function (s) { return s.total === low; }).length;
+      bits.push("Low card was " + low + (lows > 1 ? ", shared by " + lows + " coaches." : "."));
+    }
+    var sp = w.suicide;
+    if (sp && sp.killed && sp.killer) {
+      bits.push(sp.killer + " knocked " + plural(sp.killed, "coach", "coaches") + " out of the suicide pool" +
+        (sp.left != null ? ", " + (sp.left === 1 ? "one left standing." : sp.left + " left standing.") : "."));
+    }
     return bits.join(" ");
   }
   // How many coaches went out of the suicide pool in a week, whichever team did it.
@@ -2947,15 +3026,31 @@ a.weekpill { text-decoration: none; }
     var alive = onWeeks && w.suicide && w.suicide.left != null ? w.suicide.left : aliveNames().length;
     var out = outIn(w.week);
     return hero("Week " + w.week, [
-      el("span", { class: "kicker" }, [el("span", { text: onWeeks ? "Week " + w.week : "Week " + w.week + " in the books" })]),
+      el("span", { class: "kicker" }, onWeeks ? [el("span", { text: "Week " + w.week })] : welcome([seasonOver() ? "The season is in the books" : "Week " + w.week + " is in the books",
+        seasonOver() ? null : "Next slate is loading"])),
       el(onWeeks ? "h2" : "h1", { text: headline(w) }),
-      el("p", { class: "deck", text: story(w) })
+      el("p", { class: "deck" }, boldNames(story(w), w.scores.map(function (s) { return s.name; }))),
+      onWeeks ? null : el("p", { class: "deck more" }, boldNames(weekTold(w), w.scores.map(function (s) { return s.name; })))
     ], [
-      stat(String(w.top), "winning score"),
-      stat(w.average.toFixed(1), "pool average"),
+      stat(String(w.top), weekMost(w) ? "winning score, of " + weekMost(w) + " possible" : "winning score", "lead", w.top / (weekMost(w) || w.games)),
+      stat(w.average.toFixed(1), "pool average", null, w.average / (weekMost(w) || w.games)),
       stat(String(alive), out ? "left in the suicide pool, " + out + " out" : "left in the suicide pool"),
       stat(String(w.scores.reduce(function (a, s) { return a + (s.big_loser || 0); }, 0)), "Big Loser points")
     ], onWeeks ? "compact" : null);
+  }
+  // The banner's top line: hello to the chosen coach, then where the season
+  // stands, each part only from what the page knows.
+  function welcome(parts) {
+    var out = hasMe() ? [el("span", { class: "hello", text: "Welcome back, " + state.me })] : [];
+    parts.filter(Boolean).forEach(function (p) { out.push(el("span", { text: (out.length ? "· " : "") + p })); });
+    return out;
+  }
+  function seasonOver() { var R = DATA.race; return !!R && R.season_weeks && DATA.through_week >= R.season_weeks; }
+  // "Sunday is underway" while a Sunday game is on; between windows just the week.
+  var DAYS = ["Sunday", "Monday night", "Tuesday", "Wednesday", "Thursday night", "Friday", "Saturday"];
+  function underway(t, week) {
+    var on = t.games.filter(function (x) { return x.state === "in" && x.kick; })[0];
+    return on ? DAYS[new Date(on.kick).getDay()] + " is underway" : "Week " + week + " is underway";
   }
   // The lower third: the one loud thing on a page. Its numbers sit in a
   // panel beside the headline on a wide screen, under it on a phone.
@@ -2964,8 +3059,18 @@ a.weekpill { text-decoration: none; }
       el("div", { class: "hero-main" }, main),
       stats ? el("div", { class: "hero-side" }, [el("div", { class: "stats" }, stats)]) : null]);
   }
-  function stat(value, label, tone) {
-    return el("div", { class: "stat" + (tone ? " " + tone : "") }, [el("span", { class: "v", text: value }), el("span", { class: "k", text: label })]);
+  // share (0-1), when given, draws a thin meter under the number: how much of the card it is.
+  function stat(value, label, tone, share) {
+    var meter = share == null ? null : el("span", { class: "meter", "aria-hidden": "true" },
+      [el("i", { style: "width:" + Math.max(0, Math.min(100, share * 100)).toFixed(1) + "%" })]);
+    return el("div", { class: "stat" + (tone ? " " + tone : "") }, [el("span", { class: "v", text: value, "data-tick": "h:" + label }), meter, el("span", { class: "k", text: label })]);
+  }
+  // A sentence with the coaches' names in bold, longest names first so "Jim T" doesn't eat "Jim".
+  function boldNames(text, names) {
+    var found = names.filter(function (n) { return n && text.indexOf(n) >= 0; }).sort(function (a, b) { return b.length - a.length; });
+    if (!found.length) return [document.createTextNode(text)];
+    var re = new RegExp("(" + found.map(function (n) { return n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }).join("|") + ")");
+    return text.split(re).map(function (part, i) { return i % 2 ? el("b", { text: part }) : document.createTextNode(part); });
   }
 
   // ---- results in: the recap -----------------------------------------------------------
@@ -3112,7 +3217,7 @@ a.weekpill { text-decoration: none; }
     var lined = L.games.filter(function (g) { return g.line != null && g.fav; }).length;
     var losers = L.coaches.reduce(function (a, c) { return a + c.bl.length; }, 0);
     var top = hero("Week " + L.week, [
-      el("span", { class: "kicker" }, [el("span", { text: "Week " + L.week + ": the picks are in" })]),
+      el("span", { class: "kicker" }, welcome(["Week " + L.week + " is up next", "the picks are in"])),
       el("h1", {}, next ? ["Kickoff ", el("span", { "data-until": String(next.at), text: untilText(next.at) })] : ["Week " + L.week + " is set"]),
       el("p", { class: "deck" }, [plural(L.coaches.length, "card") + " in. " + aliveNames().length + " still alive in the suicide pool." +
         (next ? " " + next.g.a + " at " + next.g.h + " starts it." : "")]),
@@ -3162,8 +3267,8 @@ a.weekpill { text-decoration: none; }
       stat(String(t.games.length - on - finals), "still to play")
     ];
     var top_ = hero("Week " + L.week + " live", [
-      el("span", { class: "kicker" }, [on ? el("span", { class: "live-tag", text: "LIVE" }) : null,
-        el("span", { text: "Week " + L.week + (on ? ": " + plural(on, "game") + " on, " : ": ") + finals + " of " + t.games.length + " final" })]),
+      el("span", { class: "kicker" }, [on ? el("span", { class: "live-tag", text: "LIVE" }) : null].concat(welcome([underway(t, L.week),
+        (on ? plural(on, "game") + " on, " : "") + finals + " of " + t.games.length + " final"]))),
       el("h1", { text: leaders.length > 3 ? cap(count(leaders.length, "coach", "coaches")) + " share the lead on " + top
         : listNames(leaders, 3) + (leaders.length > 1 ? " lead" : " leads") + " the week with " + top }),
       mine ? el("p", { class: "deck", text: (!behind ? (leaders.length > 1 ? "You share the lead" : "You lead the week") : "You’re " + behind + " behind the lead") +
@@ -3195,7 +3300,7 @@ a.weekpill { text-decoration: none; }
     var pay = moneyNow(t);
     var average = t.rows.length ? t.rows.reduce(function (a, r) { return a + r.now; }, 0) / t.rows.length : 0;
     var top_ = hero("Week " + L.week + " final", [
-      el("span", { class: "kicker" }, [el("span", { text: "Week " + L.week + " is over" })]),
+      el("span", { class: "kicker" }, welcome(["Week " + L.week + " is final", "official table to follow"])),
       el("h1", { text: winners.length > 2 ? cap(count(winners.length, "coach", "coaches")) + " share week " + L.week + " on " + top
         : listNames(winners, 2) + (winners.length > 1 ? " win" : " wins") + " week " + L.week + " with " + top }),
       el("p", { class: "deck", text: "From the final scores. The official table follows once the week is entered." })
@@ -3583,10 +3688,10 @@ a.weekpill { text-decoration: none; }
       el("span", { class: "odds" }, [el("span", { text: "Win %" }), el("span", { text: over ? "Pays" : "$ now" })])])].concat(shown.map(function (r) {
       var m = pay[r.c.name];
       return el("div", { class: "r" + (isMe(r.c.name) ? " me" : "") + (place[r.c.name] === 1 && r.now > 0 ? " lead" : ""), style: "grid-template-columns: 30px minmax(0,1fr) auto 66px" }, [
-        el("span", { class: "pos", text: String(place[r.c.name]) }),
+        el("span", { class: "pos", text: String(place[r.c.name]), "data-tick": "l:pos:" + r.c.name }),
         el("span", { class: "name" }, [who(r.c.name), isMe(r.c.name) ? el("span", { class: "youtag", text: "YOU" }) : null,
           el("span", { class: "meta", style: "display:block", text: r.final + " final · " + r.left + " to play" + (r.bl ? " · " + plural(r.bl, "Big Loser point") : "") })]),
-        el("span", { class: "big", text: String(r.now) }),
+        el("span", { class: "big", text: String(r.now), "data-tick": "l:now:" + r.c.name }),
         el("span", { class: "odds num" }, [el("b", { text: pct(sim.chance[r.c.name] || 0) }),
           el("span", { class: "cash " + cashTone(m), title: (over ? "What the week pays: " : "If it ended now: ") + cash(m), text: cash(m) })])
       ]);
@@ -3984,11 +4089,11 @@ a.weekpill { text-decoration: none; }
           last ? "last wk " + last.total + (won ? " ★" : "") : "",
           p.big_loser ? "BL " + p.big_loser : ""].filter(Boolean).join(" · ")];
       rows.push(el("div", { class: "r" + (isMe(p.name) ? " me" : "") + (line ? " avgtop" : ""), "data-name": p.name }, [
-        el("span", { class: "pos", text: p.place != null ? String(p.place) : "" }),
+        el("span", { class: "pos", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
         moveMark(p.move),
         el("span", { class: "name" }, [el("span", { class: "initials sm", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
           who(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null]),
-        el("span", { class: "big", text: String(p.wins) }),
+        el("span", { class: "big", text: String(p.wins), "data-tick": "s:total:" + p.name }),
         el("span", { class: "col", text: lead - p.wins ? String(lead - p.wins) : "–" }),
         el("span", { class: "col" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }),
         el("span", { class: "col", text: last ? String(last.total) + (won ? " ★" : "") : "" }),
@@ -4019,9 +4124,9 @@ a.weekpill { text-decoration: none; }
       var s = p.suicide;
       var mv = p.move == null || p.move === 0 ? el("td", { class: "n flat", text: "–" })
         : p.move > 0 ? el("td", { class: "n up", text: "▲" + p.move }) : el("td", { class: "n down", text: "▼" + Math.abs(p.move) });
-      var cells = [el("td", { class: "n place num stick-a", text: p.place != null ? String(p.place) : "" }),
+      var cells = [el("td", { class: "n place num stick-a", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
         el("td", { class: "coach stick-b" }, [who(p.name)]),
-        el("td", { class: "n total num", text: String(p.wins) }), mv,
+        el("td", { class: "n total num", text: String(p.wins), "data-tick": "s:total:" + p.name }), mv,
         DATA.race ? el("td", { class: "n num" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }) : null,
         el("td", { class: "n num", text: p.big_loser ? String(p.big_loser) : "–" }),
         el("td", {}, [el("span", { class: "dot " + (s.alive ? "alive" : "out") }), s.alive ? "Still in" : (s.out ? "Out wk " + s.out : "–")])].filter(Boolean);
@@ -4893,7 +4998,7 @@ a.weekpill { text-decoration: none; }
       week ? rootingFor(p.name) : null,
       chance,
       el("div", { class: "cols" }, [
-        el("div", {}, [trendModule(p), profileModule(p), blindSpotsModule(p)]),
+        el("div", {}, [trendModule(p), maxModule(p), profileModule(p), blindSpotsModule(p)]),
         el("div", {}, [twinsModule(p), rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
       ]),
       played ? module("Every week", plural(played, "week"), [scroller(el("table", { id: "coach-weeks" }, [el("thead", {}, [el("tr", {}, [
@@ -4937,6 +5042,27 @@ a.weekpill { text-decoration: none; }
     ], { "data-card": "chance" });
   }
 
+  // Each week's score against the most that week allowed, so a 9 in a short
+  // bye week and a 9 in a full slate read differently. Only weeks whose
+  // maximum the official sheet supports.
+  function maxModule(p) {
+    var rows = DATA.weeks.filter(function (w) { return weekMost(w) && p.weekly[String(w.week)] != null; })
+      .sort(function (a, b) { return b.week - a.week; })
+      .map(function (w) { var v = p.weekly[String(w.week)]; return { w: w, v: v, share: v / weekMost(w) }; });
+    if (!rows.length) return null;
+    var best = Math.max.apply(null, rows.map(function (r) { return r.share; }));
+    var worst = Math.min.apply(null, rows.map(function (r) { return r.share; }));
+    return module("Points against the max", "games plus Big Loser picks", [
+      el("div", { class: "rows maxweeks" }, rows.map(function (r) {
+        return el("div", { class: "r" + (rows.length > 1 && r.share === best ? " best" : "") }, [
+          el("span", { class: "meta", text: "Wk " + r.w.week }),
+          el("span", { class: "num" }, [el("b", { text: String(r.v) }), " of " + weekMost(r.w)]),
+          bar(r.share, 1),
+          el("span", { class: "num", style: "text-align:right", text: Math.round(r.share * 100) + "%" })]);
+      })),
+      rows.length > 1 && best !== worst ? el("p", { class: "note", text: "Best week " + Math.round(best * 100) + "% of the max, worst " + Math.round(worst * 100) + "%." }) : null
+    ], { "data-card": "max" });
+  }
   // Where the coach has been, week by week: place and score against the pool.
   function trendModule(p) {
     var weeks = DATA.weeks.map(function (w) { return w.week; }).sort(function (a, b) { return a - b; });

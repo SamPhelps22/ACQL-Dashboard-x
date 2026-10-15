@@ -295,6 +295,10 @@ def _week(season: Season, number: int, *, money_known: bool = True,
         "week": number,
         "entrants": made.entrants,
         "games": made.games,
+        # the most a card could score: every game plus every Big Loser pick the
+        # official sheet allows; left out when the sheet does not say
+        "most": made.games + int(season.max_big_loser_points)
+        if made.games and season.max_big_loser_points else None,
         "average": round(made.average, 2),
         "winners": list(made.winners),
         "top": made.top_score,
