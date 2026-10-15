@@ -2662,7 +2662,11 @@ a.weekpill { text-decoration: none; }
         return el("button", { type: "button", "aria-pressed": textPref() === o[0] ? "true" : "false",
           onclick: function () { textChoice = o[0]; store(TEXT_KEY, o[0]); render(); }, text: o[1] });
       }))
-    ].concat(DATA.alerts ? [
+    ].concat(DATA.texts ? [
+      el("b", { text: "Text alerts" }),
+      el("span", { class: "note", text: "Get a text before picks close and when the week's results are in. Send the commissioner your number and carrier to be added (any carrier but AT&T)." })
+    ].concat(DATA.alerts ? [el("a", { class: "note", href: DATA.alerts, target: "_blank", rel: "noopener", text: "Or get them in the free ntfy app" })] : [])
+    : DATA.alerts ? [
       el("b", { text: "Phone alerts" }),
       el("a", { class: "btn", href: DATA.alerts, target: "_blank", rel: "noopener", text: "Get alerts on your phone" }),
       el("span", { class: "note", text: "Install the free ntfy app, then subscribe from this link: a reminder before picks close, and when the week's results are in." })

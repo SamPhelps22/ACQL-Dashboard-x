@@ -723,6 +723,15 @@ def _alerts_link() -> str:
         return ""
 
 
+def _texts_on() -> bool:
+    """Whether the pool's alerts go out by text."""
+    try:
+        from ..site import pushalerts
+        return bool(pushalerts.text_number())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def snapshot(season: Season, *, generated: str | None = None, strict: bool = False) -> dict:
     """Everything the pool page shows, worked out from the season. `strict`
     (publishing) lets a store that can't be read stop the build rather than
@@ -836,6 +845,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "money_by_week": money_by_week,
         "note": note,
         "alerts": _alerts_link(),
+        "texts": _texts_on(),
         "history": history,
         "teams": {code: display_team(code) for code in sorted(DISPLAY)},
         "team_rank": _team_ranks(latest),
