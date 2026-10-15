@@ -819,6 +819,7 @@ td.gone, span.gone { color: var(--muted); }
 .mehead { display: grid; gap: 10px; }
 .mehead .idrow { display: flex; align-items: center; gap: 14px; }
 .mehead .initials.xl { width: 58px; height: 58px; font-size: 24px; }
+.mehead .nickname { font: 700 14px/1 var(--body); color: var(--gold-text); letter-spacing: 0.02em; cursor: help; }
 .mehead h1 { font-size: clamp(34px, 8vw, 52px); overflow-wrap: anywhere; }
 .figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--rule); }
 @media (min-width: 720px) { .figures { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -5037,13 +5038,17 @@ a.weekpill { text-decoration: none; }
     var head = el("section", { class: "mehead" }, [
       back,
       el("div", { class: "idrow" }, [el("span", { class: "initials xl", style: avatarStyle(p.name), text: initials(p.name) }),
-        el("div", {}, [el("h1", {}, [p.name, formBadge(p.name)]), el("p", { class: "coach-line note", text: line }),
+        el("div", {}, [nickname(p.name) ? el("span", { class: "nickname", title: nickname(p.name).why, text: "“" + nickname(p.name).name + "”" }) : null,
+          el("h1", {}, [p.name, formBadge(p.name)]), el("p", { class: "coach-line note", text: line }),
           form(p.name) ? el("p", { class: "note form-line", text: formText(form(p.name)) }) : null])]),
       el("div", { class: "figures" }, [
-        figure(p.place != null ? ordinal(p.place) : "–", "in the standings", lead - p.wins ? (lead - p.wins) + " behind the lead" : "leading"),
-        figure(String(p.wins), "wins", p.move ? (p.move > 0 ? "up " : "down ") + plural(Math.abs(p.move), "place") + " last week" : "no move last week"),
+        figure(p.place != null ? ordinal(p.place) : "–", "in the standings",
+          (p.move ? (p.move > 0 ? "▲ up " : "▼ down ") + plural(Math.abs(p.move), "place") : "no move") + " last week"),
+        figure(String(p.wins), "wins", (lead - p.wins ? (lead - p.wins) + " behind the lead" : "leading") + " · " +
+          (avg > 0 ? "+" : avg < 0 ? "−" : "") + Math.abs(avg).toFixed(1) + " a week on the average"),
         figure(titleText(p) || "–", "title chance", p.out_of_reach ? "out of reach" : ""),
-        figure((avg > 0 ? "+" : avg < 0 ? "−" : "") + Math.abs(avg).toFixed(1), "a week on the average", plural(won, "week") + " won")
+        figure(money(DATA.money ? (p.won || 0) : moneyWon), "money won", plural(won, "week") + " won" +
+          (DATA.money && p.net != null ? " · " + money(p.net) + " net" : ""))
       ]),
       el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" }, [
         el("button", { class: "btn" + (mine ? " primary" : ""), type: "button", onclick: function () { shareWeek(p.name); } }, [icon("share"), mine ? "Share my week" : "Share " + p.name + "’s week"]),
@@ -5211,6 +5216,32 @@ a.weekpill { text-decoration: none; }
     if (recs.length) kids.push(el("div", { class: "teamrec" }, recs));
     if (pr.lined && pr.straight) kids.push(el("p", { class: "note", text: "Right on " + pr.linedRight + " of " + pr.lined + " lined games and " + pr.straightRight + " of " + pr.straight + " straight-up ones." }));
     return module("Picking profile", plural(pr.right, "pick") + " right of " + pr.games, [el("div", { class: "profile" }, kids)], { "data-card": "profile" });
+  }
+
+  // A nickname from how a coach picks: the habit furthest from the pool's,
+  // once there are enough picks to tell. Most coaches get one; it changes as they do.
+  function nickname(name) {
+    var pr = profileOf(name);
+    if (pr.games < 12) return null;
+    var pool = poolProfiles(), options = [];
+    function rate(a, b) { return b ? a / b : null; }
+    var fav = rate(pr.fav, pr.favKnown), poolFav = rate(pool.fav, pool.favKnown);
+    var home = rate(pr.home, pr.games), poolHome = rate(pool.home, pool.games);
+    var against = rate(pr.against, pr.games), poolAgainst = rate(pool.against, pool.games);
+    if (fav != null && poolFav != null && pr.favKnown >= 12) {
+      options.push({ by: fav - poolFav, name: "Chalk Eater", why: "Takes the favourite " + pctText(fav) + " of the time; the pool, " + pctText(poolFav) + "." });
+      options.push({ by: poolFav - fav, name: "Dog Lover", why: "Takes the underdog " + pctText(1 - fav) + " of the time; the pool, " + pctText(1 - poolFav) + "." });
+    }
+    if (poolHome != null) {
+      options.push({ by: home - poolHome, name: "Homebody", why: "Takes the home side " + pctText(home) + " of the time; the pool, " + pctText(poolHome) + "." });
+      options.push({ by: poolHome - home, name: "Road Warrior", why: "Takes the road side " + pctText(1 - home) + " of the time; the pool, " + pctText(1 - poolHome) + "." });
+    }
+    if (poolAgainst != null) {
+      options.push({ by: (against - poolAgainst) * 1.5, name: "The Contrarian", why: "Goes against most of the pool " + pctText(against) + " of the time; the pool, " + pctText(poolAgainst) + "." });
+      options.push({ by: (poolAgainst - against) * 1.5, name: "Mr. Consensus", why: "Goes against most of the pool only " + pctText(against) + " of the time; the pool, " + pctText(poolAgainst) + "." });
+    }
+    var best = options.filter(function (o) { return o.by >= 0.06; }).sort(function (a, b) { return b.by - a.by; })[0];
+    return best ? { name: best.name, why: best.why } : null;
   }
 
   // The coaches just above and below, and how they've done against each other.
