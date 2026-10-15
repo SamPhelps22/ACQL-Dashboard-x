@@ -459,6 +459,8 @@ main {
 .r .big { font: 800 24px/1 var(--display); text-align: right; font-variant-numeric: tabular-nums; }
 .r .meta { color: var(--muted); font-size: 13px; }
 .r .meta b { color: var(--ink-2); font-weight: 600; }
+.form { flex: none; font-size: 0.95em; line-height: 1; margin-left: 4px; cursor: help; }
+.podname { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
 .youtag { font: 800 11px/1 var(--display); letter-spacing: 0.06em; background: var(--gold); color: #0a0c0b; padding: 3px 5px 2px; border-radius: 2px; margin-left: 6px; vertical-align: 2px; }
 
 /* standings rows */
@@ -1709,6 +1711,38 @@ a.weekpill { text-decoration: none; }
   }
   function weeksWon(name) {
     return DATA.weeks.filter(function (w) { return w.winners.indexOf(name) >= 0; }).length;
+  }
+  // Form over the last three finished weeks: on fire when a coach beat the
+  // pool's average every one of them and by FORM_EDGE wins in all, on the hot
+  // seat when below it every week by as much. Most coaches are neither.
+  var FORM_WEEKS = 3, FORM_EDGE = 4.5, formCache = null;
+  function form(name) {
+    if (!formCache) {
+      formCache = {};
+      var last = DATA.weeks.slice().sort(function (a, b) { return b.week - a.week; }).slice(0, FORM_WEEKS);
+      if (last.length === FORM_WEEKS) names().forEach(function (n) {
+        var diffs = last.map(function (w) {
+          var s = w.scores.filter(function (x) { return x.name === n; })[0];
+          return s ? s.total - w.average : null;
+        });
+        if (diffs.some(function (d) { return d == null; })) return;
+        var sum = diffs.reduce(function (a, d) { return a + d; }, 0);
+        if (sum >= FORM_EDGE && diffs.every(function (d) { return d > 0; })) formCache[n] = { kind: "hot", by: sum };
+        else if (sum <= -FORM_EDGE && diffs.every(function (d) { return d < 0; })) formCache[n] = { kind: "cold", by: sum };
+      });
+    }
+    return formCache[name] || null;
+  }
+  function formText(f) {
+    return (f.kind === "hot" ? "On fire: above the pool’s average in each of the last three weeks, "
+      : "On the hot seat: below the pool’s average in each of the last three weeks, ") +
+      Math.abs(f.by).toFixed(1) + " wins " + (f.kind === "hot" ? "ahead of" : "behind") + " it in all.";
+  }
+  function formBadge(name) {
+    var f = form(name);
+    if (!f) return null;
+    return el("span", { class: "form " + f.kind, title: formText(f), role: "img", "aria-label": formText(f),
+      text: f.kind === "hot" ? "🔥" : "🧊" });
   }
   function leaders() {
     var best = DATA.players.length ? Math.max.apply(null, DATA.players.map(function (p) { return p.wins; })) : 0;
@@ -4048,7 +4082,7 @@ a.weekpill { text-decoration: none; }
       return el("div", { class: "step p" + (i + 1) + (isMe(p.name) ? " me" : "") }, [
         el("span", { class: "medal", text: p.place != null ? (shared(p) ? "T" : "") + ordinal(p.place) : ordinal(i + 1) }),
         el("span", { class: "initials", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
-        who(p.name),
+        el("span", { class: "podname" }, [who(p.name), formBadge(p.name)]),
         el("span", { class: "wins num", text: String(p.wins) }),
         el("span", { class: "sub", text: (back ? back + " back" : "leads") + (p.title != null ? " · " + titleText(p) + " title" : "") })
       ]);
@@ -4092,7 +4126,7 @@ a.weekpill { text-decoration: none; }
         el("span", { class: "pos", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
         moveMark(p.move),
         el("span", { class: "name" }, [el("span", { class: "initials sm", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
-          who(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null]),
+          who(p.name), formBadge(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null]),
         el("span", { class: "big", text: String(p.wins), "data-tick": "s:total:" + p.name }),
         el("span", { class: "col", text: lead - p.wins ? String(lead - p.wins) : "–" }),
         el("span", { class: "col" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }),
@@ -4101,7 +4135,7 @@ a.weekpill { text-decoration: none; }
         el("span", { class: "meta" }, meta)
       ]));
     });
-    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL). Arrows show places gained or lost since last week. A green dot means still in the suicide pool." });
+    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL). Arrows show places gained or lost since last week. A green dot means still in the suicide pool. 🔥 on fire: above the pool’s average in each of the last three weeks, by " + FORM_EDGE + "+ wins in all. 🧊 on the hot seat: below it every week by as much." });
     return el("div", {}, [el("div", { class: "rows standrows", id: "leaderboard" }, rows), avgNote]);
   }
   function everyWeekTable() {
@@ -4976,7 +5010,8 @@ a.weekpill { text-decoration: none; }
     var head = el("section", { class: "mehead" }, [
       back,
       el("div", { class: "idrow" }, [el("span", { class: "initials xl", style: avatarStyle(p.name), text: initials(p.name) }),
-        el("div", {}, [el("h1", { text: p.name }), el("p", { class: "coach-line note", text: line })])]),
+        el("div", {}, [el("h1", {}, [p.name, formBadge(p.name)]), el("p", { class: "coach-line note", text: line }),
+          form(p.name) ? el("p", { class: "note form-line", text: formText(form(p.name)) }) : null])]),
       el("div", { class: "figures" }, [
         figure(p.place != null ? ordinal(p.place) : "–", "in the standings", lead - p.wins ? (lead - p.wins) + " behind the lead" : "leading"),
         figure(String(p.wins), "wins", p.move ? (p.move > 0 ? "up " : "down ") + plural(Math.abs(p.move), "place") + " last week" : "no move last week"),
@@ -5858,6 +5893,7 @@ a.weekpill { text-decoration: none; }
   // Whatever DATA the page shows, the things worked out from it start afresh.
   function dataChanged() {
     poolProfile = null;
+    formCache = null;
     historyData = null;
     historyError = "";
     simCache = { key: "", sim: null };
