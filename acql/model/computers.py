@@ -77,10 +77,15 @@ def label(code: str) -> str:
 
 
 # ---- keeping the names --------------------------------------------------------------------------
-def read_named(path: str | Path) -> dict[tuple[str, str], dict[str, float]]:
+#: The columns read_csv skipped before 2026-10-14, when it still counted the
+#: midweek line and the archives' summary columns as models. Weeks stored then
+#: were priced with those in, and are matched to their file under this rule.
+OLD_SKIP = ("line", "lineca", "lineopen", "lineavg", "linemedian", "linestd", "phwin", "phcover", "neutral")
+
+
+def read_named(path: str | Path, skip: tuple[str, ...] = predictions.NOT_MODELS) -> dict[tuple[str, str], dict[str, float]]:
     """(road, home) -> {model: home margin}, for every game in a predictions
     file. The same columns predictions.read_csv counts as models."""
-    skip = predictions.MARKET_COLUMNS + predictions.SUMMARY_COLUMNS
     out: dict[tuple[str, str], dict[str, float]] = {}
     with open(path, newline="", encoding="utf-8-sig") as handle:
         for raw in csv.DictReader(handle):
@@ -119,7 +124,7 @@ def keep() -> dict[int, int]:
         try:
             if not source.is_file():
                 continue
-            rows = read_named(source)
+            rows, old_rows = read_named(source), read_named(source, OLD_SKIP)
         except (OSError, ValueError, csv.Error):
             continue
         games = []
@@ -127,8 +132,9 @@ def keep() -> dict[int, int]:
             if not isinstance(row, dict):
                 continue
             pair = (team_code(row.get("road", "")), team_code(row.get("home", "")))
-            named = rows.get(pair)
-            if not named or not _same(sorted(named.values()), sorted(float(v) for v in row.get("opinions") or ())):
+            named, old = rows.get(pair), old_rows.get(pair)
+            priced = sorted(float(v) for v in row.get("opinions") or ())
+            if not named or not any(n and _same(sorted(n.values()), priced) for n in (named, old)):
                 continue
             games.append({"road": pair[0], "home": pair[1], "named": named})
         if not games:

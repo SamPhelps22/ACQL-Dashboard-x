@@ -110,3 +110,47 @@ def test_pool_win_probability_simulation():
     same = mine.copy()
     p = s.set_index("game_id")["blended_home_probability"]
     assert simulate_pool_win_probability(mine, [same], p, n_sims=500) == pytest.approx(0.5)
+
+
+def test_allocation_matches_exhaustive_optimum_on_small_slates():
+    """Every permutation of 1..n tried: the allocator's expected points equal the true maximum."""
+    from itertools import permutations
+    rng = np.random.default_rng(7)
+    for n in range(1, 7):
+        for _ in range(25):
+            probs = list(np.round(rng.uniform(0.02, 0.98, n), 2))   # rounding forces some exact ties
+            a = allocate(slate(probs))
+            validate_allocation(a)
+            p = select_teams(slate(probs)).selected_team_probability.to_numpy()
+            best = max(float((p * np.array(perm)).sum()) for perm in permutations(range(1, n + 1)))
+            assert a.expected_points.sum() == pytest.approx(best)
+            assert sorted(a.confidence_points) == list(range(1, n + 1))
+
+
+@pytest.mark.parametrize("points,n,problem", [
+    ([1], 4, "has 1 values but the slate has 4 games"),        # the saved setting that crashed the tracker
+    ([], 3, "is empty"),
+    ([5, 5, 3], 3, "unique"),
+    ([3, 0, 1], 3, "positive"),
+    ([3, -2, 1], 3, "positive"),
+    ([3, 2.5, 1], 3, "positive whole"),
+])
+def test_custom_points_problems_are_reported_not_guessed(points, n, problem):
+    rules = ScoringRules(points_mode="custom", custom_points=points)
+    assert problem in rules.problem(n)
+    with pytest.raises(ValueError, match=problem):
+        rules.point_values(n)
+
+
+def test_custom_points_more_than_games_uses_the_highest():
+    rules = ScoringRules(points_mode="custom", custom_points=[1, 2, 3, 5, 8])
+    assert rules.problem(3) is None and rules.point_values(3) == [8, 5, 3]
+    assert ScoringRules().problem(16) is None
+
+
+def test_saving_invalid_custom_points_is_refused():
+    from nflpickem.config import load_config
+    for bad in ([], [4, 4], [3, 0]):
+        with pytest.raises(ValueError, match="custom_points"):
+            load_config(use_local=False, overrides={"pool": {"points_mode": "custom", "custom_points": bad}})
+    load_config(use_local=False, overrides={"pool": {"points_mode": "custom", "custom_points": [1]}})

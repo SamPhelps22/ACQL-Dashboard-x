@@ -78,7 +78,7 @@ CROWD_SHARPNESS = 3.0
 # The pool's rules.
 LINED_FROM = 6.5
 SMALLEST_LINE = 7
-OTHER_COACHES = 34
+OTHER_COACHES = 34          # keep equal to pool.weekplan.OTHER_COACHES (a test checks)
 
 #: Franchises that moved: one rating each, whatever the scores file calls them.
 ALIASES = {"OAK": "LV", "SD": "LAC", "STL": "LAR", "AZ": "ARI", "ARZ": "ARI",

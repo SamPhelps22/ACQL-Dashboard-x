@@ -540,6 +540,96 @@ class _ScratchStore(unittest.TestCase):
         shutil.rmtree(self.folder, ignore_errors=True)
 
 
+class TestSealedSecrets(unittest.TestCase):
+    """Passwords and keys are kept sealed, never as readable text (a made-up value here)."""
+
+    def test_round_trip_and_nothing_readable(self):
+        import base64
+        from acql.site import mailer
+        made_up = "not-a-real-secret-0123"
+        sealed = mailer.seal(made_up)
+        self.assertEqual(mailer.unseal(sealed), made_up)
+        self.assertNotIn(made_up, sealed)
+        if sys.platform == "win32":
+            self.assertTrue(sealed.startswith("dpapi:"), sealed[:6])
+            self.assertNotIn(made_up.encode(), base64.b64decode(sealed[6:]))
+        self.assertEqual(mailer.unseal(""), "")
+
+
+class TestFieldSize(unittest.TestCase):
+    """How many other coaches the week planner plays against: one number, and only it moves."""
+
+    CHOICES = [(0.80, 0.85), (0.72, 0.80), (0.66, 0.70), (0.60, 0.75), (0.55, 0.65), (0.52, 0.55),
+               (0.70, 0.90), (0.58, 0.60)]
+
+    def _choices(self):
+        from acql.pool import weekplan
+        return [weekplan.Choice(f"g{i}", f"P{i}", f"O{i}", p, c) for i, (p, c) in enumerate(self.CHOICES)]
+
+    def test_one_default_everywhere(self):
+        from acql.model import backtest
+        from acql.pool import moneyplan, weekplan
+        self.assertEqual(weekplan.OTHER_COACHES, 34)          # 35 coaches in 2026
+        self.assertEqual(backtest.OTHER_COACHES, weekplan.OTHER_COACHES)
+        self.assertEqual(moneyplan.COACHES, weekplan.OTHER_COACHES)
+
+    def test_field_size_moves_the_week_odds_not_the_game_chances(self):
+        from acql.pool import weekplan
+        small = weekplan.plan_week(self._choices(), coaches=34, sims=4000)
+        large = weekplan.plan_week(self._choices(), coaches=49, sims=4000)
+        self.assertEqual((small.coaches, large.coaches), (34, 49))
+        self.assertAlmostEqual(small.fair_share, 1 / 35)
+        self.assertAlmostEqual(large.fair_share, 1 / 50)
+        self.assertGreater(small.plain_win_odds, large.plain_win_odds)   # more coaches, harder to be first
+        self.assertAlmostEqual(small.plain_hits, large.plain_hits, places=1)   # same games, same chances
+        again = weekplan.plan_week(self._choices(), coaches=49, sims=4000)
+        self.assertEqual((again.take, again.win_odds), (large.take, large.win_odds))   # seeded
+
+
+class TestFirstSeenIsNotTheOpener(_ScratchStore):
+    """The first line the app fetched is never passed off as the books' opening line."""
+
+    KICKOFF = 1_790_000_000.0
+
+    def _quote(self, margin):
+        from datetime import datetime, timezone
+        from acql.feeds import odds
+        iso = datetime.fromtimestamp(self.KICKOFF, timezone.utc).isoformat().replace("+00:00", "Z")
+        return odds.Quote("phi", "chi", iso, margin, 5)
+
+    def test_first_fetch_is_kept_and_later_fetches_only_move_the_latest(self):
+        from acql.feeds import odds
+        odds.update(3, [self._quote(3.0)], [("phi", "chi")], now=self.KICKOFF - 5 * 86400)
+        odds.update(3, [self._quote(5.5)], [("phi", "chi")], now=self.KICKOFF - 86400)
+        kept = odds.stored(3)
+        self.assertEqual(kept.first_seen, {"phi@chi": 3.0})
+        self.assertEqual(kept.latest, {"phi@chi": 5.5})
+        self.assertEqual([(t, n) for _, t, n in odds.movements(3)], [(3.0, 5.5)])
+
+    def test_the_files_opener_stands_and_a_fetched_one_is_marked_first_seen(self):
+        from acql.feeds import odds
+        from acql.model.predictions import Forecast
+        odds.update(3, [self._quote(5.5)], [("phi", "chi"), ("atl", "gb")], now=self.KICKOFF - 86400)
+        with_opener = Forecast("Philadelphia", "Chicago", market=4.0, opening=2.5)
+        without = Forecast("Philadelphia", "Chicago", market=4.0)
+        self.assertEqual(odds.overlay(3, [with_opener], 0)[0].opening, 2.5)
+        self.assertFalse(odds.overlay(3, [with_opener], 0)[0].opening_seen)
+        seen = odds.overlay(3, [without], 0)[0]
+        self.assertEqual((seen.opening, seen.market, seen.opening_seen), (4.0, 5.5, True))
+        fetched_only = odds.overlay(3, [], 0)[0]
+        self.assertEqual((fetched_only.opening, fetched_only.opening_seen), (5.5, True))
+
+    def test_the_evidence_card_says_first_seen(self):
+        from types import SimpleNamespace
+        from acql.model import evidence
+        from acql.model.predictions import Forecast
+        game = SimpleNamespace(index=1, home="Chicago", away="Philadelphia", line=None)
+        for flag, word in ((True, "first seen"), (False, "opened")):
+            f = Forecast("Philadelphia", "Chicago", market=5.5, opening=3.0, opening_seen=flag)
+            sig = evidence._move(game, "Chicago", True, f)
+            self.assertTrue(sig.headline.startswith(word), sig.headline)
+
+
 class TestOddsKickoff(_ScratchStore):
     """A line fetched once a game is under way is a live line, not one anyone picked against."""
 
@@ -2446,6 +2536,83 @@ class TestChartsDrawOnce(unittest.TestCase):
         self.assertIsNone(charts._mark((list(range(charts.MARK_BUDGET + 5)),)))
 
 
+class TestAmericanOdds(unittest.TestCase):
+    """American prices to chances, and the books' margin taken out."""
+
+    def test_valid_prices(self):
+        from acql.feeds.odds import _implied
+        for price, chance in [(-200, 2 / 3), (-150, 0.6), (-110, 110 / 210), (-100, 0.5), (100, 0.5),
+                              (110, 100 / 210), (130, 100 / 230), (200, 1 / 3), (-10000, 10000 / 10100)]:
+            self.assertAlmostEqual(_implied(price), chance, places=12, msg=price)
+
+    def test_impossible_prices_are_not_read(self):
+        from acql.feeds.odds import _implied
+        from acql.training.data import _implied as training_implied
+        for bad in (-99, 99, 50, -50, 0, 0.5, "", "-110", "abc", None, True, float("nan"),
+                    float("inf"), float("-inf")):
+            self.assertIsNone(_implied(bad), bad)
+            self.assertIsNone(training_implied(bad), bad)
+
+    def _event(self, *books):
+        return [{"home_team": "Kansas City Chiefs", "away_team": "Denver Broncos",
+                 "commence_time": "2026-10-18T17:00:00Z",
+                 "bookmakers": [{"markets": [
+                     {"key": "h2h", "outcomes": [{"name": "Kansas City Chiefs", "price": h},
+                                                 {"name": "Denver Broncos", "price": a}]},
+                     {"key": "spreads", "outcomes": [{"name": "Kansas City Chiefs", "point": -4.5}]}]}
+                     for h, a in books]}]
+
+    def test_no_vig_sums_to_one_and_books_are_combined_by_median(self):
+        from acql.feeds.odds import _implied, parse
+        h, a = _implied(-150), _implied(130)
+        self.assertGreater(h + a, 1)
+        self.assertAlmostEqual(h / (h + a) + a / (h + a), 1.0, places=12)
+        one = parse(self._event((-150, 130)))[0]
+        self.assertAlmostEqual(one.home_win, round(0.6 / (0.6 + 100 / 230), 4))
+        # two identical books (a duplicate) change nothing; a conflicting third moves the median
+        self.assertEqual(parse(self._event((-150, 130), (-150, 130)))[0].home_win, one.home_win)
+        three = parse(self._event((-150, 130), (-150, 130), (-110, -110)))[0]
+        self.assertEqual(three.home_win, one.home_win)
+
+    def test_a_book_with_an_impossible_or_missing_price_is_left_out(self):
+        from acql.feeds.odds import parse
+        good = parse(self._event((-150, 130)))[0].home_win
+        self.assertEqual(parse(self._event((-150, 130), (50, -50)))[0].home_win, good)
+        self.assertEqual(parse(self._event((-150, 130), (-150, None)))[0].home_win, good)
+        self.assertIsNone(parse(self._event((50, -50)))[0].home_win)     # the spread still stands
+
+
+class TestMarketColumnsAreNotModels(unittest.TestCase):
+    """A betting line or a summary column must never be counted as a model."""
+
+    HEAD = "road,home,line,lineopen,lineca,linesag,linemass,linepig"
+    ROW = "Tampa Bay,Dallas,3.5,3,3.5,4.5,2,6"
+
+    def _read(self, head, row):
+        from acql.model import predictions
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "nflpredictions week 3.csv"
+            path.write_text(f"{head}\n{row}\n", encoding="utf-8")
+            return predictions.read_csv(path)[0]
+
+    def test_extra_market_and_summary_columns_leave_the_consensus_alone(self):
+        plain = self._read(self.HEAD, self.ROW)
+        self.assertEqual(sorted(plain.opinions), [2.0, 4.5, 6.0])
+        more = self._read(self.HEAD + ",linemidweek,linemed,linemin,linemax,lineavg,linemedian,linestd",
+                          self.ROW + ",-20,9,-30,30,4.2,4.5,1.7")
+        self.assertEqual(sorted(more.opinions), sorted(plain.opinions))
+        self.assertEqual(more.consensus, plain.consensus)
+        self.assertEqual(more.market, 3.5)                       # the market itself is still read
+        self.assertEqual(more.opening, 3.0)
+
+    def test_the_market_still_enters_through_the_blend(self):
+        f = self._read(self.HEAD, self.ROW)
+        # edge = consensus - market; the blend moves the market a share of that
+        self.assertAlmostEqual(f.edge, f.consensus - 3.5)
+        self.assertAlmostEqual(f.expected(0.25), 3.5 + f.model_weight(0.25) * f.live_edge())
+        self.assertEqual(f.expected(0.0), 3.5)
+
+
 class TestComputerModels(_ScratchStore):
     """Each computer model kept by name, and the crowd of them measured against the betting line."""
 
@@ -2477,8 +2644,9 @@ class TestComputerModels(_ScratchStore):
         csv_file = self.folder / "nflpredictions week 3.csv"
         csv_file.write_text(self.FILE, encoding="utf-8")
         named = computers.read_named(csv_file)
-        self.assertEqual(named[("tb", "dal")], {"sag": 4.5, "mass": 2.0, "midweek": 3.5})
-        self.assertEqual(named[("chi", "gb")], {"sag": -1.0, "midweek": -2.5})      # a blank is no opinion
+        # linemidweek is a betting line, not a computer model
+        self.assertEqual(named[("tb", "dal")], {"sag": 4.5, "mass": 2.0})
+        self.assertEqual(named[("chi", "gb")], {"sag": -1.0})                       # a blank is no opinion
         self.assertEqual(computers.label("sag"), "Sagarin (sag)")
         self.assertEqual(computers.label("zzz"), "ZZZ")
 

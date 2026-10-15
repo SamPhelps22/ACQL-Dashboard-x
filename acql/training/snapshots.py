@@ -21,14 +21,28 @@ snapshot was made. One file a week in data/training/snapshots.
 Nothing here fetches anything; it writes down what the dashboard already
 has. Run it before Thursday's deadline (`python -m acql.training snapshot`).
 
+Every look is also kept, never overwritten, in snapshots/history/<week>/ -
+one file per run, named by when it was made, skipped only when nothing has
+changed since the last. `as_of` answers "what had been frozen by this
+moment" from them, so a week can be rebuilt as it stood at any cutoff.
+
+Times are seconds since 1970 (UTC by definition); `made_utc` spells the
+snapshot's own time out. Three kinds of time are kept apart: when a number
+was true (an injury's `at`, the report's last change), when the dashboard
+got it (`taken_at`, `models_at`, `injuries_at`), and when the snapshot was
+made (`made`). A number with no time of its own is left without one.
+
 No Qt here.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -55,6 +69,57 @@ def path_for(year: int, week: int) -> Path:
     return folder() / f"{int(year)}-{int(week):02d}.json"
 
 
+HISTORY = "history"
+
+
+def history_for(year: int, week: int) -> Path:
+    return folder() / HISTORY / f"{int(year)}-{int(week):02d}"
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """Never a half-written file: written beside it, then swapped in."""
+    spare = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    spare.write_text(text, encoding="utf-8")
+    os.replace(spare, path)
+
+
+def _fingerprint(body: dict) -> str:
+    """The snapshot's content, without when it was made."""
+    same = {k: v for k, v in body.items() if k not in ("made", "made_utc", "before_deadline")}
+    return hashlib.sha256(json.dumps(same, sort_keys=True).encode()).hexdigest()
+
+
+def _keep_in_history(year: int, week: int, body: dict) -> str:
+    """Add this look to the week's history - never replacing one. Returns what happened."""
+    where = history_for(year, week)
+    where.mkdir(parents=True, exist_ok=True)
+    earlier = sorted(where.glob("*.json"), key=lambda p: float(p.stem))
+    if earlier:
+        last = read(earlier[-1])
+        if last is not None and _fingerprint(last) == _fingerprint(body):
+            return "unchanged since the last look"
+    try:
+        with open(where / f"{body['made']:.3f}.json", "x", encoding="utf-8") as handle:   # "x": never overwrite
+            json.dump(body, handle, indent=1)
+    except FileExistsError:
+        return "already kept"
+    return "kept in history"
+
+
+def injury_report(teams) -> dict:
+    """{"at": when the report was fetched, "teams": {code: [entries]}} for these
+    teams, from whatever store is in use - call it inside study.books(). Each
+    entry keeps its own `at`: when that line of the report last changed."""
+    from ..feeds import injuries
+    report = {"at": injuries.fetched_at() or None, "teams": {}}
+    for code in sorted({str(t).lower() for t in teams if t}):
+        report["teams"][code] = [
+            {"name": i.name, "position": i.position, "status": i.status, "what": i.what, "at": i.at or None}
+            for i in injuries.team(code)
+        ]
+    return report
+
+
 def read(path: Path) -> dict | None:
     try:
         found = json.loads(path.read_text(encoding="utf-8"))
@@ -73,9 +138,11 @@ def _clean(value):
     return value
 
 
-def take(rows: pd.DataFrame, now: float | None = None) -> list[tuple[Path, str]]:
+def take(rows: pd.DataFrame, now: float | None = None,
+         injuries: dict | None = None) -> list[tuple[Path, str]]:
     """Freeze every week in `rows` (data.this_season) that has no result yet.
-    Returns (file, what happened) for each."""
+    Returns (file, what happened) for each. `injuries` is injury_report's
+    answer, read when the rows were; each game keeps its two teams' lines."""
     now = time.time() if now is None else now
     out = []
     if rows.empty:
@@ -87,26 +154,57 @@ def take(rows: pd.DataFrame, now: float | None = None) -> list[tuple[Path, str]]
         before = now <= lock
         path = path_for(year, week)
         held = read(path)
-        if held is not None and held.get("before_deadline") and not before:
-            out.append((path, "kept as it was - already frozen before the deadline"))
-            continue
-        if held is not None and not held.get("before_deadline") and not before:
-            out.append((path, "kept as it was - a late one is already there"))
-            continue
         columns = [c for c in KEPT if c in mine.columns] + data.model_columns(mine)
         games = [{k: _clean(v) for k, v in record.items() if _clean(v) is not None}
                  for record in mine[columns].to_dict("records")]
+        if injuries is not None:
+            for game in games:
+                game["injuries"] = {side: injuries.get("teams", {}).get(str(game.get(side, "")).lower(), [])
+                                    for side in ("home", "away")}
         priced = sum(1 for g in games if g.get("line_deadline") is not None or g.get("line_used") is not None)
-        body = {"training": VERSION, "season": int(year), "week": int(week), "made": now, "locks": lock,
-                "before_deadline": before, "games": games}
+        body = {"training": VERSION, "season": int(year), "week": int(week), "made": now,
+                "made_utc": datetime.fromtimestamp(now, timezone.utc).isoformat(timespec="seconds"),
+                "locks": lock, "before_deadline": before, "games": games}
+        if injuries is not None:
+            body["injuries_at"] = injuries.get("at")
         try:
-            path.write_text(json.dumps(body, indent=1), encoding="utf-8")
+            kept = _keep_in_history(year, week, body)
+        except OSError as exc:
+            kept = f"history not written: {exc}"
+        if held is not None and held.get("before_deadline") and not before:
+            out.append((path, f"kept as it was - already frozen before the deadline ({kept})"))
+            continue
+        if held is not None and not held.get("before_deadline") and not before:
+            out.append((path, f"kept as it was - a late one is already there ({kept})"))
+            continue
+        if held is not None and float(held.get("made") or 0) > now:
+            out.append((path, f"kept as it was - it is newer than this look ({kept})"))
+            continue
+        try:
+            _write_atomically(path, json.dumps(body, indent=1))
         except OSError as exc:
             out.append((path, f"could not be written: {exc}"))
             continue
         out.append((path, f"{len(games)} games frozen, {priced} with a line"
-                          + ("" if before else " - LATE: taken after the deadline, and marked so")))
+                          + ("" if before else " - LATE: taken after the deadline, and marked so")
+                          + f"; {kept}"))
     return out
+
+
+def as_of(year: int, week: int, cutoff: float) -> dict | None:
+    """The week as it had been frozen by `cutoff`: the newest look made at or
+    before it, or None. Nothing made after the cutoff is ever handed back."""
+    looks = []
+    where = history_for(year, week)
+    for path in sorted(where.glob("*.json")) if where.is_dir() else []:
+        found = read(path)
+        if found is not None:
+            looks.append(found)
+    current = read(path_for(year, week))
+    if current is not None:
+        looks.append(current)
+    looks = [b for b in looks if float(b.get("made") or float("inf")) <= cutoff]
+    return max(looks, key=lambda b: float(b["made"])) if looks else None
 
 
 def frozen() -> pd.DataFrame:
