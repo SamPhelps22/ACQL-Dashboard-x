@@ -176,6 +176,13 @@ button:focus-visible, select:focus-visible, a:focus-visible, input:focus-visible
   .weekpill.live::before, .dot-live { animation: blink 1.6s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: 0.25; } }
 }
+/* a score that has just changed: one short gold wash, never on an unchanged score */
+.score-new { border-radius: var(--r-sm); }
+@media (prefers-reduced-motion: no-preference) {
+  .score-new { animation: scorenew 2.4s ease-out 1; }
+  @keyframes scorenew { 0% { background: color-mix(in srgb, var(--gold, #d4a017) 35%, transparent); } 100% { background: transparent; } }
+}
+@media (prefers-reduced-motion: reduce) { .score-new { outline: 1px solid var(--gold, #d4a017); } }
 .desknav { display: flex; gap: 2px; margin-left: 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .desknav::-webkit-scrollbar { display: none; }
 .desknav a {
@@ -2335,6 +2342,7 @@ a.weekpill { text-decoration: none; }
   // ---- after new scores: swings, and the viewer's chance over time -------------------
   var swings = [];          // what changed while this page was open, newest first
   var lastSeen = null;      // each game's credited side at the previous look
+  var scoreMoved = {};      // games whose score really changed at the last look, until when to mark them
   function seen(t) {
     var now = {};
     t.games.forEach(function (x) {
@@ -2356,6 +2364,7 @@ a.weekpill { text-decoration: none; }
       t.games.forEach(function (x) {
         var key = gameKey(x.g.hc, x.g.ac), before = lastSeen[key];
         if (!before) return;
+        if (before.hs != null && x.hs != null && (before.hs !== x.hs || before.as !== x.as)) scoreMoved[key] = Date.now() + 4000;
         var pickers = function (team) {
           return DATA.live.coaches.filter(function (c) { return c.picks[DATA.live.games.indexOf(x.g)] === team; });
         };
@@ -3480,7 +3489,8 @@ a.weekpill { text-decoration: none; }
           el("span", { class: a > h ? "lead" : null, style: "width:" + Math.round(100 * a / total) + "%" }),
           el("span", { class: h > a ? "lead" : null, style: "width:" + Math.round(100 * h / total) + "%" })
         ]),
-        lined || x.state !== "pre" || my ? el("span", { class: "lineinfo" + (lined || x.state !== "pre" ? "" : " narrow-only") }, [[lined ? "Pool line: " + teamName(x, g.fav) + " by " + g.line : "",
+        lined || x.state !== "pre" || my ? el("span", { class: "lineinfo" + (lined || x.state !== "pre" ? "" : " narrow-only") +
+          (scoreMoved[gameKey(g.hc, g.ac)] > Date.now() ? " score-new" : "") }, [[lined ? "Pool line: " + teamName(x, g.fav) + " by " + g.line : "",
           x.state === "post" ? "Final " + x.as + "–" + x.hs : x.state === "in" ? liveDetail(x) + " " + x.as + "–" + x.hs : ""].filter(Boolean).join("   "),
           my ? el("span", { class: "narrow-only you", text: (lined || x.state !== "pre" ? " · " : "") + "you: " + my.toUpperCase() }) : null]) : null
       ]);
