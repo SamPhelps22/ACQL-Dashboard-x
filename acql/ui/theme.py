@@ -763,6 +763,19 @@ def stylesheet(p: Palette) -> str:
 
     /* Tooltips carry a lot of the explanation in this app, so they are set
        for reading rather than for glancing. */
+    /* The \u24d8 beside a figure: quiet until hovered or focused. */
+    QToolButton#InfoIcon {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {r["chip"]}px;
+        color: {p.ink_muted};
+        font-size: {t["body"]}px;
+        padding: 0 2px;
+    }}
+    QToolButton#InfoIcon:hover, QToolButton#InfoIcon:focus {{
+        color: {p.accent};
+        border-color: {p.accent};
+    }}
     QToolTip {{
         background: {p.raised};
         color: {p.ink};

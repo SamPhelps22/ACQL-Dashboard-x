@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout
 from ... import analytics
 from ...pool import cards
 from ...model import pricing
+from .. import explain
 from ..charts import BarChart, LineChart
 from ..widgets import Card, TableModel, make_table, section
 from ...version import MODEL_NAME
@@ -50,7 +51,7 @@ class ModelPage(Page):
 
         # How the app's own picks have done, which is the one thing on this
         # page that is about the app rather than the pool.
-        self.model_card = Card(MODEL_TITLE)
+        self.model_card = Card(MODEL_TITLE, info=explain.MODEL_RECORD)
         self.model_chart = LineChart(self.palette, height=3.4)
         self.model_card.add(self.model_chart, 1)
         self.model_note = QLabel("")
@@ -61,7 +62,7 @@ class ModelPage(Page):
 
         # The model's whole card each week, kept before kickoff, against the
         # card you really played - the "should I follow it?" question.
-        self.track_card = Card(TRACK_TITLE)
+        self.track_card = Card(TRACK_TITLE, info=explain.FOLLOWING)
         chooser = QHBoxLayout()
         chooser.addWidget(QLabel("You are"))
         self.me_picker = QComboBox()
@@ -85,7 +86,7 @@ class ModelPage(Page):
         self.track_card.add(self.track_note)
         self.layout_.addWidget(self.track_card)
 
-        self.calibration_card = Card(CALIBRATION_TITLE)
+        self.calibration_card = Card(CALIBRATION_TITLE, info=explain.CALIBRATION)
         self.calibration_chart = BarChart(self.palette, height=3.0)
         self.calibration_card.add(self.calibration_chart, 1)
         self.calibration_note = QLabel(
@@ -99,7 +100,7 @@ class ModelPage(Page):
 
         # The rules replayed over sixteen seasons: the one answer here that
         # doesn't depend on this season's handful of weeks.
-        self.backtest_card = Card(BACKTEST_TITLE)
+        self.backtest_card = Card(BACKTEST_TITLE, info=explain.BACKTEST)
         self.backtest_label = QLabel("")
         self.backtest_label.setWordWrap(True)
         self.backtest_label.setTextFormat(Qt.TextFormat.RichText)
