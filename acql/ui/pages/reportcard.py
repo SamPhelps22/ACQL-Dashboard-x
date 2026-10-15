@@ -101,7 +101,7 @@ class ReportCardPage(Page):
         self.weeks_box = QVBoxLayout()
         self.weeks_card.body().addLayout(self.weeks_box)
         self.weeks_note = QLabel(
-            f"{MODEL_NAME}'s card is the one This Week recommends, saved before the first kickoff. "
+            f"{MODEL_NAME}'s card is the one Picks recommends, saved before the first kickoff. "
             "\u201cLine alone\u201d is what the betting line scored. \u201cIts chances said\u201d is "
             "what it expected to get. \u201cRebuilt\u201d weeks were re-made after the fact, which "
             "flatters it slightly."
@@ -205,9 +205,10 @@ class ReportCardPage(Page):
             f"<p style='font-size:20px; font-weight:700;{f' color:{colour};' if colour else ''} margin:0'>"
             f"{report.headline}</p>"
             f"<ul style='margin-top:6px'>{bullets}</ul>"
-            f"<p style='margin:0'>This Week plays {MODEL_NAME}'s card by default: the likeliest "
-            "side of every game and the three likeliest Big Losers. You can also choose "
-            "<i>most money this week</i>, which picks Big Losers the pool isn't on.</p>"
+            f"<p style='margin:0'>Picks plays {MODEL_NAME}'s card by default: the likeliest "
+            "side of every game and the three likeliest Big Losers (<i>Safe</i>). You can also choose "
+            "<i>Win the week</i>, which picks Big Losers the pool isn't on, or <i>Long shot</i>, "
+            "which turns games against the pool.</p>"
         )
 
     # ---- the grades -----------------------------------------------------------

@@ -172,7 +172,7 @@ def workbook_note(season) -> str:
         which = f"week {typed[0]}" if typed else ""
     return (
         "Nothing needs typing into your ACQL Dashboard workbook any more. Each week is set up "
-        "from the NFL's schedule - put the pool's line games in on This Week \u203a Every game "
+        "from the NFL's schedule - put the pool's line games in on Deadeye Picks \u203a My picks "
         "\u203a Line games\u2026 (or drop in the commissioner's sheet) - and the results come in "
         "from ESPN as the games finish. "
         + (f"The results typed into it for {which} are still used. " if which else "")

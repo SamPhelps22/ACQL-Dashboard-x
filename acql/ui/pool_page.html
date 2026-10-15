@@ -335,6 +335,7 @@ main {
   display: grid;
   gap: 2px;
 }
+.notice::before { content: "League notice"; font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-text); }
 .notice b { font-family: var(--display); font-size: 19px; font-weight: 800; }
 .notice .when { color: var(--muted); font-size: 13px; }
 
@@ -367,6 +368,11 @@ main {
 .hero h1, .hero h2 { font-size: clamp(34px, 7.6vw, 64px); line-height: 0.96; max-width: 20ch; }
 .hero .deck { color: var(--onair-muted); font-size: 17px; max-width: 62ch; }
 .hero .deck b { color: var(--onair-ink); font-weight: 600; }
+/* on Weeks the week's story is a header, not the page's one loud thing again */
+.hero.compact { padding-top: 14px; padding-bottom: 16px; }
+.hero.compact h2 { font-size: clamp(26px, 5vw, 40px); max-width: 26ch; }
+.hero.compact .deck { font-size: 15px; }
+.hero.compact .stat .v { font-size: 24px; }
 .hero .stats { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 8px; }
 .hero .stat { display: grid; gap: 0; }
 .hero .stat .v { font: 800 30px/1 var(--display); color: var(--onair-ink); }
@@ -708,6 +714,14 @@ td.game, td.winner { white-space: normal; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px; background: var(--surface); font-size: 14px; }
 .chip.alive { border-color: var(--turf); background: var(--turf-soft); }
+/* three or fewer left in the suicide pool: they get a headline, not chips */
+.survivor { display: grid; gap: 4px; padding: 12px 14px; background: var(--turf-soft); border-left: 5px solid var(--turf); border-radius: 4px; }
+.survivor .k { font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.survivor .names { display: flex; flex-wrap: wrap; gap: 2px 18px; }
+.survivor b { font: 800 clamp(24px, 5vw, 32px)/1.05 var(--display); }
+.survivor b.me { color: var(--gold-text); }
+/* the leader's bar, in gold */
+.bar.top { background: var(--gold); }
 .chip.me { border-color: var(--gold); background: var(--gold-soft); font-weight: 600; }
 .chip.strong { border-color: var(--turf); font-weight: 600; }
 .grave { display: grid; gap: 8px; }
@@ -738,14 +752,38 @@ td.gone, span.gone { color: var(--muted); }
 .close-one ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
 .award { display: grid; gap: 1px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
 .award:last-child { border-bottom: 0; }
-.award .t { font: 800 18px var(--display); }
-.award .w { font-weight: 600; }
+.award .t { font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-text); }
+.award .w { font: 800 18px/1.2 var(--display); }
 .award .why { color: var(--ink-2); font-size: 14px; }
 .upset { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
 .upset:last-child { border-bottom: 0; }
 .upset .game { font-weight: 600; }
 .upset .had { font: 800 18px var(--display); color: var(--bad); text-align: right; }
 .upset .how { color: var(--ink-2); font-size: 14px; grid-column: 1 / -1; }
+/* how much of the pool had the winner, as a bar: 0 of 35 reads at a glance */
+.upset .share { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.upset .share i { display: block; height: 100%; min-width: 2px; background: var(--bad); }
+/* the week's stories sit two across when the card is wide enough */
+.awards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); column-gap: 28px; }
+.awards .award:last-child { border-bottom: 1px solid var(--rule); }
+/* the replay keeps its chart's height while it loads, so nothing below jumps */
+.chart-wait { min-height: 230px; display: grid; place-items: center; border: 1px dashed var(--rule); border-radius: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  /* bars grow out from zero, so the eye reads them as amounts */
+  .bar, .upset .share i { transform-origin: left center; animation: grow 700ms cubic-bezier(.2, .7, .2, 1) both; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  /* the stories arrive one after another */
+  .awards .award { animation: settle 360ms ease-out both; }
+  .awards .award:nth-child(2) { animation-delay: 50ms; }
+  .awards .award:nth-child(3) { animation-delay: 100ms; }
+  .awards .award:nth-child(4) { animation-delay: 150ms; }
+  .awards .award:nth-child(5) { animation-delay: 200ms; }
+  .awards .award:nth-child(n+6) { animation-delay: 250ms; }
+  @keyframes settle { from { opacity: 0; transform: translateY(6px); } }
+  /* the replay placeholder breathes, so it reads as working, not empty */
+  .chart-wait .note { animation: breathe 1.4s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: 0.4; } }
+}
 
 /* ---- head-to-head: the tale of the tape ------------------------------------------- */
 .vs { display: grid; grid-template-columns: minmax(0, 14em) auto minmax(0, 14em) auto; align-items: center; justify-content: start; gap: 8px; }
@@ -853,6 +891,8 @@ td.gone, span.gone { color: var(--muted); }
 .chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .ln.ctx { stroke: var(--context); stroke-width: 1.25; }
 .chart .ln.strong { stroke: var(--context-strong); }
+.chart .ln.mid { stroke: var(--context-strong); stroke-width: 1.5; opacity: 0.45; }
+.chart .end.mid { opacity: 0.6; }
 .chart .ln.me { stroke: var(--me-mark); stroke-width: 3; }
 .chart .grid line { stroke: var(--grid); stroke-width: 1; }
 .chart .zero { stroke: var(--context-strong); stroke-width: 1; }
@@ -1150,38 +1190,6 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
 .podium .sub { font-size: 12px; color: var(--muted); }
 .podium .step.me { box-shadow: inset 0 0 0 2px var(--gold); }
 
-/* section links: a long page's sections, one tap away */
-.jumpbar {
-  position: sticky;
-  top: var(--bar-h, 56px);
-  z-index: 15;
-  display: flex;
-  gap: 6px;
-  margin: -14px -16px -14px;
-  padding: 8px 16px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  background: var(--ground);
-  background: color-mix(in srgb, var(--ground) 90%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--rule);
-}
-.jumpbar::-webkit-scrollbar { display: none; }
-.jumpbar a {
-  flex: none;
-  padding: 7px 12px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--rule);
-  background: var(--surface);
-  color: var(--ink-2);
-  font: 600 14px/1 var(--body);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.jumpbar a:hover { border-color: var(--gold); color: var(--ink); }
-.jumpbar a.on { background: var(--ink); border-color: var(--ink); color: var(--ground); }
-
 /* back to the top */
 .totop {
   position: fixed;
@@ -1282,7 +1290,7 @@ footer .fbrand img { width: 44px; height: 44px; }
   @keyframes arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   .finder { animation: drop 0.18s ease-out both; }
   @keyframes drop { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%); } }
-  .module, .jumpbar a, .podium .step { transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
+  .module, .podium .step { transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
 }
 @media (max-width: 719px) {
   /* on a phone the logo sits in the corner of the lower third, clear of the figures */
@@ -1292,14 +1300,13 @@ footer .fbrand img { width: 44px; height: 44px; }
   /* a panel costs a phone some width: the page gives a little back */
   main { padding-left: 10px; padding-right: 10px; }
   .module { padding: 12px 10px 14px; }
-  .jumpbar { margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; }
   .brandmark img.logo { width: 40px; height: 40px; margin: -5px -2px -5px -3px; }
   .podium { gap: 6px; }
   .podium .step { padding: 14px 4px 10px; }
   .podium .wins { font-size: 30px; }
   .podium .p1 .wins { font-size: 40px; }
 }
-@media print { .jumpbar, .totop, .finder-wrap { display: none; } }
+@media print { .totop, .finder-wrap { display: none; } }
 
 /* ==== the future skin ===================================================================
    The league's own black, gold and green, as a control room rather than a broadcast:
@@ -1377,9 +1384,7 @@ th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
 .gcard { border-radius: 6px; }
 .bug { border-radius: 2px; }
 
-/* section links and switches: squared, in capitals, the current one lit */
-.jumpbar a { border-radius: 3px; background: transparent; text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; padding: 8px 11px 7px; }
-.jumpbar a.on { background: color-mix(in srgb, var(--gold) 14%, transparent); border-color: var(--gold); color: var(--gold-text); box-shadow: 0 0 16px -5px var(--glow); }
+/* switches: squared, in capitals, the current one lit */
 .seg { border-radius: 4px; }
 .seg button { text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
 .seg button[aria-pressed="true"], .weeks button[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #14100a; }
@@ -1639,7 +1644,7 @@ a.weekpill { text-decoration: none; }
     });
   }
   function bar(value, top) {
-    return el("div", { class: "bar", width: (top > 0 ? Math.max(0, Math.round(100 * value / top)) : 0) + "%" });
+    return el("div", { class: "bar" + (top > 0 && value >= top ? " top" : ""), width: (top > 0 ? Math.max(0, Math.round(100 * value / top)) : 0) + "%" });
   }
   // Cards side by side on a wide screen; nothing at all when there are none.
   function twoUp(cards) {
@@ -2714,53 +2719,8 @@ a.weekpill { text-decoration: none; }
     try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"; } catch (e) { return "auto"; }
   }
 
-  // ---- section links: a long page's sections, one tap away -------------------------------
-  // Built from the page's own modules each time it is drawn, so a new module
-  // gets its link without anyone listing it here.
-  var jump = { bar: null, targets: [], raf: 0 };
-  function jumpbar(view) {
-    jump.bar = null;
-    jump.targets = [];
-    var mods = Array.prototype.filter.call(view.querySelectorAll(".module"), function (m) {
-      return !(m.parentElement && m.parentElement.closest(".module")) && m.querySelector(".mhead h2");
-    });
-    if (mods.length < 3) return null;
-    var links = mods.map(function (m, i) {
-      if (!m.id) m.id = "sec-" + (i + 1);
-      // a module with a long heading gives the link a shorter name of its own
-      var label = m.getAttribute("data-nav") || (m.querySelector(".mhead h2").textContent || "").trim();
-      if (label.length > 26) label = label.slice(0, 24).trim() + "…";
-      return el("a", { href: "#" + m.id, text: label,
-        onclick: function (e) { e.preventDefault(); m.scrollIntoView({ behavior: smooth(), block: "start" }); } });
-    });
-    jump.targets = mods;
-    jump.bar = el("nav", { class: "jumpbar", "aria-label": "On this page" }, links);
-    return jump.bar;
-  }
-  function placeJumpbar(view, bar) {
-    // under the page's own heading: the title, the lower third, the lede
-    var after = null, kid = view.firstElementChild;
-    while (kid && /(^|\s)(pagehead|hero|mehead|lede|notice)(\s|$)/.test(kid.getAttribute("class") || "")) { after = kid; kid = kid.nextElementSibling; }
-    view.insertBefore(bar, after ? after.nextSibling : view.firstChild);
-  }
-  function markSection() {
-    jump.raf = 0;
-    if (!jump.bar || !jump.bar.isConnected) return;
-    var line = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar-h")) || 56) + 76;
-    var on = 0;
-    jump.targets.forEach(function (m, i) { if (m.getBoundingClientRect().top <= line) on = i; });
-    Array.prototype.forEach.call(jump.bar.children, function (link, i) {
-      var was = link.classList.contains("on");
-      link.classList.toggle("on", i === on);
-      if (i === on && !was) {
-        var b = jump.bar;
-        if (link.offsetLeft < b.scrollLeft + 16 || link.offsetLeft + link.offsetWidth > b.scrollLeft + b.clientWidth - 16) b.scrollLeft = link.offsetLeft - 16;
-      }
-    });
-  }
   window.addEventListener("scroll", function () {
     document.documentElement.classList.toggle("scrolled", window.scrollY > 700);
-    if (!jump.raf) jump.raf = window.requestAnimationFrame(markSection);
   }, { passive: true });
   function toTop() {
     return el("button", { class: "totop", type: "button", "aria-label": "Back to the top", title: "Back to the top",
@@ -2922,8 +2882,6 @@ a.weekpill { text-decoration: none; }
     app.appendChild(toTop());
     var bar = app.querySelector(".topbar");
     if (bar) document.documentElement.style.setProperty("--bar-h", bar.offsetHeight + "px");
-    var links = jumpbar(view);
-    if (links) placeJumpbar(view, links);
     if (opts.top) view.classList.add("enter");
     (sheet() || []).forEach(function (n) { app.appendChild(n); });
     var hero = view.querySelector(".hero");
@@ -2936,7 +2894,6 @@ a.weekpill { text-decoration: none; }
     if (opts.top) window.scrollTo(0, 0);
     else if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     refocus(focused, opts.top);
-    markSection();
   }
 
   // ---- home: the front page follows the week -------------------------------------------
@@ -2998,7 +2955,7 @@ a.weekpill { text-decoration: none; }
       stat(w.average.toFixed(1), "pool average"),
       stat(String(alive), out ? "left in the suicide pool, " + out + " out" : "left in the suicide pool"),
       stat(String(w.scores.reduce(function (a, s) { return a + (s.big_loser || 0); }, 0)), "Big Loser points")
-    ]);
+    ], onWeeks ? "compact" : null);
   }
   // The lower third: the one loud thing on a page. Its numbers sit in a
   // panel beside the headline on a wide screen, under it on a phone.
@@ -3018,8 +2975,8 @@ a.weekpill { text-decoration: none; }
     return [
       heroRecap(w),
       el("div", { class: "cols" }, [
-        el("div", {}, [tableTop(), movers(), storiesModule(w)]),
-        el("div", {}, [youModule(w), sidePoolsModule(w), titleRaceModule()])
+        el("div", {}, [tableTop(), storiesModule(w)]),
+        el("div", {}, [youModule(w), sidePoolsModule(w), titleRaceModule(), movers()])
       ])
     ];
   }
@@ -3059,15 +3016,21 @@ a.weekpill { text-decoration: none; }
     }
     return module("Who moved", "places since last week", [el("div", { class: "rows" }, up.concat(down).map(line))], { "data-card": "movers" });
   }
+  function shareBar(right, of) {
+    var p = of ? Math.max(0, Math.min(100, right / of * 100)) : 0;
+    return el("span", { class: "share", "aria-hidden": "true" }, [el("i", { style: "width:" + p.toFixed(1) + "%" })]);
+  }
   function storiesModule(w) {
     var kids = (w.awards || []).map(function (a) {
       return el("div", { class: "award" }, [a.title ? el("span", { class: "t", text: a.title }) : null,
         el("span", { class: "w", text: a.who }), a.detail ? el("span", { class: "why", text: a.detail }) : null]);
     });
+    kids = kids.length ? [el("div", { class: "awards" }, kids)] : [];
     (w.upsets || []).slice(0, 2).forEach(function (u) {
       kids.push(el("div", { class: "upset" }, [
         el("span", { class: "game" }, [el("span", { class: "team" }, [badge(u.winner), el("span", { text: u.matchup })])]),
         el("span", { class: "had num", text: u.right + " of " + u.entrants }),
+        shareBar(u.right, u.entrants),
         el("span", { class: "how", text: u.line ? "Credited to " + u.winner + ", pool line " + u.line : u.winner + " won" })
       ]));
     });
@@ -4155,7 +4118,10 @@ a.weekpill { text-decoration: none; }
     return el("div", { class: "view", "data-view": "pools" }, (thisWeek.length ? thisWeek : [el("div", { class: "pagehead" }, [el("h1", { text: "Side pools" })])]).concat([
       el("div", { class: "cols even" }, [
         module("Suicide pool", alive.length + " still in", [
-          alive.length ? el("div", { class: "chips" }, alive.map(function (n) { return el("span", { class: "chip alive" + (isMe(n) ? " me" : "") }, [who(n)]); }))
+          alive.length && alive.length <= 3 ? el("div", { class: "survivor" }, [
+            el("span", { class: "k", text: alive.length === 1 ? "Last one standing" : "The last " + numberWord(alive.length) + " standing" }),
+            el("div", { class: "names" }, alive.map(function (n) { return el("b", { class: isMe(n) ? "me" : null }, [who(n)]); }))
+          ]) : alive.length ? el("div", { class: "chips" }, alive.map(function (n) { return el("span", { class: "chip alive" + (isMe(n) ? " me" : "") }, [who(n)]); }))
             : el("p", { class: "note", text: "Nobody is left standing." }),
           groups.length ? el("div", { class: "grave" }, [el("b", { text: "Knocked out" })].concat(groups.map(function (g, i) {
             return el("div", { class: "grave-row" }, [
@@ -4255,14 +4221,15 @@ a.weekpill { text-decoration: none; }
         ]);
       }))
     ]));
-    var awards = module("The week’s stories", null, w.awards.length ? w.awards.map(function (a) {
+    var awards = module("The week’s stories", null, w.awards.length ? [el("div", { class: "awards" }, w.awards.map(function (a) {
       return el("div", { class: "award" }, [a.title ? el("span", { class: "t", text: a.title }) : null,
         el("span", { class: "w", text: a.who }), a.detail ? el("span", { class: "why", text: a.detail }) : null]);
-    }) : [el("p", { class: "note", text: "A quiet week." })], { "data-card": "stories" });
+    }))] : [el("p", { class: "note", text: "A quiet week." })], { "data-card": "stories" });
     var upsets = module("The games that sank the pool", null, w.upsets.length ? w.upsets.map(function (u) {
       return el("div", { class: "upset" }, [
         el("span", { class: "game" }, [el("span", { class: "team" }, [badge(u.winner), el("span", { text: u.matchup })])]),
         el("span", { class: "had num", text: u.right + " of " + u.entrants + " had it" }),
+        shareBar(u.right, u.entrants),
         el("span", { class: "how", text: u.line ? "Credited to " + u.winner + " · pool line " + u.line : u.winner + " won" })
       ]);
     }) : [el("p", { class: "note", text: "No upsets: most of the pool had every winner." })], { "data-card": "upsets", "data-nav": "Upsets" });
@@ -4556,7 +4523,7 @@ a.weekpill { text-decoration: none; }
     var top = rep.coaches.slice(0, 1).concat(rep.coaches.filter(function (c, i) { return i > 0 && totals[n - 1][i] === totals[n - 1][0]; }));
     var marked = {};
     top.forEach(function (c) { marked[c] = "strong"; });
-    (rep.beatsFor || []).forEach(function (c) { if (!marked[c]) marked[c] = "strong"; });
+    (rep.beatsFor || []).forEach(function (c) { if (!marked[c]) marked[c] = "mid"; });
     if (focus) marked[focus] = "me";
     function path(ci) {
       var d = "";
@@ -4565,7 +4532,7 @@ a.weekpill { text-decoration: none; }
       });
       return d;
     }
-    var order = { ctx: 0, strong: 1, me: 2 };
+    var order = { ctx: 0, mid: 1, strong: 2, me: 3 };
     rep.coaches.map(function (c, ci) { return { c: c, ci: ci, role: marked[c] || "ctx" }; })
       .sort(function (a, b) { return order[a.role] - order[b.role]; })
       .forEach(function (ln) { svg.appendChild(svgEl("path", { class: "ln " + ln.role, d: path(ln.ci) })); });
@@ -4623,7 +4590,7 @@ a.weekpill { text-decoration: none; }
     if (!got) return null;
     var info = w.replay;
     var aside = plural(info.scores || 0, "score") + " · lead changed hands " + plural(info.lead_changes || 0, "time");
-    if (got.state === "loading") return module("The week, replayed", aside, [el("p", { class: "note", text: "Loading the replay…" })], { "data-card": "replay" });
+    if (got.state === "loading") return module("The week, replayed", aside, [el("div", { class: "chart-wait" }, [el("p", { class: "note", text: "Loading the replay…" })])], { "data-card": "replay" });
     if (got.state === "failed") return module("The week, replayed", aside, [el("p", { class: "note", text: "The replay couldn’t be loaded just now. It’ll be here next time." })], { "data-card": "replay" });
     var rep = got.data;
     var n = rep.frames.length;

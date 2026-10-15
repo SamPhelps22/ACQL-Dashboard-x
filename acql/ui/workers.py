@@ -90,7 +90,7 @@ def warm_this_week(season) -> None:
     def card() -> None:
         style = QSettings().value(BriefingPage.STYLE_KEY, briefing.DEFAULT_STYLE)
         if style not in (briefing.STYLE_STRAIGHT, briefing.STYLE_MONEY, briefing.STYLE_WIN):
-            style = briefing.STYLE_STRAIGHT         # as the page's own picker falls back
+            style = briefing.DEFAULT_STYLE          # as the page's own picker falls back
         found["week"] = week = analytics.upcoming_week(season)
         found["me"] = owner.key(season) or QSettings().value(ME_KEY, "") or None
         if week:

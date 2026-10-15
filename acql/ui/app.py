@@ -71,10 +71,6 @@ NAV = (
               (("Overview", OverviewPage), ("Standings", StandingsPage),
                ("Winnings", WinningsPage), ("Projections", ProjectionsPage),
                ("Charts", ChartsPage))),
-    # Second, and on Ctrl+2: the question most visits are here to answer is
-    # "what do I play this week", and it should not be four clicks away.
-    GroupSpec(places.THIS_WEEK, "calendar", "What to play this week: your card, every game priced, and where the card could be wrong",
-              ((places.CARD, BriefingPage), (places.EVERY_GAME, NextWeekPage), (places.RADAR, RadarPage))),
     # While the games are on: every score against the pool's lines, live.
     GroupSpec(places.GAME_DAY, "football", "The games as they happen: live scores against the pool's lines, and what you need to go your way",
               (("Game day", GameDayPage), (places.EVERYONE, EveryonePage))),
@@ -87,6 +83,9 @@ NAV = (
     GroupSpec(places.INSIGHTS, "search",
               "What the numbers say about the pool: its habits, its luck, and how the market rates every team",
               ((places.POOL, InsightsPage), (places.TEAMS, TeamsPage))),
+    # Beside Deadeye Analysis: the card it recommends, then how good it is.
+    GroupSpec(places.THIS_WEEK, "calendar", "What to play this week: your picks, every game priced, and where the card could be wrong",
+              ((places.CARD, BriefingPage), (places.EVERY_GAME, NextWeekPage), (places.RADAR, RadarPage))),
     # Its own place, so "is it any good, and should I follow it?" is one
     # click from anywhere rather than a tab inside Insights.
     GroupSpec(places.MODEL, "crosshair", f"How good {MODEL_NAME}'s picks are, where they miss, and whether anything would do better",
@@ -260,10 +259,33 @@ class MainWindow(QMainWindow):
         # The Data page after a write, This Week after fetching new lines.
         if hasattr(page, "refresh_requested"):
             page.refresh_requested.connect(self.refresh_by_hand)
+        # The card's entry buttons: the All games page does the work.
+        if isinstance(page, BriefingPage):
+            page.entry_requested.connect(lambda what, week, card=page: self._enter_from_card(card, what, week))
         # Double-clicking a standings row opens that player.
         if isinstance(page, StandingsPage):
             page.player_selected.connect(self.show_player)
         return page
+
+    def _enter_from_card(self, card: BriefingPage, what: str, week: int) -> None:
+        """Line games, a predictions file, pasted models or odds, asked for on
+        My picks: done by the All games page, then everything is read again."""
+        from .. import store
+        page = next((p for p in self.pages if isinstance(p, NextWeekPage)), None)
+        if page is None:
+            return
+        try:
+            before = store.stamp()
+        except store.StoreError:
+            before = None
+        card.entry_done(page.enter(what, week))
+        try:
+            changed = before is None or store.stamp() != before
+        except store.StoreError:
+            changed = True
+        # line games ask for the reload themselves; nothing stored, nothing to read again
+        if changed and what != "lines":
+            self.refresh_by_hand()
 
     def _page_action(self, what: str) -> None:
         if what == GO_TO_DATA:
@@ -477,9 +499,9 @@ class MainWindow(QMainWindow):
         footer.setContentsMargins(10, 8, 10, 12)
         footer.setSpacing(6)
 
-        self.jump_btn = QPushButton("  Jump to\u2026")
-        self.jump_btn.setToolTip("Search pages and commands (Ctrl+K)")
-        self.jump_btn.clicked.connect(self.open_palette)
+        self.settings_btn = QPushButton("  Settings")
+        self.settings_btn.setToolTip("Settings and commands (Ctrl+K)")
+        self.settings_btn.clicked.connect(self.open_palette)
         self.refresh_btn = QPushButton("  Refresh")
         self.refresh_btn.setToolTip(
             "Rescan the watched folders (F5 or Ctrl+R). New or saved files "
@@ -489,7 +511,7 @@ class MainWindow(QMainWindow):
         self.theme_btn = QPushButton("  Theme")
         self.theme_btn.setToolTip("Switch between light and dark (Ctrl+T)")
         self.theme_btn.clicked.connect(self.toggle_theme)
-        self._footer_icons = ((self.jump_btn, "search"), (self.refresh_btn, "refresh"), (self.theme_btn, "theme"))
+        self._footer_icons = ((self.settings_btn, "sliders"),(self.refresh_btn, "refresh"), (self.theme_btn, "theme"))
         for button, _name in self._footer_icons:
             button.setIconSize(QSize(FOOTER_ICON, FOOTER_ICON))
             footer.addWidget(button)
@@ -535,7 +557,7 @@ class MainWindow(QMainWindow):
         add("Refresh", "F5", self.refresh_by_hand)
         add("Refresh", "Ctrl+R", self.refresh_by_hand)
         add("Toggle theme", "Ctrl+T", self.toggle_theme)
-        add("Jump to\u2026", "Ctrl+K", self.open_palette)
+        add("Settings", "Ctrl+K", self.open_palette)
         add("Quit", QKeySequence.StandardKey.Quit, self.close)
         for i in range(len(NAV)):
             if page_shortcut(i):
@@ -589,17 +611,8 @@ class MainWindow(QMainWindow):
         return self.groups[self.stack.currentIndex()].current_page()
 
     def open_palette(self) -> None:
-        commands = []
-        for i, spec in enumerate(NAV):
-            commands.append(Command(spec.title, page_shortcut(i), lambda i=i: self._select_page(i)))
-            if len(spec.tabs) > 1:
-                for t, (label, _) in enumerate(spec.tabs):
-                    commands.append(Command(
-                        f"{spec.title} \u203a {label}", "",
-                        lambda i=i, t=t: self._select_page(i, t),
-                    ))
         other_theme = "light" if self.palette_.name == "dark" else "dark"
-        commands += [
+        commands = [
             Command("Refresh data", "F5", self.refresh_by_hand),
             Command(f"Switch to {other_theme} theme", "Ctrl+T", self.toggle_theme),
             Command("Open data folder", "", self.open_data_folder),

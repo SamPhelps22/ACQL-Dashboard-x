@@ -201,7 +201,7 @@ def _lines(season: Season, week: int, to_lock: float, now: float) -> list[Check]
     left = odds.remaining()
     if not odds.api_key():
         out.append(Check(SOURCES, "Odds requests", BAD, "No Odds API key is set",
-                         "Without one the lines can only be typed in by hand (This Week > Your card, the "
+                         "Without one the lines can only be typed in by hand (Deadeye Picks > My picks, the "
                          "button beside Update lines)."))
     elif left is None:
         out.append(Check(SOURCES, "Odds requests", NOTE, "Requests left this month: not known until the next fetch"))
@@ -310,7 +310,7 @@ def _inputs(season: Season, week: int, to_lock: float) -> Check:
     posted = any(g.line is not None for g in games)
     line_note = ("" if posted or to_lock <= 0 else
                  " The pool's lines aren't in yet: big favourites are priced straight up until they are entered "
-                 "on This Week > Every game.")
+                 "on Deadeye Picks > My picks.")
     if not lacking:
         return Check(CARD, "Every game's inputs", OK, f"All {len(games)} games have a line and a kickoff time",
                      ("" + line_note).strip())
@@ -337,9 +337,9 @@ def _kept_card(season: Season, year: int, week: int, now: float) -> Check:
         if started:
             return Check(CARD, name, BAD, "No card was kept before the first kickoff",
                          "Its record for this week will have to be re-made from the stored lines afterwards, "
-                         "which is a little kind to it. The nightly run and opening This Week both keep it.")
+                         "which is a little kind to it. The nightly run and opening Deadeye Picks both keep it.")
         return Check(CARD, name, WARN if kickoff - now < 2 * DAY else NOTE, "Not kept yet",
-                     "It is written down whenever This Week is opened or the scheduled job prices the week, "
+                     "It is written down whenever Deadeye Picks is opened or the scheduled job prices the week, "
                      "and for the last time before the first kickoff.")
     if getattr(snap, "rebuilt", False):
         return Check(CARD, name, WARN, "Re-made after the fact, not kept at the time",
@@ -374,12 +374,12 @@ def _my_card(week: int, to_lock: float, now: float) -> Check:
     mine = cards.mine(week)
     if mine is not None:
         return Check(CARD, "Your own card", OK, f"Saved {ago(now - mine.at)}",
-                     "Any change before the deadline is pointed out on This Week.", mine.at)
+                     "Any change before the deadline is pointed out on Deadeye Picks.", mine.at)
     if to_lock <= 0:
         return Check(CARD, "Your own card", NOTE, "No card was saved for this week")
     return Check(CARD, "Your own card", WARN if to_lock < DAY else NOTE,
                  f"Not saved yet - cards are due {until(to_lock)}",
-                 "Save card on This Week remembers the one you are handing in.")
+                 "Save card on Deadeye Picks remembers the one you are handing in.")
 
 
 def _autopsy(season: Season, year: int) -> Check:

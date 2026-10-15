@@ -31,7 +31,7 @@ import statistics
 from dataclasses import dataclass
 
 from .. import analytics
-from . import luck, pricing
+from . import luck, predictions, pricing
 from ..feeds import results
 from ..models import Game, Season, same_team
 from .predictions import display_team, team_code
@@ -229,7 +229,7 @@ def _line_coming(game: Game, forecast, lines_posted: bool) -> Signal | None:
     return Signal(
         "Pool line", AGAINST, "not posted yet - expect one",
         f"{favourite} is favoured by {abs(margin):g}, and favourites this big usually get a pool line. "
-        f"Priced straight up for now: enter the line on Every game when it is posted - the pick often changes.",
+        f"Priced straight up for now: enter the line with Line games\u2026 when it is posted - the pick often changes.",
     )
 
 
@@ -288,8 +288,10 @@ def _efficiency(pick: str, other: str, pick_code: str, other_code: str, year: in
         f"{theirs.defence:+.2f}. The line has weighed this already - it is the football under the number.{stale}")
 
 
-def _quarterback(pick: str, other: str, pick_code: str, other_code: str) -> Signal | None:
-    """Whether either side has a quarterback on the injury report."""
+def _quarterback(pick: str, other: str, pick_code: str, other_code: str,
+                 market_at: float = 0.0) -> Signal | None:
+    """Whether either side has a quarterback on the injury report - and
+    whether that news came in after the newest line the card is priced on."""
     from ..feeds import injuries
     if not injuries.fetched_at():
         return None
@@ -303,10 +305,18 @@ def _quarterback(pick: str, other: str, pick_code: str, other_code: str) -> Sign
 
     mine_out, theirs_out = any(i.missing for i in mine), any(i.missing for i in theirs)
     verdict = FOR if theirs_out and not mine_out else AGAINST if mine_out and not theirs_out else INFO
+    late = injuries.newer_than(mine + theirs, market_at)
     detail = ("No quarterback on either side's injury report." if not mine and not theirs else
               "The report lists every quarterback on a roster, so a name here may be a backup rather than the "
-              "starter - check who is starting. The line already has it in.")
-    return Signal("Quarterback", verdict, f"{words(pick, mine)} \u00b7 {words(other, theirs)}", detail)
+              "starter - check who is starting. " + (
+                  "The line already has it in." if not late else
+                  "The line may not have it yet: " + ", ".join(
+                      f"{i.name} ({injuries.STATUSES.get(i.status, i.status)})" for i in late)
+                  + " changed after the newest line the card is priced on. Update lines before the card goes in."
+                  + (" Questionable is not out - the line may barely move." if all(not i.missing for i in late)
+                     else "")))
+    headline = f"{words(pick, mine)} \u00b7 {words(other, theirs)}" + (" \u00b7 newer than the line" if late else "")
+    return Signal("Quarterback", verdict, headline, detail)
 
 
 def _steps(game: Game, choice, pick_home: bool, price, forecast) -> tuple[Step, ...]:
@@ -504,6 +514,7 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
     doubted = distrusted(season)
     # today's injury report says nothing about a week that has been played
     current = not all(g.played for g in games)
+    market_at = predictions.market_time(brief.week) if current else 0.0
 
     out = []
     for choice in brief.choices:
@@ -519,7 +530,7 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
             _move(game, choice.pick, pick_home, forecast),
             _models(game, choice.pick, pick_home, forecast),
             _efficiency(choice.pick, choice.other, pick_code, other_code, year, brief.week) if current else None,
-            _quarterback(choice.pick, choice.other, pick_code, other_code) if current else None,
+            _quarterback(choice.pick, choice.other, pick_code, other_code, market_at) if current else None,
             _form(pick_code, other_code, choice.pick, choice.other, form),
             _rest(choice.pick, choice.other, pick_code, other_code,
                   _kickoff(year, brief.week, game), form),

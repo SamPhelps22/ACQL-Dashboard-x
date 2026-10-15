@@ -3051,6 +3051,23 @@ class TestLedger(_ScratchStore):
         self.assertFalse(ledger.due(2026, self.NOW + 60))
 
 
+class SurvivorFieldTests(unittest.TestCase):
+    """The suicide pool field: shares among unspent teams, and the fit."""
+
+    def test_shares_skip_spent_and_favour_safer(self):
+        from acql.pool import survivorfield as sf
+        share = sf._shares({"a": 0.7, "b": 0.5, "c": 0.6}, {"c"}, 10.0)
+        self.assertEqual(set(share), {"a", "b"})
+        self.assertAlmostEqual(sum(share.values()), 1.0)
+        self.assertGreater(share["a"], share["b"])
+
+    def test_fit_finds_sharp_pickers(self):
+        from acql.pool import survivorfield as sf
+        chances = {"a": 0.75, "b": 0.5, "c": 0.45}
+        made = [sf.Made("x", w, "a", chances, frozenset()) for w in range(1, 9)]
+        self.assertGreater(sf.fit(made), sf.fit(made[:1] + [sf.Made("y", 9, "c", chances, frozenset())] * 3))
+
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")

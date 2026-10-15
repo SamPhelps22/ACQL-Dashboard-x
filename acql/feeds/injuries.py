@@ -165,6 +165,14 @@ def team(code: str) -> list[Injury]:
     return out
 
 
+def newer_than(report: list[Injury], when: float) -> list[Injury]:
+    """The entries on a report that changed after `when` - news a betting line
+    taken then cannot have in it. Nothing when `when` is unknown (0)."""
+    if not when:
+        return []
+    return [i for i in report if i.at > when]
+
+
 def summary(code: str, most: int = 2) -> str:
     """"QB Lamar Jackson out (hamstring); 3 more out (WR, CB, S); 2 questionable" - or ""."""
     report = team(code)

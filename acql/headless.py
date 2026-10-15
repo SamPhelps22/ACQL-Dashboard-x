@@ -433,7 +433,7 @@ def email_card(*, dry_run: bool = False) -> int:
         _log(f"card email (dry run): \"{card.subject}\" written to {EMAIL_PREVIEW.name}, "
              f"would go to {len(cardmail.recipients())} address(es); nothing sent")
         return 0
-    _private_page(card.html)
+    _private_page(card.html, season)
     try:
         to = cardmail.send(card)
     except mailer.MailError as exc:
@@ -449,7 +449,7 @@ def _private_page(inside: str | None = None, season=None) -> None:
     before it leaves. Only when a passphrase has been set; never the cause of a failed run."""
     try:
         from .site import lockedpage
-        done = lockedpage.put(inside) if inside is not None else lockedpage.refresh(season)
+        done = lockedpage.put(inside, season=season) if inside is not None else lockedpage.refresh(season)
         if done:
             _log("private page updated")
     except Exception as exc:  # noqa: BLE001 - reported, and the run goes on

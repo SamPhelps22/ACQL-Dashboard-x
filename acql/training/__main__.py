@@ -10,6 +10,7 @@
     python -m acql.training patterns   home-underdog patterns from outside, counted on our seasons
     python -m acql.training decay      how much of the models' gap from the line survives open to close
     python -m acql.training margin     four ways of taking the bookmaker's margin out, against results
+    python -m acql.training features   each football fact on its own, on top of the line, at each timing
     python -m acql.training fetch     the season archives from The Prediction Tracker (about 2 MB;
                                        the one thing here that goes online, and only when asked)
 
@@ -219,6 +220,15 @@ def decay(args) -> int:
     return 0
 
 
+def featurevalue(args) -> int:
+    """Each football fact added on its own to the line, walked forward, at each line timing."""
+    from . import featurevalue as found
+    text, path = found.run()
+    print(text)
+    print(f"Written to {path}")
+    return 0
+
+
 def fetch(args) -> int:
     """The season archives, one request each, a second apart. Files already
     on disk are left alone (this season's is fetched again with --refresh)."""
@@ -270,12 +280,14 @@ def main(argv: list[str] | None = None) -> int:
     pt.add_argument("--every-day", action="store_true", help="count Thursday and Monday games too")
     commands.add_parser("margin", help="four ways of taking the margin out of the moneylines, measured")
     commands.add_parser("decay", help="the models' edge over the line, open to close, measured")
+    commands.add_parser("features", help="each football fact on its own, on top of the line, measured")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
     args = parser.parse_args(argv)
     _logging(args.verbose)
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
-            "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay}.get(args.command)
+            "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
+            "features": featurevalue}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0

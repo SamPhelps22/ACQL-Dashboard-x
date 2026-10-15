@@ -659,7 +659,7 @@ class Results:
     TABLE_HEADERS = ["Suicide pool rule", "Weeks its chances expected",
                      "Weeks it really lasted", "Lasted 4+ weeks"]
     WEEK_HEADERS = ["Weekly card", "Points a week", "Finished first", "Money a week",
-                    "Against most wins"]
+                    "Against Safe"]
 
     def headline_html(self) -> str:
         w = self.raw["week"]
@@ -675,7 +675,7 @@ class Results:
                 f"<b>{wins['points']:.2f}</b> points a week - a typical coach gets "
                 f"{money['pool_right']:.0%} of games right to its {w['plain_right']:.0%} - "
                 f"and made <b>{_dollars(wins['money'])}</b> a week. "
-                f"Turning games against the pool (the card built to finish first) made "
+                f"Turning games against the pool (the Long shot card) made "
                 f"{_dollars(first['gain'])} against it, give or take {first['gain_se']:.2f}: "
                 f"its expected gain of {_dollars(first['expected'] - wins['expected'])} did not "
                 f"show up in real results, and it cost {wins['points'] - first['points']:.2f} "
@@ -685,7 +685,7 @@ class Results:
                 + ("a real gain" if cash['gain'] > 2 * cash['gain_se'] else "not yet a proven gain")
                 + " - for "
                 f"{max(0.0, wins['points'] - cash['points']):.2f} fewer points a week. "
-                f"The card aims for most wins unless This Week is told to aim for money."
+                f"Deadeye Picks plays the Win the week card unless you choose Safe or Long shot."
             )
         else:
             first, plain, fair = w["plan_first"], w["plain_first"], w["fair"]
@@ -732,13 +732,13 @@ class Results:
         money = self.raw.get("money")
         if not money:
             return [
-                ["Built to win the week", "", f"{w['plan_first']:.1%}", "", ""],
+                ["Long shot", "", f"{w['plan_first']:.1%}", "", ""],
                 ["Likeliest side of every game", "", f"{w['plain_first']:.1%}", "", ""],
                 ["A fair share of the pool", "", f"{w['fair']:.1%}", "", ""],
             ]
-        names = {"most wins": "Most wins (the default)",
-                 "built to finish first": "Built to finish first",
-                 "most money": "Most money (Big Losers the pool isn't on)"}
+        names = {"most wins": "Safe (the default)",
+                 "built to finish first": "Long shot (games turned against the pool)",
+                 "most money": "Win the week (Big Losers the pool isn't on)"}
         rows = []
         for name in MONEY_CARDS:
             c = money[name]

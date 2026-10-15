@@ -57,7 +57,7 @@ Down the left are seven places. Where a place holds more than one page,
 tabs across the top switch between them:
 
     Season          Overview, Standings, Winnings and Projections
-    This Week       your card for the week, and every game on the slate
+    Picks           your picks for the week, and every game on the slate
     Results         one week at a time, and the recap to share or email
     Side Pools      Big Loser and the suicide pool
     Player          one coach's whole season (or double-click a name
@@ -66,8 +66,8 @@ tabs across the top switch between them:
                     own picks are doing
     Data & Update   what is loaded, entering results, and updates
 
-Ctrl+1 to Ctrl+7 jump between the places. Ctrl+K finds any page, tab or
-command by typing a few letters of it.
+Ctrl+1 to Ctrl+7 jump between the places. The Settings button (Ctrl+K)
+finds any setting or command by typing a few letters of it.
 
 Numbers come from the spreadsheets in the folder. When Sam sends a new
 week's files, drop them in - the dashboard notices and updates itself.

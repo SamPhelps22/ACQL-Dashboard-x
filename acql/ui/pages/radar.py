@@ -159,7 +159,7 @@ class RadarPage(Page):
         self.scout_button.setEnabled(False)
         if not slate.games:
             self.table_card.set_title(TABLE_TITLE)
-            self.table_note.setText(f"Appears once week {slate.week} has betting lines - Update lines on Your card fetches them.")
+            self.table_note.setText(f"Appears once week {slate.week} has betting lines - Update lines on My picks fetches them.")
             return
         games = sorted(slate.games, key=lambda g: -g.hard)
         rows, tones, tips = [], {}, {}

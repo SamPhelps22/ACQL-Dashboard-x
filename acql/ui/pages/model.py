@@ -29,7 +29,7 @@ MODEL_TITLE = f"How {MODEL_NAME}'s picks are doing"
 CALIBRATION_TITLE = "Are its chances honest?"
 TRACK_TITLE = f"Following {MODEL_NAME} - its card against yours"
 TRACK_KEY = "insights/me"
-TRACK_HEADERS = ["Week", f"{MODEL_NAME}'s card", "Built to finish first", "You", "Week's best",
+TRACK_HEADERS = ["Week", f"{MODEL_NAME}'s card", "Long shot", "You", "Week's best",
                  f"{MODEL_NAME} would have been"]
 CALLS_TITLE = "Your own calls - the games you went against its card"
 CALLS_HEADERS = ["Week", "Game", "You took", f"{MODEL_NAME}'s card (its chance)", "Going your own way"]
@@ -76,8 +76,8 @@ class ModelPage(Page):
         self.track_box = QVBoxLayout()
         self.track_card.body().addLayout(self.track_box)
         self.track_note = QLabel(
-            f"{MODEL_NAME}'s card is the one This Week recommends. It is saved before the first kickoff "
-            "and scored when the results are in. The card built to finish first is shown beside it. "
+            f"{MODEL_NAME}'s card is the one Deadeye Picks recommends. It is saved before the first kickoff "
+            "and scored when the results are in. The Long shot card is shown beside it. "
             "\u201cRebuilt\u201d weeks came before cards were saved and were re-made afterwards."
         )
         self.track_note.setObjectName("Muted")
@@ -153,7 +153,7 @@ class ModelPage(Page):
         if not scores:
             self.track_summary.setText(
                 f"Nothing to score yet. {MODEL_NAME}'s card is kept each week from "
-                "This Week, and graded here once the results are in."
+                "Deadeye Picks, and graded here once the results are in."
             )
             return
         self.track_summary.setText(cards.record(scores).sentence(name))
@@ -236,7 +236,7 @@ class ModelPage(Page):
                 "Appears once a week with a predictions file has been scored"
             )
             self.model_note.setText(
-                "Load a week's predictions on This Week \u203a Every game and this fills "
+                "Load a week's predictions on Deadeye Picks \u203a My picks and this fills "
                 "in as the results come."
             )
             self.calibration_card.set_title(CALIBRATION_TITLE)
