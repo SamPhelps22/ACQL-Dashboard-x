@@ -714,6 +714,15 @@ def _from_sheets(season: Season) -> Season:
     return view
 
 
+def _alerts_link() -> str:
+    """Where coaches subscribe to the pool's phone alerts, when they're on."""
+    try:
+        from ..site import pushalerts
+        return pushalerts.subscribe_link()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def snapshot(season: Season, *, generated: str | None = None, strict: bool = False) -> dict:
     """Everything the pool page shows, worked out from the season. `strict`
     (publishing) lets a store that can't be read stop the build rather than
@@ -826,6 +835,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "title_by_week": title_by_week,
         "money_by_week": money_by_week,
         "note": note,
+        "alerts": _alerts_link(),
         "history": history,
         "teams": {code: display_team(code) for code in sorted(DISPLAY)},
         "team_rank": _team_ranks(latest),

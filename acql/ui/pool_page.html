@@ -2662,7 +2662,11 @@ a.weekpill { text-decoration: none; }
         return el("button", { type: "button", "aria-pressed": textPref() === o[0] ? "true" : "false",
           onclick: function () { textChoice = o[0]; store(TEXT_KEY, o[0]); render(); }, text: o[1] });
       }))
-    ]);
+    ].concat(DATA.alerts ? [
+      el("b", { text: "Phone alerts" }),
+      el("a", { class: "btn", href: DATA.alerts, target: "_blank", rel: "noopener", text: "Get alerts on your phone" }),
+      el("span", { class: "note", text: "Install the free ntfy app, then subscribe from this link: a reminder before picks close, and when the week's results are in." })
+    ] : []));
     var box = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "Menu", tabindex: "-1",
       onkeydown: function (e) { if (e.key === "Escape") close(); } }, [
       el("div", { class: "sh-head" }, [el("h2", { text: "Menu" }),

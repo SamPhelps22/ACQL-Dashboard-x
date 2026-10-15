@@ -358,7 +358,7 @@ def _timelines(season) -> int:
 def _publish(season) -> str | None:
     """The website, brought up to date when something it shows has changed -
     the same steps as the window's AutoPublisher, on this thread."""
-    from .site import siteextras, webpublish
+    from .site import pushalerts, siteextras, webpublish
     from .ui import poolpage
     from .ui.webpage import published
 
@@ -390,7 +390,17 @@ def _publish(season) -> str | None:
     url = webpublish.publish(settings, page, message=f"After week {week} (scheduled)", files=files)
     published(data, week, url)
     _log(f"website updated: {url}")
+    _alert("results", lambda: pushalerts.results_in(week, url))
     return url
+
+
+def _alert(what: str, send) -> None:
+    """One phone alert (pushalerts.py) - a failure is logged, never fatal."""
+    try:
+        if send():
+            _log(f"{what} alert sent")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"{what} alert failed: {exc!r}")
 
 
 def email_card(*, dry_run: bool = False) -> int:
@@ -534,6 +544,8 @@ def main(argv: list[str] | None = None) -> int:
             _log("another run is still going - skipped")
             return 0
         try:
+            from .site import pushalerts
+            _alert("deadline", pushalerts.remind_deadline)
             if args.poll and not _poll_due():
                 return 0
             _log("daily run" if args.daily else "game-day poll")
