@@ -459,6 +459,11 @@ main {
 .r .big { font: 800 24px/1 var(--display); text-align: right; font-variant-numeric: tabular-nums; }
 .r .meta { color: var(--muted); font-size: 13px; }
 .r .meta b { color: var(--ink-2); font-weight: 600; }
+:root[data-text="l"] body { zoom: 1.12; }
+:root[data-text="xl"] body { zoom: 1.25; }
+/* the bars keep their size: their buttons are big enough, and wider ones run off a phone */
+:root[data-text="l"] .topbar, :root[data-text="l"] .bottombar { zoom: 0.893; }
+:root[data-text="xl"] .topbar, :root[data-text="xl"] .bottombar { zoom: 0.8; }
 .form { flex: none; font-size: 0.95em; line-height: 1; margin-left: 4px; cursor: help; }
 .podname { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
 .youtag { font: 800 11px/1 var(--display); letter-spacing: 0.06em; background: var(--gold); color: #0a0c0b; padding: 3px 5px 2px; border-radius: 2px; margin-left: 6px; vertical-align: 2px; }
@@ -1549,7 +1554,7 @@ a.weekpill { text-decoration: none; }
     "https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap",
     "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap"
   ];
-  var ME_KEY = "acql-pool-me", THEME_KEY = "acql-theme", VS_KEY = "acql-pool-vs";
+  var ME_KEY = "acql-pool-me", THEME_KEY = "acql-theme", TEXT_KEY = "acql-text", VS_KEY = "acql-pool-vs";
   var app = document.getElementById("app");
   var state = { view: "home", week: DATA.through_week, me: stored(ME_KEY), coach: "", a: "", b: "",
     sheet: false, every: false, chartMe: "", picksOrder: "" };
@@ -2599,8 +2604,16 @@ a.weekpill { text-decoration: none; }
     return v === "light" || v === "dark" ? v : "auto";
   }
   function gameOn() { return hasLive() && !!live.fetched && gamesOn(liveTally()) > 0; }
+  // Text size: the whole page scaled, so every figure and chart grows with the words.
+  var TEXT_SIZES = [["", "Normal"], ["l", "Larger"], ["xl", "Largest"]];
+  var textChoice = null;
+  function textPref() {
+    var v = textChoice != null ? textChoice : stored(TEXT_KEY);
+    return v === "l" || v === "xl" ? v : "";
+  }
   function applyTheme() {
     var pref = themePref(), root = document.documentElement;
+    if (textPref()) root.setAttribute("data-text", textPref()); else root.removeAttribute("data-text");
     var want = pref === "auto" ? (gameOn() ? "dark" : "") : pref;
     if (want) root.setAttribute("data-theme", want); else root.removeAttribute("data-theme");
   }
@@ -2632,7 +2645,12 @@ a.weekpill { text-decoration: none; }
         return el("button", { type: "button", "aria-pressed": pref === o[0] ? "true" : "false",
           onclick: function () { themeChoice = o[0]; store(THEME_KEY, o[0] === "auto" ? "" : o[0]); render(); }, text: o[1] });
       })),
-      el("span", { class: "note", text: "Auto follows your phone, and goes dark while games are on." })
+      el("span", { class: "note", text: "Auto follows your phone, and goes dark while games are on." }),
+      el("b", { text: "Text size" }),
+      el("div", { class: "seg", role: "group", "aria-label": "Text size" }, TEXT_SIZES.map(function (o) {
+        return el("button", { type: "button", "aria-pressed": textPref() === o[0] ? "true" : "false",
+          onclick: function () { textChoice = o[0]; store(TEXT_KEY, o[0]); render(); }, text: o[1] });
+      }))
     ]);
     var box = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "Menu", tabindex: "-1",
       onkeydown: function (e) { if (e.key === "Escape") close(); } }, [
