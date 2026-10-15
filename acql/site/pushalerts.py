@@ -116,7 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.off:
         set_topic("")
     elif args.topic:
-        set_topic(args.topic)
+        try:
+            set_topic(args.topic)
+        except ValueError as exc:
+            print(f"not set: {exc} (for example acql-pool-k7q2m9x)")
+            return 1
     name = topic()
     print(f"alerts go to {subscribe_link(name)}" if name else "alerts are off (no topic)")
     if args.test and name:
