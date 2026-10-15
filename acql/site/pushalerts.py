@@ -14,6 +14,7 @@ ten minutes never repeats one. With no topic set nothing is sent.
     python -m acql.site.pushalerts --off                   stop the alerts
     python -m acql.site.pushalerts --deadline "thu 6pm"    when picks are due each week
     python -m acql.site.pushalerts --remind 3              hours of warning before it
+    python -m acql.site.pushalerts --text 5551234567       also text alerts to a Verizon phone
 
 A topic is public to anyone who knows its name, so pick one hard to guess.
 """
@@ -31,6 +32,8 @@ KIND = "alerts"
 REMIND_BEFORE = 2 * 3600
 TIMEOUT = 15
 TOPIC_RULE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
+#: Verizon turns an email to this address into a text message.
+TEXT_GATEWAY = "vtext.com"
 
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -102,14 +105,46 @@ def set_topic(name: str) -> None:
     store.put(KIND, "topic", name)
 
 
+def text_number() -> str:
+    from .. import store
+    try:
+        found = str(store.get(KIND, "text", "") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+    return found if len(found) == 10 and found.isdigit() else ""
+
+
+def clean_number(number: str) -> str:
+    """'(555) 123-4567' or '+1 555 123 4567' -> '5551234567'; '' stays ''."""
+    digits = re.sub(r"\D", "", number)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if digits and len(digits) != 10:
+        raise ValueError("a phone number is 10 digits, like 555-123-4567")
+    return digits
+
+
+def set_text_number(number: str) -> None:
+    from .. import store
+    store.put(KIND, "text", clean_number(number))
+
+
+def text_address(number: str | None = None) -> str:
+    number = text_number() if number is None else number
+    return f"{number}@{TEXT_GATEWAY}" if number else ""
+
+
 def subscribe_link(name: str | None = None) -> str:
     name = topic() if name is None else name
     return f"{SERVER}/{name}" if name else ""
 
 
-def send(title: str, message: str, *, link: str = "", tags: str = "", name: str | None = None) -> bool:
-    """Post one alert. False when there is no topic; raises when ntfy refuses."""
+def send(title: str, message: str, *, link: str = "", tags: str = "", name: str | None = None,
+         text: str | None = None) -> bool:
+    """Post one alert (and text it, when a number is set). False when there is no topic;
+    raises when ntfy refuses."""
     name = topic() if name is None else name
+    text = text_address() if text is None else text
     if not name:
         return False
     headers = {"Title": title.encode("utf-8").decode("latin-1", "replace")}
@@ -117,6 +152,8 @@ def send(title: str, message: str, *, link: str = "", tags: str = "", name: str 
         headers["Click"] = link
     if tags:
         headers["Tags"] = tags
+    if text:
+        headers["Email"] = text
     request = urllib.request.Request(f"{SERVER}/{name}", data=message.encode("utf-8"),
                                      headers=headers, method="POST")
     with urllib.request.urlopen(request, timeout=TIMEOUT) as reply:
@@ -167,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--off", action="store_true", help="stop sending alerts")
     parser.add_argument("--test", action="store_true", help="send a test alert")
     parser.add_argument("--deadline", help='when picks are due each week, like "thu 6pm"')
+    parser.add_argument("--text", help="phone number to text alerts to (Verizon); '' to stop")
     parser.add_argument("--remind", type=float, help="hours before the deadline to send the reminder")
     args = parser.parse_args(argv)
     if args.deadline:
@@ -181,6 +219,12 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(f"reminder not changed: {exc}")
             return 1
+    if args.text is not None:
+        try:
+            set_text_number(args.text)
+        except ValueError as exc:
+            print(f"text number not changed: {exc}")
+            return 1
     if args.off:
         set_topic("")
     elif args.topic:
@@ -191,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     name = topic()
     print(f"alerts go to {subscribe_link(name)}" if name else "alerts are off (no topic)")
+    if name and text_number():
+        print(f"and are texted to {text_address()}")
     print(f"picks are due {describe_deadline()}; the reminder goes {remind_before() / 3600:g} hours before")
     if args.test and name:
         send("ACQL alerts are on", "This is a test. You'll get the picks deadline and weekly results here.",

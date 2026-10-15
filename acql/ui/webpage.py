@@ -314,6 +314,9 @@ class ExtrasDialog(QDialog):
         self.topic = QLineEdit(pushalerts.topic())
         self.topic.setPlaceholderText("e.g. acql-pool-k7q2m9x - blank for no alerts; hard to guess")
         form.addRow("ntfy topic", self.topic)
+        self.text_to = QLineEdit(pushalerts.text_number())
+        self.text_to.setPlaceholderText("Verizon number, e.g. 555-123-4567 - blank for no texts")
+        form.addRow("Text alerts to", self.text_to)
         weekday, hour, minute = oddslock.deadline_clock()
         self.day = QComboBox()
         self.day.addItems(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
@@ -347,7 +350,13 @@ class ExtrasDialog(QDialog):
             self.problems.setText("Fix these first: a topic is 6-64 letters, digits, - or _.")
             return
         try:
-            pushalerts.send("ACQL alerts are on", "This is a test from the dashboard.", tags="football", name=name)
+            number = pushalerts.clean_number(self.text_to.text())
+        except ValueError as exc:
+            self.problems.setText(f"Fix these first: {exc}.")
+            return
+        try:
+            pushalerts.send("ACQL alerts are on", "This is a test from the dashboard.", tags="football", name=name,
+                            text=pushalerts.text_address(number))
         except Exception as exc:  # noqa: BLE001
             self.problems.setText(f"The test alert didn't go: {exc}")
             return
@@ -360,6 +369,10 @@ class ExtrasDialog(QDialog):
             pushalerts.set_topic(self.topic.text())
         except ValueError as exc:
             return f"ntfy topic: {exc}"
+        try:
+            pushalerts.set_text_number(self.text_to.text())
+        except ValueError as exc:
+            return f"Text alerts: {exc}"
         when = self.time.time()
         hour = when.hour()
         clock = f"{hour % 12 or 12}:{when.minute():02d}{'pm' if hour >= 12 else 'am'}"

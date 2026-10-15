@@ -59,6 +59,15 @@ class TestPushAlerts(unittest.TestCase):
         self.assertFalse(pushalerts.deadline_due(3 * 3600, 0))
         self.assertFalse(pushalerts.deadline_due(-1, 0))
 
+    def test_text_number(self):
+        self.assertEqual(pushalerts.clean_number("(555) 123-4567"), "5551234567")
+        self.assertEqual(pushalerts.clean_number("+1 555 123 4567"), "5551234567")
+        self.assertEqual(pushalerts.clean_number(""), "")
+        with self.assertRaises(ValueError):
+            pushalerts.clean_number("12345")
+        pushalerts.set_text_number("555.123.4567")
+        self.assertEqual(pushalerts.text_address(), "5551234567@vtext.com")
+
 
 if __name__ == "__main__":
     unittest.main()
