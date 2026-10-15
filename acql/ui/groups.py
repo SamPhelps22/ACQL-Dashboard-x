@@ -25,6 +25,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QStackedWidget, QTabBar, QVBoxLayout, QWidget
 
 from .pages.base import Page
+from .tokens import SPACE
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ class PageGroup(QWidget):
             holder = QWidget()
             holder.setObjectName("GroupTabs")
             row = QHBoxLayout(holder)
-            row.setContentsMargins(22, 6, 18, 0)
+            row.setContentsMargins(SPACE["gap"], SPACE["snug"] - 2, SPACE["room"], 0)
             row.setSpacing(0)
             # which of the sidebar's places these tabs are the pages of
             kicker = QLabel(spec.title.upper())
