@@ -66,7 +66,10 @@ class TestPushAlerts(unittest.TestCase):
         with self.assertRaises(ValueError):
             pushalerts.clean_number("12345")
         pushalerts.set_text_number("555.123.4567")
-        self.assertEqual(pushalerts.text_address(), "5551234567@vtext.com")
+        self.assertEqual(pushalerts.text_address(), ["5551234567@vtext.com"])
+        pushalerts.set_text_number("555-123-4567, 555 987 6543 T-Mobile\n5551112222 googlefi")
+        self.assertEqual(pushalerts.text_address(), ["5551234567@vtext.com", "5559876543@tmomail.net",
+                                                     "5551112222@msg.fi.google.com"])
 
     def test_text_goes_through_gmail(self):
         from acql.site import mailer

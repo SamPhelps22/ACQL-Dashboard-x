@@ -315,8 +315,13 @@ class ExtrasDialog(QDialog):
         self.topic.setPlaceholderText("e.g. acql-pool-k7q2m9x - blank for no alerts; hard to guess")
         form.addRow("ntfy topic", self.topic)
         self.text_to = QLineEdit(pushalerts.text_number())
-        self.text_to.setPlaceholderText("Verizon number, e.g. 555-123-4567 - sent from the Gmail in the email settings")
+        self.text_to.setPlaceholderText("555-123-4567, 555-987-6543 tmobile - commas between; Verizon needs no name")
         form.addRow("Text alerts to", self.text_to)
+        carriers = QLabel("Texts go out from the Gmail in the email settings. Put the carrier after any "
+                          "number that isn't Verizon: tmobile, metro, uscellular or googlefi. AT&T can't get them.")
+        carriers.setObjectName("Muted")
+        carriers.setWordWrap(True)
+        form.addRow("", carriers)
         weekday, hour, minute = oddslock.deadline_clock()
         self.day = QComboBox()
         self.day.addItems(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
@@ -364,8 +369,7 @@ class ExtrasDialog(QDialog):
             self.problems.setText(f"The test alert didn't go: {exc}")
             return
         self.problems.setText("")
-        where = [w for w in (pushalerts.subscribe_link(name) if name else "",
-                             pushalerts.text_address(number)) if w]
+        where = ([pushalerts.subscribe_link(name)] if name else []) + pushalerts.text_address(number)
         QMessageBox.information(self, "Phone alerts", f"Sent to {' and '.join(where)}.")
 
     def _save_alerts(self) -> str:

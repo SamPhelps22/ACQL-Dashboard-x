@@ -32,8 +32,9 @@ KIND = "alerts"
 REMIND_BEFORE = 2 * 3600
 TIMEOUT = 15
 TOPIC_RULE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
-#: Verizon turns an email to this address into a text message.
-TEXT_GATEWAY = "vtext.com"
+#: Each carrier turns an email to number@this into a text message (AT&T stopped in 2025).
+CARRIERS = {"verizon": "vtext.com", "tmobile": "tmomail.net", "metro": "mymetropcs.com",
+            "uscellular": "email.uscc.net", "googlefi": "msg.fi.google.com"}
 
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -106,32 +107,46 @@ def set_topic(name: str) -> None:
 
 
 def text_number() -> str:
+    """The numbers alerts are texted to, as typed back: '5551234567, 5559876543 tmobile'."""
     from .. import store
     try:
-        found = str(store.get(KIND, "text", "") or "")
+        return clean_number(str(store.get(KIND, "text", "") or ""))
     except Exception:  # noqa: BLE001
         return ""
-    return found if len(found) == 10 and found.isdigit() else ""
 
 
-def clean_number(number: str) -> str:
-    """'(555) 123-4567' or '+1 555 123 4567' -> '5551234567'; '' stays ''."""
-    digits = re.sub(r"\D", "", number)
+def _one_number(entry: str) -> str:
+    """'(555) 123-4567 t-mobile' -> '5551234567 tmobile' (Verizon needs no name)."""
+    words = re.sub(r"[^a-z]", "", entry.lower())
+    carrier = next((c for c in CARRIERS if c in words), "verizon") if words else "verizon"
+    digits = re.sub(r"\D", "", entry)
     if len(digits) == 11 and digits.startswith("1"):
         digits = digits[1:]
-    if digits and len(digits) != 10:
-        raise ValueError("a phone number is 10 digits, like 555-123-4567")
-    return digits
+    if len(digits) != 10:
+        raise ValueError(f"{entry.strip()!r} isn't a 10-digit phone number")
+    return digits if carrier == "verizon" else f"{digits} {carrier}"
 
 
-def set_text_number(number: str) -> None:
+def clean_number(numbers: str) -> str:
+    """One or more numbers, split by commas or new lines, each with its carrier when
+    it isn't Verizon ('555-123-4567, 555-987-6543 tmobile'); '' stays ''."""
+    entries = [e for e in re.split(r"[,;\n]", numbers) if e.strip()]
+    return ", ".join(dict.fromkeys(_one_number(e) for e in entries))
+
+
+def set_text_number(numbers: str) -> None:
     from .. import store
-    store.put(KIND, "text", clean_number(number))
+    store.put(KIND, "text", clean_number(numbers))
 
 
-def text_address(number: str | None = None) -> str:
-    number = text_number() if number is None else number
-    return f"{number}@{TEXT_GATEWAY}" if number else ""
+def text_address(numbers: str | None = None) -> list[str]:
+    """The email address each number's carrier turns into a text."""
+    numbers = text_number() if numbers is None else numbers
+    found = []
+    for entry in filter(None, numbers.split(", ")):
+        digits, _, carrier = entry.partition(" ")
+        found.append(f"{digits}@{CARRIERS[carrier or 'verizon']}")
+    return found
 
 
 def subscribe_link(name: str | None = None) -> str:
@@ -140,7 +155,7 @@ def subscribe_link(name: str | None = None) -> str:
 
 
 def send(title: str, message: str, *, link: str = "", tags: str = "", name: str | None = None,
-         text: str | None = None) -> bool:
+         text: list[str] | str | None = None) -> bool:
     """Post one alert to ntfy, and text it when a number is set. False when neither
     is set up; raises when ntfy or Gmail refuses."""
     name = topic() if name is None else name
@@ -156,9 +171,15 @@ def send(title: str, message: str, *, link: str = "", tags: str = "", name: str 
                                          headers=headers, method="POST")
         with urllib.request.urlopen(request, timeout=TIMEOUT) as reply:
             sent = 200 <= reply.status < 300
-    if text:
-        send_text(text, title, f"{message} {link}".strip())
-        sent = True
+    failed = []
+    for address in ([text] if isinstance(text, str) and text else text or []):
+        try:
+            send_text(address, title, f"{message} {link}".strip())
+            sent = True
+        except Exception as exc:  # noqa: BLE001 - one bad number doesn't stop the rest
+            failed.append(f"{address}: {exc}")
+    if failed:
+        raise RuntimeError("; ".join(failed))
     return sent
 
 
@@ -223,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--off", action="store_true", help="stop sending alerts")
     parser.add_argument("--test", action="store_true", help="send a test alert")
     parser.add_argument("--deadline", help='when picks are due each week, like "thu 6pm"')
-    parser.add_argument("--text", help="phone number to text alerts to (Verizon); '' to stop")
+    parser.add_argument("--text", help='numbers to text, comma-separated, carrier after any non-Verizon one ("555-123-4567, 555-987-6543 tmobile"); "" to stop')
     parser.add_argument("--remind", type=float, help="hours before the deadline to send the reminder")
     args = parser.parse_args(argv)
     if args.deadline:
@@ -255,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     name = topic()
     print(f"alerts go to {subscribe_link(name)}" if name else "alerts are off (no topic)")
     if text_number():
-        print(f"texts go to {text_address()} (sent from the Gmail in the email settings)")
+        print(f"texts go to {', '.join(text_address())} (sent from the Gmail in the email settings)")
     print(f"picks are due {describe_deadline()}; the reminder goes {remind_before() / 3600:g} hours before")
     if args.test and (name or text_number()):
         send("ACQL alerts are on", "This is a test. You'll get the picks deadline and weekly results here.",
