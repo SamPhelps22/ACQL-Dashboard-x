@@ -549,6 +549,13 @@ td.game, td.winner { white-space: normal; }
 .live-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
 .live-status { color: var(--muted); font-size: 14px; }
 .live-status.bad { color: var(--bad); }
+.live-status .linkish { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--turf); text-decoration: underline; cursor: pointer; font-size: inherit; }
+/* empty and error states: what's missing, why, and what to do about it */
+.state-msg { display: grid; gap: 4px; justify-items: start; margin: 8px 0; padding: 12px 14px; border: 1px solid var(--rule); border-left: 3px solid var(--muted); border-radius: 4px; }
+.state-msg strong { font-size: 15px; }
+.state-msg .btn { margin-top: 6px; }
+.state-msg.bad { border-left-color: var(--bad); }
+.state-msg.bad strong { color: var(--bad); }
 .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 6px; vertical-align: 1px; }
 /* ---- a game, as a scoreboard card ------------------------------------------------- */
 .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; }
@@ -1659,6 +1666,14 @@ a.weekpill { text-decoration: none; }
     return el("section", a, [el("div", { class: "mhead" }, [el("h2", { text: title }),
       aside == null ? null : typeof aside === "string" ? el("span", { class: "aside", text: aside }) : aside])].concat(kids));
   }
+  // An empty or error state: a plain title, a line on why, and the next step.
+  function stateMsg(title, detail, action, tone) {
+    return el("div", { class: "state-msg" + (tone ? " " + tone : ""), role: tone === "bad" ? "alert" : "status" }, [
+      el("strong", { text: title }),
+      detail ? el("span", { class: "note", text: detail }) : null,
+      action ? el("button", { class: "btn", type: "button", text: action.text, onclick: action.go }) : null
+    ]);
+  }
   function moreLink(text, view) {
     return el("a", { class: "more-link", href: "#" + view, onclick: function (e) { e.preventDefault(); go(view); }, text: text });
   }
@@ -1863,12 +1878,22 @@ a.weekpill { text-decoration: none; }
       storeJSON(CACHE_KEY, { week: L.week, year: seasonYear(), at: Date.now(), scores: got, spreads: live.spreads, kick: live.kick });
       afterScores();
     }).catch(function (e) {
-      live.error = "Live scores can’t be reached right now (" + (e && e.message ? e.message : "no connection") + "). The picks are still here; scores will fill in when it comes back.";
+      live.error = e && e.message ? e.message : "no connection";
     }).then(function () {
       live.busy = false;
       schedule();                          // first, so the page says how often it now looks
       if (!updateBar) render({ quiet: true });
     });
+  }
+  function retryScores() { fetchScores(); render({ quiet: true }); }
+  // What went wrong with the score feed, and what still works without it.
+  function liveProblem() {
+    if (!live.error) return null;
+    var retry = { text: live.busy ? "Trying…" : "Try again", go: retryScores };
+    if (live.fetched) return stateMsg("Last update failed",
+      "Showing scores from " + clock(live.fetched) + " (" + live.error + "). It tries again on its own, or now:", retry, "bad");
+    return stateMsg("Market feed unavailable",
+      "Live scores and betting lines can’t be reached (" + live.error + "). Every pick is still here, and win chances use the pool lines until it’s back.", retry, "bad");
   }
   // ESPN's words, tidied: single spaces, nothing at either end.
   function words(v) { return v == null ? "" : String(v).replace(/\s+/g, " ").trim(); }
@@ -3004,7 +3029,9 @@ a.weekpill { text-decoration: none; }
   // ---- results in: the recap -----------------------------------------------------------
   function recapHome() {
     var w = weekData(DATA.through_week);
-    if (!w) return [el("p", { class: "lede", text: "No finished week yet." })];
+    if (!w) return [stateMsg("No completed games yet",
+      "The recap and standings appear here once week 1’s results are entered in the dashboard.",
+      { text: "See the season’s picks", go: function () { go("weeks"); } })];
     return [
       heroRecap(w),
       el("div", { class: "cols" }, [
@@ -3502,7 +3529,7 @@ a.weekpill { text-decoration: none; }
         started ? mini(cash(m), weekOver(t) ? "for the week" : "if it ended now", "money " + cashTone(m)) : null,
         mini(right + "–" + wrong, open ? "right–wrong, " + open + " still to finish" : "right–wrong")
       ]),
-      live.error ? el("p", { class: "live-status bad", text: live.error }) : null,
+      liveProblem(),
       el("div", { class: "box week-card" }, [el("table", {}, [
         el("thead", {}, [el("tr", {}, [el("th", { text: "Game" }), el("th", { text: "Pick" }), el("th", { text: "How it stands" })])]),
         el("tbody", {}, rows)])])
@@ -3748,7 +3775,9 @@ a.weekpill { text-decoration: none; }
   function liveStatus(t) {
     var inPlay = gamesOn(t);
     var finals = t.games.filter(function (x) { return x.state === "post"; }).length;
-    return live.error ? el("span", { class: "live-status bad", text: live.error })
+    return live.error ? el("span", { class: "live-status bad" }, [
+        live.fetched ? "Last update failed · scores from " + clock(live.fetched) : "Market feed unavailable",
+        el("button", { class: "linkish", type: "button", text: live.busy ? "trying…" : "try again", onclick: retryScores })])
       : el("span", { class: "live-status" }, [inPlay ? el("span", { class: "dot-live" }) : null,
           (inPlay ? inPlay + " on now · " : "") + finals + " of " + t.games.length + " final" +
           (live.fetched ? " · scores at " + clock(live.fetched) + ", " + everyText() : " · fetching scores…")]);
@@ -4162,7 +4191,7 @@ a.weekpill { text-decoration: none; }
               el("td", { class: "n total num", text: String(p.big_loser) }),
               el("td", { class: "bar-cell" }, [bar(p.big_loser, blTop)])
             ]);
-          }))])]) : el("p", { class: "note", text: "No Big Loser points yet." }),
+          }))])]) : stateMsg("No Big Loser points yet", "A point goes to each pick whose team loses by 15 or more."),
           bl.length > shown.length ? el("p", { class: "note", text: "and " + plural(bl.length - shown.length, "more coach", "more coaches") + " on the board" }) : null,
           el("p", { class: "note", text: "Three picks a week, a point each when the team loses by 15 or more." })
         ], { "data-card": "losers-season" })
@@ -4609,7 +4638,8 @@ a.weekpill { text-decoration: none; }
     var info = w.replay;
     var aside = plural(info.scores || 0, "score") + " · lead changed hands " + plural(info.lead_changes || 0, "time");
     if (got.state === "loading") return module("The week, replayed", aside, [el("p", { class: "note", text: "Loading the replay…" })], { "data-card": "replay" });
-    if (got.state === "failed") return module("The week, replayed", aside, [el("p", { class: "note", text: "The replay couldn’t be loaded just now. It’ll be here next time." })], { "data-card": "replay" });
+    if (got.state === "failed") return module("The week, replayed", aside, [stateMsg("Replay unavailable", "This week’s replay file couldn’t be loaded - check the connection. The week’s results are unaffected.",
+      { text: "Try again", go: function () { delete replays[w.week]; render({ quiet: true }); } }, "bad")], { "data-card": "replay" });
     var rep = got.data;
     var n = rep.frames.length;
     if (!n) return null;
@@ -4920,7 +4950,7 @@ a.weekpill { text-decoration: none; }
         el("th", { class: "n hide-narrow", text: "Big Loser" }), el("th", { class: "n", text: "Week" }),
         el("th", { class: "n hide-narrow", text: "Season" }), el("th", { text: "Suicide pick" })])]), el("tbody", {}, rows)])),
         el("p", { class: "note", text: "Week is where that week’s score ranked. Season is the place in the standings after it. Wins include Big Loser points." })])
-        : el("p", { class: "note", text: "No scores yet." })
+        : stateMsg("No completed games yet", "Weekly scores show here once the first week is entered.")
     ]);
   }
   function placesAfter(n, raw) {
@@ -5442,7 +5472,7 @@ a.weekpill { text-decoration: none; }
     }).then(function (d) {
       historyData = d && typeof d === "object" ? d : { champions: [], seasons: [] };
     }).catch(function () {
-      historyError = "Past seasons can’t be fetched right now - this season’s records are below.";
+      historyError = "The history file couldn’t be loaded - check the connection. This season’s records are below.";
       historyData = { champions: [], seasons: [] };
     }).then(function () {
       historyBusy = false;
@@ -5557,7 +5587,8 @@ a.weekpill { text-decoration: none; }
       el("div", { class: "pagehead" }, [el("h1", { text: "History" })]),
       el("p", { class: "lede", text: "The league’s champions, its records, and every season the site has kept." }),
       historyBusy ? el("p", { class: "note", text: "Fetching past seasons…" }) : null,
-      historyError ? el("p", { class: "note", text: historyError }) : null,
+      historyError ? stateMsg("Past seasons unavailable", historyError,
+        { text: "Try again", go: function () { historyError = ""; historyData = null; loadHistory(); render({ quiet: true }); } }, "bad") : null,
       el("div", { class: "cols" }, [
         el("div", {}, [module("Champions", null, [el("div", { class: "timeline" }, rows),
           Object.keys(champs).length ? null : el("p", { class: "note", text: "Past champions show here once they’re added in the dashboard (Results › ⚙). Each season the dashboard publishes is kept too." })],
