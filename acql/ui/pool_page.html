@@ -466,6 +466,8 @@ main {
 :root[data-text="xl"] .topbar, :root[data-text="xl"] .bottombar { zoom: 0.8; }
 .trophies { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .trophy { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--rule); border-radius: var(--r-sm, 6px); background: var(--raised); }
+.trophies.shelf { grid-template-columns: 1fr; gap: 8px; }
+.trophy.title { border-color: var(--gold); }
 .trophy.mine { border-color: var(--gold); background: var(--gold-soft); }
 .trophy .ic { font-size: 26px; line-height: 1; flex: none; }
 .trophy > div { display: grid; gap: 3px; min-width: 0; }
@@ -5066,7 +5068,7 @@ a.weekpill { text-decoration: none; }
       chance,
       el("div", { class: "cols" }, [
         el("div", {}, [trendModule(p), maxModule(p), profileModule(p), blindSpotsModule(p)]),
-        el("div", {}, [twinsModule(p), rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
+        el("div", {}, [trophyShelf(p), twinsModule(p), rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
       ]),
       played ? module("Every week", plural(played, "week"), [scroller(el("table", { id: "coach-weeks" }, [el("thead", {}, [el("tr", {}, [
         el("th", { class: "n", text: "Wk" }), el("th", { class: "n", text: "Wins" }),
@@ -5902,6 +5904,27 @@ a.weekpill { text-decoration: none; }
     });
     if (historyBusy) kids.push(el("p", { class: "note", text: "Fetching past seasons…" }));
     return el("div", { class: "view", "data-view": "awards" }, kids);
+  }
+  // A coach's trophy shelf: what they hold this season and won in past ones, and their titles.
+  function trophyShelf(p) {
+    loadHistory();
+    var mine = trophiesOf(p.name);
+    var champs = championsByYear(allSeasons()), titles = Object.keys(champs).filter(function (y) {
+      return splitNames(champs[y].names).indexOf(p.name) >= 0;
+    }).sort().reverse();
+    var kids = titles.map(function (y) {
+      return el("div", { class: "trophy title" }, [el("span", { class: "ic", "aria-hidden": "true", text: "👑" }),
+        el("div", {}, [el("b", { text: "Champion " + y }), el("span", { class: "note", text: champs[y].note || "Won the season" })])]);
+    }).concat(mine.map(function (a) {
+      return el("div", { class: "trophy" }, [el("span", { class: "ic", "aria-hidden": "true", text: a.icon }),
+        el("div", {}, [el("b", { text: a.title + (a.current ? "" : " " + a.year) }),
+          el("span", { class: "note", text: a.text + (a.who.length > 1 ? ", shared" : "") + (a.current ? " · holds it so far" : "") })])]);
+    }));
+    return module("Trophy shelf", kids.length ? plural(kids.length, "trophy", "trophies") : null,
+      kids.length ? [el("div", { class: "trophies shelf" }, kids), moreLink("Every award", "awards")]
+        : [el("p", { class: "note", text: "Nothing on the shelf yet. " + (DATA.weeks.length < 2 ? "Trophies start once two weeks are done." : "There’s a season of them to win.") }),
+          moreLink("The awards", "awards")],
+      { "data-card": "trophies-for" });
   }
   // Every trophy one coach holds, this season and in the archive.
   function trophiesOf(name) {
