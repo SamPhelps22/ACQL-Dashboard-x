@@ -2883,6 +2883,40 @@ class TestLedger(_ScratchStore):
         self.assertFalse(ledger.due(2026, self.NOW + 60))
 
 
+class TestSharedDesign(unittest.TestCase):
+    """The window and the website are cut from the same tokens (acql/ui/tokens.py)."""
+
+    def test_the_published_page_carries_the_tokens_and_shared_icons(self):
+        import json
+        import re
+        from acql.ui import iconset, poolpage, tokens
+        page = poolpage._with_design(poolpage.TEMPLATE.read_text(encoding="utf-8"))
+        self.assertIn(tokens.css(), page)
+        self.assertNotIn("__POOL_ICONS__", page)
+        shared = json.loads(json.loads(re.search(r"var SHARED_ICONS = (\".*?\");\n", page).group(1)))
+        self.assertEqual(shared, iconset.web_icons())
+
+    def test_web_corners_come_off_the_scale(self):
+        import re
+        from acql.ui import poolpage
+        page = poolpage.TEMPLATE.read_text(encoding="utf-8")
+        loose = [v for v in re.findall(r"border-radius: ([^;{}]+);", page)
+                 for part in v.split() if re.fullmatch(r"([2-9]|\d\d+)px", part)]
+        self.assertEqual(loose, [])
+
+    def test_the_stylesheet_uses_only_scale_corners(self):
+        import re
+        try:
+            from acql.ui import theme
+        except ImportError as exc:  # no Qt-free theme module? nothing to check
+            self.skipTest(str(exc))
+        allowed = set(theme.RADIUS.values()) | {0, 1, 2, 5, 9}   # 5 and 9: half a scrollbar or slider handle
+        for palette in theme.PALETTES.values():
+            sheet = theme.stylesheet(palette)
+            corners = {int(v) for v in re.findall(r"border-radius: (\d+)px", sheet)}
+            self.assertLessEqual(corners, allowed, palette.name)
+
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")

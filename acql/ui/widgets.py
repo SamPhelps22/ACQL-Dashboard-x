@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from .theme import DARK, PALETTES, Palette, contrast, tone_color
+from .tokens import SPACE
 
 #: The tones a widget may be given; anything else is treated as no tone.
 TONES = ("good", "warning", "serious", "bad", "muted")
@@ -180,8 +181,8 @@ class Card(QFrame):
         super().__init__(parent)
         self.setObjectName("Card")
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(16, 14, 16, 14)
-        self._layout.setSpacing(10)
+        self._layout.setContentsMargins(SPACE["room"], SPACE["step"], SPACE["room"], SPACE["room"])
+        self._layout.setSpacing(SPACE["step"])
         # A card given more height than it needs keeps its contents at the
         # top. Otherwise the spare height was shared out between the items,
         # and a title label - which centres its text in whatever it is
@@ -415,8 +416,8 @@ class Banner(QFrame):
         super().__init__(parent)
         self.setObjectName("Banner")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(SPACE["step"], SPACE["snug"], SPACE["snug"], SPACE["snug"])
+        layout.setSpacing(SPACE["snug"])
         self.icon = QLabel("\N{WARNING SIGN}")
         self.icon.setObjectName("BannerIcon")
         self.label = QLabel("")

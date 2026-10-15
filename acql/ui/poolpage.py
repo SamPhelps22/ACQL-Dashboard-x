@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
 
@@ -938,7 +939,8 @@ def site_fingerprint(data: dict) -> str:
     """Changes whenever the website would: new results, a new pick sheet, the
     announcement or champions, or a dashboard update that changes the page."""
     from ..version import VERSION
-    template = hashlib.sha256(TEMPLATE.read_bytes()).hexdigest()
+    # the tokens and shared icons count as part of the page: a change to either republishes it
+    template = hashlib.sha256(_with_design(TEMPLATE.read_text(encoding="utf-8")).encode("utf-8")).hexdigest()
     return siteextras.fingerprint(_as_shown(data), [VERSION, template])
 
 
@@ -951,11 +953,23 @@ def page_html(season: Season, *, generated: str | None = None) -> str:
     return site(season, generated=generated)[0]
 
 
+_TOKENS = re.compile(r"(/\* tokens:begin.*?\*/\n).*?(\n/\* tokens:end \*/)", re.S)
+
+
+def _with_design(page: str) -> str:
+    """The page with the dashboard's own design tokens and shared icon drawings
+    written in, so the site and the window never drift apart (tokens.py)."""
+    from . import iconset, tokens
+    page = _TOKENS.sub(lambda m: m.group(1) + tokens.css() + m.group(2), page, count=1)
+    shared = json.dumps(json.dumps(iconset.web_icons())).replace("</", "<\\/")
+    return page.replace('"__POOL_ICONS__"', shared)
+
+
 def _hosted_page(data: dict) -> str:
     import html as _html
     data["hosted"] = "web"
     from . import brand
-    fragment = (TEMPLATE.read_text(encoding="utf-8")
+    fragment = (_with_design(TEMPLATE.read_text(encoding="utf-8"))
                 .replace("__POOL_LOGO__", brand.data_uri())
                 .replace("__POOL_DATA__", to_json(data)))
     head, body = fragment.split('<div id="app"', 1)
