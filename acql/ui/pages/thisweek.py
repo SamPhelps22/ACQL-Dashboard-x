@@ -1072,7 +1072,7 @@ class BriefingPage(Page):
         if left is not None:
             text += f" \u00b7 {left} requests left this month"
         if moved:
-            text += " \u00b7 moved since opening: " + ", ".join(
+            text += " \u00b7 moved since first fetched: " + ", ".join(
                 f"{odds.describe_margin(label, then)} \u2192 {odds.describe_margin(label, now)}"
                 for label, then, now in moved[:4]
             ) + ("\u2026" if len(moved) > 4 else "")

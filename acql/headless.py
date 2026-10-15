@@ -406,7 +406,7 @@ def email_card(*, dry_run: bool = False) -> int:
     if week is None or season.weeks.get(week) is None:
         _log("card email: no week open to pick - not sent")
         return 0
-    # the newest numbers first: the file, the lines (unless just fetched), the injuries
+    # the newest numbers first: the file, the lines (unless just fetched), the injuries, the weather
     for step in (_download_predictions, None):
         try:
             if step is not None:
@@ -416,6 +416,7 @@ def email_card(*, dry_run: bool = False) -> int:
         except Exception as exc:  # noqa: BLE001 - the card goes out on what there is
             _log(f"card email: the latest numbers couldn't be fetched ({exc})")
     _injuries()
+    _weather()
     card = cardmail.compose(season, week)
     if card is None:
         _log(f"card email: week {week} has no lines yet - not sent")

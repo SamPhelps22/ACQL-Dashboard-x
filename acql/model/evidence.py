@@ -364,14 +364,17 @@ def _move(game: Game, pick: str, pick_home: bool, forecast) -> Signal | None:
     if opened is None or now is None:
         return None
     toward = (now - opened) if pick_home else (opened - now)
-    headline = f"opened {_spread(opened, game)}, now {_spread(now, game)}"
+    # without the books' own opener, the first line seen is all there is
+    seen = bool(getattr(forecast, "opening_seen", False))
+    headline = f"{'first seen' if seen else 'opened'} {_spread(opened, game)}, now {_spread(now, game)}"
+    since = "since first seen" if seen else "since it opened"
     if toward >= MOVE:
         return Signal("Line move", FOR, headline,
-                      f"{toward:g} point{'' if toward == 1 else 's'} toward {pick} since it opened: the news and the "
+                      f"{toward:g} point{'' if toward == 1 else 's'} toward {pick} {since}: the news and the "
                       f"money have come in on this side.")
     if toward <= -MOVE:
         return Signal("Line move", AGAINST, headline,
-                      f"{-toward:g} point{'' if toward == -1 else 's'} away from {pick} since it opened: the news and "
+                      f"{-toward:g} point{'' if toward == -1 else 's'} away from {pick} {since}: the news and "
                       f"the money have gone the other way.")
     return Signal("Line move", INFO, headline, "Hasn't moved enough to say anything.")
 

@@ -47,6 +47,8 @@ from functools import lru_cache
 
 import numpy as np
 
+from .weekplan import OTHER_COACHES
+
 SIMULATIONS = 20_000
 SEED = 2026
 #: A change has to add at least this many dollars a week to be made. Smaller
@@ -56,7 +58,7 @@ MIN_GAIN = 0.02
 #: Big Losers considered for a swap: the likeliest this many.
 BL_CANDIDATES = 12
 BIG_LOSER_PICKS = 3
-COACHES = 34
+COACHES = OTHER_COACHES      # the pool's other coaches, unless the real roster is passed
 
 
 @dataclass(frozen=True)

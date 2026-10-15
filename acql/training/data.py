@@ -185,10 +185,11 @@ def _number(value: object) -> float | None:
 
 
 def _implied(price: float | None) -> float | None:
-    """The chance an American price implies: -150 is 60%, +130 is 43.5%."""
-    if price is None or not price:
-        return None
-    return -price / (-price + 100) if price < 0 else 100 / (price + 100)
+    """The chance an American price implies: -150 is 60%, +130 is 43.5% -
+    the dashboard's own rule (odds._implied), which turns away a price
+    between -100 and +100 rather than reading it as a plausible chance."""
+    from ..feeds.odds import _implied as implied
+    return implied(price)
 
 
 def fair_win(home_price: float | None, away_price: float | None) -> float | None:

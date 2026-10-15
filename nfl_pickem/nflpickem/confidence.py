@@ -30,16 +30,34 @@ class ScoringRules:
     def from_config(cls, pool_cfg: dict) -> "ScoringRules":
         return cls(**{k: pool_cfg[k] for k in cls.__dataclass_fields__ if k in pool_cfg})
 
+    def problem(self, n_games: int = 0) -> str | None:
+        """Why these rules cannot score an n-game slate, or None if they can.
+
+        Custom points are never padded or invented: a list that is too short
+        for the slate is an error the user has to fix, not something to guess.
+        """
+        if self.points_mode == "1_to_n":
+            return None
+        pts = list(self.custom_points)
+        if not pts:
+            return "custom_points is empty; enter one value per game or use 1_to_n"
+        if any(isinstance(x, bool) or not isinstance(x, int) or x <= 0 for x in pts):
+            return "custom_points must be positive whole numbers"
+        if len(set(pts)) != len(pts):
+            return "custom_points must be unique"
+        if len(pts) < n_games:
+            return f"custom_points has {len(pts)} values but the slate has {n_games} games"
+        return None
+
     def point_values(self, n_games: int) -> list[int]:
-        """Distinct point values, highest first, for an n-game slate."""
+        """Distinct point values, highest first, for an n-game slate. With more
+        custom values than games, the highest n are used."""
         if self.points_mode == "1_to_n":
             return list(range(n_games, 0, -1))
-        pts = sorted(self.custom_points, reverse=True)
-        if len(pts) < n_games:
-            raise ValueError(f"custom_points has {len(pts)} values but the slate has {n_games} games")
-        if len(set(pts)) != len(pts):
-            raise ValueError("custom_points must be unique")
-        return pts[:n_games]
+        problem = self.problem(n_games)
+        if problem:
+            raise ValueError(problem)
+        return sorted(self.custom_points, reverse=True)[:n_games]
 
 
 def select_teams(slate: pd.DataFrame, prob_col: str = "blended_home_probability") -> pd.DataFrame:

@@ -153,6 +153,7 @@ def load_season(settings: Settings, aliases: AliasTable | None = None, *,
 
     _split_provisional(season)
     _resolve_suicide_pool(season, (latest_stats or {}).get("week") or 0)
+    _restart_suicide_pool(season, (latest_stats or {}).get("week") or 0)
     _rank_weeks(season)
     return season
 
@@ -531,6 +532,44 @@ def _resolve_suicide_pool(season: Season, stats_week: int | None = None) -> None
             person.suicide_alive = not lost
             if lost and person.suicide_out_week is None:
                 person.suicide_out_week = latest
+
+
+def _restart_suicide_pool(season: Season, stats_week: int = 0) -> None:
+    """Start the suicide pool again from the week the dashboard was told it did
+    (survivor.start_again): somebody won it, so everyone is back in.
+
+    Until the standings export covers that week it still lists the last
+    round's survivors, so the new round is worked out here - everyone alive,
+    then each week's picks from the new start on. Once the export has caught
+    up, its survivors are the new round's and stay as they are.
+    """
+    from .pool import survivor
+    found = survivor.rounds(season.results_year or results.season_year(season))
+    if not found:
+        return
+    start = season.suicide_restart = found[-1]["week"]
+    season.suicide_winners = list(found[-1].get("winners") or [])
+    if stats_week >= start:
+        for person in season.players.values():
+            if (person.suicide_out_week or start) < start:
+                person.suicide_out_week = None
+        return
+    for person in season.players.values():
+        person.suicide_alive, person.suicide_out_week = True, None
+    for number in sorted(n for n in season.weeks if n >= start):
+        week = season.weeks[number]
+        for key, line in week.lines.items():
+            person = season.players.get(key)
+            if person is None or not person.suicide_alive:
+                continue
+            if line.suicide_out:
+                person.suicide_alive, person.suicide_out_week = False, max(number - 1, start)
+            elif line.suicide_pick:
+                code = team_code(line.suicide_pick)
+                game = next((g for g in week.games if g.played
+                             and code in (team_code(g.home), team_code(g.away))), None)
+                if game is not None and team_code(game.winner) != code:
+                    person.suicide_alive, person.suicide_out_week = False, number
 
 
 def _split_provisional(season: Season) -> None:

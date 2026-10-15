@@ -401,6 +401,14 @@ def big_loser_king(season: Season) -> Award | None:
 def last_one_standing(season: Season) -> Award | None:
     """The suicide pool, once it has come down to one."""
     alive = [p for p in season.players.values() if p.suicide_alive]
+    won = getattr(season, "suicide_winners", None) or []
+    if len(alive) != 1 and len(won) == 1 and len(season.players) >= 2:
+        # the pool has started again since: the round before still has its winner
+        return Award(
+            "suicide", "\N{SHIELD}", "Last One Standing", won[0],
+            "Won it", f"Outlasted {_plural(len(season.players) - 1, 'other')}; the pool started again "
+                      f"in week {season.suicide_restart}", GOOD,
+        )
     if len(alive) != 1 or len(season.players) < 2:
         return None
     player = alive[0]

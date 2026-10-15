@@ -315,6 +315,11 @@ class Season:  # noqa: D101
     #: pick sheet: the games, the line games typed in here, and the results.
     #: Nobody's picks are in them yet.
     fixture_weeks: list[int] = field(default_factory=list)
+    #: The week the suicide pool last started again in (survivor.start_again),
+    #: 0 if it never has: somebody won it, so everyone is back in and every
+    #: team can be used again from this week. And who won the round before.
+    suicide_restart: int = 0
+    suicide_winners: list[str] = field(default_factory=list)
 
     # ---- convenience accessors -----------------------------------------
     def ordered_players(self) -> list[Player]:

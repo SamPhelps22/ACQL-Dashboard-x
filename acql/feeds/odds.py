@@ -34,6 +34,7 @@ Every margin here is from the HOME team's side, like the predictions file:
 from __future__ import annotations
 
 import json
+import math
 import statistics
 import time
 import urllib.error
@@ -175,8 +176,16 @@ def parse(events: object) -> list[Quote]:
 
 
 def _implied(price: object) -> float | None:
-    """The chance an American price implies: -150 is 60%, +130 is 43.5%."""
-    if not isinstance(price, (int, float)) or not price:
+    """The chance an American price implies: -150 is 60%, +130 is 43.5%.
+
+    None for anything that is not a real American price - a number, finite,
+    and at least 100 either way (+100 and -100 are both even money). A +50
+    or -50 is a decimal or a typo, and read as American it would pass for a
+    plausible 67% or 33%; dropped here, that book simply isn't counted.
+    """
+    if isinstance(price, bool) or not isinstance(price, (int, float)):
+        return None
+    if not math.isfinite(price) or abs(price) < 100:
         return None
     return -price / (-price + 100) if price < 0 else 100 / (price + 100)
 
@@ -290,6 +299,8 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
     lines = {}
     for key, q in best.items():
         before = entry["latest"].get(key)
+        # "opening" is the first line this app fetched, not the books' opener
+        # (the key keeps its old name so stored weeks still read)
         entry["opening"].setdefault(key, q.home_margin)
         entry["latest"][key] = q.home_margin
         lines[key] = q.home_margin
@@ -319,11 +330,18 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
 @dataclass(frozen=True)
 class Stored:
     at: float
-    opening: dict[str, float]
+    opening: dict[str, float]       # the first line FETCHED for each game - see first_seen
     latest: dict[str, float]
     history: list[tuple[float, dict[str, float]]]
     win: dict[str, float] = field(default_factory=dict)      # home side's chance to win outright
     total: dict[str, float] = field(default_factory=dict)    # the over/under
+
+    @property
+    def first_seen(self) -> dict[str, float]:
+        """Each game's first fetched line. Only a sportsbook opener when the
+        first fetch happened to come before any move - which nothing here can
+        tell - so it is never shown as "opened"."""
+        return self.opening
 
 
 def stored(week: int) -> Stored | None:
@@ -407,10 +425,11 @@ def overlay(week: int, forecasts: list, imported: float) -> list:
         key = f"{team_code(f.road)}@{team_code(f.home)}"
         seen.add(key)
         if key in found.latest and newer:
-            opening = f.opening if f.opening is not None else (
-                f.market if f.market is not None else found.opening.get(key)
+            no_opener = f.opening is None
+            opening = f.opening if not no_opener else (
+                f.market if f.market is not None else found.first_seen.get(key)
             )
-            f = replace(f, market=found.latest[key], opening=opening)
+            f = replace(f, market=found.latest[key], opening=opening, opening_seen=f.opening_seen or no_opener)
         if key in found.latest:
             # the moneyline and the total only ever come from here
             f = replace(f, market_win=found.win.get(key), total=found.total.get(key))
@@ -421,7 +440,7 @@ def overlay(week: int, forecasts: list, imported: float) -> list:
         away, home = key.split("@")
         out.append(Forecast(
             road=DISPLAY.get(away, away), home=DISPLAY.get(home, home),
-            market=margin, opening=found.opening.get(key, margin),
+            market=margin, opening=found.first_seen.get(key, margin), opening_seen=True,
             market_win=found.win.get(key), total=found.total.get(key),
         ))
     return out
@@ -431,14 +450,14 @@ def movements(week: int, since: float | None = None) -> list[tuple[str, float, f
     """(game, then, now) for every line that has moved BIG_MOVE or more.
 
     `since` compares with the lines as they stood then; otherwise with the
-    opening number.
+    first line fetched (not necessarily the books' opener).
     """
     from ..model.predictions import display_matchup
 
     found = stored(week)
     if found is None:
         return []
-    then = lines_at(week, since) if since is not None else found.opening
+    then = lines_at(week, since) if since is not None else found.first_seen
     out = []
     for key, now in found.latest.items():
         before = then.get(key)

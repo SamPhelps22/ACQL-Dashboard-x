@@ -43,7 +43,16 @@ FORECASTS_FILE = ROOT / "acql-forecasts.json"
 
 # Columns that are not a model's prediction.
 MARKET_COLUMNS = ("line", "lineca", "lineopen")
-SUMMARY_COLUMNS = ("lineavg", "linemedian", "linestd", "phwin", "phcover", "neutral")
+#: Betting lines that are never the week's market number here, and so never a
+#: model either. linemidweek is the line as it stood midweek: always a half
+#: point, level with `line` in 44% of 3,620 archived games.
+OTHER_MARKET_COLUMNS = ("linemidweek",)
+#: linemed/linemin/linemax are the season archives' names for the summary
+#: columns: linemed sits 0.17 points from the models' own median on average.
+SUMMARY_COLUMNS = ("lineavg", "linemedian", "linemed", "linemin", "linemax",
+                   "linestd", "phwin", "phcover", "neutral")
+#: Every line-shaped column that is not one model's opinion.
+NOT_MODELS = MARKET_COLUMNS + OTHER_MARKET_COLUMNS + SUMMARY_COLUMNS
 
 #: How far the market has to have moved against a model edge before that edge
 #: is discounted away entirely. The models in these files are published early
@@ -265,6 +274,10 @@ class Forecast:
     #: the home side wins outright, and the over/under.
     market_win: float | None = None
     total: float | None = None
+    #: True when `opening` is only the first line this app saw (a fetched line,
+    #: or the file's own line when the file had no lineopen) - not the books'
+    #: opener. The number is used the same way; only what it is called differs.
+    opening_seen: bool = False
 
     @property
     def road_code(self) -> str:
@@ -448,7 +461,7 @@ def read_csv(path: str | Path) -> list[Forecast]:
             priced = [
                 number for key, value in row.items()
                 if key.startswith("line")
-                and key not in MARKET_COLUMNS + SUMMARY_COLUMNS
+                and key not in NOT_MODELS
                 for number in (_number(value),)
                 if number is not None
             ]
