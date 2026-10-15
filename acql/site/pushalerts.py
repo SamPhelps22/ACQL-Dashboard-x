@@ -141,29 +141,48 @@ def subscribe_link(name: str | None = None) -> str:
 
 def send(title: str, message: str, *, link: str = "", tags: str = "", name: str | None = None,
          text: str | None = None) -> bool:
-    """Post one alert (and text it, when a number is set). False when there is no topic;
-    raises when ntfy refuses."""
+    """Post one alert to ntfy, and text it when a number is set. False when neither
+    is set up; raises when ntfy or Gmail refuses."""
     name = topic() if name is None else name
     text = text_address() if text is None else text
-    if not name:
-        return False
-    headers = {"Title": title.encode("utf-8").decode("latin-1", "replace")}
-    if link:
-        headers["Click"] = link
-    if tags:
-        headers["Tags"] = tags
+    sent = False
+    if name:
+        headers = {"Title": title.encode("utf-8").decode("latin-1", "replace")}
+        if link:
+            headers["Click"] = link
+        if tags:
+            headers["Tags"] = tags
+        request = urllib.request.Request(f"{SERVER}/{name}", data=message.encode("utf-8"),
+                                         headers=headers, method="POST")
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as reply:
+            sent = 200 <= reply.status < 300
     if text:
-        headers["Email"] = text
-    request = urllib.request.Request(f"{SERVER}/{name}", data=message.encode("utf-8"),
-                                     headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as reply:
-        return 200 <= reply.status < 300
+        send_text(text, title, f"{message} {link}".strip())
+        sent = True
+    return sent
+
+
+def send_text(address: str, title: str, message: str, *, smtp_factory=None) -> None:
+    """Text through the dashboard's Gmail (the email settings): Verizon turns the
+    email into a text. ntfy.sh no longer forwards emails for anonymous senders."""
+    from email.message import EmailMessage
+    from . import mailer
+    settings = mailer.MailSettings.load()
+    if not (settings.sender and settings.sealed_password):
+        raise mailer.MailError("texts go out through Gmail - fill in the email settings "
+                               "(Gmail address and app password) first")
+    note = EmailMessage()
+    note["From"] = settings.sender
+    note["To"] = address
+    note["Subject"] = title
+    note.set_content(message)
+    mailer.send(settings, note, smtp_factory=smtp_factory)
 
 
 def _once(key: str, title: str, message: str, **kw) -> bool:
     """Send unless this key already went out."""
     from .. import store
-    if not topic() or store.get(KIND, f"sent:{key}", None):
+    if not (topic() or text_number()) or store.get(KIND, f"sent:{key}", None):
         return False
     if send(title, message, **kw):
         store.put(KIND, f"sent:{key}", time.time())
@@ -235,10 +254,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     name = topic()
     print(f"alerts go to {subscribe_link(name)}" if name else "alerts are off (no topic)")
-    if name and text_number():
-        print(f"and are texted to {text_address()}")
+    if text_number():
+        print(f"texts go to {text_address()} (sent from the Gmail in the email settings)")
     print(f"picks are due {describe_deadline()}; the reminder goes {remind_before() / 3600:g} hours before")
-    if args.test and name:
+    if args.test and (name or text_number()):
         send("ACQL alerts are on", "This is a test. You'll get the picks deadline and weekly results here.",
              tags="football")
         print("test alert sent")

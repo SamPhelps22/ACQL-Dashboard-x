@@ -68,6 +68,23 @@ class TestPushAlerts(unittest.TestCase):
         pushalerts.set_text_number("555.123.4567")
         self.assertEqual(pushalerts.text_address(), "5551234567@vtext.com")
 
+    def test_text_goes_through_gmail(self):
+        from acql.site import mailer
+        sent = []
+
+        class FakeSmtp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def login(self, user, password): pass
+            def send_message(self, msg): sent.append((msg["To"], msg["Subject"]))
+
+        with self.assertRaises(mailer.MailError):  # no Gmail set up
+            pushalerts.send_text("5551234567@vtext.com", "t", "m")
+        self.kept[("settings", "email")] = {"sender": "a@gmail.com", "sealed_password": "x"}
+        with mock.patch.object(mailer, "unseal", lambda s: s):
+            pushalerts.send_text("5551234567@vtext.com", "Week 6", "m", smtp_factory=FakeSmtp)
+        self.assertEqual(sent, [("5551234567@vtext.com", "Week 6")])
+
 
 if __name__ == "__main__":
     unittest.main()

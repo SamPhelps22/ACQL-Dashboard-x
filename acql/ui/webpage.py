@@ -315,7 +315,7 @@ class ExtrasDialog(QDialog):
         self.topic.setPlaceholderText("e.g. acql-pool-k7q2m9x - blank for no alerts; hard to guess")
         form.addRow("ntfy topic", self.topic)
         self.text_to = QLineEdit(pushalerts.text_number())
-        self.text_to.setPlaceholderText("Verizon number, e.g. 555-123-4567 - blank for no texts")
+        self.text_to.setPlaceholderText("Verizon number, e.g. 555-123-4567 - sent from the Gmail in the email settings")
         form.addRow("Text alerts to", self.text_to)
         weekday, hour, minute = oddslock.deadline_clock()
         self.day = QComboBox()
@@ -346,13 +346,16 @@ class ExtrasDialog(QDialog):
 
     def _test_alert(self) -> None:
         name = self.topic.text().strip()
-        if not pushalerts.TOPIC_RULE.match(name):
-            self.problems.setText("Fix these first: a topic is 6-64 letters, digits, - or _.")
-            return
         try:
             number = pushalerts.clean_number(self.text_to.text())
         except ValueError as exc:
             self.problems.setText(f"Fix these first: {exc}.")
+            return
+        if name and not pushalerts.TOPIC_RULE.match(name):
+            self.problems.setText("Fix these first: a topic is 6-64 letters, digits, - or _.")
+            return
+        if not (name or number):
+            self.problems.setText("Fix these first: fill in an ntfy topic or a number to text.")
             return
         try:
             pushalerts.send("ACQL alerts are on", "This is a test from the dashboard.", tags="football", name=name,
@@ -361,7 +364,9 @@ class ExtrasDialog(QDialog):
             self.problems.setText(f"The test alert didn't go: {exc}")
             return
         self.problems.setText("")
-        QMessageBox.information(self, "Phone alerts", f"Sent to {pushalerts.subscribe_link(name)}.")
+        where = [w for w in (pushalerts.subscribe_link(name) if name else "",
+                             pushalerts.text_address(number)) if w]
+        QMessageBox.information(self, "Phone alerts", f"Sent to {' and '.join(where)}.")
 
     def _save_alerts(self) -> str:
         """Keep the alert settings; what's wrong, in words, or ''."""
