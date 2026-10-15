@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QToolButton,
+    QToolTip,
     QSizePolicy,
     QTableView,
     QVBoxLayout,
@@ -120,10 +122,61 @@ class ElidedLabel(QLabel):
         self.setToolTip(self._full if shown != self._full else "")
 
 
-class Card(QFrame):
-    """A titled surface. The title is a quiet label, not a heading."""
+class InfoIcon(QToolButton):
+    """A small \u24d8 that explains a figure - on hover, on keyboard focus, or on a click.
 
-    def __init__(self, title: str = "", parent: QWidget | None = None) -> None:
+    Tooltips alone only answer a mouse; this one also opens for someone
+    tabbing through the page, and a screen reader is given the same words.
+    """
+
+    def __init__(self, text: str, name: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("InfoIcon")
+        self.setText("\u24d8")
+        self.setAutoRaise(True)
+        self.setCursor(Qt.CursorShape.WhatsThisCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(f"About {name}" if name else "More about this")
+        self.clicked.connect(self._show)
+        self.set_text(text)
+
+    def set_text(self, text: str) -> None:
+        self._text = text
+        self.setToolTip(text)
+        self.setAccessibleDescription(text)
+
+    def _show(self) -> None:
+        if self._text:
+            QToolTip.showText(self.mapToGlobal(self.rect().bottomLeft()), self._text, self)
+
+    def focusInEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().focusInEvent(event)
+        self._show()
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().focusOutEvent(event)
+        QToolTip.hideText()
+
+
+def with_info(widget: QWidget, text: str, name: str = "") -> QWidget:
+    """`widget` with an \u24d8 beside it, as one row."""
+    row = QWidget()
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(4)
+    lay.addWidget(widget)
+    lay.addWidget(InfoIcon(text, name), 0, Qt.AlignmentFlag.AlignVCenter)
+    lay.addStretch(1)
+    return row
+
+
+class Card(QFrame):
+    """A titled surface. The title is a quiet label, not a heading.
+
+    `info`, if given, puts an \u24d8 beside the title explaining what the card shows.
+    """
+
+    def __init__(self, title: str = "", parent: QWidget | None = None, info: str = "") -> None:
         super().__init__(parent)
         self.setObjectName("Card")
         self._layout = QVBoxLayout(self)
@@ -135,10 +188,20 @@ class Card(QFrame):
         # given - drifted down into the middle of an empty card.
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.title_label: QLabel | None = None
+        self.info_icon: InfoIcon | None = None
         if title:
             self.title_label = QLabel(title)
             self.title_label.setObjectName("CardTitle")
-            self._layout.addWidget(self.title_label)
+            if info:
+                self.info_icon = InfoIcon(info, title)
+                head = QHBoxLayout()
+                head.setSpacing(4)
+                head.addWidget(self.title_label)
+                head.addWidget(self.info_icon, 0, Qt.AlignmentFlag.AlignVCenter)
+                head.addStretch(1)
+                self._layout.addLayout(head)
+            else:
+                self._layout.addWidget(self.title_label)
 
     def body(self) -> QVBoxLayout:
         return self._layout
@@ -161,9 +224,12 @@ class StatTile(Card):
         value: str = "-",
         detail: str = "",
         parent: QWidget | None = None,
+        info: str = "",
     ) -> None:
         # What a tile measures is set in small capitals, as on an instrument.
-        super().__init__(title.upper(), parent)
+        super().__init__(title.upper(), parent, info=info)
+        if self.info_icon is not None:
+            self.info_icon.setAccessibleName(f"About {title}")
         # A different object name lets the theme lift tiles above the cards.
         self.setObjectName("StatTile")
         self._palette: Palette | None = None
