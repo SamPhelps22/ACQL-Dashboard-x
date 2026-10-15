@@ -20,6 +20,9 @@ from ..widgets import Card, TableModel, make_table
 
 LEADER_TITLE = "Leaderboard - eligible forecasts only, on finished games"
 LEADER_HEADERS = ["Model", "Games", "Brier", "Log loss", "Winners", "Margin miss", "Duplicates left out"]
+SCORE_TITLE = "Scorecard - every past forecast graded against the result"
+SCORE_HEADERS = ["Model", "Games", "Hit rate", "Avg miss", "Beat the close", "Edge vs close"]
+TALLY_TITLE = "Running tally - how often each model beat the closing line"
 WEEKLY_TITLE = "Week by week - Brier score (lower is better)"
 MATCHUP_TITLE = "The week's games - every model's chance for the home side"
 HISTORY_TITLE = "Every forecast in the log, newest first"
@@ -60,7 +63,8 @@ class ForecastLogView(QWidget):
         row = QHBoxLayout()
         for label, slot in (("Bring in what's on file", self._bring_in), ("Import games CSV...", self._import_games),
                             ("Import forecasts CSV...", self._import),
-                            ("Export leaderboard...", self._export_board), ("Export history...", self._export_history),
+                            ("Export leaderboard...", self._export_board),
+                            ("Export scorecard...", self._export_scorecard), ("Export history...", self._export_history),
                             ("Blank CSV for a week...", self._export_template)):
             button = QPushButton(label)
             button.clicked.connect(slot)
@@ -80,6 +84,13 @@ class ForecastLogView(QWidget):
         self.leader_chart = BarChart(page.palette, height=2.4)
         self.leader_card.add(self.leader_chart)
         box.addWidget(self.leader_card)
+
+        self.score_card, self.score_box, self.score_note = self._card(SCORE_TITLE)
+        box.addWidget(self.score_card)
+        self.tally_card, _, self.tally_note = self._card(TALLY_TITLE)
+        self.tally_chart = LineChart(page.palette, height=2.6)
+        self.tally_card.body().insertWidget(1, self.tally_chart)
+        box.addWidget(self.tally_card)
 
         self.weekly_card, _, self.weekly_note = self._card(WEEKLY_TITLE)
         self.weekly_chart = LineChart(page.palette, height=2.6)
@@ -124,6 +135,7 @@ class ForecastLogView(QWidget):
     def restyle(self) -> None:
         self.leader_chart.set_palette(self.page.palette)
         self.weekly_chart.set_palette(self.page.palette)
+        self.tally_chart.set_palette(self.page.palette)
 
     # ---- reading the log -------------------------------------------------------------------
     def refresh(self, year: int | None) -> None:
@@ -136,6 +148,7 @@ class ForecastLogView(QWidget):
         try:
             self._update_lead(conn)
             self._update_leaderboard(conn)
+            self._update_scorecard(conn)
             self._update_weekly(conn)
             self._fill_weeks(conn)
             self._update_sources(conn)
@@ -180,6 +193,32 @@ class ForecastLogView(QWidget):
             if not board else
             "Ties are left out of the win-chance scores. Winners are counted only where a forecast named one."
             + ("" if len(board) > 1 else " Only one model has eligible forecasts so far - nothing to compare yet."))
+
+    def _update_scorecard(self, conn) -> None:
+        card = log.scorecard(conn, self.year)
+        rows, tones = [], {}
+        for r, m in enumerate(card):
+            close = "" if not m["line_games"] else f"{m['beat_line']}-{m['lost_to_line']} ({_pct(m['beat_line_rate'])})"
+            edge = "" if m["line_edge"] is None else f"{m['line_edge']:+.1f}"
+            rows.append([m["model_name"], m["games"],
+                         f"{_pct(m['hit_rate'])} of {m['picks']}" if m["picks"] else "",
+                         _num(m["avg_miss"], 1), close, edge])
+            if m["beat_line_rate"] is not None:
+                tones[(r, 4)] = "good" if m["beat_line_rate"] > 0.5 else ("bad" if m["beat_line_rate"] < 0.5 else "muted")
+        self._table(self.score_box, SCORE_HEADERS, rows, numeric_columns={1, 2, 3, 4, 5}, tones=tones)
+        self.score_note.setText(
+            "Nothing graded yet: a forecast is graded once its game is final and it was in before the cutoff."
+            if not card else
+            "Hit rate: had the winner (ties left out). Avg miss: points between its margin and the result. "
+            "Beat the close: games its margin was nearer the result than the closing line's, won-lost. "
+            "Edge: points nearer than the close on average (+ is better). Best against the close first.")
+        series = [(m["model_name"], m["weeks"]) for m in card if m["line_games"]]
+        weeks = sorted({w["week"] for _, ws in series for w in ws})
+        self.tally_chart.plot(weeks, [(name, [next((w["beat_line_rate"] for w in ws if w["week"] == wk), None)
+                                               for wk in weeks]) for name, ws in series],
+                              ylabel="Beat the close")
+        self.tally_note.setText("Each point is the season so far after that week; above 50% earns its place."
+                                if weeks else "Appears once a graded forecast can be set beside a closing line.")
 
     def _update_weekly(self, conn) -> None:
         by = log.weekly_brier(conn, self.year) if self.year is not None else {}
@@ -338,6 +377,16 @@ class ForecastLogView(QWidget):
             finally:
                 conn.close()
             self.status.setText(f"Leaderboard saved to {path}.")
+
+    def _export_scorecard(self) -> None:
+        path = self._save_as("Export scorecard", f"model-lab-scorecard-{self.year}.csv")
+        if path:
+            conn = log.connect()
+            try:
+                log.export_scorecard_csv(log.scorecard(conn, self.year), path)
+            finally:
+                conn.close()
+            self.status.setText(f"Scorecard saved to {path}.")
 
     def _export_history(self) -> None:
         path = self._save_as("Export history", "model-lab-forecasts.csv")

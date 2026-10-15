@@ -924,3 +924,149 @@ def bring_in(conn: sqlite3.Connection, year: int | None = None, cutoff: int = CU
                     break
         conn.commit()
     return counts
+
+
+# ---- the scorecard: every past forecast graded against the result ------------------------------------------
+def _home_margin(row) -> Optional[float]:
+    """A forecast's home margin: from its projected scores, else the margin it was brought in with.
+
+    A brought-in margin was written in the pool's orientation, which a neutral-site game can have the other
+    way round from the log's; its win chance was turned with it, so the chance's side settles which way."""
+    if row["projected_home_score"] is not None and row["projected_away_score"] is not None:
+        return float(row["projected_home_score"]) - float(row["projected_away_score"])
+    try:
+        payload = json.loads(row["raw_payload_json"] or "{}")
+    except ValueError:
+        return None
+    margin = payload.get("margin", payload.get("home_margin")) if isinstance(payload, dict) else None
+    if not isinstance(margin, (int, float)) or not math.isfinite(margin):
+        return None
+    p = row["home_win_probability"]
+    if p is not None and margin and p != 0.5 and (margin > 0) != (p > 0.5):
+        margin = -margin
+    return float(margin)
+
+
+def _picked(row) -> Optional[str]:
+    """The side a forecast picked: the winner it named, else the side its win chance favoured."""
+    if row["predicted_winner"]:
+        return str(row["predicted_winner"]).casefold()
+    p = row["home_win_probability"]
+    if p is None or p == 0.5:
+        return None
+    return (row["home_team"] if p > 0.5 else row["away_team"]).casefold()
+
+
+def grade_forecasts(conn: sqlite3.Connection, season: Optional[int] = None) -> list[dict]:
+    """Every eligible forecast on a finished game, graded: did it have the winner, how far its margin missed,
+    and whether that miss beat the closing line's (the last fetched spread before the cutoff).
+
+    The same rules as the leaderboard: eligible forecasts only, and a model with two eligible forecasts for
+    one game has that game left out rather than one of them chosen. A tie has no winner to have, so it is
+    graded on its margin only."""
+    where, params = ["g.home_score IS NOT NULL", "g.away_score IS NOT NULL",
+                     "p.eligibility_status = 'eligible'"], []
+    if season is not None:
+        where.append("g.season = ?")
+        params.append(season)
+    rows = conn.execute(
+        f"""SELECT p.prediction_id, p.model_id, m.display_name, m.model_type, p.game_id, p.retrieved_at_utc,
+                   p.home_win_probability, p.predicted_winner, p.projected_home_score, p.projected_away_score,
+                   p.raw_payload_json, g.season, g.week, g.kickoff_utc, g.home_team, g.away_team,
+                   g.home_score, g.away_score
+            FROM lab_predictions p JOIN lab_games g ON g.game_id = p.game_id
+            JOIN lab_models m ON m.model_id = p.model_id
+            WHERE {' AND '.join(where)} ORDER BY g.kickoff_utc, g.game_id, p.model_id""", params).fetchall()
+
+    # the closing line: the latest eligible fetched spread on each game
+    closing: dict[str, tuple[str, float]] = {}
+    for r in rows:
+        if r["model_id"] == MARKET_SPREAD:
+            margin = _home_margin(r)
+            before = closing.get(r["game_id"])
+            if margin is not None and (before is None or r["retrieved_at_utc"] >= before[0]):
+                closing[r["game_id"]] = (r["retrieved_at_utc"], margin)
+
+    counts: dict = {}
+    for r in rows:
+        counts[(r["model_id"], r["game_id"])] = counts.get((r["model_id"], r["game_id"]), 0) + 1
+    graded = []
+    for r in rows:
+        if counts[(r["model_id"], r["game_id"])] != 1:
+            continue
+        actual = r["home_score"] - r["away_score"]
+        winner = None if actual == 0 else (r["home_team"] if actual > 0 else r["away_team"]).casefold()
+        picked = _picked(r)
+        margin = _home_margin(r)
+        miss = None if margin is None else abs(margin - actual)
+        line = closing.get(r["game_id"])
+        line_miss = None if line is None else abs(line[1] - actual)
+        versus = None
+        if miss is not None and line_miss is not None and r["model_id"] != MARKET_SPREAD:
+            versus = "beat" if miss < line_miss else ("lost" if miss > line_miss else "even")
+        graded.append({
+            "prediction_id": r["prediction_id"], "model_id": r["model_id"], "model_name": r["display_name"],
+            "game_id": r["game_id"], "season": r["season"], "week": r["week"],
+            "away_team": r["away_team"], "home_team": r["home_team"],
+            "away_score": r["away_score"], "home_score": r["home_score"],
+            "picked": picked.upper() if picked else None,
+            "hit": None if winner is None or picked is None else picked == winner,
+            "home_margin": margin, "miss": miss,
+            "closing_line": None if line is None else line[1], "line_miss": line_miss, "versus_line": versus,
+        })
+    return graded
+
+
+def _tally(items: Sequence[dict]) -> dict:
+    picks = [g for g in items if g["hit"] is not None]
+    misses = [g["miss"] for g in items if g["miss"] is not None]
+    against = [g for g in items if g["versus_line"] is not None]
+    beat = sum(g["versus_line"] == "beat" for g in against)
+    lost = sum(g["versus_line"] == "lost" for g in against)
+    return {
+        "games": len(items),
+        "hits": sum(g["hit"] for g in picks), "picks": len(picks),
+        "hit_rate": sum(g["hit"] for g in picks) / len(picks) if picks else None,
+        "avg_miss": sum(misses) / len(misses) if misses else None, "margin_games": len(misses),
+        "line_games": len(against), "beat_line": beat, "lost_to_line": lost,
+        # of the games that weren't dead even with the line
+        "beat_line_rate": beat / (beat + lost) if beat + lost else None,
+        # how much closer than the closing line, on average (positive: the model was closer)
+        "line_edge": (sum(g["line_miss"] - g["miss"] for g in against) / len(against)) if against else None,
+    }
+
+
+def scorecard(conn: sqlite3.Connection, season: Optional[int] = None) -> list[dict]:
+    """Each model's record on every graded forecast, with a running tally week by week.
+
+    Per model: hit rate (had the winner), average miss (points between its margin and the result), and
+    against the closing line - games it was closer, games it was further, and its average edge in points.
+    `weeks` holds the same tally as it stood after each week. The betting line itself is listed for its hit
+    rate and miss, with nothing to beat. Sorted with the models that beat the close most often first."""
+    by_model: dict[str, list[dict]] = {}
+    for g in grade_forecasts(conn, season):
+        by_model.setdefault(g["model_id"], []).append(g)
+    out = []
+    for model_id, items in by_model.items():
+        running = []
+        for week in sorted({(g["season"], g["week"]) for g in items}):
+            so_far = [g for g in items if (g["season"], g["week"]) <= week]
+            running.append({"season": week[0], "week": week[1], **_tally(so_far)})
+        out.append({"model_id": model_id, "model_name": items[0]["model_name"], **_tally(items), "weeks": running})
+    return sorted(out, key=lambda r: (r["beat_line_rate"] is None, -(r["beat_line_rate"] or 0),
+                                      r["avg_miss"] if r["avg_miss"] is not None else float("inf")))
+
+
+SCORECARD_FIELDS = ["model_id", "model_name", "games", "hits", "picks", "hit_rate", "avg_miss", "margin_games",
+                    "line_games", "beat_line", "lost_to_line", "beat_line_rate", "line_edge"]
+
+
+def export_scorecard_csv(card: Iterable[dict], output_path: str | Path) -> None:
+    """The scorecard, one row per model per week as the tally stood then, and a season row (week blank)."""
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["season", "week"] + SCORECARD_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for model in card:
+            for week in model["weeks"]:
+                writer.writerow({**model, **week})
+            writer.writerow({**model, "season": "", "week": ""})

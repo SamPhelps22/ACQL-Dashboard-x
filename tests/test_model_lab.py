@@ -401,6 +401,83 @@ class TestBringIn(unittest.TestCase):
             conn.close()
 
 
+class TestScorecard(_Log):
+    """Every past forecast graded: hit rate, average miss, and against the closing line."""
+
+    def line(self, gid, margin, at="2026-10-18T15:00:00+00:00"):
+        register_model(self.conn, forecastlog.MARKET_SPREAD, "Betting line (fetched)", model_type="market")
+        add_prediction(self.conn, game_id=gid, model_id=forecastlog.MARKET_SPREAD,
+                       home_win_probability=0.5 + (0.1 if margin > 0 else -0.1), predicted_winner=None,
+                       retrieved_at_utc=at, source_published_at_utc=at, eligibility_status="eligible",
+                       raw_payload={"home_margin": margin})
+
+    def scored(self, model, gid, home, away, status="eligible", p=None):
+        add_prediction(self.conn, game_id=gid, model_id=model,
+                       home_win_probability=p if p is not None else (0.6 if home > away else 0.4),
+                       predicted_winner=None, retrieved_at_utc="2026-10-18T14:00:00+00:00",
+                       source_published_at_utc="2026-10-18T13:55:00+00:00", eligibility_status=status,
+                       projected_home_score=home, projected_away_score=away)
+
+    def test_hit_rate_miss_and_closing_line(self):
+        register_model(self.conn, "m", "M")
+        self.game("g1", home=24, away=17)                     # home by 7
+        self.game("g2", home=10, away=20, week=8)             # road by 10
+        self.line("g1", 3.0)                                  # line missed by 4
+        self.line("g2", 2.0)                                  # line missed by 12
+        self.scored("m", "g1", 30, 20)                        # had the winner, missed by 3: beat it
+        self.scored("m", "g2", 27, 20)                        # wrong winner, missed by 17: lost
+        [m] = [r for r in forecastlog.scorecard(self.conn, 2026) if r["model_id"] == "m"]
+        self.assertEqual((m["games"], m["hits"], m["picks"]), (2, 1, 2))
+        self.assertAlmostEqual(m["hit_rate"], 0.5)
+        self.assertAlmostEqual(m["avg_miss"], 10.0)
+        self.assertEqual((m["beat_line"], m["lost_to_line"], m["beat_line_rate"]), (1, 1, 0.5))
+        self.assertAlmostEqual(m["line_edge"], ((4 - 3) + (12 - 17)) / 2)
+        # the running tally: after week 7 it was unbeaten against the close
+        self.assertEqual([(w["week"], w["beat_line"], w["games"]) for w in m["weeks"]], [(7, 1, 1), (8, 1, 2)])
+        line = [r for r in forecastlog.scorecard(self.conn, 2026) if r["model_id"] == forecastlog.MARKET_SPREAD][0]
+        self.assertEqual(line["line_games"], 0)               # nothing for the line to beat
+        self.assertAlmostEqual(line["avg_miss"], 8.0)
+
+    def test_latest_line_is_the_close(self):
+        register_model(self.conn, "m", "M")
+        self.game("g1", home=24, away=17)
+        self.line("g1", 10.0, at="2026-10-18T12:00:00+00:00")
+        self.line("g1", 3.0, at="2026-10-18T15:00:00+00:00")
+        self.scored("m", "g1", 25, 20)
+        [g] = [r for r in forecastlog.grade_forecasts(self.conn) if r["model_id"] == "m"]
+        self.assertEqual((g["closing_line"], g["versus_line"]), (3.0, "beat"))
+
+    def test_only_eligible_ties_and_duplicates(self):
+        register_model(self.conn, "m", "M")
+        self.game("tie", home=20, away=20)
+        self.game("g2", home=24, away=17)
+        self.scored("m", "tie", 23, 20)                       # graded on its miss, no winner to have
+        self.scored("m", "g2", 21, 20, status="late")         # not graded
+        [m] = forecastlog.scorecard(self.conn, 2026)
+        self.assertEqual((m["games"], m["picks"], m["avg_miss"]), (1, 0, 3.0))
+        self.scored("m", "tie", 24, 20)                       # two eligible on one game: left out
+        self.assertEqual(forecastlog.scorecard(self.conn, 2026), [])
+
+    def test_brought_in_margin_follows_its_win_chance(self):
+        register_model(self.conn, "r", "R")
+        self.game("g1", home=24, away=17)
+        add_prediction(self.conn, game_id="g1", model_id="r", home_win_probability=0.3, predicted_winner=None,
+                       retrieved_at_utc="2026-10-18T14:00:00+00:00",
+                       source_published_at_utc="2026-10-18T14:00:00+00:00", eligibility_status="eligible",
+                       raw_payload={"margin": 4.0})            # neutral site, written the other way round
+        [g] = forecastlog.grade_forecasts(self.conn)
+        self.assertEqual((g["home_margin"], g["hit"], g["miss"]), (-4.0, False, 11.0))
+
+    def test_export(self):
+        register_model(self.conn, "m", "M")
+        self.game("g1")
+        self.scored("m", "g1", 24, 20)
+        path = self.folder / "card.csv"
+        forecastlog.export_scorecard_csv(forecastlog.scorecard(self.conn, 2026), path)
+        rows = list(csv.DictReader(open(path, encoding="utf-8")))
+        self.assertEqual([(r["week"], r["games"]) for r in rows], [("7", "1"), ("", "1")])
+
+
 class TestOutsideForecastsView(unittest.TestCase):
     """The Model Lab page builds with its fifth view and fills it from a scratch log."""
 
@@ -430,6 +507,7 @@ class TestOutsideForecastsView(unittest.TestCase):
             self.assertIn("1 forecasts in the log, 1 of them eligible", page.outside.lead.text())
             self.assertEqual(page.outside.week_pick.currentData(), 7)
             self.assertEqual(page.outside.model_pick.count(), 2)
+            self.assertIn("Hit rate", page.outside.score_note.text())
             page.deleteLater()
             app.processEvents()
         finally:
