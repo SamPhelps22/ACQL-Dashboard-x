@@ -68,6 +68,13 @@ def describe_deadline() -> str:
     return f"{DAYS[weekday].title()} {clock}"
 
 
+def set_remind_hours(hours: float) -> None:
+    from .. import store
+    if not 0.25 <= hours <= 48:
+        raise ValueError("the reminder goes 0.25 to 48 hours before")
+    store.put(KIND, "remind_hours", hours)
+
+
 def remind_before() -> float:
     """How long before the deadline the reminder goes out (seconds)."""
     from .. import store
@@ -169,11 +176,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"deadline not changed: {exc}")
             return 1
     if args.remind is not None:
-        if not 0.25 <= args.remind <= 48:
-            print("reminder not changed: give 0.25 to 48 hours")
+        try:
+            set_remind_hours(args.remind)
+        except ValueError as exc:
+            print(f"reminder not changed: {exc}")
             return 1
-        from .. import store
-        store.put(KIND, "remind_hours", args.remind)
     if args.off:
         set_topic("")
     elif args.topic:

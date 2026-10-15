@@ -7,13 +7,15 @@ from __future__ import annotations
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from PySide6.QtCore import Qt, QThread, QTime, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -23,10 +25,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTimeEdit,
     QVBoxLayout,
+    QWidget,
 )
 
-from ..site import lockedpage, mailer, siteextras, webpublish
+from ..site import lockedpage, mailer, pushalerts, siteextras, webpublish
 from . import poolpage
 from .pages.base import write_log
 
@@ -286,6 +290,7 @@ class ExtrasDialog(QDialog):
         self.auto = QCheckBox("Update the website by itself when new results or a pick sheet are loaded")
         self.auto.setChecked(extras.auto_publish)
         layout.addWidget(self.auto)
+        layout.addWidget(self._alerts_box())
         self.problems = QLabel("")
         self.problems.setWordWrap(True)
         self.problems.setStyleSheet("color:#d03b3b")
@@ -297,6 +302,70 @@ class ExtrasDialog(QDialog):
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _alerts_box(self):
+        """Phone alerts through ntfy.sh, and the weekly picks deadline they count down to."""
+        from ..feeds import oddslock
+        box = QWidget()
+        form = QFormLayout(box)
+        form.setContentsMargins(0, 8, 0, 0)
+        form.addRow(QLabel("<b>Phone alerts</b> - coaches install the free ntfy app and subscribe "
+                           "from the website's menu."))
+        self.topic = QLineEdit(pushalerts.topic())
+        self.topic.setPlaceholderText("e.g. acql-pool-k7q2m9x - blank for no alerts; hard to guess")
+        form.addRow("ntfy topic", self.topic)
+        weekday, hour, minute = oddslock.deadline_clock()
+        self.day = QComboBox()
+        self.day.addItems(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+        self.day.setCurrentIndex(weekday)
+        self.time = QTimeEdit(QTime(hour, minute))
+        self.time.setDisplayFormat("h:mm AP")
+        due = QHBoxLayout()
+        due.addWidget(self.day)
+        due.addWidget(self.time)
+        due.addStretch(1)
+        form.addRow("Picks due", due)
+        self.remind = QDoubleSpinBox()
+        self.remind.setRange(0.25, 48)
+        self.remind.setSingleStep(0.5)
+        self.remind.setSuffix(" hours before")
+        self.remind.setValue(pushalerts.remind_before() / 3600)
+        form.addRow("Reminder", self.remind)
+        test = QPushButton("Send a test alert")
+        test.clicked.connect(self._test_alert)
+        form.addRow("", test)
+        note = QLabel("The deadline also freezes the week's betting lines. The reminder goes out from "
+                      "the scheduled game-day check (Thu, Sun and Mon).")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        form.addRow(note)
+        return box
+
+    def _test_alert(self) -> None:
+        name = self.topic.text().strip()
+        if not pushalerts.TOPIC_RULE.match(name):
+            self.problems.setText("Fix these first: a topic is 6-64 letters, digits, - or _.")
+            return
+        try:
+            pushalerts.send("ACQL alerts are on", "This is a test from the dashboard.", tags="football", name=name)
+        except Exception as exc:  # noqa: BLE001
+            self.problems.setText(f"The test alert didn't go: {exc}")
+            return
+        self.problems.setText("")
+        QMessageBox.information(self, "Phone alerts", f"Sent to {pushalerts.subscribe_link(name)}.")
+
+    def _save_alerts(self) -> str:
+        """Keep the alert settings; what's wrong, in words, or ''."""
+        try:
+            pushalerts.set_topic(self.topic.text())
+        except ValueError as exc:
+            return f"ntfy topic: {exc}"
+        when = self.time.time()
+        hour = when.hour()
+        clock = f"{hour % 12 or 12}:{when.minute():02d}{'pm' if hour >= 12 else 'am'}"
+        pushalerts.set_deadline(f"{pushalerts.DAYS[self.day.currentIndex()]} {clock}")
+        pushalerts.set_remind_hours(self.remind.value())
+        return ""
 
     def _show_count(self) -> None:
         used = len(" ".join(self.note.toPlainText().split()))
@@ -326,6 +395,10 @@ class ExtrasDialog(QDialog):
         problems = extras.set_champions(self.rows())
         if problems:
             self.problems.setText("Fix these first: " + "; ".join(problems) + ".")
+            return
+        wrong = self._save_alerts()
+        if wrong:
+            self.problems.setText(f"Fix these first: {wrong}.")
             return
         extras.set_note(self.note.toPlainText())
         extras.auto_publish = self.auto.isChecked()
