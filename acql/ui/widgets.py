@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import teamlogos
 from .theme import DARK, PALETTES, Palette, contrast, tone_color
 from .tokens import SPACE
 
@@ -561,6 +562,12 @@ class TableModel(QAbstractTableModel):
         self._background = {
             cell: QColor(color) for cell, color in self._cell_colors.items() if color
         }
+        # A team's logo beside its name, wherever a cell names one.
+        self._logos = {
+            (r, c): code
+            for r, row in enumerate(self._text) for c, text in enumerate(row)
+            if c not in self._numeric and (code := teamlogos.code_in(text))
+        }
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
         return 0 if parent.isValid() else len(self._rows)
@@ -607,6 +614,9 @@ class TableModel(QAbstractTableModel):
             return self._align[col]
         if role == Qt.ItemDataRole.ForegroundRole:
             return self._foreground.get((row, col))
+        if role == Qt.ItemDataRole.DecorationRole:
+            code = self._logos.get((row, col))
+            return teamlogos.icon(code) if code else None
         if role == Qt.ItemDataRole.BackgroundRole:
             return self._background.get((row, col))
         if role == Qt.ItemDataRole.ToolTipRole:

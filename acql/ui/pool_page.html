@@ -292,6 +292,10 @@ button:focus-visible, select:focus-visible, a:focus-visible, input:focus-visible
   vertical-align: middle;
 }
 .tb.lg { min-width: 44px; height: 28px; font-size: 16px; }
+/* the team's logo, ahead of its badge; hidden again if it can't be fetched */
+.tl { width: 22px; height: 22px; object-fit: contain; flex: none; vertical-align: middle; }
+.tl.lg { width: 30px; height: 30px; }
+.logo { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
 .ticker .tb, .hero .tb, .tape .tb, .toast .tb { box-shadow: inset 3px 0 0 var(--c2, rgba(255,255,255,0.4)), 0 0 0 1px rgba(255, 255, 255, 0.16); }
 .team { display: inline-flex; align-items: center; gap: 7px; }
 
@@ -1752,12 +1756,27 @@ a.weekpill { text-decoration: none; }
     function f(c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) > 0.36;
   }
+  // The team's logo, from ESPN's image server (the same place the live scores
+  // come from). Any logo that fails to load removes itself, leaving the badge.
+  var LOGO_CODES = { was: "wsh" };
+  function logoUrl(code) {
+    return "https://a.espncdn.com/i/teamlogos/nfl/500/" + (LOGO_CODES[code] || code) + ".png";
+  }
   function badge(team, big) {
     var code = codeOf(team);
     var c = TEAM_COLORS[code] || ["#556373", "#8a968c"];
-    return el("span", { class: "tb" + (big ? " lg" : ""), title: teamFull(code) || String(team || ""),
+    var tag = el("span", { class: "tb" + (big ? " lg" : ""), title: teamFull(code) || String(team || ""),
       style: "--c1:" + c[0] + ";--c2:" + c[1] + ";--ct:" + (lightColour(c[0]) ? "#101820" : "#ffffff"),
       text: code ? code.toUpperCase() : String(team || "?").slice(0, 3).toUpperCase() });
+    if (!code) return tag;
+    var img = document.createElement("img");
+    img.className = "tl" + (big ? " lg" : "");
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.src = logoUrl(code);
+    img.onerror = function () { if (img.parentNode) img.parentNode.removeChild(img); };
+    return el("span", { class: "logo" }, [img, tag]);
   }
   function teamTag(team) {
     return el("span", { class: "team" }, [badge(team), el("b", { text: teamFull(codeOf(team)) || team })]);

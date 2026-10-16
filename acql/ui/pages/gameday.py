@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ...pool import gameday as GD
 from ...model.predictions import display_team
+from .. import teamlogos
 from ...version import MODEL_NAME
 from ...wording import ordinal as _ordinal, plural as _plural
 from ..theme import mix
@@ -188,6 +189,12 @@ class GameCard(QFrame):
             bar.setFixedSize(4, 24)
             bar.setStyleSheet(f"background: {_readable(color, palette)}; border-radius: 2px;")
             row.addWidget(bar)
+            logo = teamlogos.pixmap(name, 22)
+            if logo is not None:
+                mark = QLabel()
+                mark.setPixmap(logo)
+                mark.setFixedSize(24, 24)
+                row.addWidget(mark)
             team = ElidedLabel(display_team(name))
             team.setObjectName("GameTeam")
             behind = st.decided and margin is not None and ((margin < 0) if side == GD.HOME else (margin > 0))
