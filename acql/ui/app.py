@@ -1107,6 +1107,9 @@ def main(argv: list[str] | None = None) -> int:
     from . import keeping
     if not (smoke_test or self_check) and keeping.hand_over(show=not background):
         return 0                        # already running: that one comes forward instead
+    if not (smoke_test or self_check):
+        from . import teamlogos
+        teamlogos.fetch_all()           # first run only: after that they're on disk
     window = MainWindow(remember_state=not smoke_test)
     if not (smoke_test or self_check):
         window._doorbell = keeping.listen(window)

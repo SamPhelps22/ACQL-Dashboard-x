@@ -774,7 +774,7 @@ def stylesheet(p: Palette) -> str:
     QToolButton#InfoIcon {{
         background: transparent;
         border: 1px solid transparent;
-        border-radius: {r["chip"]}px;
+        border-radius: {r["sm"]}px;
         color: {p.ink_muted};
         font-size: {t["body"]}px;
         padding: 0 2px;
