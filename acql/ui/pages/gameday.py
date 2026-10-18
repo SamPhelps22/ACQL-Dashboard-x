@@ -31,7 +31,9 @@ from .. import teamlogos
 from ...version import MODEL_NAME
 from ...wording import ordinal as _ordinal, plural as _plural
 from ..theme import mix
-from ..widgets import Card, ElidedLabel, IconButton, Pill, StatTile, TableModel, make_table, section, tile_grid
+from ..tokens import SPACE
+from ..widgets import (Card, ElidedLabel, IconButton, InfoIcon, Pill, StatTile, TableModel, make_table, section,
+                       tile_grid)
 from .base import LIVE_CHECK, LIVE_CHECK_NOW, Page
 
 #: Shared with the Report card and Deadeye's details, so every page knows who you are.
@@ -39,6 +41,18 @@ ME_KEY = "insights/me"
 CARD_COLUMNS = 3
 #: A game card needs about this much width; narrower windows get fewer columns.
 CARD_MIN_WIDTH = 430
+#: The control room's layout. At this page width and up, Deadeye's insights
+#: are a column beside the slate; narrower, they stack above it (your week
+#: first - on a laptop or phone that is the thing you look for).
+SPLIT_WIDTH = 980
+#: The insights column: a share of the page, between these widths.
+INSIGHT_WIDTH = (360, 440)
+INSIGHT_SHARE = 0.30
+#: Below this width the four headline tiles go two to a row instead of four.
+TILES_FOUR_WIDTH = 720
+#: One chip on the scoreboard strip, and the most rows of chips it shows.
+CHIP_WIDTH = 168
+CHIP_ROWS = 2
 ROOTS_SHOWN = 5
 LOSERS_SHOWN = 8
 BOARD_HEADERS = ["#", "Coach", "Now", "Games", "Big L.", "Banked", "Can reach", "To win", "If it ended now"]
@@ -240,6 +254,7 @@ class GameCard(QFrame):
             layout.addWidget(bar)
         chances = QLabel(chance_text)
         chances.setObjectName("GameMeta")
+        chances.setWordWrap(True)
         layout.addWidget(chances)
 
         # your pick, Deadeye's, and the pool's
@@ -263,6 +278,7 @@ class GameCard(QFrame):
             most = max(home_n, away_n)
             pool = QLabel(f"The pool: {most / (home_n + away_n):.0%} on {display_team(st.team(side))}")
             pool.setObjectName("GameMeta")
+            pool.setWordWrap(True)
             pool.setToolTip(f"{home_n} on {display_team(st.game.home)}, {away_n} on {display_team(st.game.away)}")
         else:
             pool = None
@@ -307,6 +323,81 @@ class GameCard(QFrame):
         return "\n".join(lines)
 
 
+class ScoreChip(QFrame):
+    """One game on the scoreboard strip: the clock and the two scores, nothing
+    else - the full card is in the slate below."""
+
+    def __init__(self, st: GD.GameNow, you: GD.Card | None) -> None:
+        super().__init__()
+        self.setObjectName("ScoreChip")
+        mine = you.picks.get(st.index, GD.NOBODY) if you is not None else GD.NOBODY
+        tone = ""
+        if mine and st.started and st.leader:
+            tone = "good" if st.leader == mine else "bad"
+        elif st.state == "in":
+            tone = "live"
+        self.setProperty("tone", tone)
+        self.setMinimumWidth(CHIP_WIDTH - 24)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 7)
+        layout.setSpacing(2)
+        if st.state == "in":
+            state_text = f"● {st.clock}" if st.clock else "● LIVE"
+        elif st.state == "final":
+            state_text = st.clock.upper() if st.clock else "FINAL"
+        elif st.state == "off":
+            state_text = "POSTPONED"
+        else:
+            state_text = GD.kickoff_text(st.kickoff) or "TO PLAY"
+        state = ElidedLabel(state_text)
+        state.setObjectName("GameState")
+        state.setProperty("live", "true" if st.state == "in" else "")
+        layout.addWidget(state)
+        margin = st.margin
+        for side, name, points in ((GD.AWAY, st.game.away, st.away_points),
+                                   (GD.HOME, st.game.home, st.home_points)):
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            logo = teamlogos.pixmap(name, 16)
+            if logo is not None:
+                mark = QLabel()
+                mark.setPixmap(logo)
+                mark.setFixedSize(16, 16)
+                row.addWidget(mark)
+            behind = st.decided and margin is not None and ((margin < 0) if side == GD.HOME else (margin > 0))
+            team = ElidedLabel(display_team(name))
+            team.setObjectName("ChipTeam")
+            team.setProperty("faded", "true" if behind else "")
+            row.addWidget(team, 1)
+            score = QLabel("" if points is None or not st.started else str(points))
+            score.setObjectName("ChipScore")
+            score.setProperty("faded", "true" if behind else "")
+            score.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            row.addWidget(score)
+            layout.addLayout(row)
+        self.setToolTip(f"{st.game.label} · pool line {st.line_text()}")
+
+
+def _heading(text: str, icon: str, palette) -> QWidget:
+    """A column's heading: one drawn icon and the name in small capitals."""
+    from .. import icons
+    row = QWidget()
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(2, 0, 0, 0)
+    lay.setSpacing(8)
+    mark = QLabel()
+    mark.setObjectName("RoomIcon")
+    drawn = icons.icon(icon, palette.brand or palette.accent, size=16)
+    if not drawn.isNull():
+        mark.setPixmap(drawn.pixmap(16, 16))
+    lay.addWidget(mark)
+    label = QLabel(text.upper())
+    label.setObjectName("RoomHeading")
+    lay.addWidget(label, 1)
+    return row
+
+
 class GameDayPage(Page):
     from ...places import GAME_DAY as title
     subtitle = "Live scores against the pool's lines, where you stand this week, and what to root for"
@@ -321,42 +412,69 @@ class GameDayPage(Page):
         self.layout_.addWidget(section(self.title, self.subtitle))
 
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("Week"))
+        self.week_word = QLabel("Week")
+        controls.addWidget(self.week_word)
         self.week_picker = QComboBox()
         self.week_picker.setMinimumWidth(130)
         self.week_picker.currentIndexChanged.connect(lambda _: self._week_chosen())
         controls.addWidget(self.week_picker)
         controls.addSpacing(12)
-        controls.addWidget(QLabel("You are"))
+        self.me_word = QLabel("You are")
+        controls.addWidget(self.me_word)
         self.me_picker = QComboBox()
         self.me_picker.setMinimumWidth(180)
         self.me_picker.currentIndexChanged.connect(lambda _: self._me_chosen())
         controls.addWidget(self.me_picker)
         controls.addStretch(1)
-        self.status = QLabel("")
-        self.status.setObjectName("Muted")
-        controls.addWidget(self.status)
-        self.refresh_button = IconButton("Scores now", "refresh")
-        self.refresh_button.setToolTip("Ask ESPN for the latest scores now")
-        self.refresh_button.clicked.connect(lambda *_: self.action_requested.emit(LIVE_CHECK_NOW))
-        controls.addWidget(self.refresh_button)
         self.layout_.addLayout(controls)
 
-        self.tile_score = StatTile("Your Week")
-        self.tile_place = StatTile("Your Place")
-        self.tile_chance = StatTile("Chance To Win The Week")
-        self.tile_money = StatTile("If It Ended Now")
-        self._tiles = (self.tile_score, self.tile_place, self.tile_chance, self.tile_money)
-        self.layout_.addLayout(tile_grid(list(self._tiles), per_row=4))
+        # ---- the scoreboard strip: every game at a glance, two rows at most
+        self.strip = QFrame()
+        self.strip.setObjectName("ScoreStrip")
+        self.strip_grid = QGridLayout(self.strip)
+        self.strip_grid.setContentsMargins(8, 8, 8, 8)
+        self.strip_grid.setSpacing(8)
+        self._chips: list[ScoreChip] = []
+        self._chips_laid = 0
+        self.strip_more = QLabel("")
+        self.strip_more.setObjectName("Muted")
+        self.layout_.addWidget(self.strip)
 
-        self.root_card = Card("What to root for")
-        self.root_box = QVBoxLayout()
-        self.root_box.setSpacing(6)
-        self.root_card.body().addLayout(self.root_box)
-        self.layout_.addWidget(self.root_card)
+        # ---- the room: the slate, and Deadeye's insights beside or above it
+        self.room = QWidget()
+        self.room_grid = QGridLayout(self.room)
+        self.room_grid.setContentsMargins(0, 0, 0, 0)
+        self.room_grid.setSpacing(SPACE["room"])
+        self._room_split: bool | None = None
+        self.slate = QWidget()
+        self.slate_box = QVBoxLayout(self.slate)
+        self.slate_box.setContentsMargins(0, 0, 0, 0)
+        self.slate_box.setSpacing(SPACE["room"])
+        self.insights = QWidget()
+        self.insights.setObjectName("InsightsColumn")
+        self.insights_box = QVBoxLayout(self.insights)
+        self.insights_box.setContentsMargins(0, 0, 0, 0)
+        self.insights_box.setSpacing(SPACE["room"])
+        self.layout_.addWidget(self.room)
 
+        self.slate_box.addWidget(_heading("The slate", "football", self.palette))
         self.live_card, self.live_grid = self._game_section("On now")
+
+        # A place kept for the Chaos Simulator, built separately: it fills
+        # chaos_slot() and the placeholder goes. Nothing else lives here.
+        self.chaos_panel = QFrame()
+        self.chaos_panel.setObjectName("ChaosSlot")
+        self.chaos_box = QVBoxLayout(self.chaos_panel)
+        self.chaos_box.setContentsMargins(SPACE["room"], SPACE["step"], SPACE["room"], SPACE["step"])
+        self.chaos_box.setSpacing(4)
+        self.chaos_box.addWidget(_heading("Chaos Simulator", "dice", self.palette))
+        self.chaos_placeholder = QLabel("Reserved for the Chaos Simulator - coming soon.")
+        self.chaos_placeholder.setObjectName("Muted")
+        self.chaos_placeholder.setWordWrap(True)
+        self.chaos_box.addWidget(self.chaos_placeholder)
+        self.slate_box.addWidget(self.chaos_panel)
         self.next_card, self.next_grid = self._game_section("Still to play")
+
         self.final_card, self.final_grid = self._game_section("Final")
 
         self.board_card = Card("The week so far")
@@ -366,23 +484,65 @@ class GameDayPage(Page):
         self.board_note.setObjectName("Muted")
         self.board_note.setWordWrap(True)
         self.board_card.add(self.board_note)
-        self.layout_.addWidget(self.board_card)
+        self.slate_box.addWidget(self.board_card)
+        self.slate_box.addStretch(1)
+
+        self.insights_box.addWidget(_heading(f"{MODEL_NAME} insights", "crosshair", self.palette))
+        self.tile_score = StatTile("Your Week")
+        self.tile_place = StatTile("Your Place")
+        self.tile_chance = StatTile("Chance To Win")
+        self.tile_money = StatTile("If It Ended Now")
+        self._tiles = (self.tile_score, self.tile_place, self.tile_chance, self.tile_money)
+        for tile in self._tiles:
+            tile.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.tile_box = tile_grid(list(self._tiles), per_row=2)
+        self._tiles_per_row = 2
+        self.insights_box.addLayout(self.tile_box)
+
+        self.root_card = Card("What to root for")
+        self.root_box = QVBoxLayout()
+        self.root_box.setSpacing(6)
+        self.root_card.body().addLayout(self.root_box)
+        self.insights_box.addWidget(self.root_card)
 
         self.side_card = Card("The side pools, as they stand")
         self.side_box = QVBoxLayout()
         self.side_box.setSpacing(6)
         self.side_card.body().addLayout(self.side_box)
-        self.layout_.addWidget(self.side_card)
+        self.insights_box.addWidget(self.side_card)
+        self.insights_box.addStretch(1)
 
-        self.footnote = QLabel(
+        # ---- the status bar: pinned under the page, outside the scroll
+        self.status_bar = QFrame()
+        self.status_bar.setObjectName("StatusBar")
+        bar = QHBoxLayout(self.status_bar)
+        bar.setContentsMargins(SPACE["gap"], 4, SPACE["step"], 4)
+        bar.setSpacing(SPACE["snug"])
+        self.status_light = QLabel("●")
+        self.status_light.setObjectName("StatusLight")
+        bar.addWidget(self.status_light)
+        self.status = ElidedLabel("")
+        self.status.setObjectName("StatusText")
+        bar.addWidget(self.status, 1)
+        footnote = (
             "Scores are checked every minute while a game is on. A game's chances come from the score, "
             "the time left and the betting line. Your chance of finishing first plays the rest of the "
             f"week out {GD.SIMS:,} times against everyone's cards. Money follows the pool's rule: a "
-            "dollar for each game behind the week's best card."
-        )
-        self.footnote.setObjectName("Muted")
-        self.footnote.setWordWrap(True)
-        self.layout_.addWidget(self.footnote)
+            "dollar for each game behind the week's best card.")
+        self.footnote = InfoIcon(footnote, "how Game Day works")
+        bar.addWidget(self.footnote)
+        self.refresh_button = IconButton("Scores now", "refresh", size=13)
+        self.refresh_button.setObjectName("StatusButton")
+        self.refresh_button.setToolTip("Ask ESPN for the latest scores now")
+        self.refresh_button.clicked.connect(lambda *_: self.action_requested.emit(LIVE_CHECK_NOW))
+        bar.addWidget(self.refresh_button)
+        self._outer.addWidget(self.status_bar)
+        self._arrange()
+
+    def chaos_slot(self) -> QVBoxLayout:
+        """The slate's empty panel, for the Chaos Simulator to fill."""
+        self.chaos_placeholder.hide()
+        return self.chaos_box
 
     def _game_section(self, title: str) -> tuple[Card, QGridLayout]:
         card = Card(title)
@@ -391,8 +551,61 @@ class GameDayPage(Page):
         for column in range(CARD_COLUMNS):
             grid.setColumnStretch(column, 1)
         card.body().addLayout(grid)
-        self.layout_.addWidget(card)
+        self.slate_box.addWidget(card)
         return card, grid
+
+    # ---- the layout, as the window resizes ----------------------------------------
+    def _room_width(self) -> int:
+        bar = self._scroll.verticalScrollBar()
+        side = self.layout_.contentsMargins().left()
+        return max(0, int(self.width()) - 2 * side - (bar.sizeHint().width() if bar.isVisible() else 0))
+
+    def _arrange(self) -> None:
+        """Insights beside the slate when there is room, above it when not;
+        the tiles four or two to a row; the strip's chips re-flowed."""
+        width = self._room_width()
+        split = width >= SPLIT_WIDTH
+        if split != self._room_split:
+            self._room_split = split
+            self.room_grid.removeWidget(self.slate)
+            self.room_grid.removeWidget(self.insights)
+            if split:
+                self.room_grid.addWidget(self.slate, 0, 0)
+                self.room_grid.addWidget(self.insights, 0, 1)
+                self.room_grid.setColumnStretch(0, 1)
+                self.room_grid.setColumnStretch(1, 0)
+            else:
+                self.room_grid.addWidget(self.insights, 0, 0)
+                self.room_grid.addWidget(self.slate, 1, 0)
+                self.room_grid.setColumnStretch(0, 1)
+                self.room_grid.setColumnStretch(1, 0)
+        if split:
+            low, high = INSIGHT_WIDTH
+            self.insights.setFixedWidth(int(min(high, max(low, width * INSIGHT_SHARE))))
+        else:
+            self.insights.setMinimumWidth(0)
+            self.insights.setMaximumWidth(16777215)
+        per_row = 4 if (not split and width >= TILES_FOUR_WIDTH) else 2
+        if per_row != self._tiles_per_row:
+            self._tiles_per_row = per_row
+            for tile in self._tiles:
+                self.tile_box.removeWidget(tile)
+            for i, tile in enumerate(self._tiles):
+                self.tile_box.addWidget(tile, i // per_row, i % per_row)
+            for column in range(4):
+                self.tile_box.setColumnStretch(column, 1 if column < per_row else 0)
+        narrow = width < 520
+        self.refresh_button.setText("" if narrow else "Scores now")
+        # a phone: tighter page margins and pickers, so nothing runs off the side
+        side = SPACE["step"] if narrow else SPACE["gap"]
+        self.layout_.setContentsMargins(side, SPACE["room"], side, SPACE["gap"])
+        self.week_picker.setMinimumWidth(118 if narrow else 130)
+        self.me_picker.setMinimumWidth(120 if narrow else 180)
+        self.week_word.setVisible(not narrow)
+        self.me_word.setVisible(not narrow)
+        self.week_picker.setToolTip("Week")
+        self.me_picker.setToolTip("You are")
+        self._place_chips()
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().showEvent(event)
@@ -469,6 +682,8 @@ class GameDayPage(Page):
         self._render_roots(bd)
         you_card = bd.you.card if bd.you is not None else None
         ghost_card = bd.ghost.card if bd.ghost is not None else None
+        self._set_chips(list(bd.live) + list(bd.upcoming)
+                        + sorted(bd.final, key=lambda s: (-(s.kickoff or 0), s.index)), you_card)
         self._render_games(self.live_card, self.live_grid, bd.live, bd, you_card, ghost_card,
                            f"On now · {_plural(len(bd.live), 'game')}")
         self._render_games(self.next_card, self.next_grid, bd.upcoming, bd, you_card, ghost_card,
@@ -488,7 +703,12 @@ class GameDayPage(Page):
         if bd is None:
             self.status.setText("")
             return
+        self.status_light.setProperty("live", "true" if bd.live else "")
+        self.status_light.style().unpolish(self.status_light)
+        self.status_light.style().polish(self.status_light)
         parts = [f"ESPN checked {_ago(bd.checked)}"]
+        if bd.states:
+            parts.insert(0, f"{len(bd.live)} on \u00b7 {len(bd.upcoming)} to play \u00b7 {len(bd.final)} final")
         if bd.mode in ("pre", "between") and bd.next_kickoff:
             parts.insert(0, f"Next kickoff {GD.kickoff_text(bd.next_kickoff)} ({_countdown(bd.next_kickoff)})")
         if bd.live:
@@ -505,6 +725,7 @@ class GameDayPage(Page):
             card.hide()
         self.clear_layout(self.root_box)
         self.root_card.hide()
+        self._set_chips([], None)
         self.clear_layout(self.board_box)
         self.board_note.setText(
             f"Week {week} has no games set up yet." if week else "No week to show yet.")
@@ -524,7 +745,7 @@ class GameDayPage(Page):
             self.tile_place.update_values(
                 leader.card.name if leader else self.NO_VALUE,
                 f"{leader.total_now} so far" if leader else "the pick sheet isn't in yet")
-            self.tile_chance.set_title("Chance To Win The Week")
+            self.tile_chance.set_title("Chance To Win")
             likeliest = max(bd.standings, key=lambda s: s.chance or 0.0) if bd.standings else None
             self.tile_chance.update_values(
                 f"{likeliest.chance:.0%}" if likeliest and likeliest.chance is not None else self.NO_VALUE,
@@ -560,7 +781,7 @@ class GameDayPage(Page):
                 "not on the commissioner's sheet yet - your saved card is shown"
                 + (f" · {MODEL_NAME} has {ghost.total_now}" if ghost else ""))
 
-        self.tile_chance.set_title("Chance To Win The Week")
+        self.tile_chance.set_title("Chance To Win")
         if me.chance is not None and fair:
             self.tile_chance.update_values(
                 f"{me.chance:.1%}", f"a fair share is {fair:.1%}",
@@ -588,8 +809,13 @@ class GameDayPage(Page):
         self.tile_money.set_title("Next Kickoff")
         nxt = bd.next_kickoff
         game = next((s for s in bd.upcoming if s.kickoff == nxt), None)
+        # the time alone in the big type (it fits a narrow tile); the day goes below
+        when = GD.kickoff_text(nxt) if nxt else ""
+        clock = time.strftime("%I:%M %p", time.localtime(nxt)).lstrip("0") if nxt else ""
+        day = when[:-len(clock)].strip() if clock and when.endswith(clock) else when
         self.tile_money.update_values(
-            GD.kickoff_text(nxt) if nxt else self.NO_VALUE,
+            (clock or when) if nxt else self.NO_VALUE,
+            (f"{day} · " if day and clock else "") +
             (f"{game.game.label} · {_countdown(nxt)}" if game else "") +
             (f" · {game.broadcast}" if game is not None and game.broadcast else ""))
 
@@ -671,9 +897,12 @@ class GameDayPage(Page):
         self._place(grid)
 
     def _columns(self) -> int:
-        """As many card columns as the page's width takes, up to three."""
+        """As many card columns as the slate's width takes, up to three."""
         try:
-            width = int(self.width())
+            width = self._room_width()
+            if self._room_split:
+                width -= self.insights.width() + SPACE["room"]
+            width += SPACE["room"] * 2      # the cards' own margins are inside the slate
         except (TypeError, ValueError):
             return CARD_COLUMNS
         return max(1, min(CARD_COLUMNS, width // CARD_MIN_WIDTH)) if width > 0 else CARD_COLUMNS
@@ -693,8 +922,46 @@ class GameDayPage(Page):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().resizeEvent(event)
+        self._arrange()
         for grid, _cards, _laid in list(self._placed.values()):
             self._place(grid)
+
+    # ---- the scoreboard strip --------------------------------------------------------
+    def _set_chips(self, states: list[GD.GameNow], you: GD.Card | None) -> None:
+        self.clear_layout(self.strip_grid)
+        self._chips = [ScoreChip(st, you) for st in states]
+        self.strip_more = QLabel("")
+        self.strip_more.setObjectName("Muted")
+        self._chips_laid = 0
+        self.strip.setVisible(bool(self._chips))
+        self._place_chips()
+
+    def _place_chips(self) -> None:
+        if not self._chips:
+            return
+        columns = max(2, (self._room_width() - 16 + 8) // (CHIP_WIDTH + 8))
+        if columns == self._chips_laid:
+            return
+        self._chips_laid = columns
+        for chip in self._chips:
+            self.strip_grid.removeWidget(chip)
+            chip.hide()
+        self.strip_grid.removeWidget(self.strip_more)
+        room = columns * CHIP_ROWS
+        shown = self._chips if len(self._chips) <= room else self._chips[:room - 1]
+        for i, chip in enumerate(shown):
+            self.strip_grid.addWidget(chip, i // columns, i % columns)
+            chip.show()
+        hidden = len(self._chips) - len(shown)
+        if hidden:
+            self.strip_more.setText(f"+{hidden} more\nin the slate")
+            self.strip_more.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.strip_grid.addWidget(self.strip_more, (room - 1) // columns, (room - 1) % columns)
+            self.strip_more.show()
+        else:
+            self.strip_more.hide()
+        for column in range(max(columns, self.strip_grid.columnCount())):
+            self.strip_grid.setColumnStretch(column, 1 if column < columns else 0)
 
     # ---- everyone ---------------------------------------------------------------
     def _render_board(self, bd: GD.Board) -> None:
