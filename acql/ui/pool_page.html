@@ -3048,17 +3048,17 @@ a.weekpill { text-decoration: none; }
   // last saw. Within a visit only a redraw of the same page counts (moving to
   // another week or tab is not news); the official standings ("s:") are also
   // remembered between visits, so a new week's totals flash on arrival.
-  var TICK_KEY = "acql-pool-seen", seen = {}, drawnOnce = false, drawnWeek = null;
-  (function () { var s = storedJSON(TICK_KEY); if (s && typeof s === "object") seen = s; })();
+  var TICK_KEY = "acql-pool-seen", tickSeen = {}, drawnOnce = false, drawnWeek = null;
+  (function () { var s = storedJSON(TICK_KEY); if (s && typeof s === "object") tickSeen = s; })();
   function ticks(sameView) {
     var keep = {};
     Array.prototype.forEach.call(app.querySelectorAll("[data-tick]"), function (n) {
       var k = n.getAttribute("data-tick"), v = n.textContent;
       var counts = sameView || (!drawnOnce && k.indexOf("s:") === 0);
-      if (counts && Object.prototype.hasOwnProperty.call(seen, k) && seen[k] !== v) n.classList.add("ticked");
-      seen[k] = v;
+      if (counts && Object.prototype.hasOwnProperty.call(tickSeen, k) && tickSeen[k] !== v) n.classList.add("ticked");
+      tickSeen[k] = v;
     });
-    Object.keys(seen).forEach(function (k) { if (k.indexOf("s:") === 0) keep[k] = seen[k]; });
+    Object.keys(tickSeen).forEach(function (k) { if (k.indexOf("s:") === 0) keep[k] = tickSeen[k]; });
     storeJSON(TICK_KEY, keep);
     drawnOnce = true;
   }
