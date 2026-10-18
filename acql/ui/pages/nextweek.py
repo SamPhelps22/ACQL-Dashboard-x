@@ -38,6 +38,7 @@ from ...model import predictions, pricing
 from ...config import BIG_LOSER_PICKS, WEEKS_IN_SEASON
 from ...models import Game
 from ...wording import plural as _plural
+from ..chaospanel import ChaosPanel
 from ..widgets import Card, ColumnFitter, StatTile, fit_height, section
 from .base import Page
 
@@ -405,6 +406,8 @@ class NextWeekPage(Page):
         self.layout_.addWidget(self.card, 1)
         self.layout_.addWidget(self.plan_card)
         self.layout_.addWidget(self.losers, 1)
+        self.chaos = ChaosPanel()
+        self.layout_.addWidget(self.chaos)
 
     def restyle(self) -> None:
         # Pick colours come from the palette, so the rows are redrawn.
@@ -418,6 +421,7 @@ class NextWeekPage(Page):
         # a week themselves; then leave their choice alone across refreshes.
         if not self._user_chose_week:
             self._set_week(analytics.upcoming_week(season))
+        self.chaos.set_season(season)
         self._show_week()
 
     def _set_week(self, number: int) -> None:
