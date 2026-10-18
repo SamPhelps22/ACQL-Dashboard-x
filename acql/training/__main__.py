@@ -11,6 +11,7 @@
     python -m acql.training decay      how much of the models' gap from the line survives open to close
     python -m acql.training margin     four ways of taking the bookmaker's margin out, against results
     python -m acql.training features   each football fact on its own, on top of the line, at each timing
+    python -m acql.training calibration  are Deadeye's chances honest? the margin-to-chance step, audited
     python -m acql.training fetch     the season archives from The Prediction Tracker (about 2 MB;
                                        the one thing here that goes online, and only when asked)
 
@@ -229,6 +230,21 @@ def featurevalue(args) -> int:
     return 0
 
 
+def calibration(args) -> int:
+    """Deadeye's chances against results: the curve, its width, and recalibration, walked forward."""
+    from . import calibration as found
+    if args.part == "join":
+        text, path = found.join()
+    elif args.part:
+        found.run_part(args.part)
+        text, path = found.join()
+    else:
+        text, path = found.run()
+    print(text)
+    print(f"Written to {path}")
+    return 0
+
+
 def fetch(args) -> int:
     """The season archives, one request each, a second apart. Files already
     on disk are left alone (this season's is fetched again with --refresh)."""
@@ -281,13 +297,16 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("margin", help="four ways of taking the margin out of the moneylines, measured")
     commands.add_parser("decay", help="the models' edge over the line, open to close, measured")
     commands.add_parser("features", help="each football fact on its own, on top of the line, measured")
+    c = commands.add_parser("calibration", help="Deadeye's chances against results, walked forward (shadow only)")
+    c.add_argument("part", nargs="?", choices=("midweek", "opening", "updated", "join"),
+                   help="one line timing only (then the report is joined again), or just join the parts")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
     args = parser.parse_args(argv)
     _logging(args.verbose)
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
             "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
-            "features": featurevalue}.get(args.command)
+            "features": featurevalue, "calibration": calibration}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0
