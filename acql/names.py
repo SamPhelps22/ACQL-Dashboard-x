@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from .config import ALIASES_FILE
+from .config import ALIASES_FILE, write_atomic
 
 _PUNCT = re.compile(r"[^\w\s]+", re.UNICODE)
 _SPACE = re.compile(r"\s+")
@@ -66,7 +66,7 @@ class AliasTable:
             "aliases": {a: self._display.get(c, c) for a, c in self._map.items()},
         }
         try:
-            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            write_atomic(path, json.dumps(payload, indent=2))
         except OSError:
             pass
 

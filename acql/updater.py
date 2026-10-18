@@ -173,17 +173,49 @@ def open_update(source: str | Path) -> Update:
 
 
 # ---- backing up and putting back -----------------------------------------------------
-def backup_code(root: Path, label: str) -> Path:
-    """Zip every code file in the project (never the data) into backups/."""
+def backup_code(root: Path, label: str, also: list[str] = ()) -> Path:
+    """Zip every code file in the project (never the data) into backups/.
+
+    `also`: more files to keep, by relative path - the ones an update is about
+    to overwrite or remove whatever their kind (README.md, schedule.ps1), so
+    a rollback can put every one of them back.
+    """
     root = Path(root)
     folder = root / BACKUPS
     folder.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     target = folder / f"code-{label}-{stamp}.zip"
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
+        kept = set()
         for path in _code_files(root):
-            zf.write(path, path.relative_to(root).as_posix())
+            rel = path.relative_to(root).as_posix()
+            zf.write(path, rel)
+            kept.add(rel)
+        for rel in also:
+            if rel not in kept and (root / rel).is_file():
+                zf.write(root / rel, rel)
+                kept.add(rel)
     return target
+
+
+def safe_path(rel: str) -> str:
+    """`rel` if it names a code file inside the project, else UpdateError.
+
+    An update (or a backup) may only write where the code lives: no absolute
+    paths or drive letters, no `..`, nothing in the top-level data, backups
+    or .venv folders - and no file at the top of the folder that the code
+    backup treats as the app's own memory (acql-picks.json, aliases.json...).
+    """
+    text = str(rel)
+    parts = text.split("/")
+    if (not text or "\\" in text or ":" in text or text.startswith("/")
+            or any(part in ("", ".", "..") for part in parts)):
+        raise UpdateError(f"The update names a file outside the dashboard's code ({text!r}) - it wasn't installed.")
+    if parts[0] in NOT_CODE:
+        raise UpdateError(f"The update would touch {text}, which is data, not code - it wasn't installed.")
+    if len(parts) == 1 and Path(text).suffix.lower() in (".json", ".csv", ".png", ".xls", ".xlsx", ".db"):
+        raise UpdateError(f"The update would touch {text}, which is data, not code - it wasn't installed.")
+    return text
 
 
 def _code_files(root: Path):
@@ -209,7 +241,9 @@ def restore_backup(root: Path, backup: Path, *, remove: list[str] = ()) -> None:
     root = Path(root)
     failed: list[str] = []
     with zipfile.ZipFile(backup) as zf:
-        names = set(zf.namelist())
+        names = {name for name in zf.namelist() if not name.endswith("/")}
+        for name in names:                # every name checked before one is written
+            safe_path(name)
         for name in sorted(names):
             target = root / name
             data = zf.read(name)
@@ -295,13 +329,20 @@ def install(update: Update, root: Path, *, check=None, say=print,
         raise UpdateError(
             f"Version {current} is already installed, and this update is {update.version}."
         )
+    for rel in [*update.files, *update.remove]:
+        safe_path(rel)
     for rel, digest in update.files.items():
-        if _sha(update.read(rel)) != digest:
+        try:
+            data = update.read(rel)
+        except (OSError, KeyError, zipfile.BadZipFile) as exc:
+            raise UpdateError(f"The update's copy of {rel} is missing or unreadable - download it again.") from exc
+        if _sha(data) != digest:
             raise UpdateError(f"The update's copy of {rel} is damaged - download it again.")
 
     before = installed_version(root) or "1.x"
     say(f"Backing up the current code (version {before})...")
-    backup = backup_code(root, before.replace(".", "_"))
+    backup = backup_code(root, before.replace(".", "_"),
+                         also=[*update.files, *update.remove])
     say(f"  saved as {backup.relative_to(root)}")
 
     new_files = [rel for rel in update.files if not (root / rel).exists()]

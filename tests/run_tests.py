@@ -2916,6 +2916,150 @@ class TestSharedDesign(unittest.TestCase):
             corners = {int(v) for v in re.findall(r"border-radius: (\d+)px", sheet)}
             self.assertLessEqual(corners, allowed, palette.name)
 
+class TestUpdaterInstall(unittest.TestCase):
+    """Installing, failing, rolling back and undoing - on a scratch project, never this folder."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp(prefix="acql-upd-"))
+        self.root = self.tmp / "proj"
+        (self.root / "acql").mkdir(parents=True)
+        (self.root / "data").mkdir()
+        (self.root / "run.py").write_text("old run\n")
+        (self.root / "README.md").write_text("old readme\n")
+        (self.root / "schedule.ps1").write_text("old schedule\n")
+        (self.root / "acql" / "__init__.py").write_text("")
+        (self.root / "acql" / "version.py").write_text('VERSION = "1.0.0"\n')
+        (self.root / "acql" / "gone.py").write_text("old module\n")
+        (self.root / "acql-picks.json").write_text('{"mine": 1}')
+        (self.root / "data" / "acql.db").write_text("database")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _zip(self, files, remove=(), version="1.1.0", damage=None):
+        import hashlib
+        import json
+        import zipfile
+        from acql import updater
+        path = self.tmp / f"ACQL-Dashboard-{version}-update.zip"
+        top = f"ACQL-Dashboard-{version}-update"
+        manifest = {"version": version, "files": {}, "remove": list(remove), "requires": []}
+        with zipfile.ZipFile(path, "w") as zf:
+            for rel, text in files.items():
+                data = text.encode()
+                manifest["files"][rel] = hashlib.sha256(data).hexdigest()
+                zf.writestr(f"{top}/{updater.PAYLOAD}/{rel}", b"x" + data if rel == damage else data)
+            zf.writestr(f"{top}/{updater.MANIFEST}", json.dumps(manifest))
+        return updater.open_update(path)
+
+    def _good(self):
+        return {"run.py": "new run\n", "README.md": "new readme\n", "schedule.ps1": "new schedule\n",
+                "acql/version.py": 'VERSION = "1.1.0"\n', "acql/added.py": "new module\n"}
+
+    def test_a_good_update_installs_and_leaves_the_data(self):
+        from acql import updater
+        done = updater.install(self._zip(self._good(), remove=["acql/gone.py"]), self.root,
+                               check=lambda r: "", say=lambda *_: None)
+        self.assertEqual(done.version, "1.1.0")
+        self.assertEqual((self.root / "README.md").read_text(), "new readme\n")
+        self.assertFalse((self.root / "acql" / "gone.py").exists())
+        self.assertEqual((self.root / "acql-picks.json").read_text(), '{"mine": 1}')
+        self.assertEqual((self.root / "data" / "acql.db").read_text(), "database")
+
+    def test_a_failed_start_puts_every_overwritten_file_back(self):
+        from acql import updater
+        with self.assertRaises(updater.UpdateError):
+            updater.install(self._zip(self._good(), remove=["acql/gone.py"]), self.root,
+                            check=lambda r: "ImportError: boom", say=lambda *_: None)
+        self.assertEqual((self.root / "run.py").read_text(), "old run\n")
+        # README.md and schedule.ps1 aren't .py files: the backup used to leave them out
+        self.assertEqual((self.root / "README.md").read_text(), "old readme\n")
+        self.assertEqual((self.root / "schedule.ps1").read_text(), "old schedule\n")
+        self.assertEqual((self.root / "acql" / "gone.py").read_text(), "old module\n")
+        self.assertFalse((self.root / "acql" / "added.py").exists())
+        self.assertEqual(updater.installed_version(self.root), "1.0.0")
+
+    def test_undo_brings_back_the_version_before(self):
+        from acql import updater
+        updater.install(self._zip(self._good(), remove=["acql/gone.py"]), self.root,
+                        check=lambda r: "", say=lambda *_: None)
+        self.assertEqual(updater.undo_last(self.root), "1.0.0")
+        self.assertEqual((self.root / "schedule.ps1").read_text(), "old schedule\n")
+        self.assertEqual((self.root / "acql" / "gone.py").read_text(), "old module\n")
+        self.assertFalse((self.root / "acql" / "added.py").exists())
+
+    def test_a_damaged_file_is_refused_before_anything_changes(self):
+        from acql import updater
+        with self.assertRaises(updater.UpdateError):
+            updater.install(self._zip(self._good(), damage="run.py"), self.root,
+                            check=lambda r: "", say=lambda *_: None)
+        self.assertEqual((self.root / "run.py").read_text(), "old run\n")
+        self.assertFalse((self.root / "backups").exists())
+
+    def test_paths_outside_the_code_are_refused_before_anything_changes(self):
+        from acql import updater
+        for bad in ("../escaped.py", "/abs.py", "C:/x.py", "acql/../../escaped.py", "data/acql.db",
+                    "backups/x.zip", ".venv/x.py", "acql-picks.json", "a//b.py"):
+            with self.subTest(files=bad), self.assertRaises(updater.UpdateError):
+                updater.install(self._zip({**self._good(), bad: "evil"}), self.root,
+                                check=lambda r: "", say=lambda *_: None)
+            with self.subTest(remove=bad), self.assertRaises(updater.UpdateError):
+                updater.install(self._zip(self._good(), remove=[bad]), self.root,
+                                check=lambda r: "", say=lambda *_: None)
+        self.assertFalse((self.tmp / "escaped.py").exists())
+        self.assertEqual((self.root / "data" / "acql.db").read_text(), "database")
+        self.assertEqual((self.root / "acql-picks.json").read_text(), '{"mine": 1}')
+        self.assertEqual((self.root / "run.py").read_text(), "old run\n")
+        self.assertFalse((self.root / "backups").exists())
+
+    def test_the_real_release_passes_the_path_check(self):
+        from acql import updater
+        zips = sorted((ROOT / "updates").glob("ACQL-Dashboard-*-update.zip"))
+        if not zips:
+            self.skipTest("no release zip in updates/")
+        update = updater.open_update(zips[-1])
+        for rel in [*update.files, *update.remove]:
+            self.assertEqual(updater.safe_path(rel), rel)
+
+
+class TestAtomicWrites(unittest.TestCase):
+    """aliases.json and acql-settings.json are replaced whole or left as they were."""
+
+    def test_a_failed_write_leaves_the_old_aliases(self):
+        import os
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "aliases.json"
+            table = AliasTable()
+            table.add("Zachary N", "Zach N")
+            table.save(path)
+            before = path.read_bytes()
+            other = AliasTable()
+            other.add("Debbie", "Debe")
+            with mock.patch.object(os, "replace", side_effect=OSError("disk full")):
+                other.save(path)                     # save() swallows OSError, as before
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(sorted(p.name for p in Path(scratch).iterdir()), ["aliases.json"])
+            self.assertEqual(AliasTable.load(path).key("zachary n"), normalize("Zach N"))
+            other.save(path)
+            self.assertEqual(AliasTable.load(path).key("Debbie"), normalize("Debe"))
+
+    def test_settings_round_trip_through_the_atomic_write(self):
+        from acql import config
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "acql-settings.json"
+            real = config.SETTINGS_FILE
+            config.SETTINGS_FILE = path
+            try:
+                Settings(buy_in=55.0, last_week_viewed=4).save()
+                again = Settings.load()
+            finally:
+                config.SETTINGS_FILE = real
+            self.assertEqual((again.buy_in, again.last_week_viewed), (55.0, 4))
+            self.assertEqual([p.name for p in Path(scratch).iterdir()], ["acql-settings.json"])
+
+
 
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:

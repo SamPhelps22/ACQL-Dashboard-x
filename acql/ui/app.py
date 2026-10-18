@@ -32,6 +32,7 @@ from ..models import Season
 from ..version import MODEL_NAME
 from . import icons
 from .groups import GroupSpec, PageGroup
+from .motion import fade_stack
 from .pages.base import (
     CHECK_RESULTS, CHECK_UPDATES, GO_TO_DATA, INSTALL_UPDATE, KEEPING, LIVE_CHECK, LIVE_CHECK_NOW, OPEN_FOLDER,
     POOL_EXTRAS, UPDATE_SETTINGS,
@@ -196,6 +197,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._build_sidebar())
         self.stack = QStackedWidget()
+        fade_stack(self.stack)
         layout.addWidget(self.stack, 1)
         self.setCentralWidget(root)
 
@@ -895,11 +897,16 @@ class MainWindow(QMainWindow):
         self._loaded_at = datetime.now()
         self._tick_updated()
         self.updated_label.setToolTip(f"Last read {self._loaded_at:%A %H:%M:%S}")
+        playing = season.provisional_weeks[0] if season.provisional_weeks else season.current_week
         self.season_label.setText((
-            f"{season.title}  \u00b7  week {season.current_week}"
-            if season.current_week
+            f"{season.title}  \u00b7  week {playing}"
+            if playing
             else season.title
         ).upper())
+        self.season_label.setToolTip(
+            f"Week {season.current_week} is the last one final; week {playing} is under way"
+            if playing != season.current_week else ""
+        )
         if season.title:
             self.setWindowTitle(f"{places.BRAND} \u2013 {season.title}")
         # The workbook's folder is only known now; make sure it is watched.

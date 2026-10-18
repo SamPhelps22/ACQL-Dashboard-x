@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from ...model import ghost
 from ...site import mailer
 from ...pool import picks
-from ...model.predictions import display_team
+from ...model.predictions import display_team, team_code
 from ...models import Week
 from ..charts import BarChart, HistogramChart
 from .. import recap
@@ -38,6 +38,11 @@ TRAP_COUNT = 10
 EASY_RATE = 0.75      # most of the pool got it - not a trap
 TRAP_RATE = 0.30      # most of the pool missed it
 
+
+
+def _short(team) -> str:
+    """A team in a narrow column: "SEA", or its name when it has no code."""
+    return team_code(team).upper() or display_team(team)
 
 
 def _score(game) -> str:
@@ -432,8 +437,8 @@ class WeeklyPage(Page):
             rows.append([
                 game.index,
                 game.label,
-                f"{display_team(game.line_favourite)} by {line:g}" if line is not None else self.NO_VALUE,
-                (display_team(game.winner) + _score(game)) if game.played else self.NO_VALUE,
+                f"{_short(game.line_favourite)} by {line:g}" if line is not None else self.NO_VALUE,
+                (_short(game.winner) + _score(game)) if game.played else self.NO_VALUE,
                 took,
                 correct,
                 self.pct(rate) if game.played or correct else self.NO_VALUE,
@@ -486,7 +491,7 @@ class WeeklyPage(Page):
                 best, share = team, value
         if not best:
             return self.NO_VALUE, None
-        return f"{display_team(best)} {self.pct(share, 0)}", share
+        return f"{_short(best)} {self.pct(share, 0)}", share
 
     def _render_traps(self, week: Week) -> None:
         if not week.lines:
