@@ -33,6 +33,7 @@ from ..version import MODEL_NAME
 from . import icons
 from .groups import GroupSpec, PageGroup
 from .motion import fade_stack
+from .ribbon import ScoreboardRibbon, playing_week as ribbon_week
 from .pages.base import (
     CHECK_RESULTS, CHECK_UPDATES, GO_TO_DATA, INSTALL_UPDATE, KEEPING, LIVE_CHECK, LIVE_CHECK_NOW, OPEN_FOLDER,
     POOL_EXTRAS, UPDATE_SETTINGS,
@@ -195,9 +196,18 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
 
         layout.addWidget(self._build_sidebar())
+        # the scoreboard ribbon over every page, the pages under it
+        main = QWidget()
+        column = QVBoxLayout(main)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        self.ribbon = ScoreboardRibbon(self.palette_)
+        self.ribbon.game_chosen.connect(self.open_game)
+        column.addWidget(self.ribbon)
         self.stack = QStackedWidget()
         fade_stack(self.stack)
-        layout.addWidget(self.stack, 1)
+        column.addWidget(self.stack, 1)
+        layout.addWidget(main, 1)
         self.setCentralWidget(root)
 
         # One instance of every page, grouped into the sidebar's places.
@@ -609,6 +619,22 @@ class MainWindow(QMainWindow):
                 self.groups[index].select(tab)
             self._show_page(index)
 
+    def open_game(self, week: int, index: int) -> None:
+        """A chip on the scoreboard ribbon: Game Day, at that game's card."""
+        place, tab = group_of(GameDayPage)
+        self._select_page(place, tab)
+        page = self._game_day_page()
+        if page is not None:
+            page.show_game(week, index)
+
+    def _redraw_ribbon(self) -> None:
+        """The ribbon brought up to the scores as kept; never stops the window."""
+        try:
+            self.ribbon.set_season(self.season)
+        except Exception as exc:  # noqa: BLE001
+            write_log(f"scoreboard ribbon failed: {exc!r}")
+            self.ribbon.hide()
+
     def current_page(self) -> Page:
         return self.groups[self.stack.currentIndex()].current_page()
 
@@ -639,6 +665,9 @@ class MainWindow(QMainWindow):
             app.setProperty("theme", self.palette_.name)    # for widgets that draw themselves
             app.setStyleSheet(stylesheet(self.palette_))
         self._draw_icons()
+        ribbon = getattr(self, "ribbon", None)
+        if ribbon is not None:
+            ribbon.restyle(self.palette_)
 
     def _draw_icons(self) -> None:
         """The sidebar's icons and the mark, in the palette's colours: quiet
@@ -776,7 +805,7 @@ class MainWindow(QMainWindow):
         weeks = self._results_weeks()
         year = getattr(self.season, "results_year", 0) or 0
         if live is None:
-            live = self._game_day_showing()
+            live = self._game_day_showing() or self.ribbon.live
         every = results.LIVE_RECHECK_S if live else None
         if not weeks or not year or not (force or results.due(year, weeks, every=every)):
             return
@@ -836,8 +865,9 @@ class MainWindow(QMainWindow):
         if getattr(self, "_close_when_published", False):
             self.close()
             return
-        # Game Day draws the scores as kept, so a look redraws it at once -
-        # a finished game reloads everything anyway.
+        # Game Day and the ribbon draw the scores as kept, so a look redraws
+        # them at once - a finished game reloads everything anyway.
+        self._redraw_ribbon()
         page = self._game_day_page()
         if page is not None and self._game_day_showing():
             try:
@@ -871,6 +901,12 @@ class MainWindow(QMainWindow):
     def _on_clock(self) -> None:
         self._tick_updated()
         self._watch_lock()
+        try:
+            turned = self.ribbon.week != ribbon_week(self.season)   # a new week started, or the season ended
+        except Exception:  # noqa: BLE001 - _redraw_ribbon logs it
+            turned = True
+        if turned:
+            self._redraw_ribbon()
         page = self._game_day_page()
         if page is not None and self._game_day_showing():
             page.tick()
@@ -931,6 +967,7 @@ class MainWindow(QMainWindow):
                 page.set_season(season)
             except Exception as exc:  # noqa: BLE001
                 write_log(f"set_season failed on {page.title}: {exc!r}")
+        self._redraw_ribbon()
         self._lock_state = self._lock_now()
 
         conflicts = len(season.conflicts)
