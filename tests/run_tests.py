@@ -143,8 +143,11 @@ class TestSeasonLoad(unittest.TestCase):
         (total,) = totals
         weeks = len(self.season.final_weeks())
         self.assertGreater(total, weeks * self.season.max_regular_points)
+        # The standings export can run ahead of the pick sheets on hand, so the
+        # ceiling is the export's own week, not the weeks with sheets.
+        covered = max(weeks, self.season.current_week or 0)
         self.assertLessEqual(
-            total, weeks * (self.season.max_regular_points + self.season.max_big_loser_points))
+            total, covered * (self.season.max_regular_points + self.season.max_big_loser_points))
 
     def test_provisional_weeks_are_excluded_from_averages(self):
         for week in self.season.provisional_weeks:
