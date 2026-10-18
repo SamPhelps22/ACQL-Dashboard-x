@@ -204,7 +204,7 @@ class OddsDialog(QDialog):
 
 class NextWeekPage(Page):
     from ...places import EVERY_GAME as title
-    subtitle = "Every game on the slate, priced: enter the pool's lines here and see each pick's chance"
+    subtitle = "Every game on the slate, priced: the line, what the models say, and each pick's chance"
     icon = "\N{AMERICAN FOOTBALL}"
 
     #: Line games were typed in: the window reads everything again with them.
@@ -443,6 +443,12 @@ class NextWeekPage(Page):
         if season is None:
             return
         number = self._week_number
+        # The week being picked has these buttons on the My picks tab; here
+        # they are only for another week, which that tab can't reach.
+        other = number != analytics.upcoming_week(season)
+        for button in (self.lines_button, self.load_button, self.models_button,
+                       self.paste_button, self.clear_button):
+            button.setVisible(other)
         week = season.weeks.get(number)
         sheet_games = sorted(week.games, key=lambda g: g.index) if week else []
         workbook = getattr(season, "workbook_path", None)
@@ -569,9 +575,9 @@ class NextWeekPage(Page):
                 f"No pick sheet for week {number} yet \u00b7 "
                 + ("line games: " + ", ".join(
                     f"{predictions.display_team(g.line_favourite)} by {g.line:g}" for g in lined)
-                   + " \u00b7 Line games\u2026 changes them"
+                   + " \u00b7 Line games\u2026 on My picks changes them"
                    if lined else
-                   "no line games yet - add them with Line games\u2026, and every game "
+                   "no line games yet - add them with Line games\u2026 on My picks, and every game "
                    "is straight up until then")
             )
 
@@ -1112,6 +1118,23 @@ class NextWeekPage(Page):
             self.table.setItem(row, col, cell)
 
     # ---- filling the slate in bulk -----------------------------------------
+    def enter(self, what: str, week: int) -> str:
+        """One of the jobs below, asked for from the My picks tab - where the
+        buttons for the week being picked are. Returns what there is to say."""
+        jobs = {"lines": self._line_games, "predictions": self._load_predictions,
+                "models": self._paste_models, "odds": self._paste_odds, "clear": self._clear_spreads}
+        if self.season is None or what not in jobs:
+            return ""
+        self._user_chose_week = False        # back on the week being picked
+        self._set_week(week)
+        self._show_week()
+        if what != "lines" and self._locked_now():
+            return f"Week {week}'s odds are locked - its numbers stay as they were at the deadline."
+        if what != "predictions" and what != "models" and not self._games:
+            return f"Week {week} has no games yet."
+        jobs[what]()
+        return "" if self.paste_note.isHidden() else self.paste_note.text()
+
     def _load_predictions(self) -> None:
         if self._locked_now():
             return                # the week's odds are locked
@@ -1508,8 +1531,8 @@ class NextWeekPage(Page):
             + f"\nIt expects {plan.expected_hits:.1f} right instead of "
               f"{plan.plain_hits:.1f}, and makes the top five less often "
               f"({plan.top_five:.0%} against {plan.plain_top_five:.0%}). Over 2011-2025 "
-              f"that trade didn't pay, so This Week keeps the likelier side unless you "
-              f"choose the card built to finish first."
+              f"that trade didn't pay, so My picks keeps the likelier side unless you "
+              f"choose the Long shot card."
         )
 
     # ---- the headline numbers ----------------------------------------------

@@ -138,7 +138,7 @@ class TeamsPage(Page):
             "above its record is one the pool tends to underrate. Own rating is the dashboard's own, "
             "built from final scores only. "
             + ("Injuries are from ESPN's latest report."
-               if seen else "The injury report hasn't been read yet. Update lines on This Week reads it.")
+               if seen else "The injury report hasn't been read yet. Update lines on Picks reads it.")
         )
 
     @staticmethod

@@ -1,4 +1,4 @@
-"""Ctrl+K: jump to a page or run a command by typing a few letters."""
+"""Ctrl+K: open a setting or run a command by typing a few letters."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ class Command:
 
 
 class CommandPalette(QDialog):
-    """Ctrl+K quick switcher: type a few letters, press Enter.
+    """Ctrl+K settings list: type a few letters, press Enter.
 
     Styled by the app stylesheet; target `QDialog#CommandPalette` in the
     theme to give it its own look.
@@ -35,7 +35,7 @@ class CommandPalette(QDialog):
         layout.setSpacing(8)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Jump to a page or run a command\u2026")
+        self.search.setPlaceholderText("Find a setting or command\u2026")
         self.search.textChanged.connect(self._filter)
         self.search.returnPressed.connect(self._run_current)
         self.search.installEventFilter(self)

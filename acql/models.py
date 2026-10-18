@@ -190,6 +190,11 @@ class Player:
     line_game_pct: float = 0.0
 
     big_loser_points: float = 0.0
+    # stats.xls's "Pie Splits" column: the side-pool money (suicide, big
+    # loser, top 10) paid so far, apart from the weekly pot - and by week,
+    # from how much it grew between one weekly export and the next.
+    pie_splits: float = 0.0
+    weekly_pie: dict[int, float] = field(default_factory=dict)
     suicide_alive: bool = False
     suicide_picks: dict[int, str] = field(default_factory=dict)
     suicide_out_week: int | None = None
@@ -229,11 +234,20 @@ class Player:
         return statistics.pstdev(vals) if len(vals) > 1 else 0.0
 
     @property
+    def has_totals(self) -> bool:
+        """Whether the season's money totals are known (stats.xls's +PTS, -PTS and NET PTS)."""
+        return bool(self.points_won or self.points_paid or self.net_points)
+
+    @property
     def total_winnings(self) -> float:
-        return sum(self.weekly_winnings.values())
+        """Everything won: stats.xls's +PTS when it gives it - the pool's official
+        figure - and otherwise the weekly payouts added up."""
+        return self.points_won if self.has_totals else sum(self.weekly_winnings.values())
 
     def net(self, buy_in: float) -> float:
-        return self.total_winnings - buy_in
+        """Up or down on the season: stats.xls's NET PTS when it gives it, and
+        otherwise what was won against the buy-in."""
+        return self.net_points if self.has_totals else self.total_winnings - buy_in
 
     @property
     def rank_movement(self) -> int | None:
@@ -315,6 +329,11 @@ class Season:  # noqa: D101
     #: pick sheet: the games, the line games typed in here, and the results.
     #: Nobody's picks are in them yet.
     fixture_weeks: list[int] = field(default_factory=list)
+    #: The week the suicide pool last started again in (survivor.start_again),
+    #: 0 if it never has: somebody won it, so everyone is back in and every
+    #: team can be used again from this week. And who won the round before.
+    suicide_restart: int = 0
+    suicide_winners: list[str] = field(default_factory=list)
 
     # ---- convenience accessors -----------------------------------------
     def ordered_players(self) -> list[Player]:

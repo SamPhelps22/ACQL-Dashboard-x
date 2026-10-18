@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ... import analytics
-from ...pool import bigloser
-from ...feeds import oddslock
+from ...config import WEEKS_IN_SEASON
+from ...pool import bigloser, survivor
+from ...feeds import oddslock, results
 from ...models import Player, Season
 from ...version import MODEL_NAME
 from ...wording import plural as _plural
@@ -53,6 +54,7 @@ class PoolsPage(Page):
     from ...places import SIDE_POOLS as title
     subtitle = "Big Loser standings and the best picks left, and who is still alive in the suicide pool"
     icon = "\N{DIRECT HIT}"
+    refresh_requested = Signal()
 
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
@@ -126,6 +128,25 @@ class PoolsPage(Page):
         row.addWidget(self.bl_card, 1, Qt.AlignmentFlag.AlignTop)
 
         self.suicide_card = Card("Suicide pool")
+        # Somebody winning it early starts it again, and no file says so.
+        self.round_note = QLabel("")
+        self.round_note.setObjectName("Muted")
+        self.round_note.setWordWrap(True)
+        self.suicide_card.add(self.round_note)
+        buttons = QHBoxLayout()
+        self.restart_button = QPushButton("Start a new round…")
+        self.restart_button.setToolTip(
+            "Somebody has won the suicide pool: put everyone back in, with every "
+            "team to use again, from the week you choose"
+        )
+        self.restart_button.clicked.connect(self._start_again)
+        buttons.addWidget(self.restart_button)
+        self.undo_restart_button = QPushButton("Undo new round")
+        self.undo_restart_button.setToolTip("Take the latest new round back - the pool is as the files have it")
+        self.undo_restart_button.clicked.connect(self._undo_start)
+        buttons.addWidget(self.undo_restart_button)
+        buttons.addStretch(1)
+        self.suicide_card.body().addLayout(buttons)
         self.suicide_box = QVBoxLayout()
         self.suicide_card.body().addLayout(self.suicide_box)
         row.addWidget(self.suicide_card, 1, Qt.AlignmentFlag.AlignTop)
@@ -157,6 +178,7 @@ class PoolsPage(Page):
         self._update_survival(season, players)
         self._update_bl_chart(big_loser)
         self._update_bl_table(big_loser)
+        self._update_round(season)
         self._update_suicide_table(players)
 
     def _show_empty(self) -> None:
@@ -437,18 +459,69 @@ class PoolsPage(Page):
         self.bl_table = view
         self.bl_box.addWidget(view)
 
+    # ---- the pool starting again ------------------------------------------------
+    def _start_again(self) -> None:
+        season = self.season
+        if season is None:
+            return
+        week, ok = QInputDialog.getInt(
+            self, "Suicide pool - new round",
+            "Somebody has won the suicide pool, and it starts again.\n"
+            "Everyone is back in, and every team can be used again, from week:",
+            max(analytics.upcoming_week(season) or 1, season.suicide_restart + 1), 1, WEEKS_IN_SEASON,
+        )
+        if not ok:
+            return
+        if week <= season.suicide_restart:
+            self.round_note.setText(
+                f"Not started: the round being played began in week {season.suicide_restart}. "
+                f"Undo that one first to move it.")
+            return
+        winners = sorted(p.display for p in season.players.values() if p.suicide_alive)
+        try:
+            survivor.start_again(results.season_year(season), week, winners)
+        except Exception as exc:  # noqa: BLE001 - the store says why
+            self.round_note.setText(f"New round not started: {exc}")
+            return
+        self.refresh_requested.emit()
+
+    def _undo_start(self) -> None:
+        season = self.season
+        if season is None:
+            return
+        try:
+            survivor.undo_start(results.season_year(season))
+        except Exception as exc:  # noqa: BLE001
+            self.round_note.setText(f"New round not undone: {exc}")
+            return
+        self.refresh_requested.emit()
+
+    def _update_round(self, season: Season) -> None:
+        start = season.suicide_restart
+        self.undo_restart_button.setVisible(bool(start))
+        if not start:
+            self.round_note.setText(
+                "If somebody wins the pool before the season ends, Start a new round puts everyone back in.")
+            return
+        won = season.suicide_winners
+        self.round_note.setText(
+            f"A new round started in week {start}: everyone is back in and every team can be used again."
+            + (f" The round before went to {', '.join(won)}." if 0 < len(won) <= 3 else ""))
+
     def _update_suicide_table(self, players: list[Player]) -> None:
         # Status is a word plus a tone, never colour alone.
         ordered = sorted(players, key=lambda p: (not p.suicide_alive, p.display.lower()))
         rows, tones = [], {}
         for r, player in enumerate(ordered):
-            latest = max(player.suicide_picks) if player.suicide_picks else None
+            # the round being played: an earlier round's picks are spent and gone
+            made = survivor.round_picks(self.season, player)
+            latest = max(made) if made else None
             out_week = player.suicide_out_week
             rows.append([
                 player.display,
                 "Alive" if player.suicide_alive else "Eliminated",
-                (player.suicide_picks.get(latest) or self.NO_VALUE) if latest else self.NO_VALUE,
-                len(player.suicide_picks),
+                (made.get(latest) or self.NO_VALUE) if latest else self.NO_VALUE,
+                len(made),
                 # The model records when a player went out; showing it turns a
                 # flat list of the eliminated into the order they fell in.
                 f"Week {out_week}" if out_week else self.NO_VALUE,

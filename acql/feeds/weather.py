@@ -35,6 +35,20 @@ WINDY = 15.0            # mph, sustained
 GUSTY = 28.0            # mph
 WET = 50                # % chance of rain or snow
 COLD, HOT = 25.0, 92.0  # Fahrenheit
+#: The states as the scoreboard abbreviates them, and as the lookup names them.
+STATES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+    "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia",
+    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois",
+    "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana",
+    "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+    "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma", "OR": "Oregon",
+    "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota",
+    "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia",
+    "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+}
 
 
 class WeatherError(Exception):
@@ -95,12 +109,16 @@ def locate(city: str, opener=None) -> tuple[float, float] | None:
         found = places[city]
         return (float(found[0]), float(found[1])) if found else None
     name = city.split(",")[0].strip()
-    data = _get(GEOCODE, {"name": name, "count": 5, "language": "en", "format": "json"}, opener)
+    data = _get(GEOCODE, {"name": name, "count": 10, "language": "en", "format": "json"}, opener)
     hits = data.get("results") or []
     region = city.split(",")[1].strip().casefold() if "," in city else ""
-    best = next((h for h in hits if region and region in (
+    # The scoreboard writes a state as "CA" and the lookup as "California":
+    # without the full name nothing matched, and the first hit in the world
+    # was taken - Santa Clara, Cuba, for the 49ers.
+    wanted = {region, STATES.get(region.upper(), "").casefold()} - {""}
+    best = next((h for h in hits if wanted & {
         str(h.get("admin1", "")).casefold(), str(h.get("admin1_code", "")).casefold(),
-        str(h.get("country", "")).casefold(), str(h.get("country_code", "")).casefold())), None)
+        str(h.get("country", "")).casefold(), str(h.get("country_code", "")).casefold()}), None)
     best = best or (hits[0] if hits else None)
     places = dict(places)
     places[city] = [best["latitude"], best["longitude"]] if best else None

@@ -351,6 +351,7 @@ main {
   display: grid;
   gap: 2px;
 }
+.notice::before { content: "League notice"; font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-text); }
 .notice b { font-family: var(--display); font-size: 19px; font-weight: 800; }
 .notice .when { color: var(--muted); font-size: 13px; }
 
@@ -383,6 +384,11 @@ main {
 .hero h1, .hero h2 { font-size: clamp(34px, 7.6vw, 64px); line-height: 0.96; max-width: 20ch; }
 .hero .deck { color: var(--onair-muted); font-size: 17px; max-width: 62ch; }
 .hero .deck b { color: var(--onair-ink); font-weight: 600; }
+/* on Weeks the week's story is a header, not the page's one loud thing again */
+.hero.compact { padding-top: 14px; padding-bottom: 16px; }
+.hero.compact h2 { font-size: clamp(26px, 5vw, 40px); max-width: 26ch; }
+.hero.compact .deck { font-size: 15px; }
+.hero.compact .stat .v { font-size: 24px; }
 .hero .stats { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 8px; }
 .hero .stat { display: grid; gap: 0; }
 .hero .stat .v { font: 800 30px/1 var(--display); color: var(--onair-ink); }
@@ -482,6 +488,22 @@ main {
 .r .meta { color: var(--muted); font-size: 13px; }
 .r .meta b { color: var(--ink-2); font-weight: 600; }
 .youtag { font: 800 11px/1 var(--display); letter-spacing: 0.06em; background: var(--gold); color: #0a0c0b; padding: 3px 5px 2px; border-radius: var(--r-xs); margin-left: 6px; vertical-align: 2px; }
+:root[data-text="l"] body { zoom: 1.12; }
+:root[data-text="xl"] body { zoom: 1.25; }
+/* the bars keep their size: their buttons are big enough, and wider ones run off a phone */
+:root[data-text="l"] .topbar, :root[data-text="l"] .bottombar { zoom: 0.893; }
+:root[data-text="xl"] .topbar, :root[data-text="xl"] .bottombar { zoom: 0.8; }
+.trophies { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.trophy { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--rule); border-radius: var(--r-md); background: var(--raised); }
+.trophies.shelf { grid-template-columns: 1fr; gap: 8px; }
+.trophy.title { border-color: var(--gold); }
+.trophy.mine { border-color: var(--gold); background: var(--gold-soft); }
+.trophy .ic { font-size: 26px; line-height: 1; flex: none; }
+.trophy > div { display: grid; gap: 3px; min-width: 0; }
+.trophy b { font: 800 15px/1.1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
+.trophy .who { font-weight: 600; overflow-wrap: anywhere; }
+.form { flex: none; font-size: 0.95em; line-height: 1; margin-left: 4px; cursor: help; }
+.podname { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
 
 /* standings rows */
 .standrows > .r { grid-template-columns: 30px 30px minmax(0, 1fr) auto; }
@@ -743,6 +765,14 @@ td.game, td.winner { white-space: normal; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 1px solid var(--rule); border-radius: var(--r-pill); padding: var(--sp-1) var(--sp-4); background: var(--surface); font-size: 14px; }
 .chip.alive { border-color: var(--turf); background: var(--turf-soft); }
+/* three or fewer left in the suicide pool: they get a headline, not chips */
+.survivor { display: grid; gap: 4px; padding: 12px 14px; background: var(--turf-soft); border-left: 5px solid var(--turf); border-radius: var(--r-sm); }
+.survivor .k { font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.survivor .names { display: flex; flex-wrap: wrap; gap: 2px 18px; }
+.survivor b { font: 800 clamp(24px, 5vw, 32px)/1.05 var(--display); }
+.survivor b.me { color: var(--gold-text); }
+/* the leader's bar, in gold */
+.bar.top { background: var(--gold); }
 .chip.me { border-color: var(--gold); background: var(--gold-soft); font-weight: 600; }
 .chip.strong { border-color: var(--turf); font-weight: 600; }
 .grave { display: grid; gap: 8px; }
@@ -773,14 +803,38 @@ td.gone, span.gone { color: var(--muted); }
 .close-one ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
 .award { display: grid; gap: 1px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
 .award:last-child { border-bottom: 0; }
-.award .t { font: 800 18px var(--display); }
-.award .w { font-weight: 600; }
+.award .t { font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-text); }
+.award .w { font: 800 18px/1.2 var(--display); }
 .award .why { color: var(--ink-2); font-size: 14px; }
 .upset { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid var(--rule); }
 .upset:last-child { border-bottom: 0; }
 .upset .game { font-weight: 600; }
 .upset .had { font: 800 18px var(--display); color: var(--bad); text-align: right; }
 .upset .how { color: var(--ink-2); font-size: 14px; grid-column: 1 / -1; }
+/* how much of the pool had the winner, as a bar: 0 of 35 reads at a glance */
+.upset .share { grid-column: 1 / -1; height: 4px; border-radius: var(--r-xs); background: var(--rule); overflow: hidden; }
+.upset .share i { display: block; height: 100%; min-width: 2px; background: var(--bad); }
+/* the week's stories sit two across when the card is wide enough */
+.awards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); column-gap: 28px; }
+.awards .award:last-child { border-bottom: 1px solid var(--rule); }
+/* the replay keeps its chart's height while it loads, so nothing below jumps */
+.chart-wait { min-height: 230px; display: grid; place-items: center; border: 1px dashed var(--rule); border-radius: var(--r-md); }
+@media (prefers-reduced-motion: no-preference) {
+  /* bars grow out from zero, so the eye reads them as amounts */
+  .bar, .upset .share i { transform-origin: left center; animation: grow 700ms cubic-bezier(.2, .7, .2, 1) both; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  /* the stories arrive one after another */
+  .awards .award { animation: settle 360ms ease-out both; }
+  .awards .award:nth-child(2) { animation-delay: 50ms; }
+  .awards .award:nth-child(3) { animation-delay: 100ms; }
+  .awards .award:nth-child(4) { animation-delay: 150ms; }
+  .awards .award:nth-child(5) { animation-delay: 200ms; }
+  .awards .award:nth-child(n+6) { animation-delay: 250ms; }
+  @keyframes settle { from { opacity: 0; transform: translateY(6px); } }
+  /* the replay placeholder breathes, so it reads as working, not empty */
+  .chart-wait .note { animation: breathe 1.4s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: 0.4; } }
+}
 
 /* ---- head-to-head: the tale of the tape ------------------------------------------- */
 .vs { display: grid; grid-template-columns: minmax(0, 14em) auto minmax(0, 14em) auto; align-items: center; justify-content: start; gap: 8px; }
@@ -802,6 +856,7 @@ td.gone, span.gone { color: var(--muted); }
 .mehead { display: grid; gap: 10px; }
 .mehead .idrow { display: flex; align-items: center; gap: 14px; }
 .mehead .initials.xl { width: 58px; height: 58px; font-size: 24px; }
+.mehead .nickname { font: 700 14px/1 var(--body); color: var(--gold-text); letter-spacing: 0.02em; cursor: help; }
 .mehead h1 { font-size: clamp(34px, 8vw, 52px); overflow-wrap: anywhere; }
 .figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--rule); }
 @media (min-width: 720px) { .figures { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -888,6 +943,8 @@ td.gone, span.gone { color: var(--muted); }
 .chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .ln.ctx { stroke: var(--context); stroke-width: 1.25; }
 .chart .ln.strong { stroke: var(--context-strong); }
+.chart .ln.mid { stroke: var(--context-strong); stroke-width: 1.5; opacity: 0.45; }
+.chart .end.mid { opacity: 0.6; }
 .chart .ln.me { stroke: var(--me-mark); stroke-width: 3; }
 .chart .grid line { stroke: var(--grid); stroke-width: 1; }
 .chart .zero { stroke: var(--context-strong); stroke-width: 1; }
@@ -1185,38 +1242,6 @@ footer { max-width: 1180px; width: 100%; margin: 0 auto; color: var(--muted); fo
 .podium .sub { font-size: 12px; color: var(--muted); }
 .podium .step.me { box-shadow: inset 0 0 0 2px var(--gold); }
 
-/* section links: a long page's sections, one tap away */
-.jumpbar {
-  position: sticky;
-  top: var(--bar-h, 56px);
-  z-index: 15;
-  display: flex;
-  gap: 6px;
-  margin: -14px -16px -14px;
-  padding: 8px 16px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  background: var(--ground);
-  background: color-mix(in srgb, var(--ground) 90%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--rule);
-}
-.jumpbar::-webkit-scrollbar { display: none; }
-.jumpbar a {
-  flex: none;
-  padding: 7px 12px 6px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--rule);
-  background: var(--surface);
-  color: var(--ink-2);
-  font: 600 14px/1 var(--body);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.jumpbar a:hover { border-color: var(--rule-hover); color: var(--ink); }
-.jumpbar a.on { background: var(--ink); border-color: var(--ink); color: var(--ground); }
-
 /* back to the top */
 .totop {
   position: fixed;
@@ -1317,7 +1342,7 @@ footer .fbrand img { width: 44px; height: 44px; }
   @keyframes arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   .finder { animation: drop 0.18s ease-out both; }
   @keyframes drop { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%); } }
-  .module, .jumpbar a, .podium .step { transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
+  .module, .podium .step { transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
 }
 @media (max-width: 719px) {
   /* on a phone the logo sits in the corner of the lower third, clear of the figures */
@@ -1327,14 +1352,13 @@ footer .fbrand img { width: 44px; height: 44px; }
   /* a panel costs a phone some width: the page gives a little back */
   main { padding-left: 10px; padding-right: 10px; }
   .module { padding: 12px 10px 14px; }
-  .jumpbar { margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; }
   .brandmark img.logo { width: 40px; height: 40px; margin: -5px -2px -5px -3px; }
   .podium { gap: 6px; }
   .podium .step { padding: 14px 4px 10px; }
   .podium .wins { font-size: 30px; }
   .podium .p1 .wins { font-size: 40px; }
 }
-@media print { .jumpbar, .totop, .finder-wrap { display: none; } }
+@media print { .totop, .finder-wrap { display: none; } }
 
 /* ==== the future skin ===================================================================
    The league's own black, gold and green, as a control room rather than a broadcast:
@@ -1393,6 +1417,30 @@ th { text-transform: uppercase; letter-spacing: var(--label-tracking); font-size
     radial-gradient(130% 150% at 0% 0%, color-mix(in srgb, var(--turf) 34%, var(--onair)) 0%, var(--onair) 62%);
 }
 .hero::after { display: none; }
+/* the week's banner: the winning number lit gold, thin meters out of the card,
+   the logo off the headline and tucked behind the figures on the right */
+.hero h1 { text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55); }
+.hero .deck b { color: var(--gold); font-weight: 600; }
+.hero .stat.lead .v { color: var(--gold); text-shadow: 0 0 18px var(--glow); }
+.hero .stat .meter { display: block; height: 3px; margin: 7px 0 2px; max-width: 120px; background: color-mix(in srgb, var(--onair-ink) 12%, transparent); border-radius: var(--r-xs); overflow: hidden; }
+.hero .stat .meter i { display: block; height: 100%; background: var(--onair-muted); border-radius: inherit; }
+.hero .stat.lead .meter i { background: var(--gold); box-shadow: 0 0 8px var(--glow); }
+@media (min-width: 720px) {
+  .hero.sided .stats { border-top: 1px solid color-mix(in srgb, var(--gold) 55%, transparent); }
+}
+.hero .deck + .deck { margin-top: 4px; }
+.hero .kicker .hello { color: var(--onair-ink); }
+.maxweeks .r { grid-template-columns: 44px 74px minmax(0,1fr) 44px; }
+.maxweeks .r.best .num b { color: var(--gold); }
+@media (prefers-reduced-motion: no-preference) {
+  /* a number that just changed glows once, then settles; nothing repeats */
+  @keyframes ticked {
+    0%, 25% { color: var(--gold); text-shadow: 0 0 16px var(--glow); background-color: color-mix(in srgb, var(--gold) 18%, transparent); }
+    100% { background-color: transparent; }
+  }
+  .ticked { animation: ticked 1400ms ease-out 1; border-radius: var(--r-xs); }
+}
+.hero .deck.more { font-size: 15px; }
 @media (prefers-reduced-motion: no-preference) {
   @keyframes wipe {
     from { clip-path: polygon(0 0, 0 0, 0 0, 0 100%, 0 100%, 0 100%); }
@@ -1412,9 +1460,7 @@ th { text-transform: uppercase; letter-spacing: var(--label-tracking); font-size
 .gcard { border-radius: var(--r-md); }
 .bug { border-radius: var(--r-xs); }
 
-/* section links and switches: squared, in capitals, the current one lit */
-.jumpbar a { border-radius: var(--r-xs); background: transparent; text-transform: uppercase; letter-spacing: var(--label-tracking); font-size: 12px; padding: 8px 11px 7px; }
-.jumpbar a.on { background: color-mix(in srgb, var(--gold) 14%, transparent); border-color: var(--gold); color: var(--gold-text); box-shadow: 0 0 16px -5px var(--glow); }
+/* switches: squared, in capitals, the current one lit */
 .seg { border-radius: var(--r-sm); }
 .seg button { text-transform: uppercase; letter-spacing: var(--label-tracking); font-size: 12px; }
 .seg button[aria-pressed="true"], .weeks button[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #14100a; }
@@ -1553,7 +1599,7 @@ a.weekpill { text-decoration: none; }
     "https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap",
     "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap"
   ];
-  var ME_KEY = "acql-pool-me", THEME_KEY = "acql-theme", VS_KEY = "acql-pool-vs";
+  var ME_KEY = "acql-pool-me", THEME_KEY = "acql-theme", TEXT_KEY = "acql-text", VS_KEY = "acql-pool-vs";
   var app = document.getElementById("app");
   var state = { view: "home", week: DATA.through_week, me: stored(ME_KEY), coach: "", a: "", b: "",
     sheet: false, every: false, chartMe: "", picksOrder: "" };
@@ -1674,7 +1720,7 @@ a.weekpill { text-decoration: none; }
     });
   }
   function bar(value, top) {
-    return el("div", { class: "bar", width: (top > 0 ? Math.max(0, Math.round(100 * value / top)) : 0) + "%" });
+    return el("div", { class: "bar" + (top > 0 && value >= top ? " top" : ""), width: (top > 0 ? Math.max(0, Math.round(100 * value / top)) : 0) + "%" });
   }
   // Cards side by side on a wide screen; nothing at all when there are none.
   function twoUp(cards) {
@@ -1723,6 +1769,38 @@ a.weekpill { text-decoration: none; }
   }
   function weeksWon(name) {
     return DATA.weeks.filter(function (w) { return w.winners.indexOf(name) >= 0; }).length;
+  }
+  // Form over the last three finished weeks: on fire when a coach beat the
+  // pool's average every one of them and by FORM_EDGE wins in all, on the hot
+  // seat when below it every week by as much. Most coaches are neither.
+  var FORM_WEEKS = 3, FORM_EDGE = 4.5, formCache = null;
+  function form(name) {
+    if (!formCache) {
+      formCache = {};
+      var last = DATA.weeks.slice().sort(function (a, b) { return b.week - a.week; }).slice(0, FORM_WEEKS);
+      if (last.length === FORM_WEEKS) names().forEach(function (n) {
+        var diffs = last.map(function (w) {
+          var s = w.scores.filter(function (x) { return x.name === n; })[0];
+          return s ? s.total - w.average : null;
+        });
+        if (diffs.some(function (d) { return d == null; })) return;
+        var sum = diffs.reduce(function (a, d) { return a + d; }, 0);
+        if (sum >= FORM_EDGE && diffs.every(function (d) { return d > 0; })) formCache[n] = { kind: "hot", by: sum };
+        else if (sum <= -FORM_EDGE && diffs.every(function (d) { return d < 0; })) formCache[n] = { kind: "cold", by: sum };
+      });
+    }
+    return formCache[name] || null;
+  }
+  function formText(f) {
+    return (f.kind === "hot" ? "On fire: above the pool’s average in each of the last three weeks, "
+      : "On the hot seat: below the pool’s average in each of the last three weeks, ") +
+      Math.abs(f.by).toFixed(1) + " wins " + (f.kind === "hot" ? "ahead of" : "behind") + " it in all.";
+  }
+  function formBadge(name) {
+    var f = form(name);
+    if (!f) return null;
+    return el("span", { class: "form " + f.kind, title: formText(f), role: "img", "aria-label": formText(f),
+      text: f.kind === "hot" ? "🔥" : "🧊" });
   }
   function leaders() {
     var best = DATA.players.length ? Math.max.apply(null, DATA.players.map(function (p) { return p.wins; })) : 0;
@@ -2465,6 +2543,7 @@ a.weekpill { text-decoration: none; }
     charts: { label: "Charts", icon: "charts", about: "The season race, title odds, scores" },
     h2h: { label: "Head-to-head", icon: "h2h", about: "Any two coaches, pick by pick" },
     history: { label: "History", icon: "history", about: "Champions and records" },
+    awards: { label: "Awards", icon: "history", about: "The season’s trophies, and who holds them" },
     pools: { label: "Side pools", icon: "pools", about: "The suicide pool and the Big Losers" },
     money: { label: "Money", icon: "money", about: "Who’s up and who owes" },
     me: { label: "Me", icon: "me" }
@@ -2478,14 +2557,14 @@ a.weekpill { text-decoration: none; }
   }
   // every page, in the order the search lists them
   function pageList() {
-    return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "history", "pools", "money"].filter(available);
+    return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "awards", "history", "pools", "money"].filter(available);
   }
   // The few sections the bars show, and the pages each one holds. Me is its
   // own button beside them.
   var SECTIONS = [
     { id: "home", label: "Home", icon: "home", views: ["home"] },
     { id: "week", label: "This week", icon: "weeks", views: ["live", "picks", "weeks"] },
-    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "charts", "h2h", "history"] },
+    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "charts", "h2h", "awards", "history"] },
     { id: "pools", label: "Pools & money", short: "Pools", icon: "pools", views: ["pools", "money"] }
   ];
   // The sections as the bars draw them: the pages each has now, where it
@@ -2610,8 +2689,16 @@ a.weekpill { text-decoration: none; }
     return v === "light" || v === "dark" ? v : "auto";
   }
   function gameOn() { return hasLive() && !!live.fetched && gamesOn(liveTally()) > 0; }
+  // Text size: the whole page scaled, so every figure and chart grows with the words.
+  var TEXT_SIZES = [["", "Normal"], ["l", "Larger"], ["xl", "Largest"]];
+  var textChoice = null;
+  function textPref() {
+    var v = textChoice != null ? textChoice : stored(TEXT_KEY);
+    return v === "l" || v === "xl" ? v : "";
+  }
   function applyTheme() {
     var pref = themePref(), root = document.documentElement;
+    if (textPref()) root.setAttribute("data-text", textPref()); else root.removeAttribute("data-text");
     var want = pref === "auto" ? (gameOn() ? "dark" : "") : pref;
     if (want) root.setAttribute("data-theme", want); else root.removeAttribute("data-theme");
   }
@@ -2643,8 +2730,23 @@ a.weekpill { text-decoration: none; }
         return el("button", { type: "button", "aria-pressed": pref === o[0] ? "true" : "false",
           onclick: function () { themeChoice = o[0]; store(THEME_KEY, o[0] === "auto" ? "" : o[0]); render(); }, text: o[1] });
       })),
-      el("span", { class: "note", text: "Auto follows your phone, and goes dark while games are on." })
-    ]);
+      el("span", { class: "note", text: "Auto follows your phone, and goes dark while games are on." }),
+      el("b", { text: "Text size" }),
+      el("div", { class: "seg", role: "group", "aria-label": "Text size" }, TEXT_SIZES.map(function (o) {
+        return el("button", { type: "button", "aria-pressed": textPref() === o[0] ? "true" : "false",
+          onclick: function () { textChoice = o[0]; store(TEXT_KEY, o[0]); render(); }, text: o[1] });
+      }))
+    ].concat(DATA.texts ? [
+      el("b", { text: "Text alerts" }),
+      el("a", { class: "btn", href: "mailto:" + DATA.texts + "?subject=" + encodeURIComponent("ACQL text alerts") +
+        "&body=" + encodeURIComponent("Add me to the text alerts.\nNumber: \nCarrier: "), text: "Email to sign up" }),
+      el("span", { class: "note", text: "Get a text before picks close and when the week's results are in. Email your number and carrier to " + DATA.texts + " (any carrier but AT&T)." })
+    ].concat(DATA.alerts ? [el("a", { class: "note", href: DATA.alerts, target: "_blank", rel: "noopener", text: "Or get them in the free ntfy app" })] : [])
+    : DATA.alerts ? [
+      el("b", { text: "Phone alerts" }),
+      el("a", { class: "btn", href: DATA.alerts, target: "_blank", rel: "noopener", text: "Get alerts on your phone" }),
+      el("span", { class: "note", text: "Install the free ntfy app, then subscribe from this link: a reminder before picks close, and when the week's results are in." })
+    ] : []));
     var box = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "Menu", tabindex: "-1",
       onkeydown: function (e) { if (e.key === "Escape") close(); } }, [
       el("div", { class: "sh-head" }, [el("h2", { text: "Menu" }),
@@ -2665,12 +2767,22 @@ a.weekpill { text-decoration: none; }
     ]);
   }
   function footer() {
-    return el("footer", {}, [
+    var foot = el("footer", {}, [
       hasLogo() ? el("div", { class: "fbrand" }, [logoImg("logo"), "Arm Chair Quarterback League"]) : null,
       "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every number comes from the pool’s own sheets.",
       typeof ownerFooter === "function" ? ownerFooter() : null,
       homeScreenTip()
     ]);
+    // five quick taps down here open a page that is no use without its passphrase
+    var taps = 0, since = 0;
+    foot.addEventListener("click", function (event) {
+      if (event.target.closest && event.target.closest("a, button")) return;
+      var now = Date.now();
+      if (now - since > 2500) { taps = 0; since = now; }
+      taps += 1;
+      if (taps >= 5) { taps = 0; window.location.href = "locker.html"; }
+    });
+    return foot;
   }
   function homeScreenTip() {
     if (!LIVE.hosted) return null;
@@ -2719,6 +2831,7 @@ a.weekpill { text-decoration: none; }
       case "h2h": return h2hView();
       case "charts": return chartsView();
       case "history": return historyView();
+      case "awards": return awardsView();
       case "money": return moneyView();
       default: return homeView();
     }
@@ -2778,53 +2891,8 @@ a.weekpill { text-decoration: none; }
     try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"; } catch (e) { return "auto"; }
   }
 
-  // ---- section links: a long page's sections, one tap away -------------------------------
-  // Built from the page's own modules each time it is drawn, so a new module
-  // gets its link without anyone listing it here.
-  var jump = { bar: null, targets: [], raf: 0 };
-  function jumpbar(view) {
-    jump.bar = null;
-    jump.targets = [];
-    var mods = Array.prototype.filter.call(view.querySelectorAll(".module"), function (m) {
-      return !(m.parentElement && m.parentElement.closest(".module")) && m.querySelector(".mhead h2");
-    });
-    if (mods.length < 3) return null;
-    var links = mods.map(function (m, i) {
-      if (!m.id) m.id = "sec-" + (i + 1);
-      // a module with a long heading gives the link a shorter name of its own
-      var label = m.getAttribute("data-nav") || (m.querySelector(".mhead h2").textContent || "").trim();
-      if (label.length > 26) label = label.slice(0, 24).trim() + "…";
-      return el("a", { href: "#" + m.id, text: label,
-        onclick: function (e) { e.preventDefault(); m.scrollIntoView({ behavior: smooth(), block: "start" }); } });
-    });
-    jump.targets = mods;
-    jump.bar = el("nav", { class: "jumpbar", "aria-label": "On this page" }, links);
-    return jump.bar;
-  }
-  function placeJumpbar(view, bar) {
-    // under the page's own heading: the title, the lower third, the lede
-    var after = null, kid = view.firstElementChild;
-    while (kid && /(^|\s)(pagehead|hero|mehead|lede|notice)(\s|$)/.test(kid.getAttribute("class") || "")) { after = kid; kid = kid.nextElementSibling; }
-    view.insertBefore(bar, after ? after.nextSibling : view.firstChild);
-  }
-  function markSection() {
-    jump.raf = 0;
-    if (!jump.bar || !jump.bar.isConnected) return;
-    var line = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar-h")) || 56) + 76;
-    var on = 0;
-    jump.targets.forEach(function (m, i) { if (m.getBoundingClientRect().top <= line) on = i; });
-    Array.prototype.forEach.call(jump.bar.children, function (link, i) {
-      var was = link.classList.contains("on");
-      link.classList.toggle("on", i === on);
-      if (i === on && !was) {
-        var b = jump.bar;
-        if (link.offsetLeft < b.scrollLeft + 16 || link.offsetLeft + link.offsetWidth > b.scrollLeft + b.clientWidth - 16) b.scrollLeft = link.offsetLeft - 16;
-      }
-    });
-  }
   window.addEventListener("scroll", function () {
     document.documentElement.classList.toggle("scrolled", window.scrollY > 700);
-    if (!jump.raf) jump.raf = window.requestAnimationFrame(markSection);
   }, { passive: true });
   function toTop() {
     return el("button", { class: "totop", type: "button", "aria-label": "Back to the top", title: "Back to the top",
@@ -2951,6 +3019,24 @@ a.weekpill { text-decoration: none; }
   });
 
   var heroShown = false;    // the lower third wipes in once a visit, not on every refresh
+  // Numbers tagged data-tick flash once when they differ from what this viewer
+  // last saw. Within a visit only a redraw of the same page counts (moving to
+  // another week or tab is not news); the official standings ("s:") are also
+  // remembered between visits, so a new week's totals flash on arrival.
+  var TICK_KEY = "acql-pool-seen", seen = {}, drawnOnce = false, drawnWeek = null;
+  (function () { var s = storedJSON(TICK_KEY); if (s && typeof s === "object") seen = s; })();
+  function ticks(sameView) {
+    var keep = {};
+    Array.prototype.forEach.call(app.querySelectorAll("[data-tick]"), function (n) {
+      var k = n.getAttribute("data-tick"), v = n.textContent;
+      var counts = sameView || (!drawnOnce && k.indexOf("s:") === 0);
+      if (counts && Object.prototype.hasOwnProperty.call(seen, k) && seen[k] !== v) n.classList.add("ticked");
+      seen[k] = v;
+    });
+    Object.keys(seen).forEach(function (k) { if (k.indexOf("s:") === 0) keep[k] = seen[k]; });
+    storeJSON(TICK_KEY, keep);
+    drawnOnce = true;
+  }
   var shown = "";           // the page last drawn
   function render(opts) {
     opts = opts || {};
@@ -2986,13 +3072,13 @@ a.weekpill { text-decoration: none; }
     app.appendChild(toTop());
     var bar = app.querySelector(".topbar");
     if (bar) document.documentElement.style.setProperty("--bar-h", bar.offsetHeight + "px");
-    var links = jumpbar(view);
-    if (links) placeJumpbar(view, links);
     if (opts.top) view.classList.add("enter");
     (sheet() || []).forEach(function (n) { app.appendChild(n); });
     var hero = view.querySelector(".hero");
     if (hero && !heroShown) { hero.classList.add("enter"); heroShown = true; }
     drawCharts();
+    ticks(drawnOnce && here === shown && state.week === drawnWeek);
+    drawnWeek = state.week;
     var wide = app.querySelectorAll(".scroll");
     if (slid.length === wide.length) slid.forEach(function (left, i) { if (left) wide[i].scrollLeft = left; });
     shown = state.coach ? "coach=" + state.coach : state.view;
@@ -3000,7 +3086,6 @@ a.weekpill { text-decoration: none; }
     if (opts.top) window.scrollTo(0, 0);
     else if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     refocus(focused, opts.top);
-    markSection();
   }
 
   // ---- home: the front page follows the week -------------------------------------------
@@ -3023,6 +3108,8 @@ a.weekpill { text-decoration: none; }
     var below = w.scores.map(function (s) { return s.total; }).filter(function (v) { return v < w.top; });
     return below.length ? Math.max.apply(null, below) : null;
   }
+  // The most a card could score that week (games plus Big Loser picks), from the official sheet.
+  function weekMost(w) { return w && w.most > 0 ? w.most : null; }
   function headline(w) {
     var n = w.winners, second = secondBest(w), gap = second == null ? 0 : w.top - second;
     if (n.length === 1) {
@@ -3049,6 +3136,39 @@ a.weekpill { text-decoration: none; }
     if (u) {
       var who = u.right ? "only " + u.right + " of " + u.entrants + " saw it coming" : "nobody saw it coming";
       bits.push(isTie(u) ? "The " + u.matchup + " tie wrecked cards; " + who + "." : u.winner + " was the killer; " + who + ".");
+    }
+    return bits.join(" ");
+  }
+  // The rest of the week, for the home banner: how it was won, how the games
+  // went, who went home. Each line only when the week has the facts for it.
+  function weekTold(w) {
+    var bits = [];
+    var lc = function (s) { return s ? s.charAt(0).toLowerCase() + s.slice(1) : s; };
+    var beat = function (kind) { return (w.beats || []).filter(function (b) { return b.kind === kind; })[0]; };
+    var dec = beat("decider"), bad = beat("bad-beat");
+    if (dec) bits.push(dec.who + " was " + lc(dec.detail).replace(/\.?$/, "."));
+    if (bad && (!dec || bad.who !== dec.who)) bits.push(bad.who + " was " + lc(bad.detail).replace(/\.?$/, "."));
+    var climb = (w.awards || []).filter(function (a) { return a.title === "Biggest climber"; })[0];
+    if (climb) bits.push(climb.who + " moved " + climb.detail + ".");
+    var c = w.chaos;
+    if (c && c.upsets != null) {
+      bits.push(cap(plural(c.upsets, "upset")) + " against " + c.expected.toFixed(1) + " expected" +
+        (c.label ? ", a " + c.label.toLowerCase() + " week" : "") + (c.biggest ? "; the biggest was " + c.biggest + "." : "."));
+    }
+    var res = (w.results || []).filter(function (g) { return g.right != null; });
+    if (res.length) {
+      var best = res.reduce(function (a, g) { return g.right > a.right ? g : a; });
+      bits.push("Best-called game: " + best.winner + " over " + best.loser + ", " + best.right + " of " + w.entrants + " had it.");
+    }
+    if (w.scores && w.scores.length) {
+      var low = Math.min.apply(null, w.scores.map(function (s) { return s.total; }));
+      var lows = w.scores.filter(function (s) { return s.total === low; }).length;
+      bits.push("Low card was " + low + (lows > 1 ? ", shared by " + lows + " coaches." : "."));
+    }
+    var sp = w.suicide;
+    if (sp && sp.killed && sp.killer) {
+      bits.push(sp.killer + " knocked " + plural(sp.killed, "coach", "coaches") + " out of the suicide pool" +
+        (sp.left != null ? ", " + (sp.left === 1 ? "one left standing." : sp.left + " left standing.") : "."));
     }
     return bits.join(" ");
   }
@@ -3089,6 +3209,20 @@ a.weekpill { text-decoration: none; }
     if (loser) main.push(el("p", { class: "hero-foot", text: "Big Loser: " + listNames(loser.names, 2) + ", " + plural(loser.pts, "pt") }));
     return hero("Week " + w.week, main, stats);
   }
+  // The banner's top line: hello to the chosen coach, then where the season
+  // stands, each part only from what the page knows.
+  function welcome(parts) {
+    var out = hasMe() ? [el("span", { class: "hello", text: "Welcome back, " + state.me })] : [];
+    parts.filter(Boolean).forEach(function (p) { out.push(el("span", { text: (out.length ? "· " : "") + p })); });
+    return out;
+  }
+  function seasonOver() { var R = DATA.race; return !!R && R.season_weeks && DATA.through_week >= R.season_weeks; }
+  // "Sunday is underway" while a Sunday game is on; between windows just the week.
+  var DAYS = ["Sunday", "Monday night", "Tuesday", "Wednesday", "Thursday night", "Friday", "Saturday"];
+  function underway(t, week) {
+    var on = t.games.filter(function (x) { return x.state === "in" && x.kick; })[0];
+    return on ? DAYS[new Date(on.kick).getDay()] + " is underway" : "Week " + week + " is underway";
+  }
   // The lower third: the one loud thing on a page. Its numbers sit in a
   // panel beside the headline on a wide screen, under it on a phone.
   function hero(label, main, stats, cls) {
@@ -3096,8 +3230,18 @@ a.weekpill { text-decoration: none; }
       el("div", { class: "hero-main" }, main),
       stats ? el("div", { class: "hero-side" }, [el("div", { class: "stats" }, stats)]) : null]);
   }
-  function stat(value, label, tone) {
-    return el("div", { class: "stat" + (tone ? " " + tone : "") }, [el("span", { class: "v", text: value }), el("span", { class: "k", text: label })]);
+  // share (0-1), when given, draws a thin meter under the number: how much of the card it is.
+  function stat(value, label, tone, share) {
+    var meter = share == null ? null : el("span", { class: "meter", "aria-hidden": "true" },
+      [el("i", { style: "width:" + Math.max(0, Math.min(100, share * 100)).toFixed(1) + "%" })]);
+    return el("div", { class: "stat" + (tone ? " " + tone : "") }, [el("span", { class: "v", text: value, "data-tick": "h:" + label }), meter, el("span", { class: "k", text: label })]);
+  }
+  // A sentence with the coaches' names in bold, longest names first so "Jim T" doesn't eat "Jim".
+  function boldNames(text, names) {
+    var found = names.filter(function (n) { return n && text.indexOf(n) >= 0; }).sort(function (a, b) { return b.length - a.length; });
+    if (!found.length) return [document.createTextNode(text)];
+    var re = new RegExp("(" + found.map(function (n) { return n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }).join("|") + ")");
+    return text.split(re).map(function (part, i) { return i % 2 ? el("b", { text: part }) : document.createTextNode(part); });
   }
 
   // ---- results in: the recap -----------------------------------------------------------
@@ -3109,8 +3253,8 @@ a.weekpill { text-decoration: none; }
     return [
       heroRecap(w),
       el("div", { class: "cols" }, [
-        el("div", {}, [tableTop(), movers(), storiesModule(w)]),
-        el("div", {}, [youModule(w), sidePoolsModule(w), titleRaceModule()])
+        el("div", {}, [tableTop(), storiesModule(w)]),
+        el("div", {}, [youModule(w), sidePoolsModule(w), titleRaceModule(), movers()])
       ])
     ];
   }
@@ -3150,15 +3294,21 @@ a.weekpill { text-decoration: none; }
     }
     return module("Who moved", "places since last week", [el("div", { class: "rows" }, up.concat(down).map(line))], { "data-card": "movers" });
   }
+  function shareBar(right, of) {
+    var p = of ? Math.max(0, Math.min(100, right / of * 100)) : 0;
+    return el("span", { class: "share", "aria-hidden": "true" }, [el("i", { style: "width:" + p.toFixed(1) + "%" })]);
+  }
   function storiesModule(w) {
     var kids = (w.awards || []).map(function (a) {
       return el("div", { class: "award" }, [a.title ? el("span", { class: "t", text: a.title }) : null,
         el("span", { class: "w", text: a.who }), a.detail ? el("span", { class: "why", text: a.detail }) : null]);
     });
+    kids = kids.length ? [el("div", { class: "awards" }, kids)] : [];
     (w.upsets || []).slice(0, 2).forEach(function (u) {
       kids.push(el("div", { class: "upset" }, [
         el("span", { class: "game" }, [el("span", { class: "team" }, [badge(u.winner), el("span", { text: u.matchup })])]),
         el("span", { class: "had num", text: u.right + " of " + u.entrants }),
+        shareBar(u.right, u.entrants),
         el("span", { class: "how", text: u.line ? "Credited to " + u.winner + ", pool line " + u.line : u.winner + " won" })
       ]));
     });
@@ -3240,7 +3390,7 @@ a.weekpill { text-decoration: none; }
     var lined = L.games.filter(function (g) { return g.line != null && g.fav; }).length;
     var losers = L.coaches.reduce(function (a, c) { return a + c.bl.length; }, 0);
     var top = hero("Week " + L.week, [
-      el("span", { class: "kicker" }, [el("span", { text: "Week " + L.week + ": the picks are in" })]),
+      el("span", { class: "kicker" }, welcome(["Week " + L.week + " is up next", "the picks are in"])),
       el("h1", {}, next ? ["Kickoff ", el("span", { "data-until": String(next.at), text: untilText(next.at) })] : ["Week " + L.week + " is set"]),
       el("p", { class: "deck" }, [plural(L.coaches.length, "card") + " in. " + aliveNames().length + " still alive in the suicide pool." +
         (next ? " " + next.g.a + " at " + next.g.h + " starts it." : "")]),
@@ -3290,8 +3440,8 @@ a.weekpill { text-decoration: none; }
       stat(String(t.games.length - on - finals), "still to play")
     ];
     var top_ = hero("Week " + L.week + " live", [
-      el("span", { class: "kicker" }, [on ? el("span", { class: "live-tag", text: "LIVE" }) : null,
-        el("span", { text: "Week " + L.week + (on ? ": " + plural(on, "game") + " on, " : ": ") + finals + " of " + t.games.length + " final" })]),
+      el("span", { class: "kicker" }, [on ? el("span", { class: "live-tag", text: "LIVE" }) : null].concat(welcome([underway(t, L.week),
+        (on ? plural(on, "game") + " on, " : "") + finals + " of " + t.games.length + " final"]))),
       el("h1", { text: leaders.length > 3 ? cap(count(leaders.length, "coach", "coaches")) + " share the lead on " + top
         : listNames(leaders, 3) + (leaders.length > 1 ? " lead" : " leads") + " the week with " + top }),
       mine ? el("p", { class: "deck", text: (!behind ? (leaders.length > 1 ? "You share the lead" : "You lead the week") : "You’re " + behind + " behind the lead") +
@@ -3323,7 +3473,7 @@ a.weekpill { text-decoration: none; }
     var pay = moneyNow(t);
     var average = t.rows.length ? t.rows.reduce(function (a, r) { return a + r.now; }, 0) / t.rows.length : 0;
     var top_ = hero("Week " + L.week + " final", [
-      el("span", { class: "kicker" }, [el("span", { text: "Week " + L.week + " is over" })]),
+      el("span", { class: "kicker" }, welcome(["Week " + L.week + " is final", "official table to follow"])),
       el("h1", { text: winners.length > 2 ? cap(count(winners.length, "coach", "coaches")) + " share week " + L.week + " on " + top
         : listNames(winners, 2) + (winners.length > 1 ? " win" : " wins") + " week " + L.week + " with " + top }),
       el("p", { class: "deck", text: "From the final scores. The official table follows once the week is entered." })
@@ -3712,10 +3862,10 @@ a.weekpill { text-decoration: none; }
       el("span", { class: "odds" }, [el("span", { text: "Win %" }), el("span", { text: over ? "Pays" : "$ now" })])])].concat(shown.map(function (r) {
       var m = pay[r.c.name];
       return el("div", { class: "r" + (isMe(r.c.name) ? " me" : "") + (place[r.c.name] === 1 && r.now > 0 ? " lead" : ""), style: "grid-template-columns: 30px minmax(0,1fr) auto 66px" }, [
-        el("span", { class: "pos", text: String(place[r.c.name]) }),
+        el("span", { class: "pos", text: String(place[r.c.name]), "data-tick": "l:pos:" + r.c.name }),
         el("span", { class: "name" }, [who(r.c.name), isMe(r.c.name) ? el("span", { class: "youtag", text: "YOU" }) : null,
           el("span", { class: "meta", style: "display:block", text: r.final + " final · " + r.left + " to play" + (r.bl ? " · " + plural(r.bl, "Big Loser point") : "") })]),
-        el("span", { class: "big", text: String(r.now) }),
+        el("span", { class: "big", text: String(r.now), "data-tick": "l:now:" + r.c.name }),
         el("span", { class: "odds num" }, [el("b", { text: pct(sim.chance[r.c.name] || 0) }),
           el("span", { class: "cash " + cashTone(m), title: (over ? "What the week pays: " : "If it ended now: ") + cash(m), text: cash(m) })])
       ]);
@@ -4074,7 +4224,7 @@ a.weekpill { text-decoration: none; }
       return el("div", { class: "step p" + (i + 1) + (isMe(p.name) ? " me" : "") }, [
         el("span", { class: "medal", text: p.place != null ? (shared(p) ? "T" : "") + ordinal(p.place) : ordinal(i + 1) }),
         el("span", { class: "initials", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
-        who(p.name),
+        el("span", { class: "podname" }, [who(p.name), formBadge(p.name)]),
         el("span", { class: "wins num", text: String(p.wins) }),
         el("span", { class: "sub", text: (back ? back + " back" : "leads") + (p.title != null ? " · " + titleText(p) + " title" : "") })
       ]);
@@ -4115,11 +4265,11 @@ a.weekpill { text-decoration: none; }
           last ? "last wk " + last.total + (won ? " ★" : "") : "",
           p.big_loser ? "BL " + p.big_loser : ""].filter(Boolean).join(" · ")];
       rows.push(el("div", { class: "r" + (isMe(p.name) ? " me" : "") + (line ? " avgtop" : ""), "data-name": p.name }, [
-        el("span", { class: "pos", text: p.place != null ? String(p.place) : "" }),
+        el("span", { class: "pos", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
         moveMark(p.move),
         el("span", { class: "name" }, [el("span", { class: "initials sm", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
-          who(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null]),
-        el("span", { class: "big", text: String(p.wins) }),
+          who(p.name), formBadge(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null]),
+        el("span", { class: "big", text: String(p.wins), "data-tick": "s:total:" + p.name }),
         el("span", { class: "col", text: lead - p.wins ? String(lead - p.wins) : "–" }),
         el("span", { class: "col" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }),
         el("span", { class: "col", text: last ? String(last.total) + (won ? " ★" : "") : "" }),
@@ -4127,7 +4277,7 @@ a.weekpill { text-decoration: none; }
         el("span", { class: "meta" }, meta)
       ]));
     });
-    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL). Arrows show places gained or lost since last week. A green dot means still in the suicide pool." });
+    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL). Arrows show places gained or lost since last week. A green dot means still in the suicide pool. 🔥 on fire: above the pool’s average in each of the last three weeks, by " + FORM_EDGE + "+ wins in all. 🧊 on the hot seat: below it every week by as much." });
     return el("div", {}, [el("div", { class: "rows standrows", id: "leaderboard" }, rows), avgNote]);
   }
   function everyWeekTable() {
@@ -4150,9 +4300,9 @@ a.weekpill { text-decoration: none; }
       var s = p.suicide;
       var mv = p.move == null || p.move === 0 ? el("td", { class: "n flat", text: "–" })
         : p.move > 0 ? el("td", { class: "n up", text: "▲" + p.move }) : el("td", { class: "n down", text: "▼" + Math.abs(p.move) });
-      var cells = [el("td", { class: "n place num stick-a", text: p.place != null ? String(p.place) : "" }),
+      var cells = [el("td", { class: "n place num stick-a", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
         el("td", { class: "coach stick-b" }, [who(p.name)]),
-        el("td", { class: "n total num", text: String(p.wins) }), mv,
+        el("td", { class: "n total num", text: String(p.wins), "data-tick": "s:total:" + p.name }), mv,
         DATA.race ? el("td", { class: "n num" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }) : null,
         el("td", { class: "n num", text: p.big_loser ? String(p.big_loser) : "–" }),
         el("td", {}, [el("span", { class: "dot " + (s.alive ? "alive" : "out") }), s.alive ? "Still in" : (s.out ? "Out wk " + s.out : "–")])].filter(Boolean);
@@ -4249,7 +4399,10 @@ a.weekpill { text-decoration: none; }
     return el("div", { class: "view", "data-view": "pools" }, (thisWeek.length ? thisWeek : [el("div", { class: "pagehead" }, [el("h1", { text: "Side pools" })])]).concat([
       el("div", { class: "cols even" }, [
         module("Suicide pool", alive.length + " still in", [
-          alive.length ? el("div", { class: "chips" }, alive.map(function (n) { return el("span", { class: "chip alive" + (isMe(n) ? " me" : "") }, [who(n)]); }))
+          alive.length && alive.length <= 3 ? el("div", { class: "survivor" }, [
+            el("span", { class: "k", text: alive.length === 1 ? "Last one standing" : "The last " + numberWord(alive.length) + " standing" }),
+            el("div", { class: "names" }, alive.map(function (n) { return el("b", { class: isMe(n) ? "me" : null }, [who(n)]); }))
+          ]) : alive.length ? el("div", { class: "chips" }, alive.map(function (n) { return el("span", { class: "chip alive" + (isMe(n) ? " me" : "") }, [who(n)]); }))
             : el("p", { class: "note", text: "Nobody is left standing." }),
           groups.length ? el("div", { class: "grave" }, [el("b", { text: "Knocked out" })].concat(groups.map(function (g, i) {
             return el("div", { class: "grave-row" }, [
@@ -4349,14 +4502,15 @@ a.weekpill { text-decoration: none; }
         ]);
       }))
     ]));
-    var awards = module("The week’s stories", null, w.awards.length ? w.awards.map(function (a) {
+    var awards = module("The week’s stories", null, w.awards.length ? [el("div", { class: "awards" }, w.awards.map(function (a) {
       return el("div", { class: "award" }, [a.title ? el("span", { class: "t", text: a.title }) : null,
         el("span", { class: "w", text: a.who }), a.detail ? el("span", { class: "why", text: a.detail }) : null]);
-    }) : [el("p", { class: "note", text: "A quiet week." })], { "data-card": "stories" });
+    }))] : [el("p", { class: "note", text: "A quiet week." })], { "data-card": "stories" });
     var upsets = module("The games that sank the pool", null, w.upsets.length ? w.upsets.map(function (u) {
       return el("div", { class: "upset" }, [
         el("span", { class: "game" }, [el("span", { class: "team" }, [badge(u.winner), el("span", { text: u.matchup })])]),
         el("span", { class: "had num", text: u.right + " of " + u.entrants + " had it" }),
+        shareBar(u.right, u.entrants),
         el("span", { class: "how", text: u.line ? "Credited to " + u.winner + " · pool line " + u.line : u.winner + " won" })
       ]);
     }) : [el("p", { class: "note", text: "No upsets: most of the pool had every winner." })], { "data-card": "upsets", "data-nav": "Upsets" });
@@ -4633,19 +4787,24 @@ a.weekpill { text-decoration: none; }
       grid.appendChild(svgEl("text", { x: padL - 6, y: Y(v) + 4, "text-anchor": "end", text: v === 0 ? "lead" : "−" + v }));
     });
     svg.appendChild(grid);
-    // the days along the bottom, where each begins
-    var last = "";
+    // the days along the bottom, where each begins; the steps are one per score,
+    // not by the clock, so a day with few scores would put its name under the
+    // next day's - that one moves right to clear it (or is left off at the edge)
+    var last = "", free = 0;
     frames.forEach(function (f, i) {
       var d = frameDay(f);
       if (d === last) return;
       last = d;
       svg.appendChild(svgEl("line", { class: "day", x1: X(i), x2: X(i), y1: padT, y2: H - padB }));
-      svg.appendChild(svgEl("text", { x: X(i) + 3, y: H - 8, text: d }));
+      var lx = Math.max(X(i) + 3, free), lw = d.length * 8;
+      if (lx + lw > width) return;
+      free = lx + lw + 6;
+      svg.appendChild(svgEl("text", { x: lx, y: H - 8, text: d }));
     });
     var top = rep.coaches.slice(0, 1).concat(rep.coaches.filter(function (c, i) { return i > 0 && totals[n - 1][i] === totals[n - 1][0]; }));
     var marked = {};
     top.forEach(function (c) { marked[c] = "strong"; });
-    (rep.beatsFor || []).forEach(function (c) { if (!marked[c]) marked[c] = "strong"; });
+    (rep.beatsFor || []).forEach(function (c) { if (!marked[c]) marked[c] = "mid"; });
     if (focus) marked[focus] = "me";
     function path(ci) {
       var d = "";
@@ -4654,7 +4813,7 @@ a.weekpill { text-decoration: none; }
       });
       return d;
     }
-    var order = { ctx: 0, strong: 1, me: 2 };
+    var order = { ctx: 0, mid: 1, strong: 2, me: 3 };
     rep.coaches.map(function (c, ci) { return { c: c, ci: ci, role: marked[c] || "ctx" }; })
       .sort(function (a, b) { return order[a.role] - order[b.role]; })
       .forEach(function (ln) { svg.appendChild(svgEl("path", { class: "ln " + ln.role, d: path(ln.ci) })); });
@@ -4712,7 +4871,7 @@ a.weekpill { text-decoration: none; }
     if (!got) return null;
     var info = w.replay;
     var aside = plural(info.scores || 0, "score") + " · lead changed hands " + plural(info.lead_changes || 0, "time");
-    if (got.state === "loading") return module("The week, replayed", aside, [el("p", { class: "note", text: "Loading the replay…" })], { "data-card": "replay" });
+    if (got.state === "loading") return module("The week, replayed", aside, [el("div", { class: "chart-wait" }, [el("p", { class: "note", text: "Loading the replay…" })])], { "data-card": "replay" });
     if (got.state === "failed") return module("The week, replayed", aside, [stateMsg("Replay unavailable", "This week’s replay file couldn’t be loaded - check the connection. The week’s results are unaffected.",
       { text: "Try again", go: function () { delete replays[w.week]; render({ quiet: true }); } }, "bad")], { "data-card": "replay" });
     var rep = got.data;
@@ -4994,12 +5153,17 @@ a.weekpill { text-decoration: none; }
     var head = el("section", { class: "mehead" }, [
       back,
       el("div", { class: "idrow" }, [el("span", { class: "initials xl", style: avatarStyle(p.name), text: initials(p.name) }),
-        el("div", {}, [el("h1", { text: p.name }), el("p", { class: "coach-line note", text: line })])]),
+        el("div", {}, [nickname(p.name) ? el("span", { class: "nickname", title: nickname(p.name).why, text: "“" + nickname(p.name).name + "”" }) : null,
+          el("h1", {}, [p.name, formBadge(p.name)]), el("p", { class: "coach-line note", text: line }),
+          form(p.name) ? el("p", { class: "note form-line", text: formText(form(p.name)) }) : null])]),
       el("div", { class: "figures" }, [
-        figure(p.place != null ? ordinal(p.place) : "–", "in the standings", lead - p.wins ? (lead - p.wins) + " behind the lead" : "leading"),
-        figure(String(p.wins), "wins", p.move ? (p.move > 0 ? "up " : "down ") + plural(Math.abs(p.move), "place") + " last week" : "no move last week"),
+        figure(p.place != null ? ordinal(p.place) : "–", "in the standings",
+          (p.move ? (p.move > 0 ? "▲ up " : "▼ down ") + plural(Math.abs(p.move), "place") : "no move") + " last week"),
+        figure(String(p.wins), "wins", (lead - p.wins ? (lead - p.wins) + " behind the lead" : "leading") + " · " +
+          (avg > 0 ? "+" : avg < 0 ? "−" : "") + Math.abs(avg).toFixed(1) + " a week on the average"),
         figure(titleText(p) || "–", "title chance", p.out_of_reach ? "out of reach" : ""),
-        figure((avg > 0 ? "+" : avg < 0 ? "−" : "") + Math.abs(avg).toFixed(1), "a week on the average", plural(won, "week") + " won")
+        figure(money(DATA.money ? (p.won || 0) : moneyWon), "money won", plural(won, "week") + " won" +
+          (DATA.money && p.net != null ? " · " + money(p.net) + " net" : ""))
       ]),
       el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" }, [
         el("button", { class: "btn" + (mine ? " primary" : ""), type: "button", onclick: function () { shareWeek(p.name); } }, [icon("share"), mine ? "Share my week" : "Share " + p.name + "’s week"]),
@@ -5016,8 +5180,8 @@ a.weekpill { text-decoration: none; }
       week ? rootingFor(p.name) : null,
       chance,
       el("div", { class: "cols" }, [
-        el("div", {}, [trendModule(p), profileModule(p), blindSpotsModule(p)]),
-        el("div", {}, [twinsModule(p), rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
+        el("div", {}, [trendModule(p), maxModule(p), profileModule(p), blindSpotsModule(p)]),
+        el("div", {}, [trophyShelf(p), twinsModule(p), rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
       ]),
       played ? module("Every week", plural(played, "week"), [scroller(el("table", { id: "coach-weeks" }, [el("thead", {}, [el("tr", {}, [
         el("th", { class: "n", text: "Wk" }), el("th", { class: "n", text: "Wins" }),
@@ -5060,6 +5224,27 @@ a.weekpill { text-decoration: none; }
     ], { "data-card": "chance" });
   }
 
+  // Each week's score against the most that week allowed, so a 9 in a short
+  // bye week and a 9 in a full slate read differently. Only weeks whose
+  // maximum the official sheet supports.
+  function maxModule(p) {
+    var rows = DATA.weeks.filter(function (w) { return weekMost(w) && p.weekly[String(w.week)] != null; })
+      .sort(function (a, b) { return b.week - a.week; })
+      .map(function (w) { var v = p.weekly[String(w.week)]; return { w: w, v: v, share: v / weekMost(w) }; });
+    if (!rows.length) return null;
+    var best = Math.max.apply(null, rows.map(function (r) { return r.share; }));
+    var worst = Math.min.apply(null, rows.map(function (r) { return r.share; }));
+    return module("Points against the max", "games plus Big Loser picks", [
+      el("div", { class: "rows maxweeks" }, rows.map(function (r) {
+        return el("div", { class: "r" + (rows.length > 1 && r.share === best ? " best" : "") }, [
+          el("span", { class: "meta", text: "Wk " + r.w.week }),
+          el("span", { class: "num" }, [el("b", { text: String(r.v) }), " of " + weekMost(r.w)]),
+          bar(r.share, 1),
+          el("span", { class: "num", style: "text-align:right", text: Math.round(r.share * 100) + "%" })]);
+      })),
+      rows.length > 1 && best !== worst ? el("p", { class: "note", text: "Best week " + Math.round(best * 100) + "% of the max, worst " + Math.round(worst * 100) + "%." }) : null
+    ], { "data-card": "max" });
+  }
   // Where the coach has been, week by week: place and score against the pool.
   function trendModule(p) {
     var weeks = DATA.weeks.map(function (w) { return w.week; }).sort(function (a, b) { return a - b; });
@@ -5146,6 +5331,32 @@ a.weekpill { text-decoration: none; }
     if (recs.length) kids.push(el("div", { class: "teamrec" }, recs));
     if (pr.lined && pr.straight) kids.push(el("p", { class: "note", text: "Right on " + pr.linedRight + " of " + pr.lined + " lined games and " + pr.straightRight + " of " + pr.straight + " straight-up ones." }));
     return module("Picking profile", plural(pr.right, "pick") + " right of " + pr.games, [el("div", { class: "profile" }, kids)], { "data-card": "profile" });
+  }
+
+  // A nickname from how a coach picks: the habit furthest from the pool's,
+  // once there are enough picks to tell. Most coaches get one; it changes as they do.
+  function nickname(name) {
+    var pr = profileOf(name);
+    if (pr.games < 12) return null;
+    var pool = poolProfiles(), options = [];
+    function rate(a, b) { return b ? a / b : null; }
+    var fav = rate(pr.fav, pr.favKnown), poolFav = rate(pool.fav, pool.favKnown);
+    var home = rate(pr.home, pr.games), poolHome = rate(pool.home, pool.games);
+    var against = rate(pr.against, pr.games), poolAgainst = rate(pool.against, pool.games);
+    if (fav != null && poolFav != null && pr.favKnown >= 12) {
+      options.push({ by: fav - poolFav, name: "Chalk Eater", why: "Takes the favourite " + pctText(fav) + " of the time; the pool, " + pctText(poolFav) + "." });
+      options.push({ by: poolFav - fav, name: "Dog Lover", why: "Takes the underdog " + pctText(1 - fav) + " of the time; the pool, " + pctText(1 - poolFav) + "." });
+    }
+    if (poolHome != null) {
+      options.push({ by: home - poolHome, name: "Homebody", why: "Takes the home side " + pctText(home) + " of the time; the pool, " + pctText(poolHome) + "." });
+      options.push({ by: poolHome - home, name: "Road Warrior", why: "Takes the road side " + pctText(1 - home) + " of the time; the pool, " + pctText(1 - poolHome) + "." });
+    }
+    if (poolAgainst != null) {
+      options.push({ by: (against - poolAgainst) * 1.5, name: "The Contrarian", why: "Goes against most of the pool " + pctText(against) + " of the time; the pool, " + pctText(poolAgainst) + "." });
+      options.push({ by: (poolAgainst - against) * 1.5, name: "Mr. Consensus", why: "Goes against most of the pool only " + pctText(against) + " of the time; the pool, " + pctText(poolAgainst) + "." });
+    }
+    var best = options.filter(function (o) { return o.by >= 0.06; }).sort(function (a, b) { return b.by - a.by; })[0];
+    return best ? { name: best.name, why: best.why } : null;
   }
 
   // The coaches just above and below, and how they've done against each other.
@@ -5551,7 +5762,8 @@ a.weekpill { text-decoration: none; }
       historyData = { champions: [], seasons: [] };
     }).then(function () {
       historyBusy = false;
-      if (state.view === "history" && !state.coach) render({ quiet: true });
+      // History, Awards and a coach's trophy shelf all draw from the archive
+      if (state.coach || ["history", "awards", "me"].indexOf(state.view) >= 0) render({ quiet: true });
     });
   }
   function thisSeason() {
@@ -5702,6 +5914,139 @@ a.weekpill { text-decoration: none; }
           el("td", { class: "n num", text: r.best != null ? ordinal(r.best) : "–" })]);
       }))
     ])), el("p", { class: "note", text: "Includes this season so far. Names are matched exactly as each season’s sheet wrote them." })], { "data-card": "all-time" });
+  }
+
+  // ---- the season's trophies -------------------------------------------------------------
+  // Worked out from the weekly scores alone, so the same rules give a past
+  // season's trophies from the History archive. A tie shares the trophy.
+  var TROPHIES = [
+    { id: "weeks", icon: "🏆", title: "Week winner", about: "Most weeks won" },
+    { id: "best", icon: "🎯", title: "Best week", about: "The season’s highest score in a week" },
+    { id: "streak", icon: "🔥", title: "Hot streak", about: "Most weeks in a row above the pool’s average" },
+    { id: "steady", icon: "🧱", title: "Steady hand", about: "Most weeks above the pool’s average" },
+    { id: "climb", icon: "🚀", title: "Comeback", about: "Most places climbed in one week" },
+    { id: "loser", icon: "💣", title: "Big Loser king", about: "Most Big Loser points" },
+    { id: "survivor", icon: "🛡️", title: "Survivor", about: "Longest run in the suicide pool" },
+    { id: "spoon", icon: "🥄", title: "Wooden spoon", about: "Most weeks with the pool’s low score" }
+  ];
+  function seasonAwards(s) {
+    var weeks = (s.weeks || []).slice().sort(function (a, b) { return a.week - b.week; });
+    var people = (s.standings || []).filter(function (x) { return x && x.name; });
+    if (weeks.length < 2 || people.length < 2) return [];
+    function score(x, w) { var v = (x.weekly || {})[String(w.week)]; return v == null ? null : Number(v); }
+    function average(w) {
+      if (w.average != null) return w.average;
+      var v = people.map(function (x) { return score(x, w); }).filter(function (v) { return v != null; });
+      return v.length ? v.reduce(function (a, b) { return a + b; }, 0) / v.length : null;
+    }
+    var stat = {};
+    people.forEach(function (x) { stat[x.name] = { weeks: 0, best: null, bestWeek: null, run: 0, streak: 0, above: 0, climb: 0, climbWeek: null, spoon: 0, total: 0 }; });
+    var placeBefore = null;
+    weeks.forEach(function (w) {
+      var avg = average(w), lows = [], low = null;
+      people.forEach(function (x) {
+        var v = score(x, w), r = stat[x.name];
+        if ((w.winners || []).indexOf(x.name) >= 0) r.weeks++;
+        if (v == null) { r.run = 0; return; }
+        r.total += v;
+        if (r.best == null || v > r.best) { r.best = v; r.bestWeek = w.week; }
+        if (avg != null && v > avg) { r.above++; r.run++; r.streak = Math.max(r.streak, r.run); } else r.run = 0;
+        if (low == null || v < low) { low = v; lows = [x.name]; } else if (v === low) lows.push(x.name);
+      });
+      if (lows.length && lows.length <= 3) lows.forEach(function (n) { stat[n].spoon++; });
+      var place = {};
+      people.forEach(function (x) { place[x.name] = 1 + people.filter(function (y) { return stat[y.name].total > stat[x.name].total; }).length; });
+      if (placeBefore) people.forEach(function (x) {
+        var up = placeBefore[x.name] - place[x.name];
+        if (up > stat[x.name].climb) { stat[x.name].climb = up; stat[x.name].climbWeek = w.week; }
+      });
+      placeBefore = place;
+    });
+    var last = weeks[weeks.length - 1].week;
+    people.forEach(function (x) {
+      stat[x.name].loser = Number(x.big_loser) || 0;
+      stat[x.name].survivor = x.suicide_alive ? (s.through_week || last) : x.suicide_out ? x.suicide_out - 1 : 0;
+    });
+    function top(field, words, least) {
+      var best = null, who = [];
+      people.forEach(function (x) {
+        var v = stat[x.name][field];
+        if (v == null || v < (least || 1)) return;
+        if (best == null || v > best) { best = v; who = [x.name]; } else if (v === best) who.push(x.name);
+      });
+      // a "trophy" shared by half the pool is nobody's
+      if (best == null || who.length > Math.max(3, people.length / 4)) return null;
+      return { value: best, who: who, text: words(best, who) };
+    }
+    function one(who, key) { return who.length === 1 ? stat[who[0]][key] : null; }
+    var found = {
+      weeks: top("weeks", function (v) { return plural(v, "week") + " won"; }),
+      best: top("best", function (v, who) { var wk = one(who, "bestWeek"); return plural(v, "win") + (wk ? " in week " + wk : ""); }),
+      streak: top("streak", function (v) { return plural(v, "week") + " in a row"; }, 2),
+      steady: top("above", function (v) { return v + " of " + plural(weeks.length, "week"); }),
+      climb: top("climb", function (v, who) { var wk = one(who, "climbWeek"); return "up " + plural(v, "place") + (wk ? " in week " + wk : ""); }, 2),
+      loser: top("loser", function (v) { return plural(v, "point"); }),
+      survivor: top("survivor", function (v) { return plural(v, "week") + " alive"; }),
+      spoon: top("spoon", function (v) { return plural(v, "low score"); }, 2)
+    };
+    return TROPHIES.map(function (t) { return found[t.id] ? Object.assign({ year: s.year, current: !!s.current }, t, found[t.id]) : null; }).filter(Boolean);
+  }
+  function trophyCard(a) {
+    return el("div", { class: "trophy" + (a.who.some(isMe) ? " mine" : "") }, [
+      el("span", { class: "ic", "aria-hidden": "true", text: a.icon }),
+      el("div", {}, [el("b", { text: a.title }), el("span", { class: "who" }, a.who.slice(0, 4).map(function (n, i) {
+        return [i ? ", " : "", player(n) ? who(n) : n];
+      }).reduce(function (x, y) { return x.concat(y); }, []).concat(a.who.length > 4 ? [" +" + (a.who.length - 4) + " more"] : [])),
+        el("span", { class: "note", text: a.text + " · " + firstLower(a.about) })])
+    ]);
+  }
+  function awardsView() {
+    loadHistory();
+    var now = seasonAwards(thisSeason());
+    var past = allSeasons().filter(function (s) { return !s.current; });
+    var kids = [
+      el("div", { class: "pagehead" }, [el("h1", { text: "Awards" })]),
+      el("p", { class: "lede", text: "The season’s trophies so far, worked out from every week’s scores. A tie shares the trophy. Each finished season keeps its own in History." }),
+      module(seasonYear() + " so far", DATA.through_week ? "after week " + DATA.through_week : null,
+        now.length ? [el("div", { class: "trophies" }, now.map(trophyCard))] : [el("p", { class: "note", text: "Trophies start once two weeks are done." })],
+        { "data-card": "trophies" })
+    ];
+    past.forEach(function (s) {
+      var list = seasonAwards(s);
+      if (list.length) kids.push(fold("awards-" + s.year, s.year + " · " + plural(list.length, "trophy", "trophies"),
+        [el("div", { class: "trophies" }, list.map(trophyCard))]));
+    });
+    if (historyBusy) kids.push(el("p", { class: "note", text: "Fetching past seasons…" }));
+    return el("div", { class: "view", "data-view": "awards" }, kids);
+  }
+  // A coach's trophy shelf: what they hold this season and won in past ones, and their titles.
+  function trophyShelf(p) {
+    loadHistory();
+    var mine = trophiesOf(p.name);
+    var champs = championsByYear(allSeasons()), titles = Object.keys(champs).filter(function (y) {
+      return splitNames(champs[y].names).indexOf(p.name) >= 0;
+    }).sort().reverse();
+    var kids = titles.map(function (y) {
+      return el("div", { class: "trophy title" }, [el("span", { class: "ic", "aria-hidden": "true", text: "👑" }),
+        el("div", {}, [el("b", { text: "Champion " + y }), el("span", { class: "note", text: champs[y].note || "Won the season" })])]);
+    }).concat(mine.map(function (a) {
+      return el("div", { class: "trophy" }, [el("span", { class: "ic", "aria-hidden": "true", text: a.icon }),
+        el("div", {}, [el("b", { text: a.title + (a.current ? "" : " " + a.year) }),
+          el("span", { class: "note", text: a.text + (a.who.length > 1 ? ", shared" : "") + (a.current ? " · holds it so far" : "") })])]);
+    }));
+    return module("Trophy shelf", kids.length ? plural(kids.length, "trophy", "trophies") : null,
+      kids.length ? [el("div", { class: "trophies shelf" }, kids), moreLink("Every award", "awards")]
+        : [el("p", { class: "note", text: "Nothing on the shelf yet. " + (DATA.weeks.length < 2 ? "Trophies start once two weeks are done." : "There’s a season of them to win.") }),
+          moreLink("The awards", "awards")],
+      { "data-card": "trophies-for" });
+  }
+  // Every trophy one coach holds, this season and in the archive.
+  function trophiesOf(name) {
+    var out = [];
+    allSeasons().forEach(function (s) {
+      seasonAwards(s).forEach(function (a) { if (a.who.indexOf(name) >= 0) out.push(a); });
+    });
+    return out;
   }
 
   // ---- share my week: a picture for the group chat -----------------------------------------
@@ -5856,6 +6201,7 @@ a.weekpill { text-decoration: none; }
   // Whatever DATA the page shows, the things worked out from it start afresh.
   function dataChanged() {
     poolProfile = null;
+    formCache = null;
     historyData = null;
     historyError = "";
     simCache = { key: "", sim: null };

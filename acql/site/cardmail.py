@@ -135,7 +135,7 @@ def compose(season: Season, week: int, *, now: float | None = None, before: dict
         notes.append(
             f"{len(waiting)} big favourite{'s have' if len(waiting) != 1 else ' has'} no pool line "
             f"entered yet ({', '.join(c.pick for c in waiting)}). Those are priced straight up for "
-            f"now and often change once the line is in: enter it on This Week > Every game.")
+            f"now and often change once the line is in: enter it on Deadeye Picks > My picks.")
     if unpriced > 0:
         notes.append(f"{unpriced} game{'s have' if unpriced != 1 else ' has'} no betting line posted yet.")
     if checked:
@@ -216,7 +216,7 @@ def compose(season: Season, week: int, *, now: float | None = None, before: dict
     for note in notes:
         body.append(f"<p style='color:#6b7280;font-size:13px;margin:10px 0 0'>{e(note)}</p>")
     body.append(f"<p style='color:#9ca3af;font-size:12px;margin-top:18px'>{e(places.BRAND)} · {e(places.TAGLINE)} "
-                "Only you get this email; the full case for every pick is on This Week.</p></div>")
+                "Only you get this email; the full case for every pick is on Deadeye Picks.</p></div>")
     return CardMail(week, subject, "\n".join(text), "".join(body), picks, tuple(changes), losers)
 
 

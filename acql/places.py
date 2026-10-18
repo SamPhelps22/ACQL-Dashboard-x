@@ -2,7 +2,7 @@
 
 The dashboard is Operation Sunday, with Deadeye (version.MODEL_NAME) as the
 prediction engine inside it. The name and the look are the brand; the places
-themselves are called what they are - Season, This Week, Game Day - so
+themselves are called what they are - Season, Picks, Game Day - so
 nobody has to learn where anything lives. The pool's website is not part of
 it and keeps the league's own name.
 
@@ -21,9 +21,9 @@ TAGLINE = "Good analysis. Better Sundays."
 # ---- the sidebar's places, and the tabs inside them -------------------------------
 SEASON = "Season"                   # overview, standings, money, odds, charts
 OVERVIEW = "Overview"
-THIS_WEEK = "This Week"             # the week's card, and why
-CARD = "Your card"
-EVERY_GAME = "Every game"           # every game on the slate, priced
+THIS_WEEK = "Deadeye Picks"                 # the week's card, and why
+CARD = "My picks"                   # the card to hand in, and where the week's numbers go in
+EVERY_GAME = "All games"            # every game on the slate, priced
 RADAR = "Radar"                     # every game by how it could go
 GAME_DAY = "Game Day"               # the games as they happen
 EVERYONE = "Everyone's picks"       # the whole pool's cards for the week, side by side
@@ -33,7 +33,7 @@ PLAYER = "Player"                   # one coach's season
 INSIGHTS = "Insights"               # the pool's habits, and every team
 POOL = "The pool"
 TEAMS = "Teams"
-MODEL = MODEL_NAME                  # the model: how good it is, and what is inside
+MODEL = f"{MODEL_NAME} Analysis"   # the model: how good it is, and what is inside
 REPORT_CARD = "Report card"
 DETAILS = "Details"
 LAB = "Model Lab"
@@ -50,4 +50,6 @@ FORMERLY = {
     "Command Center": SEASON, "Mission Briefing": THIS_WEEK, "Live Ops": GAME_DAY,
     "After-Action Report": RESULTS, "Side Missions": SIDE_POOLS, "Personnel File": PLAYER,
     "Intelligence": INSIGHTS, "Black Box": MODEL, "Logistics": DATA,
+    "This Week": THIS_WEEK,             # its name until 2.18
+    "Picks": THIS_WEEK, MODEL_NAME: MODEL,  # their names until 2.19
 }

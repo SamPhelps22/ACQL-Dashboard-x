@@ -139,6 +139,8 @@ class BriefingPage(Page):
 
     #: Asks the window to re-read everything - after new lines are stored.
     refresh_requested = Signal()
+    #: One of the entry buttons was pressed: which (NextWeekPage.enter), and for what week.
+    entry_requested = Signal(str, int)
 
     # ---- build ---------------------------------------------------------
     def build(self) -> None:
@@ -151,21 +153,22 @@ class BriefingPage(Page):
         head = QHBoxLayout()
         head.addWidget(section(self.title, self.subtitle), 1)
         self.style_picker = QComboBox()
-        self.style_picker.addItem("Card: most wins (season title)", briefing.STYLE_STRAIGHT)
-        self.style_picker.addItem("Card: most money this week", briefing.STYLE_MONEY)
-        self.style_picker.addItem("Card: built to finish first", briefing.STYLE_WIN)
+        for style, name in briefing.STYLE_NAMES.items():
+            self.style_picker.addItem(f"Card: {name}", style)
         self.style_picker.setToolTip(
-            "Most wins takes the likelier side of every game and the three "
-            "likeliest Big Losers - the most points toward the season title.\n"
-            "Most money keeps those sides but picks Big Losers the pool isn't on: "
-            "about $3.70 a week more in the 2011-2025 replay, for a tenth or two "
-            "of a point a week.\n"
-            "Built to finish first turns a game or two against the pool; in the "
-            "replay that cost points and made no more money.\n"
+            "Long shot turns a game or two against the pool to finish first; "
+            "in the 2011-2025 replay that cost points and made no more money.\n"
+            "Win the week takes the likelier side of every game but picks Big Losers "
+            "the pool isn't on: about $3.70 a week more in the replay, for a tenth "
+            "or two of a point a week.\n"
+            "Safe takes the likelier side of every game and the three likeliest "
+            "Big Losers - the most points toward the season title.\n"
             f"See {MODEL_NAME} > Report card."
         )
         wanted = QSettings().value(self.STYLE_KEY, briefing.DEFAULT_STYLE)
         found = self.style_picker.findData(wanted)
+        if found < 0:
+            found = self.style_picker.findData(briefing.DEFAULT_STYLE)
         self.style_picker.setCurrentIndex(max(found, 0))
         self.style_picker.currentIndexChanged.connect(self._style_changed)
         self.lines_button = IconButton("Update lines", "refresh")
@@ -204,6 +207,29 @@ class BriefingPage(Page):
         options.addWidget(self.lines_status, 1)
         options.addWidget(InfoIcon(explain.MARKET_MOVEMENT, "line movement"), 0, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(options)
+        # Third row: putting the week's numbers in, without leaving the card.
+        # The All games page does the work (NextWeekPage.enter); these ask for it.
+        entry = QHBoxLayout()
+        entry.setSpacing(8)
+        self._entry_buttons: dict[str, QPushButton] = {}
+        for what, text, tip in (
+            ("lines", "Line games…",
+             "Type or paste the week's line games - (kc by 10) - until the commissioner's pick sheet says them"),
+            ("predictions", "Load predictions…",
+             "Read a week's predictions CSV - the betting line and every model's number for each game"),
+            ("models", "Paste models…",
+             "Paste The Prediction Tracker's summary table: both lines, the models' median and how far "
+             "apart they are, in one go"),
+            ("odds", "Paste odds…", "Fill the slate from a block of odds copied off a website"),
+            ("clear", "Clear spreads", "Empty every spread typed in for this week"),
+        ):
+            button = QPushButton(text)
+            button.setToolTip(tip)
+            button.clicked.connect(lambda _checked=False, what=what: self.entry_requested.emit(what, self._week_shown))
+            entry.addWidget(button)
+            self._entry_buttons[what] = button
+        entry.addStretch(1)
+        self.layout_.addLayout(entry)
 
         # Every pick in slate order, big enough to copy straight onto the sheet.
         self.glance_card = Card(GLANCE_TITLE, info=explain.PROBABILITIES)
@@ -354,7 +380,7 @@ class BriefingPage(Page):
     # ---- which card --------------------------------------------------------
     #: A new key in 2.9: the old one remembered "built to win the week",
     #: which was the default then, and the default is now the most-wins card.
-    STYLE_KEY = "thisweek/card"
+    STYLE_KEY = "thisweek/card-2"
 
     def _style(self) -> str:
         return self.style_picker.currentData() or briefing.DEFAULT_STYLE
@@ -468,7 +494,7 @@ class BriefingPage(Page):
         for box, message in (
             (self.swing_box, "The swings appear once the week is priced."),
             (self.card_box,
-             f"Week {week} has no prices yet. Open the Every game tab, load the "
+             f"Week {week} has no prices yet. With the buttons above, load the "
              f"predictions file or type the spreads, and the card appears here."),
             (self.side_box, ""),
         ):
@@ -594,7 +620,7 @@ class BriefingPage(Page):
         self.losers_head.setText(
             f"<span style='font-weight:700; color:{p.ink}'>{MODEL_NAME}'s three Big Losers</span>"
             f"<span style='color:{p.ink_muted}'> \u00b7 a point each when the team loses by 15 or more"
-            + (" \u00b7 chosen for the money card" if brief.for_money else "") + "</span>"
+            + (" \u00b7 chosen for Win the week" if brief.for_money else "") + "</span>"
         )
         found = season.weeks.get(brief.week)
         games = list(found.games) if found else []
@@ -705,7 +731,7 @@ class BriefingPage(Page):
         )
         if stale:
             intro += (
-                f" {len(stale)} spread{'s' if len(stale) != 1 else ''} typed on Every game "
+                f" {len(stale)} spread{'s' if len(stale) != 1 else ''} typed on All games "
                 f"{'are' if len(stale) != 1 else 'is'} older than the latest line, so the "
                 f"line is used: {', '.join(stale[:4])}{'…' if len(stale) > 4 else ''}."
             )
@@ -808,8 +834,8 @@ class BriefingPage(Page):
         if plan is not None:
             odds_now = brief.win_odds or 0.0
             other = (
-                f"built to finish first: {plan.win_odds:.1%}" if brief.straight
-                else f"the likeliest side of every game: {plan.plain_win_odds:.1%}"
+                f"Long shot card: {plan.win_odds:.1%}" if brief.straight
+                else f"Safe card: {plan.plain_win_odds:.1%}"
             )
             if brief.money is not None:
                 card = brief.money.best if brief.for_money else brief.money.plain
@@ -938,7 +964,7 @@ class BriefingPage(Page):
                     f"the season title, and first {plan.plain_win_odds:.1%} of "
                     f"the time."
                     + (
-                        f" Built to finish first instead, it would take "
+                        f" The Long shot card would instead take "
                         f"{', '.join(c.other for c in would)} against the pool "
                         f"({plan.win_odds:.1%} to finish first, about "
                         f"{plan.expected_hits:.1f} right) - but replayed over "
@@ -996,7 +1022,7 @@ class BriefingPage(Page):
         if money is None:
             return ""
         if not money.swapped:
-            return (" Aiming for money would change nothing this week: the "
+            return (" Win the week would change nothing this week: the "
                     "likeliest Big Losers are also the best for money.")
         dropped = [t for t in money.plain.losers if t not in money.best.losers]
         added = list(money.swapped)
@@ -1004,9 +1030,9 @@ class BriefingPage(Page):
         if brief.for_money:
             return (f" The Big Losers are chosen for money: {names(added)} in place of "
                     f"{names(dropped)}, which most of the pool will hold - "
-                    f"{_dollars(money.gain)} a week expected over the most-wins card, "
+                    f"{_dollars(money.gain)} a week expected over the Safe card, "
                     f"for {money.plain.points - money.best.points:.2f} fewer points.")
-        return (f" Aiming for money would swap Big Losers {names(dropped)} for "
+        return (f" Win the week would swap Big Losers{names(dropped)} for "
                 f"{names(added)}, which few of the pool will hold: "
                 f"{_dollars(money.gain)} a week expected, for "
                 f"{money.plain.points - money.best.points:.2f} fewer points.")
@@ -1032,10 +1058,10 @@ class BriefingPage(Page):
         found = season.weeks.get(week)
         lined = [g for g in (found.games if found else []) if g.line is not None]
         if not lined:
-            return (f"No pick sheet for week {week} yet, and no line games - add them on the "
-                    f"Every game tab (Line games\u2026); every game is straight up until then.")
-        return (f"No pick sheet for week {week} yet: the line games are the ones typed in on the "
-                f"Every game tab ({', '.join(f'{display_team(g.line_favourite)} by {g.line:g}' for g in lined)}).")
+            return (f"No pick sheet for week {week} yet, and no line games - add them with "
+                    f"Line games\u2026 above; every game is straight up until then.")
+        return (f"No pick sheet for week {week} yet: the line games are the ones typed in "
+                f"with Line games\u2026 ({', '.join(f'{display_team(g.line_favourite)} by {g.line:g}' for g in lined)}).")
 
     def _update_lines_status(self, week: int) -> None:
         pool = self._pool_note(week)
@@ -1043,8 +1069,16 @@ class BriefingPage(Page):
             week, (lambda text: self.lines_status.setText(pool + "  " + text)) if pool
             else self.lines_status.setText)
 
+    def entry_done(self, note: str) -> None:
+        """What an entry button's job had to say, shown where the lines' own news is."""
+        self._update_note = note
+        self._update_lines_status(self._week_shown)
+
     def _update_lines_text(self, week: int, say) -> None:
         locked = self._locked(week)
+        for what, button in self._entry_buttons.items():
+            # line games are the pool's rules, not a forecast: the lock doesn't hold them
+            button.setEnabled(bool(week) and (what == "lines" or not locked))
         self.lines_button.setEnabled(not locked and self._fetcher is None)
         self.lines_button.setToolTip(
             "The odds locked when the pool's cards were due - the lines stay as they were then"
@@ -1072,7 +1106,7 @@ class BriefingPage(Page):
         if left is not None:
             text += f" \u00b7 {left} requests left this month"
         if moved:
-            text += " \u00b7 moved since opening: " + ", ".join(
+            text += " \u00b7 moved since first fetched: " + ", ".join(
                 f"{odds.describe_margin(label, then)} \u2192 {odds.describe_margin(label, now)}"
                 for label, then, now in moved[:4]
             ) + ("\u2026" if len(moved) > 4 else "")

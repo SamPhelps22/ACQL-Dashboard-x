@@ -59,3 +59,19 @@ def test_local_settings_can_be_switched_off(tmp_path, monkeypatch):
     assert config.load_config()["pool"]["tie_rule"] == "full"
     monkeypatch.setenv("NFLPICKEM_NO_LOCAL", "1")
     assert config.load_config()["pool"]["tie_rule"] != "full"
+
+
+@pytest.mark.parametrize("page", ["tracker", "backtest"])
+def test_too_few_custom_points_is_an_error_message_not_a_crash(demo_db, tmp_path, monkeypatch, page):
+    """A saved custom_points list shorter than the slate once crashed the Season Tracker."""
+    import json
+    saved = tmp_path / "settings.local.json"
+    saved.write_text(json.dumps({"pool": {"points_mode": "custom", "custom_points": [1]}}))
+    monkeypatch.setattr("nflpickem.config.LOCAL_OVERRIDES", saved)
+    monkeypatch.delenv("NFLPICKEM_NO_LOCAL", raising=False)
+    at = AppTest.from_file("../app/streamlit_app.py", default_timeout=120)
+    at.session_state["force_page"] = page
+    at.run()
+    assert not at.exception, at.exception
+    if page == "tracker":
+        assert any("custom_points" in e.value or "can't" in e.value for e in at.error)
