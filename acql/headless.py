@@ -12,6 +12,9 @@ website stays current whether or not anyone has the dashboard open:
     python -m acql.headless --email     Deadeye's card for the week ahead, on the
                                         freshest lines, emailed to the dashboard's
                                         own address (cardmail.py)
+    python -m acql.headless --brief     the Sunday morning brief: top calls, line
+                                        moves since open, odds budget - from
+                                        stored lines only (sundaybrief.py)
 
 schedule.ps1 registers all three: --daily at 3am, --poll every ten minutes
 on game days, --email at noon on Tuesday, Wednesday and Thursday. Everything it does goes in the dashboard's log (acql-log.txt),
@@ -59,6 +62,8 @@ EMAIL_LINES_FRESH = 45 * 60
 EMAIL_WAIT = 240
 #: Where --email --dry-run leaves the card to look at, instead of sending it.
 EMAIL_PREVIEW = Path(DATA_DIR) / "deadeye-email-preview.html"
+#: Where --brief --dry-run leaves the Sunday brief.
+BRIEF_PREVIEW = Path(DATA_DIR) / "sunday-brief-preview.html"
 #: Lines aren't posted much further ahead than this.
 LINES_AHEAD = 6 * 86400
 #: A refresh that failed isn't tried again for this long.
@@ -454,6 +459,30 @@ def email_card(*, dry_run: bool = False) -> int:
     return 0
 
 
+def email_brief(*, dry_run: bool = False) -> int:
+    """The Sunday brief for the week in play, from what is kept (no odds fetch)."""
+    from .site import mailer, sundaybrief
+    season = load_season(Settings.load(), AliasTable.load())
+    brief = sundaybrief.compose(season)
+    if brief is None:
+        _log("sunday brief: no week in play - not sent")
+        return 0
+    if dry_run:
+        BRIEF_PREVIEW.write_text(
+            f"<!doctype html><meta charset='utf-8'><title>{brief.subject}</title>"
+            f"<p style='font-family:Segoe UI,Arial;color:#666'>Subject: {brief.subject}</p>{brief.html}",
+            encoding="utf-8")
+        _log(f"sunday brief (dry run): written to {BRIEF_PREVIEW.name}; nothing sent")
+        return 0
+    try:
+        to = sundaybrief.send(brief)
+    except mailer.MailError as exc:
+        _log(f"sunday brief not sent: {exc}")
+        return 1
+    _log(f"sunday brief sent: \"{brief.subject}\" to {len(to)} address(es)")
+    return 0
+
+
 def _private_page(inside: str | None = None, season=None) -> None:
     """The locked page on the website (site/lockedpage.py): the card, encrypted
     before it leaves. Only when a passphrase has been set; never the cause of a failed run."""
@@ -519,9 +548,17 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--daily", action="store_true", help="every step, whatever the time")
     mode.add_argument("--poll", action="store_true", help="only when a look at ESPN is due")
     mode.add_argument("--email", action="store_true", help="email Deadeye's card for the week ahead")
+    mode.add_argument("--brief", action="store_true", help="email the Sunday morning brief")
     parser.add_argument("--dry-run", action="store_true",
                         help="do everything but publish the website, or send the email")
     args = parser.parse_args(argv)
+
+    if args.brief:
+        try:
+            return email_brief(dry_run=args.dry_run)
+        except Exception as exc:  # noqa: BLE001
+            _log(f"sunday brief failed: {exc!r}\n{traceback.format_exc()}")
+            return 1
 
     if args.email:
         # The poll starts on the same minute: wait for it rather than give up.

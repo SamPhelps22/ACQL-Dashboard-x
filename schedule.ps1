@@ -14,6 +14,9 @@
 #                        numbers as they stand before the deadline, and once
 #                        a week teaches the challengers again and writes the
 #                        answer the Model Lab shows. Changes no pick.
+#    ACQL Sunday brief   Sun at 9:00 AM: the week's top calls, line moves
+#                        since open and the odds budget, emailed to you -
+#                        from stored lines only, so it costs no requests.
 #
 #  Run it again after moving the folder. To take them all away:
 #      powershell -ExecutionPolicy Bypass -File schedule.ps1 -Remove
@@ -23,7 +26,7 @@ param([switch]$Remove)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$names = "ACQL Daily", "ACQL Game-day poll", "ACQL Deadeye email", "ACQL Training"
+$names = "ACQL Daily", "ACQL Game-day poll", "ACQL Deadeye email", "ACQL Training", "ACQL Sunday brief"
 
 foreach ($name in $names) {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
@@ -72,9 +75,16 @@ Register-ScheduledTask -TaskName "ACQL Training" -Action $train -Settings $wake 
     -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday, Wednesday, Thursday -At 12:30PM) `
     -Description "ACQL Dashboard: the week's numbers frozen before the deadline, and the challengers' weekly test." | Out-Null
 
+# The Sunday brief: woken for, so it is in the inbox before the early games.
+$brief = New-ScheduledTaskAction -Execute $python -Argument "-m acql.headless --brief" -WorkingDirectory $root
+Register-ScheduledTask -TaskName "ACQL Sunday brief" -Action $brief -Settings $wake `
+    -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 9:00AM) `
+    -Description "ACQL Dashboard: Sunday's top calls, line moves and odds budget, emailed to you." | Out-Null
+
 Write-Host "  Scheduled:"
 Write-Host "    ACQL Daily          every day at 3:00 AM"
 Write-Host "    ACQL Game-day poll  Thu/Sun/Mon, every 10 min, 9 AM - midnight"
 Write-Host "    ACQL Deadeye email  Tue/Wed/Thu at 12:00 noon"
 Write-Host "    ACQL Training       Tue/Wed/Thu at 12:30 PM"
+Write-Host "    ACQL Sunday brief   Sun at 9:00 AM"
 Write-Host "  Runs while you're signed in to Windows. Log: data\acql-log.txt"
