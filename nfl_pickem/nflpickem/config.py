@@ -84,6 +84,11 @@ def validate_config(cfg: dict) -> None:
         raise ValueError("pool.postponed_rule must be void or loss")
     if p["points_mode"] not in {"1_to_n", "custom"}:
         raise ValueError("pool.points_mode must be 1_to_n or custom")
+    if p["points_mode"] == "custom":
+        from .confidence import ScoringRules
+        problem = ScoringRules(points_mode="custom", custom_points=list(p.get("custom_points") or [])).problem()
+        if problem:
+            raise ValueError(f"pool.{problem}")
     if p["cutoff_mode"] not in {"slate", "per_game"}:
         raise ValueError("pool.cutoff_mode must be slate or per_game")
     if cfg["models"].get("pick_model", "blend") not in {"blend", "market", "elo", "logistic", "gbm", "residual"}:

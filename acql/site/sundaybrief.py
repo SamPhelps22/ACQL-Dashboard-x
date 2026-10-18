@@ -32,6 +32,8 @@ TOP = 5
 RESERVE = 40
 #: Below this many requests left above the reserve, the brief warns.
 LOW = 30
+#: How many models of the forecast log's scorecard the brief names.
+BOARD = 3
 
 
 @dataclass(frozen=True)
@@ -63,8 +65,41 @@ def budget_note(left: int | None) -> tuple[str, bool]:
     return f"Odds budget: {left} requests left this month (about {fetches} fetches above the reserve).", False
 
 
+def scoreboard(season: Season, now: float) -> list[dict]:
+    """The forecast log's leaders this season (model/forecastlog.py); [] when it has none."""
+    try:
+        from ..model import forecastlog
+        conn = forecastlog.connect()
+        try:
+            card = forecastlog.scorecard(conn, results.season_year(season, now))
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - the brief goes out without it
+        return []
+    return [r for r in card if r.get("beat_line_rate") is not None][:BOARD]
+
+
+def _score_line(r: dict) -> str:
+    hit = f"{r['hit_rate']:.0%} right" if r.get("hit_rate") is not None else "no picks graded"
+    return (f"{r['model_name']}: beat the close {r['beat_line']} of {r['line_games']} "
+            f"({r['beat_line_rate']:.0%}), {hit}")
+
+
+def honesty(season: Season) -> list[str]:
+    """Calibration (analytics.calibration), a line a band: did its 70% picks win about 70%?"""
+    try:
+        from .. import analytics
+        from ..model import pricing
+        bands = analytics.calibration(pricing.graded_entries(season))
+    except Exception:  # noqa: BLE001 - the brief goes out without it
+        return []
+    return [f"Called {b.label}: {b.hits} of {b.picks} came in ({b.hits / b.picks:.0%}, "
+            f"it said {b.claimed:.0%})" for b in bands if b.picks >= 5]
+
+
 def compose(season: Season, week: int | None = None, *, now: float | None = None,
-            left: int | None = None, moves: list | None = None) -> Brief | None:
+            left: int | None = None, moves: list | None = None,
+            board: list[dict] | None = None, honest: list[str] | None = None) -> Brief | None:
     """The brief for the week in play. None when there is nothing to say."""
     now = time.time() if now is None else now
     week = week_in_play(season, now) if week is None else week
@@ -75,6 +110,8 @@ def compose(season: Season, week: int | None = None, *, now: float | None = None
         return None
     top = sorted(brief.choices, key=lambda c: -c.chance)[:TOP]
     moves = odds.movements(week) if moves is None else moves
+    board = scoreboard(season, now) if board is None else board
+    honest = honesty(season) if honest is None else honest
     budget, low = budget_note(odds.remaining() if left is None else left)
 
     subject = f"{places.BRAND} · Sunday brief, week {week}" + (" - odds budget low" if low else "")
@@ -85,6 +122,10 @@ def compose(season: Season, week: int | None = None, *, now: float | None = None
     text += ["", "LINE MOVES SINCE OPEN"]
     text += ([f"  {game}: {then:+.1f} -> {nowl:+.1f}" for game, then, nowl in moves]
              or [f"  Nothing has moved {odds.BIG_MOVE:g} points or more."])
+    if board:
+        text += ["", "FORECAST SCORECARD (BEST AGAINST THE CLOSING LINE)"] + [f"  {_score_line(r)}" for r in board]
+    if honest:
+        text += ["", "ARE ITS CHANCES HONEST?"] + [f"  {h}" for h in honest]
     text += ["", budget, "", f"- {places.BRAND} (only you get this email)"]
 
     e = html.escape
@@ -109,6 +150,13 @@ def compose(season: Season, week: int | None = None, *, now: float | None = None
             for game, then, nowl in moves) + "</table>")
     else:
         body.append(f"<p style='color:#374151;margin:0'>Nothing has moved {odds.BIG_MOVE:g} points or more.</p>")
+    if board:
+        body.append("<p style='margin:16px 0 4px;font-size:17px'><b>Forecast scorecard</b></p>"
+                    "<p style='margin:0 0 4px;color:#6b7280;font-size:12px'>Best against the closing line this season</p>"
+                    + "".join(f"<p style='margin:2px 0'>{e(_score_line(r))}</p>" for r in board))
+    if honest:
+        body.append("<p style='margin:16px 0 4px;font-size:17px'><b>Are its chances honest?</b></p>"
+                    + "".join(f"<p style='margin:2px 0'>{e(h)}</p>" for h in honest))
     body.append(f"<p style='margin:16px 0 0;color:{'#b3261e' if low else '#374151'}"
                 f"{';font-weight:600' if low else ''}'>{e(budget)}</p>")
     body.append(f"<p style='color:#9ca3af;font-size:12px;margin-top:18px'>{e(places.BRAND)} · "

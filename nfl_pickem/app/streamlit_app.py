@@ -469,37 +469,43 @@ def page_backtest() -> None:
         f.update_layout(height=400)
         st.plotly_chart(f, width="stretch")
     rules = ScoringRules.from_config(cfg["pool"])
+    problem = rules.problem(int(preds.groupby(["season", "week"]).size().max()))
+    if problem:
+        for tab in (t3, t4):
+            tab.error(f"The pool's point values can't score these weeks: {problem}. Fix them on the Settings page.")
     with t3:
-        weekly = pd.concat([simulate_pool(preds, m, rules) for m in models])
-        weekly["label"] = weekly.season.astype(str) + "-w" + weekly.week.astype(str).str.zfill(2)
-        weekly = weekly.sort_values(["season", "week"])
-        weekly["cumulative"] = weekly.groupby("model")["points"].cumsum()
-        base = weekly[weekly.model == "market"].set_index("label")["cumulative"] if "market" in models else None
-        view = st.radio("Show", ["Cumulative points", "Cumulative vs market", "Weekly points"], horizontal=True)
-        if view == "Weekly points":
-            f = px.box(weekly, x="model", y="points", color="model", color_discrete_map=MODEL_COLORS)
-        else:
-            y = "cumulative"
-            if view == "Cumulative vs market" and base is not None:
-                weekly["vs_market"] = weekly["cumulative"] - weekly["label"].map(base)
-                y = "vs_market"
-            f = px.line(weekly, x="label", y=y, color="model", color_discrete_map=MODEL_COLORS)
-        f.update_layout(height=420, xaxis_title=None)
-        st.plotly_chart(f, width="stretch")
+        if not problem:
+            weekly = pd.concat([simulate_pool(preds, m, rules) for m in models])
+            weekly["label"] = weekly.season.astype(str) + "-w" + weekly.week.astype(str).str.zfill(2)
+            weekly = weekly.sort_values(["season", "week"])
+            weekly["cumulative"] = weekly.groupby("model")["points"].cumsum()
+            base = weekly[weekly.model == "market"].set_index("label")["cumulative"] if "market" in models else None
+            view = st.radio("Show", ["Cumulative points", "Cumulative vs market", "Weekly points"], horizontal=True)
+            if view == "Weekly points":
+                f = px.box(weekly, x="model", y="points", color="model", color_discrete_map=MODEL_COLORS)
+            else:
+                y = "cumulative"
+                if view == "Cumulative vs market" and base is not None:
+                    weekly["vs_market"] = weekly["cumulative"] - weekly["label"].map(base)
+                    y = "vs_market"
+                f = px.line(weekly, x="label", y=y, color="model", color_discrete_map=MODEL_COLORS)
+            f.update_layout(height=420, xaxis_title=None)
+            st.plotly_chart(f, width="stretch")
     with t4:
-        weeks = preds[["season", "week"]].drop_duplicates().sort_values(["season", "week"])
-        c1, c2 = st.columns(2)
-        se = c1.selectbox("Season", sorted(weeks.season.unique(), reverse=True))
-        wk = c2.selectbox("Week", sorted(weeks[weeks.season == se].week.unique()))
-        d = preds[(preds.season == se) & (preds.week == wk)]
-        a = allocate(d.rename(columns={"blend": "_p"}), rules, prob_col="_p")
-        from nflpickem.confidence import grade_sheet
-        gr = grade_sheet(a, d[["game_id", "home_score", "away_score", "game_status"]], rules)
-        st.dataframe(gr[["confidence_points", "away_team", "home_team", "selected_team", "selected_team_probability",
-                         "expected_points", "away_score", "home_score", "actual_result", "points_earned"]],
-                     hide_index=True, width="stretch")
-        st.caption(f"Blend allocation as it would have been submitted: {gr.points_earned.sum():.1f} points earned, "
-                   f"{gr.expected_points.sum():.1f} expected, of {gr.confidence_points.sum()} possible.")
+        if not problem:
+            weeks = preds[["season", "week"]].drop_duplicates().sort_values(["season", "week"])
+            c1, c2 = st.columns(2)
+            se = c1.selectbox("Season", sorted(weeks.season.unique(), reverse=True))
+            wk = c2.selectbox("Week", sorted(weeks[weeks.season == se].week.unique()))
+            d = preds[(preds.season == se) & (preds.week == wk)]
+            a = allocate(d.rename(columns={"blend": "_p"}), rules, prob_col="_p")
+            from nflpickem.confidence import grade_sheet
+            gr = grade_sheet(a, d[["game_id", "home_score", "away_score", "game_status"]], rules)
+            st.dataframe(gr[["confidence_points", "away_team", "home_team", "selected_team", "selected_team_probability",
+                             "expected_points", "away_score", "home_score", "actual_result", "points_earned"]],
+                         hide_index=True, width="stretch")
+            st.caption(f"Blend allocation as it would have been submitted: {gr.points_earned.sum():.1f} points earned, "
+                       f"{gr.expected_points.sum():.1f} expected, of {gr.confidence_points.sum()} possible.")
     from nflpickem.ablation import latest_ablation
     with connection() as con:
         abl = latest_ablation(con)

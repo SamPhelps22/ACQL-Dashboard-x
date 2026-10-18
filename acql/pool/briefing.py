@@ -155,24 +155,24 @@ class Brief:
         out = [f"ACQL week {self.week}", ""]
         if self.money is not None and self.for_money:
             out.append(
-                f"  Aimed at the pool's money: {_dollars(self.money.best.money)} a week "
-                f"expected, {_dollars(self.money.gain)} more than the most-wins card, "
+                f"  Win the week, aimed at the pool's money: {_dollars(self.money.best.money)} a week "
+                f"expected, {_dollars(self.money.gain)} more than the Safe card, "
                 f"for {self.money.plain.points - self.money.best.points:.2f} fewer points"
             )
             out.append("")
         elif self.plan is not None and self.straight:
             out.append(
-                f"  The likeliest side of every game: {self.plan.plain_win_odds:.1%} "
+                f"  Safe, the likeliest side of every game: {self.plan.plain_win_odds:.1%} "
                 f"to finish first of {self.plan.coaches + 1} (a fair share is "
-                f"{self.plan.fair_share:.1%}; the card built to win the week "
+                f"{self.plan.fair_share:.1%}; the Long shot card "
                 f"would be {self.plan.win_odds:.1%})"
             )
             out.append("")
         elif self.plan is not None:
             out.append(
-                f"  Built to win the week: {self.plan.win_odds:.1%} to finish "
+                f"  Long shot: {self.plan.win_odds:.1%} to finish "
                 f"first of {self.plan.coaches + 1} (a fair share is "
-                f"{self.plan.fair_share:.1%}; the likeliest side of every game "
+                f"{self.plan.fair_share:.1%}; the Safe card "
                 f"would be {self.plan.plain_win_odds:.1%})"
             )
             out.append("")
@@ -203,11 +203,13 @@ class Brief:
 
 #: The cards This Week can hand in.
 STYLE_STRAIGHT = "straight"  # most wins: the likeliest side of every game and
-                             # the three likeliest Big Losers (the default)
-STYLE_MONEY = "money"        # the likeliest sides, Big Losers chosen for the
+                             # the three likeliest Big Losers
+STYLE_MONEY = "money"        # (the default) the likeliest sides, Big Losers chosen for the
                              # pool's money rule (moneyplan)
 STYLE_WIN = "win"            # built to finish first (the planner's card)
-DEFAULT_STYLE = STYLE_STRAIGHT
+DEFAULT_STYLE = STYLE_MONEY
+#: What each is called on the page, in the order they are offered.
+STYLE_NAMES = {STYLE_MONEY: "Win the week", STYLE_STRAIGHT: "Safe", STYLE_WIN: "Long shot"}
 
 
 def _dollars(value: float) -> str:

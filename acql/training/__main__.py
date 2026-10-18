@@ -7,7 +7,11 @@
     python -m acql.training weekly     what the scheduled task runs: the snapshot, and a fresh run
                                        when the newest is a week old (the Model Lab shows its verdict)
     python -m acql.training check      only the check that no result can leak backwards
-    python -m acql.training fetch      the season archives from The Prediction Tracker (about 2 MB;
+    python -m acql.training patterns   home-underdog patterns from outside, counted on our seasons
+    python -m acql.training decay      how much of the models' gap from the line survives open to close
+    python -m acql.training margin     four ways of taking the bookmaker's margin out, against results
+    python -m acql.training features   each football fact on its own, on top of the line, at each timing
+    python -m acql.training fetch     the season archives from The Prediction Tracker (about 2 MB;
                                        the one thing here that goes online, and only when asked)
 
 Everything is written under data/training. The dashboard's database is read
@@ -124,7 +128,13 @@ def snapshot(args) -> int:
         for issue in notes.items:
             print(f"  {issue.level}: {issue.detail}")
         return 1
-    done = snapshots.take(rows)
+    try:
+        with study.books():
+            report = snapshots.injury_report(set(rows.get("home", [])) | set(rows.get("away", [])))
+    except Exception as exc:  # noqa: BLE001 - a snapshot without injuries beats none at all
+        print(f"Injury report not read ({exc}); the snapshot goes ahead without it.")
+        report = None
+    done = snapshots.take(rows, injuries=report)
     if not done:
         print("Nothing to freeze: every week on the books already has a result in.")
     for path, what in done:
@@ -183,6 +193,42 @@ def check(args) -> int:
     return 2 if bad else 0
 
 
+def patterns(args) -> int:
+    """Outside betting patterns (home underdogs) counted on our seasons - nothing taught."""
+    from . import patterns as found
+    text, path = found.run(sunday_only=not args.every_day)
+    print(text)
+    print(f"Written to {path}")
+    return 0
+
+
+def margin(args) -> int:
+    """Four ways of taking the bookmaker's margin out of the moneylines, against the results."""
+    from . import devig
+    text, path = devig.run()
+    print(text)
+    print(f"Written to {path}")
+    return 0
+
+
+def decay(args) -> int:
+    """How much of the models' disagreement with the line is left at each line of the week."""
+    from . import decay as found
+    text, path = found.run()
+    print(text)
+    print(f"Written to {path}")
+    return 0
+
+
+def featurevalue(args) -> int:
+    """Each football fact added on its own to the line, walked forward, at each line timing."""
+    from . import featurevalue as found
+    text, path = found.run()
+    print(text)
+    print(f"Written to {path}")
+    return 0
+
+
 def fetch(args) -> int:
     """The season archives, one request each, a second apart. Files already
     on disk are left alone (this season's is fetched again with --refresh)."""
@@ -230,12 +276,18 @@ def main(argv: list[str] | None = None) -> int:
     w = commands.add_parser("weekly", help="the scheduled job: the snapshot, and a run when one is due")
     w.add_argument("--force", action="store_true", help="run now, however new the last run is")
     commands.add_parser("check", help="the check that no result can leak backwards")
+    pt = commands.add_parser("patterns", help="home-underdog patterns counted on our seasons")
+    pt.add_argument("--every-day", action="store_true", help="count Thursday and Monday games too")
+    commands.add_parser("margin", help="four ways of taking the margin out of the moneylines, measured")
+    commands.add_parser("decay", help="the models' edge over the line, open to close, measured")
+    commands.add_parser("features", help="each football fact on its own, on top of the line, measured")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
     args = parser.parse_args(argv)
     _logging(args.verbose)
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
-            "fetch": fetch}.get(args.command)
+            "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
+            "features": featurevalue}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0

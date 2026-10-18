@@ -832,7 +832,7 @@ def stylesheet(p: Palette) -> str:
         color: {p.ink_secondary};
     }}
 
-    /* ---- quick switcher (Ctrl+K) ---- */
+    /* ---- settings list (Ctrl+K) ---- */
     QDialog#CommandPalette {{
         background: {p.surface};
         border: 1px solid {p.baseline};

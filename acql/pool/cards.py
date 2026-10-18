@@ -424,7 +424,7 @@ class Record:
             return f"No graded weeks with a card from {MODEL_NAME} yet."
         text = (
             f"Over {self.weeks} week{'s' if self.weeks != 1 else ''} {MODEL_NAME}'s card got "
-            f"{self.model_total} right; the card built to finish first {self.planned_total}"
+            f"{self.model_total} right; the Long shot card {self.planned_total}"
         )
         if self.mine_total is not None:
             text += f"; {coach} {self.mine_total}"

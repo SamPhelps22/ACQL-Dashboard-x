@@ -55,6 +55,11 @@ import numpy as np
 #: slate, 12,000 found cards winning 3.4-3.5%, 20,000 found 3.5-3.7%.
 SIMULATIONS = 20_000
 SEED = 2026          # fixed, so the same week always plans the same way
+#: The other coaches a card is played against when the real roster isn't
+#: passed in. ACQL had 35 coaches in 2026, so 34 others. The live card
+#: (pool/briefing.py) always passes the season's own roster less one; this
+#: number is only the default, the self-check's and the historical replay's.
+OTHER_COACHES = 34
 #: A flip has to raise the chance of finishing first by at least this much
 #: to be kept. Smaller gains are simulation noise, and a card that changes
 #: with the noise would change every time the page is opened.
@@ -183,7 +188,7 @@ def plan_week(
     choices: list[Choice],
     *,
     cards: list[list[int]] | None = None,
-    coaches: int = 34,
+    coaches: int = OTHER_COACHES,
     sims: int = SIMULATIONS,
     seed: int = SEED,
 ) -> Plan | None:
@@ -207,7 +212,7 @@ def card_odds(
     take: list[str],
     *,
     cards: list[list[int]] | None = None,
-    coaches: int = 34,
+    coaches: int = OTHER_COACHES,
     sims: int = SIMULATIONS,
     seed: int = SEED,
 ) -> tuple[float, tuple[float, ...]] | None:

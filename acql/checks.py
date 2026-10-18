@@ -89,7 +89,7 @@ def _check_planner() -> str:
         weekplan.Choice(f"G{i}", f"A{i}", f"B{i}", 0.5 + 0.02 * (i % 10), 0.55 + 0.03 * (i % 12))
         for i in range(16)
     ]
-    plan = weekplan.plan_week(choices, coaches=34, sims=4000)
+    plan = weekplan.plan_week(choices, coaches=weekplan.OTHER_COACHES, sims=4000)
     assert plan is not None and len(plan.take) == 16
     assert plan.win_odds >= plan.plain_win_odds - 0.01, (plan.win_odds, plan.plain_win_odds)
     assert len(plan.flip_odds) == 16

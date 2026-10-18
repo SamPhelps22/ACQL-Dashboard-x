@@ -1,5 +1,9 @@
 # NFL Confidence Pick'em Predictor
 
+cd nfl_pickem
+python -m streamlit run app/streamlit_app.py
+
+
 A standalone system for weekly NFL **confidence-point pools**. It is independent of the ACQL
 Dashboard in the parent folder and shares no code with it.
 

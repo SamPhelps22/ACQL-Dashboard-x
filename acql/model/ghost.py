@@ -236,7 +236,7 @@ def tooltip(record: GhostSeason) -> str:
     lines = [
         f"{MODEL_NAME}, the dashboard's own card, scored like a coach's: shown for "
         "comparison, never placed or paid.",
-        "Its picks and its three Big Losers: the card This Week recommended when the "
+        "Its picks and its three Big Losers: the card Deadeye Picks recommended when the "
         "pool's cards were due.",
     ]
     lines.append(f"Its record is out of {record.chances}: every game and every Big Loser pick, "
