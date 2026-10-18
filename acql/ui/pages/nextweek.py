@@ -144,6 +144,22 @@ WHERE_TO_PUT_IT = (
 )
 
 
+def _codes(away: object, home: object) -> str:
+    """"SEA @ DEN": a matchup short enough never to be cut off."""
+    a, h = _code(away), _code(home)
+    return f"{a} @ {h}" if a and h else predictions.display_matchup(away, home)
+
+
+def _code(team: object) -> str:
+    """"SEA" for a team, or "" when the name is not one the lookup knows."""
+    return predictions.team_code(team).upper()
+
+
+def _short(team: object) -> str:
+    """A team in a narrow column: its code, or its name when it has none."""
+    return _code(team) or predictions.display_team(team)
+
+
 def _same(a: object, b: object) -> bool:
     """Two team names that mean the same team, whatever the spacing or case."""
     return " ".join(str(a or "").split()).casefold() == " ".join(str(b or "").split()).casefold() != ""
@@ -277,10 +293,13 @@ class NextWeekPage(Page):
         controls.addWidget(self.clear_button)
 
         controls.addStretch(1)
+        self.layout_.addLayout(controls)
+        # Its own row, wrapped: in the button row its whole sentence set the
+        # page's minimum width, and the page clipped at ordinary window sizes.
         self.status = QLabel("")
         self.status.setObjectName("Muted")
-        controls.addWidget(self.status)
-        self.layout_.addLayout(controls)
+        self.status.setWordWrap(True)
+        self.layout_.addWidget(self.status)
 
         self.source_note = QLabel("")
         self.source_note.setObjectName("Muted")
@@ -304,7 +323,7 @@ class NextWeekPage(Page):
                        self.tile_edge, self.tile_dogs)
         self.tile_slate.setProperty("lead", True)       # the row's headline, as tile_grid marks it
         for tile in self._tiles:
-            tiles.addWidget(tile, 2 if tile is self.tile_best else 1)
+            tiles.addWidget(tile, 1)
         self.layout_.addLayout(tiles)
 
         self.card = Card("Picks")
@@ -582,8 +601,11 @@ class NextWeekPage(Page):
             fitted = self._fitted.describe()
             if fitted:
                 lines_out.append(fitted)
-        self.source_note.setText("\n".join(lines_out))
-        self.source_note.setToolTip(str(source or ""))
+        shown = lines_out[:1]
+        if len(lines_out) > 1:
+            shown[0] += "  \u00b7  more \u24d8"
+        self.source_note.setText("\n".join(shown))
+        self.source_note.setToolTip("\n".join(lines_out[1:] + ([str(source)] if source else [])))
 
     def _record(self) -> str:
         """How these picks have done on the weeks that have a file and a result."""
@@ -656,7 +678,11 @@ class NextWeekPage(Page):
             return cell
 
         self.table.setItem(row, COL_NUM, item(str(game.index), Qt.AlignmentFlag.AlignRight))
-        self.table.setItem(row, COL_MATCH, item(predictions.display_matchup(game.away, game.home)))
+        # Codes, so the column never cuts a name to "Seattle @ Den..."; the
+        # names in full are in the tooltip.
+        match = item(_codes(game.away, game.home))
+        match.setToolTip(predictions.display_matchup(game.away, game.home))
+        self.table.setItem(row, COL_MATCH, match)
 
         favourite = QComboBox()
         favourite.addItem("— choose —", None)
@@ -702,7 +728,7 @@ class NextWeekPage(Page):
         now = predictions.home_margin(game, forecast, forecast.market)
         if now is None:
             return "", "", ""
-        side = game.home if now >= 0 else game.away
+        side = _short(game.home if now >= 0 else game.away)
         text = f"{side} by {abs(now):g}" if now else "pick'em"
 
         opening = predictions.home_margin(game, forecast, forecast.opening)
@@ -713,7 +739,7 @@ class NextWeekPage(Page):
         toward = game.home if now > opening else game.away
         moved = abs(now - opening)
         if opening:
-            was = f"{game.home if opening > 0 else game.away} by {abs(opening):g}"
+            was = f"{predictions.display_team(game.home if opening > 0 else game.away)} by {abs(opening):g}"
         else:
             was = "pick'em"
         return (
@@ -1021,7 +1047,8 @@ class NextWeekPage(Page):
         game = self._games[row]
         line = getattr(game, "line", None)
         if line is not None:
-            return (f"{game.line_favourite} by {line:g}", "", self.palette.ink)
+            return (f"{_short(game.line_favourite)} by {line:g}",
+                    f"{predictions.display_team(game.line_favourite)} by {line:g}", self.palette.ink)
         margin, sd, _, _ = self._margin(row)
         if margin is None or abs(margin) <= LIKELY_LINED:
             return "straight up", "", self.palette.ink_muted
@@ -1045,7 +1072,7 @@ class NextWeekPage(Page):
             why_tip = result
             colour = self.palette.ink_muted
         else:
-            pick = guess.pick
+            pick = predictions.display_team(guess.pick)
             chance = f"{guess.chance:.0%}" + (" · coin flip" if guess.coin_flip else "")
             why = result + guess.reason
             why_tip = result + guess.detail
@@ -1544,9 +1571,9 @@ class NextWeekPage(Page):
             guess = self._prediction(row)
             game = games[row]
             self.tile_edge.update_values(
-                guess.pick,
+                predictions.display_team(guess.pick),
                 f"{gain:+.0%} on the average card \u00b7 {guess.chance:.0%} to land "
-                f"against {share:.0%} of the pool\n{game.away} @ {game.home}",
+                f"against {share:.0%} of the pool\n{predictions.display_matchup(game.away, game.home)}",
                 "good" if gain >= WORTH_LEVERAGE else "",
             )
         else:
@@ -1571,8 +1598,8 @@ class NextWeekPage(Page):
         row, best = max(entered, key=lambda rg: (rg[1].chance, -rg[0]))
         game = games[row]
         self.tile_best.update_values(
-            best.pick,
-            f"{best.chance:.0%} · {game.away} @ {game.home}"
+            predictions.display_team(best.pick),
+            f"{best.chance:.0%} · {predictions.display_matchup(game.away, game.home)}"
             + (f"\nagainst the line: {best.reason}" if best.against_line else ""),
             "good",
         )

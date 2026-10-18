@@ -9,7 +9,7 @@ from matplotlib.ticker import MaxNLocator, PercentFormatter
 from .charts import LABEL_SIZE, LINE_WIDTH, Chart
 from ..wording import ordinal as _ordinal
 
-MUTED_ALPHA = 0.28
+MUTED_ALPHA = 0.16      # the pack recedes so the named lines read
 
 
 class RaceChart(Chart):
@@ -31,7 +31,7 @@ class RaceChart(Chart):
             if name in coloured:
                 continue
             line, = ax.plot(weeks, places, color=p.ink_muted, alpha=MUTED_ALPHA,
-                            linewidth=1.0, marker="o", markersize=2.5, zorder=2)
+                            linewidth=0.9, marker="o", markersize=1.5, zorder=2)
             self.register_hover(line, [f"{name}\nafter week {w}: {_ordinal(pl)}" for w, pl in zip(weeks, places)])
         ends = []
         for name, places in series:

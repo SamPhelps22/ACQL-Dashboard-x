@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QStackedWidget, QTabBar, QVBoxLayout, QWidget
 
+from .motion import fade_stack
 from .pages.base import Page
 from .tokens import SPACE
 
@@ -58,7 +59,7 @@ class PageGroup(QWidget):
         layout.setSpacing(0)
 
         self.tabs: QTabBar | None = None
-        if len(self.pages) > 1:
+        if self.pages:      # one page too: the same header row everywhere
             holder = QWidget()
             holder.setObjectName("GroupTabs")
             row = QHBoxLayout(holder)
@@ -83,6 +84,7 @@ class PageGroup(QWidget):
         self.stack = QStackedWidget()
         for page in self.pages:
             self.stack.addWidget(page)
+        fade_stack(self.stack)
         layout.addWidget(self.stack, 1)
 
     # ---- what the window asks of it ----------------------------------------

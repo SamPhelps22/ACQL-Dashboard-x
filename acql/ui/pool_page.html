@@ -409,10 +409,7 @@ main {
 }
 @media (prefers-reduced-motion: no-preference) {
   .hero.enter { animation: wipe 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-  @keyframes wipe {
-    from { clip-path: polygon(0 0, 0 0, 0 100%, 0 100%); }
-    to { clip-path: polygon(0 0, 100% 0, calc(100% - 26px) 100%, 0 100%); }
-  }
+  /* @keyframes wipe: defined once, with the cut-corner panel further down */
 }
 
 /* every hover and focus change eases in the same time */
