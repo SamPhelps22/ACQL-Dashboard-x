@@ -665,6 +665,21 @@ def _team_ranks(latest: int) -> dict[str, int]:
     return {c: i + 1 for i, c in enumerate(order)}
 
 
+def _team_power(latest: int) -> dict[str, int]:
+    """Team code -> points better than an average team, to the whole point,
+    from this season's betting lines (the same ratings as _team_ranks);
+    {} when too few games are priced. Whole points so a line moving by a
+    hair doesn't put the site up again."""
+    try:
+        from ..pool import survivor
+        rating = survivor.ratings(survivor._lines_so_far(latest + 1))
+    except Exception:  # noqa: BLE001 - the power map hides without it
+        return {}
+    if len(rating) < 28:
+        return {}
+    return {c: int(round(r)) for c, r in rating.items()}
+
+
 #: How old a pick sheet can be and still be for the week coming up, when
 #: the workbook has no slate for that week to check it against.
 RECENT_SHEET_DAYS = 21
@@ -815,6 +830,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "history": history,
         "teams": {code: display_team(code) for code in sorted(DISPLAY)},
         "team_rank": _team_ranks(latest),
+        "team_power": _team_power(latest),
         "weeks": [
             {**w, "chaos": chaos.get(w["week"])} for w in (
                 _week(season, n, money_known=n not in set(getattr(season, "computed_winnings", []) or []),

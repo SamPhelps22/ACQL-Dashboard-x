@@ -762,6 +762,34 @@ td.game, td.winner { white-space: normal; }
 .scard summary { cursor: pointer; color: var(--muted); }
 .scard .chips { margin-top: 6px; gap: 4px; }
 .scard .chip { font-size: 12px; padding: 1px 7px; }
+/* the survivor wall: a row of logos a coach, the knocked-out greyed */
+.swall { overflow-x: auto; }
+.swall table { border-collapse: separate; border-spacing: 0 3px; min-width: 100%; }
+.swall th { font-size: 11px; font-weight: 600; color: var(--muted); text-align: center; padding: 0 2px; }
+.swall td { padding: 0 2px; text-align: center; vertical-align: middle; }
+.swall td.coach, .swall th.coach { text-align: left; position: sticky; left: 0; background: var(--surface); padding-right: 10px; white-space: nowrap; z-index: 1; }
+.swall tr.me td.coach { color: var(--gold); }
+.swall .cell { width: 30px; height: 30px; border-radius: var(--r-sm); display: inline-grid; place-items: center; position: relative; background: var(--surface-2, rgba(127,127,127,.08)); }
+.swall .cell img { width: 26px; height: 26px; object-fit: contain; }
+.swall .cell .tb { font-size: 9px; }
+.swall .cell.lost { background: color-mix(in srgb, var(--bad) 22%, transparent); }
+.swall .cell.lost::after { content: ""; position: absolute; inset: 3px; background:
+  linear-gradient(45deg, transparent 46%, var(--bad) 46% 54%, transparent 54%),
+  linear-gradient(-45deg, transparent 46%, var(--bad) 46% 54%, transparent 54%); }
+.swall .cell.now { outline: 2px dashed var(--gold); outline-offset: -2px; }
+.swall .cell.gone { background: none; }
+.swall tr.out .cell:not(.lost) > * { filter: grayscale(1); opacity: .55; }
+.swall tr.out td.coach { color: var(--muted); }
+.swall tr.out td.coach a { color: inherit; }
+.swall tr.cut td { border-top: 1px solid var(--rule); padding-top: 6px; }
+/* the power map */
+.pmap svg image { cursor: default; }
+.pmap .quad { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); opacity: .8; }
+.pmap .axis { stroke: var(--rule); }
+.pmap .fit { stroke: var(--gold); stroke-dasharray: 4 4; opacity: .7; }
+.pmap .spot { fill: var(--gold); opacity: .18; }
+.pmap-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 8px; }
+.pmap-lists .chips { gap: 6px; }
 .bar { height: 6px; border-radius: var(--r-xs); background: var(--turf); }
 .bar-cell { width: 40%; min-width: 80px; }
 .race-sum { color: var(--ink-2); }
@@ -4271,8 +4299,60 @@ a.weekpill { text-decoration: none; }
           el("p", { class: "note", text: "Three picks a week, a point each when the team loses by 15 or more." })
         ], { "data-card": "losers-season" })
       ]),
+      survivorWall(),
       suicideBoard()
     ]));
+  }
+
+  // The survivor wall: every coach's suicide picks as a row of logos, week by week -
+  // the knocked-out greyed, the losing pick crossed, this week's pick dashed.
+  function suicideLogo(team) {
+    var code = codeOf(team);
+    if (!code) return el("span", { class: "tb", text: String(team || "?").slice(0, 3).toUpperCase() });
+    var img = document.createElement("img");
+    img.alt = teamFull(code);
+    img.title = teamFull(code);
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.src = logoUrl(code);
+    var holder = el("span", {}, [img]);
+    img.onerror = function () { holder.textContent = ""; holder.appendChild(badge(code)); };
+    return holder;
+  }
+  function survivorWall() {
+    var weeks = seasonWeeks();
+    var rows = DATA.players.filter(function (p) { return Object.keys(p.suicide.picks || {}).length || p.suicide.out; });
+    if (!weeks.length || !rows.length) return null;
+    var liveSui = {};
+    var liveWeek = hasLive() && DATA.live.coaches ? DATA.live.week : null;
+    if (liveWeek) DATA.live.coaches.forEach(function (c) { if (c.sui) liveSui[c.name] = c.sui; });
+    var cols = weeks.slice();
+    if (liveWeek && cols.indexOf(liveWeek) < 0 && Object.keys(liveSui).length) cols.push(liveWeek);
+    rows.sort(function (a, b) {
+      return (b.suicide.alive - a.suicide.alive) || ((b.suicide.out || 0) - (a.suicide.out || 0)) || a.name.localeCompare(b.name);
+    });
+    var standing = rows.filter(function (p) { return p.suicide.alive; }).length;
+    var body = rows.map(function (p, i) {
+      var s = p.suicide, gone = false;
+      var cells = cols.map(function (n) {
+        var team = (s.picks || {})[String(n)];
+        var now = !team && n === liveWeek && s.alive ? liveSui[p.name] : null;
+        if (gone || (!team && !now)) return el("td", {}, [el("span", { class: "cell gone" })]);
+        var lost = s.out === n;
+        if (lost) gone = true;
+        return el("td", {}, [el("span", { class: "cell" + (lost ? " lost" : "") + (now ? " now" : ""),
+          title: "Week " + n + ": " + teamFull(codeOf(team || now)) + (lost ? " – knocked out" : now ? " – being played" : "") }, [suicideLogo(team || now)])]);
+      });
+      var cls = [s.alive ? "" : "out", isMe(p.name) ? "me" : "", i && i === standing ? "cut" : ""].filter(Boolean).join(" ");
+      return el("tr", { class: cls || null }, [el("td", { class: "coach" }, [who(p.name)])].concat(cells));
+    });
+    return module("Survivor wall", standing + " of " + rows.length + " still standing", [
+      el("div", { class: "swall" }, [el("table", {}, [
+        el("thead", {}, [el("tr", {}, [el("th", { class: "coach", text: "Coach" })].concat(cols.map(function (n) { return el("th", { text: "Wk " + n }); })))]),
+        el("tbody", {}, body)])]),
+      el("p", { class: "note", text: "Every pick so far, a logo a week. A crossed logo is the pick that knocked a coach out" +
+        (Object.keys(liveSui).length ? "; a dashed one is this week’s pick, still being played." : ".") })
+    ], { "data-card": "survivor-wall" });
   }
 
   // The suicide board: what each coach still standing has left to use.
@@ -5469,6 +5549,95 @@ a.weekpill { text-decoration: none; }
   }
 
   // ---- the Charts page ------------------------------------------------------------------
+  // The power map: every team's logo by what the betting lines rate it (across) and
+  // what it has actually won (up). The dashed line is the record a rating usually
+  // earns, so a logo well under it is better than its record says.
+  function teamRecords() {
+    var rec = {};
+    DATA.weeks.forEach(function (w) {
+      (w.results || []).forEach(function (g) {
+        var win = codeOf(g.winner), lose = codeOf(g.loser);
+        if (!win || !lose || win === lose) return;
+        (rec[win] = rec[win] || { w: 0, l: 0 }).w++;
+        (rec[lose] = rec[lose] || { w: 0, l: 0 }).l++;
+      });
+    });
+    return rec;
+  }
+  function powerPoints() {
+    var power = DATA.team_power || {}, rec = teamRecords();
+    var pts = Object.keys(power).filter(function (c) { return rec[c]; }).map(function (c) {
+      var r = rec[c];
+      return { code: c, rating: power[c], w: r.w, l: r.l, pct: r.w / (r.w + r.l) };
+    });
+    if (pts.length < 28) return null;
+    // the record a rating usually earns: a straight line through the points
+    var n = pts.length, mx = 0, my = 0, sxy = 0, sxx = 0;
+    pts.forEach(function (p) { mx += p.rating / n; my += p.pct / n; });
+    pts.forEach(function (p) { sxy += (p.rating - mx) * (p.pct - my); sxx += (p.rating - mx) * (p.rating - mx); });
+    var slope = sxx ? sxy / sxx : 0;
+    pts.forEach(function (p) { p.gap = p.pct - (my + slope * (p.rating - mx)); });
+    return { pts: pts, fit: function (x) { return my + slope * (x - mx); } };
+  }
+  function powerMap(width) {
+    var P = powerPoints();
+    if (!P) return null;
+    var pts = P.pts, small = width < 520;
+    var H = small ? 340 : 440, padL = 44, padR = 16, padT = 22, padB = 38, size = small ? 24 : 32;
+    var lo = Math.min.apply(null, pts.map(function (p) { return p.rating; })), hi = Math.max.apply(null, pts.map(function (p) { return p.rating; }));
+    var span = Math.max(Math.abs(lo), Math.abs(hi), 3) + 1;
+    function X(v) { return padL + (v + span) / (2 * span) * (width - padL - padR); }
+    function Y(v) { return padT + (1 - v) * (H - padT - padB); }
+    var kids = [];
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+      kids.push(svgEl("line", { x1: padL, x2: width - padR, y1: Y(v), y2: Y(v), class: "axis", "stroke-width": v === 0.5 ? 1.5 : 0.6 }));
+      kids.push(svgEl("text", { x: padL - 6, y: Y(v) + 4, "text-anchor": "end", text: Math.round(v * 100) + "%" }));
+    });
+    var step = span > 8 ? 4 : 2;
+    for (var t = -Math.floor(span / step) * step; t <= span; t += step) {
+      kids.push(svgEl("line", { x1: X(t), x2: X(t), y1: padT, y2: H - padB, class: "axis", "stroke-width": t === 0 ? 1.5 : 0.6 }));
+      kids.push(svgEl("text", { x: X(t), y: H - padB + 16, "text-anchor": "middle", text: t === 0 ? "avg" : (t > 0 ? "+" : "−") + Math.abs(t) }));
+    }
+    kids.push(svgEl("text", { x: (padL + width - padR) / 2, y: H - 4, "text-anchor": "middle", class: "lbl", text: "Betting-line rating: points better than an average team →" }));
+    kids.push(svgEl("text", { x: 12, y: (padT + H - padB) / 2, "text-anchor": "middle", class: "lbl",
+      transform: "rotate(-90 12 " + (padT + H - padB) / 2 + ")", text: "Games won" }));
+    kids.push(svgEl("text", { x: width - padR - 4, y: H - padB - 8, "text-anchor": "end", class: "quad", text: "Better than the record" }));
+    kids.push(svgEl("text", { x: padL + 6, y: padT + 14, class: "quad", text: "Winning above the rating" }));
+    var fx1 = -span, fx2 = span;
+    kids.push(svgEl("line", { x1: X(fx1), y1: Y(Math.max(0, Math.min(1, P.fit(fx1)))), x2: X(fx2), y2: Y(Math.max(0, Math.min(1, P.fit(fx2)))), class: "fit", "stroke-width": 1.5 }));
+    var sorted = pts.slice().sort(function (a, b) { return Math.abs(a.gap) - Math.abs(b.gap); });
+    var standouts = pts.slice().sort(function (a, b) { return Math.abs(b.gap) - Math.abs(a.gap); }).slice(0, 4).map(function (p) { return p.code; });
+    sorted.forEach(function (p) {
+      var cx = X(p.rating), cy = Y(p.pct);
+      var tip = teamFull(p.code) + ": " + p.w + "–" + p.l + ", rated " + (p.rating > 0 ? "+" : p.rating < 0 ? "−" : "") + Math.abs(p.rating) + " by the lines";
+      var g = svgEl("g", {}, [
+        standouts.indexOf(p.code) >= 0 ? svgEl("circle", { cx: cx, cy: cy, r: size * 0.72, class: "spot" }) : null,
+        svgEl("text", { x: cx, y: cy + 4, "text-anchor": "middle", class: "lbl", text: p.code.toUpperCase() }),
+        svgEl("image", { href: logoUrl(p.code), x: cx - size / 2, y: cy - size / 2, width: size, height: size }),
+        svgEl("title", { text: tip })
+      ]);
+      kids.push(g);
+    });
+    return svgEl("svg", { viewBox: "0 0 " + width + " " + H, role: "img", "aria-label": "Teams by betting-line rating and games won" }, kids);
+  }
+  function powerMapModule() {
+    var P = powerPoints();
+    if (!P) return null;
+    function line(p) { return teamFull(p.code) + " " + p.w + "–" + p.l; }
+    var under = P.pts.filter(function (p) { return p.gap < -0.1; }).sort(function (a, b) { return a.gap - b.gap; }).slice(0, 4);
+    var over = P.pts.filter(function (p) { return p.gap > 0.1; }).sort(function (a, b) { return b.gap - a.gap; }).slice(0, 4);
+    function list(title, items) {
+      return items.length ? el("div", {}, [el("b", { text: title }), el("div", { class: "chips" }, items.map(function (p) {
+        return el("span", { class: "chip", title: line(p) }, [badge(p.code), " " + p.w + "–" + p.l]); }))]) : null;
+    }
+    return module("Power map", "every team: what the lines think, against what it has won", [
+      el("div", { class: "pmap" }, [chartBox("power", 340, powerMap)]),
+      el("div", { class: "pmap-lists" }, [list("Better than their record", under), list("Winning more than the lines expect", over)]),
+      el("p", { class: "note", text: "Across: how many points better than an average team the betting lines make each team, from every line this season. Up: the share of its games it has won. The dashed line is the record that rating usually brings; the further a logo sits below it, the more the market still believes in a team its record doesn’t back up." }),
+      tableView("power", ["Team", "Record", "Rating"], P.pts.slice().sort(function (a, b) { return b.rating - a.rating; }).map(function (p) {
+        return [teamFull(p.code), p.w + "–" + p.l, (p.rating > 0 ? "+" : "") + p.rating]; }))
+    ], { "data-card": "power-map" });
+  }
   function chartsView() {
     var focus = highlighted();
     var weeks = seasonWeeks();
@@ -5519,6 +5688,7 @@ a.weekpill { text-decoration: none; }
           Object.keys(M).sort(function (a, b) { return M[b][M[b].length - 1] - M[a][M[a].length - 1]; }).map(function (k) { return [k].concat(M[k].map(dollars)); }))
       ], { "data-card": "money-chart" }));
     }
+    kids.push(powerMapModule());
     return el("div", { class: "view", "data-view": "charts" }, kids);
   }
   function moneyChartModule() {
