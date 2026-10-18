@@ -113,6 +113,8 @@ ICONS = {
     "down": '<path d="M5 7.4h14L12 18.6z"/>',
     "anchor": '<circle cx="12" cy="5.6" r="2"/><path d="M12 7.6v12.6"/><path d="M8.4 11h7.2"/><path d="M4.6 13.6a7.4 7.4 0 0 0 14.8 0"/>',
     "split": '<path d="M12 20.4v-7.6"/><path d="M12 12.8L5.6 6.4"/><path d="M12 12.8l6.4-6.4"/><path d="M5.4 10.6V6.2h4.4"/><path d="M18.6 10.6V6.2h-4.4"/>',
+    "chevron-left": '<path d="M14.6 5.6L8.2 12l6.4 6.4"/>',
+    "chevron-right": '<path d="M9.4 5.6l6.4 6.4-6.4 6.4"/>',
     # Operation Sunday's own mark: the ball in the sights
     "mark": (
         '<circle cx="12" cy="12" r="8.6"/>'

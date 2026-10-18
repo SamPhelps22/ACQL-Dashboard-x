@@ -483,6 +483,7 @@ def stylesheet(p: Palette) -> str:
         border-left: 4px solid {p.baseline};
         border-radius: {r["md"]}px;
     }}
+    #GameCard[target="true"] {{ border-color: {p.accent}; }}
     #GameCard[tone="good"] {{ border-left-color: {p.good}; }}
     #GameCard[tone="bad"] {{ border-left-color: {p.critical}; }}
     #GameCard[tone="live"] {{ border-left-color: {p.accent}; }}
@@ -528,6 +529,36 @@ def stylesheet(p: Palette) -> str:
     #ChipTeam[faded="true"] {{ color: {p.ink_muted}; font-weight: 500; }}
     #ChipScore {{ font-family: {DISPLAY_STACK}; font-size: {t["body"] + 2}px; font-weight: 700; color: {p.ink}; }}
     #ChipScore[faded="true"] {{ color: {p.ink_muted}; }}
+    #ChipTeam[pick="true"] {{ color: {brand}; font-weight: 700; }}
+
+    /* The scoreboard ribbon: the week's games in one row above every page. */
+    #ScoreRibbon {{
+        background: {p.surface};
+        border-bottom: 1px solid {line};
+    }}
+    #RibbonTrack, #RibbonLane {{ background: transparent; }}
+    #ScoreRibbon #ScoreChip:hover {{ border-color: {p.accent}; }}
+    #RibbonTitle {{
+        font-size: {t["label"]}px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
+        color: {brand};
+    }}
+    #RibbonCount {{
+        font-size: {t["caption"]}px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        color: {p.ink_muted};
+    }}
+    #RibbonCount[live="true"] {{ color: {p.critical}; }}
+    QToolButton#RibbonArrow {{
+        background: transparent;
+        border: 1px solid {line};
+        border-radius: {r["sm"]}px;
+        padding: 6px 2px;
+    }}
+    QToolButton#RibbonArrow:hover {{ border-color: {p.accent}; }}
+    QToolButton#RibbonArrow:disabled {{ border-color: transparent; }}
     #RoomHeading {{
         font-size: {t["label"]}px;
         font-weight: 700;

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QPoint, QSettings, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QComboBox,
@@ -53,6 +53,8 @@ TILES_FOUR_WIDTH = 720
 #: One chip on the scoreboard strip, and the most rows of chips it shows.
 CHIP_WIDTH = 168
 CHIP_ROWS = 2
+#: How long a game opened from the scoreboard ribbon stays lit.
+TARGET_LIT_MS = 2400
 ROOTS_SHOWN = 5
 LOSERS_SHOWN = 8
 BOARD_HEADERS = ["#", "Coach", "Now", "Games", "Big L.", "Banked", "Can reach", "To win", "If it ended now"]
@@ -354,6 +356,7 @@ class ScoreChip(QFrame):
         state.setObjectName("GameState")
         state.setProperty("live", "true" if st.state == "in" else "")
         layout.addWidget(state)
+        self.state_label = state
         margin = st.margin
         for side, name, points in ((GD.AWAY, st.game.away, st.away_points),
                                    (GD.HOME, st.game.home, st.home_points)):
@@ -369,6 +372,8 @@ class ScoreChip(QFrame):
             team = ElidedLabel(display_team(name))
             team.setObjectName("ChipTeam")
             team.setProperty("faded", "true" if behind else "")
+            # your pick, in gold
+            team.setProperty("pick", "true" if mine and side == mine else "")
             row.addWidget(team, 1)
             score = QLabel("" if points is None or not st.started else str(points))
             score.setObjectName("ChipScore")
@@ -543,6 +548,45 @@ class GameDayPage(Page):
         """The slate's empty panel, for the Chaos Simulator to fill."""
         self.chaos_placeholder.hide()
         return self.chaos_box
+
+    # ---- opened at one game (the scoreboard ribbon) ----------------------------
+    def show_game(self, week: int, index: int) -> None:
+        """Show this week and scroll to one game's card, lit for a moment."""
+        if self.season is not None and week and week != self._week:
+            self._week = week
+            self._user_week = week != GD.default_week(self.season)
+            self._dirty = True
+        if self._dirty:
+            self.refresh_now()
+        # once the cards are laid out at the page's width
+        QTimer.singleShot(0, lambda: self._scroll_to_game(index))
+
+    def game_card(self, index: int) -> GameCard | None:
+        for _grid, cards, _laid in self._placed.values():
+            for card in cards:
+                if card.state.index == index:
+                    return card
+        return None
+
+    def _scroll_to_game(self, index: int) -> None:
+        card = self.game_card(index)
+        if card is None:
+            return
+        self._page_restore_to = None          # a refresh's held position must not pull it back
+        top = card.mapTo(self._content, QPoint(0, 0)).y()
+        self._scroll.verticalScrollBar().setValue(max(0, top - SPACE["room"]))
+        card.setProperty("target", "true")
+        card.style().unpolish(card)
+        card.style().polish(card)
+
+        def unlight() -> None:
+            try:
+                card.setProperty("target", "")
+                card.style().unpolish(card)
+                card.style().polish(card)
+            except RuntimeError:              # redrawn since
+                pass
+        QTimer.singleShot(TARGET_LIT_MS, unlight)
 
     def _game_section(self, title: str) -> tuple[Card, QGridLayout]:
         card = Card(title)

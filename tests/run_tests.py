@@ -3324,6 +3324,85 @@ class SurvivorFieldTests(unittest.TestCase):
         self.assertGreater(sf.fit(made), sf.fit(made[:1] + [sf.Made("y", 9, "c", chances, frozenset())] * 3))
 
 
+class TestScoreboardRibbon(unittest.TestCase):
+    """The ribbon over every page: the week's games in ticker order, exact
+    kickoff times, your pick in gold, and a chip that opens Game Day."""
+
+    @staticmethod
+    def _game(index, state, kickoff, away="Dallas", home="Green Bay", away_points=None, home_points=None,
+              clock=""):
+        from types import SimpleNamespace
+        from acql.pool import gameday as GD
+        margin = None if home_points is None or away_points is None else home_points - away_points
+        return SimpleNamespace(
+            index=index, state=state, kickoff=kickoff, clock=clock,
+            game=SimpleNamespace(away=away, home=home, label=f"{away} at {home}"),
+            home_points=home_points, away_points=away_points, margin=margin,
+            started=state in ("in", "final"), decided=state == "final",
+            leader=(GD.HOME if (margin or 0) > 0 else GD.AWAY if (margin or 0) < 0 else GD.NOBODY),
+            possession="", line_text=lambda: "straight up")
+
+    def test_on_now_then_by_kickoff_then_the_finals(self):
+        from acql.ui.ribbon import in_order
+        games = [self._game(1, "final", 100), self._game(2, "pre", 900), self._game(3, "in", 500),
+                 self._game(4, "pre", 700), self._game(5, "final", 300), self._game(6, "off", None)]
+        self.assertEqual([g.index for g in in_order(games)], [3, 4, 2, 6, 5, 1])
+
+    def test_kickoff_is_a_day_and_a_time_never_a_countdown(self):
+        import time as _time
+        from acql.ui.ribbon import kickoff_words
+        soon = _time.mktime((2026, 10, 18, 13, 0, 0, 0, 0, -1))      # a Sunday, 1 pm
+        self.assertEqual(kickoff_words(soon), "Sun 1:00 PM")
+        self.assertEqual(kickoff_words(_time.mktime((2026, 10, 19, 20, 15, 0, 0, 0, -1))), "Mon 8:15 PM")
+        self.assertEqual(kickoff_words(None), "")
+
+    def test_only_while_a_week_is_being_played(self):
+        from types import SimpleNamespace
+        from acql.feeds import results
+        from acql.ui.ribbon import playing_week
+        year = 2026
+        mid = results.week_starts(year, 6) + 4 * 86400
+        season = SimpleNamespace(is_empty=False, results_year=year, title="ACQL 2026",
+                                 weeks={6: SimpleNamespace(games=[object()])})
+        self.assertEqual(playing_week(season, mid), 6)
+        self.assertEqual(playing_week(season, results.week_starts(year, 7) + 3600), 0)   # no games set up
+        self.assertEqual(playing_week(season, results.week_starts(year, 1) - 86400), 0)  # before the season
+        self.assertEqual(playing_week(SimpleNamespace(is_empty=True), mid), 0)
+
+    def test_chips_are_one_row_in_order_with_your_pick_in_gold(self):
+        import os
+        from types import SimpleNamespace
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication, QLabel
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            self.skipTest(f"PySide6 unavailable: {exc}")
+        type(self).app = QApplication.instance() or QApplication([])
+        from acql.pool import gameday as GD
+        from acql.ui.ribbon import ScoreboardRibbon, kickoff_words
+        from acql.ui.theme import PALETTES
+        ribbon = ScoreboardRibbon(PALETTES["dark"])
+        games = [self._game(1, "final", 100, "Houston", "Jacksonville", 34, 31, "Final"),
+                 self._game(2, "pre", 900_000, "Arizona", "Los Angeles Rams"),
+                 self._game(3, "in", 500, "Chicago", "Atlanta", 21, 7, "Q2 1:02")]
+        you = SimpleNamespace(picks={3: GD.AWAY, 2: GD.HOME})
+        ribbon.show_games(6, games, you)
+        self.assertFalse(ribbon.isHidden())
+        self.assertTrue(ribbon.live)
+        self.assertEqual([c.index for c in ribbon.chips], [3, 2, 1])
+        self.assertTrue(all(ribbon.lane_row.indexOf(c) >= 0 for c in ribbon.chips))   # one row
+        self.assertEqual(ribbon.chips[1].state_label.text(), kickoff_words(900_000))
+        gold = {c.index: [lab.full_text() for lab in c.findChildren(QLabel) if lab.property("pick") == "true"]
+                for c in ribbon.chips}
+        self.assertEqual(gold, {3: ["Chicago"], 2: ["Los Angeles Rams"], 1: []})
+        chosen = []
+        ribbon.game_chosen.connect(lambda week, index: chosen.append((week, index)))
+        ribbon.chips[1].pressed.emit(ribbon.chips[1].index)
+        self.assertEqual(chosen, [(6, 2)])
+        ribbon.show_games(0, [], None)                                           # between weeks
+        self.assertTrue(ribbon.isHidden())
+
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")
