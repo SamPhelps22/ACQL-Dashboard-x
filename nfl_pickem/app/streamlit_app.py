@@ -574,9 +574,14 @@ def page_tracker() -> None:
         rs = c1.selectbox("Review season", sorted(wk_runs.season.unique(), reverse=True), key="rv_s")
         rw = c2.selectbox("Review week", sorted(wk_runs[wk_runs.season == rs].week.unique(), reverse=True), key="rv_w")
         from nflpickem.review import review_week, systematic_check
-        with connection() as con:
-            rv = review_week(con, cfg, int(rs), int(rw))
-            cal = systematic_check(con, cfg)
+        try:
+            with connection() as con:
+                rv = review_week(con, cfg, int(rs), int(rw))
+                cal = systematic_check(con, cfg)
+        except ValueError as exc:  # e.g. custom_points shorter than the slate
+            st.error(f"This week can't be reviewed with the current pool settings: {exc}. "
+                     "Fix the point values on the Settings page.")
+            return
         if "games" in rv:
             m = st.columns(4)
             m[0].metric("Points", f"{rv['points']:.1f}", f"{rv['points'] - rv['market_sheet_points']:+.1f} vs market sheet")

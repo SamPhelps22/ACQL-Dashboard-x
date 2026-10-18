@@ -12,6 +12,9 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = PROJECT_ROOT / "config.toml"
 LOCAL_OVERRIDES = PROJECT_ROOT / "settings.local.json"
+#: Set (to anything) to ignore settings.local.json - the test suite does, so a
+#: user's own pool settings cannot change what the tests see.
+NO_LOCAL_ENV = "NFLPICKEM_NO_LOCAL"
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -42,7 +45,7 @@ def load_config(path: Path | None = None, overrides: dict | None = None,
     """Return the merged configuration dictionary."""
     with open(path or DEFAULT_CONFIG, "rb") as fh:
         cfg = tomllib.load(fh)
-    if use_local and LOCAL_OVERRIDES.exists():
+    if use_local and not os.environ.get(NO_LOCAL_ENV) and LOCAL_OVERRIDES.exists():
         cfg = _deep_merge(cfg, json.loads(LOCAL_OVERRIDES.read_text()))
     if overrides:
         cfg = _deep_merge(cfg, overrides)

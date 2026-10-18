@@ -50,6 +50,34 @@ GAMES_PER_WEEK = 16
 BIG_LOSER_PICKS = 3
 
 
+def write_atomic(path: Path, text: str) -> None:
+    """Write `text` to `path` whole or not at all: a sibling temp file, then a
+    rename over the old one, so a crash or a full disk mid-write leaves the
+    previous file readable (a half-written aliases.json would load as empty).
+    Raises OSError like write_text; the temp file never stays behind."""
+    import time
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        for attempt in range(3):          # OneDrive can hold the file a moment
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.2)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
 @dataclass
 class Settings:
     """User preferences, persisted to acql-settings.json."""
@@ -74,9 +102,7 @@ class Settings:
 
     def save(self) -> None:
         try:
-            SETTINGS_FILE.write_text(
-                json.dumps(asdict(self), indent=2), encoding="utf-8"
-            )
+            write_atomic(SETTINGS_FILE, json.dumps(asdict(self), indent=2))
         except OSError:
             pass
 
