@@ -1,9 +1,13 @@
 """Phone alerts (acql/site/pushalerts.py): sent once, and never without a topic."""
 
+import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
-from acql.site import pushalerts
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from acql.site import pushalerts  # noqa: E402
 
 
 class TestPushAlerts(unittest.TestCase):

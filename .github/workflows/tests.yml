@@ -56,6 +56,13 @@ jobs:
       - name: The training ground's tests
         run: python tests/test_training.py
 
+      - name: The smaller suites (chaos, model lab, phone alerts, Sunday brief)
+        run: |
+          python tests/test_chaos.py
+          python tests/test_model_lab.py
+          python tests/test_pushalerts.py
+          python tests/test_sunday.py
+
       - name: The app's own checks
         run: python -m acql.checks
 
