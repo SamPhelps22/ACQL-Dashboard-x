@@ -507,6 +507,47 @@ def stylesheet(p: Palette) -> str:
     #GameNote {{ font-size: {t["caption"]}px; color: {p.ink_muted}; font-style: italic; }}
     #Ball {{ font-size: {t["label"]}px; }}
 
+    /* Game Day's control room: the scoreboard strip, the column headings,
+       the slot kept for the Chaos Simulator and the status bar under it all. */
+    #ScoreStrip {{
+        background: {p.surface};
+        border: 1px solid {line};
+        border-top: 1px solid {mix(brand, p.surface, 0.45)};
+        border-radius: {r["md"]}px;
+    }}
+    #ScoreChip {{
+        background: {p.raised};
+        border: 1px solid {line};
+        border-bottom: 2px solid {p.baseline};
+        border-radius: {r["sm"]}px;
+    }}
+    #ScoreChip[tone="good"] {{ border-bottom-color: {p.good}; }}
+    #ScoreChip[tone="bad"] {{ border-bottom-color: {p.critical}; }}
+    #ScoreChip[tone="live"] {{ border-bottom-color: {p.accent}; }}
+    #ChipTeam {{ font-size: {t["caption"] + 1}px; font-weight: 600; color: {p.ink}; }}
+    #ChipTeam[faded="true"] {{ color: {p.ink_muted}; font-weight: 500; }}
+    #ChipScore {{ font-family: {DISPLAY_STACK}; font-size: {t["body"] + 2}px; font-weight: 700; color: {p.ink}; }}
+    #ChipScore[faded="true"] {{ color: {p.ink_muted}; }}
+    #RoomHeading {{
+        font-size: {t["label"]}px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
+        color: {brand};
+    }}
+    #ChaosSlot {{
+        background: transparent;
+        border: 1px dashed {mix(p.accent, p.surface, 0.45)};
+        border-radius: {r["md"]}px;
+    }}
+    #StatusBar {{
+        background: {p.surface};
+        border-top: 1px solid {line};
+    }}
+    #StatusText {{ font-size: {t["caption"]}px; color: {p.ink_secondary}; }}
+    #StatusLight {{ font-size: {t["caption"]}px; color: {p.ink_muted}; }}
+    #StatusLight[live="true"] {{ color: {p.critical}; }}
+    QPushButton#StatusButton {{ padding: 2px 10px; font-size: {t["caption"]}px; }}
+
     #PageTitle {{
         font-family: {DISPLAY_STACK};
         font-size: {t["title"]}px;
