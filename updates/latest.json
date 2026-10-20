@@ -1,8 +1,8 @@
 {
- "version": "2.18.0",
- "file": "ACQL-Dashboard-2.18.0-update.zip",
- "sha256": "41e0596df267d8082659af61a8acba6d6830ca9a171f67f26173e8900cce4692",
- "size": 1659583,
- "notes": "Standings work themselves out without stats.xls",
- "commit": "bcbe77ecfde9176d6a749541cffd74cbd5a2276b"
+ "version": "2.18.1",
+ "file": "ACQL-Dashboard-2.18.1-update.zip",
+ "sha256": "9730b70165e00206870a6cefacfa5c0e063f9203e505c5bfbf7f6cbecb8a85e9",
+ "size": 1659518,
+ "notes": "Fixes the blank website page from 2.18.0, and the suicide pool count on it.",
+ "commit": "01ced602ad9a4db4d05e56fc56b16562f72cea9e"
 }
