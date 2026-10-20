@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make a release the dashboard can update itself from.
 
-    python packaging/release.py --since <commit> --notes "What changed"
+    python packaging/release.py --since <commit> --notes "The standings work themselves out once a week's games are final - no stats.xls upload needed."
     python packaging/release.py --check          (build and test-install only; write nothing)
 
 Writes two files into updates/ - the update zip and latest.json, which names
