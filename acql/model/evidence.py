@@ -17,6 +17,7 @@ worth knowing:
     You              your own record picking these teams this season
     Track record     how Deadeye's picks at this confidence have done
     Big Loser        when the other side is a blowout candidate
+    Primetime dog    a night game's underdog, and how night dogs have done this season
 
 The market and the models are what the chance is made of; the rest is the
 background the market has already weighed, shown so the pick can be
@@ -477,6 +478,24 @@ def _track(chance: float, bands: list[analytics.Band]) -> Signal | None:
     )
 
 
+def _primetime(game: Game, pick: str, year: int, week: int, record) -> Signal | None:
+    """A night game: the underdog's side, with the season's primetime-dog record."""
+    from ..pool import trends
+    score, flipped = results.find(results.load(year, week), game.away, game.home)
+    night = trends.night(getattr(score, "kickoff", None))
+    if not night:
+        return None
+    dog = trends.underdog(game, score, flipped)
+    detail = (f"Primetime underdogs are {record.record()} against the spread this season"
+              + (f" and have {record.streak_words()}" if record.streak_words() else "") + "."
+              if record is not None and record.games else "No primetime games graded yet this season.")
+    if not dog:
+        return Signal("Primetime dog", INFO, f"{night} game", detail)
+    if same_side(pick, dog):
+        return Signal("Primetime dog", FOR, f"{night}: {pick} is the underdog", detail)
+    return Signal("Primetime dog", AGAINST, f"{night}: {display_team(dog)} is the underdog", detail)
+
+
 def _blowout(other: str, other_code: str, loser_chance: dict[str, float], chosen: set[str]) -> Signal | None:
     chance = loser_chance.get(other_code)
     if chance is None or chance < BLOWOUT:
@@ -514,6 +533,11 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
     doubted = distrusted(season)
     # today's injury report says nothing about a week that has been played
     current = not all(g.played for g in games)
+    try:
+        from ..pool import trends
+        night_record = trends.primetime_record(season, brief.week - 1)
+    except Exception:  # noqa: BLE001 - the case stands without it
+        night_record = None
     market_at = predictions.market_time(brief.week) if current else 0.0
 
     out = []
@@ -541,6 +565,7 @@ def build(season: Season, brief, me: str | None = None) -> list[Case]:
             _yours(spots, choice.pick, choice.other),
             _track(choice.chance, bands),
             _blowout(choice.other, other_code, loser_chance, chosen),
+            _primetime(game, choice.pick, year, brief.week, night_record),
         ]
         signals = [_discounted(s, doubted) for s in signals]
         if choice.turned:
@@ -595,7 +620,7 @@ def distrusted(season: Season) -> dict[str, SignalRecord]:
         return {}
     return {r.name: r for r in board
             if r.split >= DISTRUST_GAMES and r.split_right / r.split <= DISTRUST_RATE
-            and r.name in ("Line move", "Computer models", "Form", "Rest")}
+            and r.name in ("Line move", "Computer models", "Form", "Rest", "Primetime dog")}
 
 
 def _discounted(signal: Signal | None, doubted: dict[str, SignalRecord]) -> Signal | None:
@@ -611,7 +636,7 @@ def _discounted(signal: Signal | None, doubted: dict[str, SignalRecord]) -> Sign
 
 
 #: The rows of the scoreboard, in the order they are read.
-SCORED = ("Deadeye", "Betting line", "Computer models", "Line move", "Form", "Rest", "The pool")
+SCORED = ("Deadeye", "Betting line", "Computer models", "Line move", "Form", "Rest", "Primetime dog", "The pool")
 
 
 def scoreboard(season: Season) -> list[SignalRecord]:
@@ -663,6 +688,7 @@ def scoreboard(season: Season) -> list[SignalRecord]:
             views["Computer models"] = side(_models(game, home, True, forecast))
             views["Form"] = side(_form(home_code, away_code, home, away, form))
             views["Rest"] = side(_rest(home, away, home_code, away_code, _kickoff(year, number, game), form))
+            views["Primetime dog"] = side(_primetime(game, home, year, number, None))
             took = crowd.get(game.index)
             views["The pool"] = None if not took or took[0] == took[1] else took[0] > took[1]
             guess = prices[game.index].prediction() if game.index in prices else None

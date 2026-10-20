@@ -728,6 +728,7 @@ td.game, td.winner { white-space: normal; }
 
 /* ---- side pools --------------------------------------------------------------------- */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.nighttag { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--gold-soft); border: 1px solid var(--gold); white-space: nowrap; }
 .chip { border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px; background: var(--surface); font-size: 14px; }
 .chip.alive { border-color: var(--turf); background: var(--turf-soft); }
 /* three or fewer left in the suicide pool: they get a headline, not chips */
@@ -3155,7 +3156,7 @@ a.weekpill { text-decoration: none; }
       heroRecap(w),
       el("div", { class: "cols" }, [
         el("div", {}, [tableTop(), storiesModule(w)]),
-        el("div", {}, [youModule(w), sidePoolsModule(w), titleRaceModule(), movers()])
+        el("div", {}, [youModule(w), sidePoolsModule(w), titleRaceModule(), trendsModule(), movers()])
       ])
     ];
   }
@@ -3267,6 +3268,27 @@ a.weekpill { text-decoration: none; }
       moreLink("The side pools", "pools")
     ], { "data-card": "side" });
   }
+  // ---- hot trends: how kinds of side have done against the spread -----------------------
+  function primeNote() {
+    var t = (DATA.trends || []).filter(function (t) { return t.key === "primetime_dogs"; })[0];
+    return t ? ". Primetime dogs are " + t.record + " against the spread this season" + (t.words ? ", " + t.words : "") : "";
+  }
+  function trendsModule() {
+    var T = DATA.trends || [];
+    if (!T.length) return null;
+    return module("Hot trends", "against the spread", [
+      el("div", { class: "rows" }, T.map(function (t) {
+        var hot = t.words ? (t.streak > 0 ? "🔥 " : "🧊 ") : "";
+        return el("div", { class: "r", style: "grid-template-columns: 64px minmax(0,1fr)" }, [
+          el("span", { class: "big", text: t.record }),
+          el("span", {}, [el("b", { text: hot + t.label }),
+            el("span", { class: "meta", style: "display:block", text: (t.words ? t.words.charAt(0).toUpperCase() + t.words.slice(1) + " · " : "") +
+              Math.round(t.rate * 100) + "% this season" + (t.recent.length ? " · latest: " + t.recent.slice(-3).join(", ") : "") })])
+        ]);
+      })),
+      el("p", { class: "note", text: "By the pool's lines where a game has one, otherwise the betting spread. Primetime is a 7pm Eastern kickoff or later." })
+    ], { "data-card": "trends" });
+  }
   function titleRaceModule() {
     var R = DATA.race;
     if (!R || !DATA.players.length) return null;
@@ -3307,7 +3329,7 @@ a.weekpill { text-decoration: none; }
       top,
       el("div", { class: "cols" }, [
         el("div", {}, [splitsCard(t, true), limbCard(t)]),
-        el("div", {}, [weekSuicideCard(t), weekLosersCard(t), w ? lastWeekModule(w) : null])
+        el("div", {}, [weekSuicideCard(t), weekLosersCard(t), trendsModule(), w ? lastWeekModule(w) : null])
       ])
     ];
   }
@@ -3360,7 +3382,7 @@ a.weekpill { text-decoration: none; }
           rootingCard(t, sim),
           swingCard(t, sim)
         ]),
-        el("div", {}, [swingsFeed(), weekSuicideCard(t), weekLosersCard(t), limbCard(t)])
+        el("div", {}, [swingsFeed(), weekSuicideCard(t), weekLosersCard(t), limbCard(t), trendsModule()])
       ])
     ];
   }
@@ -3809,7 +3831,9 @@ a.weekpill { text-decoration: none; }
     return el("div", { class: "gcard" + (on ? " in" : over ? " post" : " pre") + (on && sc.rz ? " rz" : ""), "data-game": g.ac + "@" + g.hc }, [
       el("div", { class: "top" }, [el("span", { class: "when" + (on ? " in" : "") }, [on ? el("span", { class: "dot-live" }) : null, when]),
         on && sc.rz ? el("span", { class: "rztag", text: "RED ZONE" }) : null,
-        sc.tv && !over ? el("span", { class: "tv", text: sc.tv }) : null]),
+        sc.tv && !over ? el("span", { class: "tv", text: sc.tv }) : null,
+        g.night && g.dog ? el("span", { class: "nighttag", title: g.night + " game: " + teamName(x, g.dog) + " is the underdog" + primeNote(),
+          text: "🌙 Primetime dog: " + g.dog.toUpperCase() }) : null]),
       row(g.ac, g.a, x.state === "pre" ? null : x.as, x.hs),
       row(g.hc, g.h, x.state === "pre" ? null : x.hs, x.as),
       spot ? fieldStrip(x, spot) : null,

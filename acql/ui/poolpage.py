@@ -478,6 +478,32 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
     return out
 
 
+def _night_tags(season: Season, number: int) -> dict[frozenset, dict]:
+    """The week's primetime games by their two teams (trends.week_tags)."""
+    try:
+        from ..pool import trends
+        week = season.weeks.get(number)
+        tags = trends.week_tags(season, number)
+    except Exception:  # noqa: BLE001 - the page goes up without them
+        return {}
+    by_index = {g.index: g for g in (week.games if week else [])}
+    return {frozenset((team_code(g.home), team_code(g.away))): tags[i] for i, g in by_index.items() if i in tags}
+
+
+def _trends(season: Season, weeks: list[int]) -> list[dict]:
+    """The Hot trends card: each trend with enough games behind it."""
+    if not weeks:
+        return []
+    try:
+        from ..pool import trends
+        found = trends.season_trends(season, max(weeks))
+    except Exception:  # noqa: BLE001
+        return []
+    return [{"key": t.key, "label": t.label, "record": t.record(), "rate": round(t.rate, 3),
+             "streak": t.streak, "words": t.streak_words(), "recent": list(t.recent)}
+            for t in found if t.games >= trends.MIN_GAMES or (t.key == "primetime_dogs" and t.games)]
+
+
 def _live(season: Season, latest: int) -> dict | None:
     """The week being played: its games, the pool's lines and everyone's
     picks, so the page can follow the games live. From the commissioner's
@@ -535,12 +561,15 @@ def _live(season: Season, latest: int) -> dict | None:
     def who(name: str) -> str:
         return by_name.get(" ".join(str(name).split()).casefold(), str(name).strip())
 
+    nights = _night_tags(season, number)
     games, columns = [], []
     for away, home, line, fav in slate:
+        tag = nights.get(frozenset((team_code(away), team_code(home)))) or {}
         games.append({
             "a": display_team(away), "h": display_team(home),
             "ac": team_code(away), "hc": team_code(home),
             "line": line, "fav": team_code(fav) if fav else "",
+            "night": tag.get("night", ""), "dog": tag.get("dog_code", ""),
         })
         columns.append(sheet.game_for(away, home))
     coaches = []
@@ -850,6 +879,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "note": note,
         "alerts": _alerts_link(),
         "texts": _texts_on(),
+        "trends": _trends(season, weeks),
         "history": history,
         "teams": {code: display_team(code) for code in sorted(DISPLAY)},
         "team_rank": _team_ranks(latest),
