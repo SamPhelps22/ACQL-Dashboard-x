@@ -153,7 +153,8 @@ def load_season(settings: Settings, aliases: AliasTable | None = None, *,
 
     _split_provisional(season)
     _resolve_suicide_pool(season, (latest_stats or {}).get("week") or 0)
-    _restart_suicide_pool(season, (latest_stats or {}).get("week") or 0)
+    _restart_suicide_pool(season, (latest_stats or {}).get("week") or 0,
+                          (latest_stats or {}).get("suicide_round"))
     _rank_weeks(season)
     return season
 
@@ -534,7 +535,8 @@ def _resolve_suicide_pool(season: Season, stats_week: int | None = None) -> None
                 person.suicide_out_week = latest
 
 
-def _restart_suicide_pool(season: Season, stats_week: int = 0) -> None:
+def _restart_suicide_pool(season: Season, stats_week: int = 0,
+                          from_stats: dict | None = None) -> None:
     """Start the suicide pool again from the week the dashboard was told it did
     (survivor.start_again): somebody won it, so everyone is back in.
 
@@ -542,9 +544,14 @@ def _restart_suicide_pool(season: Season, stats_week: int = 0) -> None:
     round's survivors, so the new round is worked out here - everyone alive,
     then each week's picks from the new start on. Once the export has caught
     up, its survivors are the new round's and stay as they are.
+
+    The export says so itself once it has a "Suicide Pool #2" column
+    (`from_stats`); a later start told to the dashboard still wins.
     """
     from .pool import survivor
     found = survivor.rounds(season.results_year or results.season_year(season))
+    if from_stats and (not found or found[-1]["week"] < from_stats["start"]):
+        found = found + [{"week": from_stats["start"], "winners": from_stats["winners"]}]
     if not found:
         return
     start = season.suicide_restart = found[-1]["week"]

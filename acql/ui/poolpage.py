@@ -463,7 +463,7 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
             text = (line.suicide_pick or "").strip()
             if line.suicide_out or text.casefold() in recap.DEAD_MARKERS:
                 if entered and knocked is None:
-                    knocked = number - 1
+                    knocked = max(number - 1, start)
                 break
             if not team_code(text):
                 continue
@@ -475,6 +475,8 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
             # no picks to go on: take the files' word, within the page's weeks
             knocked = min(person.suicide_out_week, latest) or None
             entered = knocked is not None
+            if knocked and start and knocked < start:
+                knocked = start         # out of this round, which began in `start`
         out[key] = (entered and knocked is None, knocked)
     return out
 
