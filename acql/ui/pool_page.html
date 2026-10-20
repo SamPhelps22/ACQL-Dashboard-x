@@ -1354,7 +1354,6 @@ html.finding { overflow: hidden; }
 }
 
 /* the footer signs off with the league's name */
-.youtag.ponytag { background: var(--raised); color: var(--ink-2); border: 1px solid var(--rule); }
 footer .fbrand { display: flex; align-items: center; gap: 10px; font: 800 19px/1 var(--display); letter-spacing: 0.02em; color: var(--ink-2); margin-bottom: 8px; }
 footer .fbrand img { width: 44px; height: 44px; }
 
@@ -4229,40 +4228,6 @@ a.weekpill { text-decoration: none; }
   }
 
   // ---- standings ---------------------------------------------------------------------
-  // ---- Line-Pony: the pool's own entry that takes the line, the yardstick ----------
-  function pony() {
-    return DATA.players.filter(function (p) { return /^line[\s_-]*pon(y|ie)s?$/i.test(String(p.name).trim()); })[0] || null;
-  }
-  function isPony(name) { var lp = pony(); return !!lp && lp.name === name; }
-  // How a coach stands against Line-Pony: the season gap and the weeks beaten.
-  function vsPony(name) {
-    var lp = pony();
-    if (!lp || lp.name === name) return null;
-    var me = null, beat = 0, tied = 0, weeks = 0;
-    DATA.players.forEach(function (p) { if (p.name === name) me = p; });
-    if (!me) return null;
-    DATA.weeks.forEach(function (w) {
-      var a = null, b = null;
-      w.scores.forEach(function (sc) { if (sc.name === name) a = sc.total; if (sc.name === lp.name) b = sc.total; });
-      if (a == null || b == null) return;
-      weeks++;
-      if (a > b) beat++; else if (a === b) tied++;
-    });
-    return { gap: me.wins - lp.wins, beat: beat, tied: tied, weeks: weeks, pony: lp.name };
-  }
-  function ponyText(v) {
-    return (v.gap > 0 ? plural(v.gap, "win") + " ahead of " : v.gap < 0 ? plural(-v.gap, "win") + " behind " : "level with ") + v.pony +
-      " · beat it in " + v.beat + " of " + plural(v.weeks, "week") + (v.tied ? ", " + v.tied + " tied" : "");
-  }
-  function ponySummary() {
-    var lp = pony();
-    if (!lp || !DATA.through_week) return "";
-    var ahead = DATA.players.filter(function (p) { return p.wins > lp.wins; }).length;
-    var others = DATA.players.length - 1;
-    return " " + (ahead ? plural(ahead, "coach is", "coaches are") + " beating " + lp.name + ", who takes the line every game"
-      : "Nobody has beaten the line yet: " + lp.name + " takes it every game") + (ahead ? " – " + (others - ahead) + " " + (others - ahead === 1 ? "isn’t." : "aren’t.") : ".");
-  }
-
   function standingsView() {
     var lead = DATA.players.length ? DATA.players[0].wins : 0;
     var latest = weekData(DATA.through_week);
@@ -4272,7 +4237,7 @@ a.weekpill { text-decoration: none; }
     }));
     return el("div", { class: "view", "data-view": "standings" }, [
       el("div", { class: "pagehead" }, [el("h1", { text: "Standings" }), toggle]),
-      el("p", { class: "lede", text: raceSummary() + ponySummary() }),
+      el("p", { class: "lede", text: raceSummary() }),
       state.every ? null : podium(),
       state.every ? everyWeekTable() : leaderboard(lead, latest),
       raceCard()
@@ -4333,8 +4298,7 @@ a.weekpill { text-decoration: none; }
         el("span", { class: "pos", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
         moveMark(p.move),
         el("span", { class: "name" }, [el("span", { class: "initials sm", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
-          who(p.name), formBadge(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null,
-          isPony(p.name) ? el("span", { class: "youtag ponytag", title: "Takes the line every game: the score to beat", text: "THE LINE" }) : null]),
+          who(p.name), formBadge(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null]),
         el("span", { class: "big", text: String(p.wins), "data-tick": "s:total:" + p.name }),
         el("span", { class: "col", text: lead - p.wins ? String(lead - p.wins) : "–" }),
         el("span", { class: "col" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }),
@@ -5273,8 +5237,7 @@ a.weekpill { text-decoration: none; }
       el("div", { class: "idrow" }, [el("span", { class: "initials xl", style: avatarStyle(p.name), text: initials(p.name) }),
         el("div", {}, [nickname(p.name) ? el("span", { class: "nickname", title: nickname(p.name).why, text: "“" + nickname(p.name).name + "”" }) : null,
           el("h1", {}, [p.name, formBadge(p.name)]), el("p", { class: "coach-line note", text: line }),
-          form(p.name) ? el("p", { class: "note form-line", text: formText(form(p.name)) }) : null,
-          vsPony(p.name) && vsPony(p.name).weeks ? el("p", { class: "note pony-line", text: "vs the line: " + ponyText(vsPony(p.name)) }) : null])]),
+          form(p.name) ? el("p", { class: "note form-line", text: formText(form(p.name)) }) : null])]),
       el("div", { class: "figures" }, [
         figure(p.place != null ? ordinal(p.place) : "–", "in the standings",
           (p.move ? (p.move > 0 ? "▲ up " : "▼ down ") + plural(Math.abs(p.move), "place") : "no move") + " last week"),
