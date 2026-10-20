@@ -2749,6 +2749,8 @@ a.weekpill { text-decoration: none; }
       items.push(el("button", { class: "item", type: "button", onclick: function () { state.sheet = false; render(); shareWeek(state.me); } },
         [icon("share"), el("span", {}, ["Share my week", el("small", { text: "A picture of your week for the group chat" })])]));
     }
+    items.push(el("a", { class: "item", href: MAIN_SITE, target: "_blank", rel: "noopener" },
+      [icon("share"), el("span", {}, ["The league's main site", el("small", { text: "users.erols.com/merpdave" })])]));
     var themes = el("div", { class: "themes" }, [
       el("b", { text: "Colours" }),
       el("div", { class: "seg", role: "group", "aria-label": "Colours" }, [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]].map(function (o) {
@@ -2791,10 +2793,13 @@ a.weekpill { text-decoration: none; }
       posted && !isNaN(posted.getTime()) ? el("span", { class: "when", text: "Posted " + posted.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) }) : null
     ]);
   }
+  // The league's own long-running site, linked from the menu and the footer.
+  var MAIN_SITE = "http://users.erols.com/merpdave/ACQL2007x.html";
   function footer() {
     var foot = el("footer", {}, [
       hasLogo() ? el("div", { class: "fbrand" }, [logoImg("logo"), "Arm Chair Quarterback League"]) : null,
       "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every number comes from the pool’s own sheets.",
+      el("a", { class: "mainsite", href: MAIN_SITE, target: "_blank", rel: "noopener", text: "The league's main site" }),
       typeof ownerFooter === "function" ? ownerFooter() : null,
       homeScreenTip()
     ]);
