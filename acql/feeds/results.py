@@ -43,9 +43,15 @@ KIND = "results"
 #: Never ask about the same week more often than this, however often the
 #: dashboard reloads (it reloads whenever a file in the folder changes).
 RECHECK_S = 5 * 60
-#: ...except while the Game Day page is open and a game is on: the score is
-#: what is being watched, so it is asked for every minute.
-LIVE_RECHECK_S = 60
+#: ...except while a game is on and being watched (Game Day, the ribbon,
+#: Cinema mode): the score is what is being watched, so it is asked for
+#: every 30 seconds.
+LIVE_RECHECK_S = 30
+#: A look due within this many seconds counts as due: the window considers
+#: looking every 30 seconds, and a tick landing a moment short of the wait
+#: (the last look's own time was stamped after it answered) would otherwise
+#: skip a whole tick and make it every minute.
+DUE_SLACK_S = 3
 #: A week whose games are all still to kick off is looked at this often -
 #: only to keep its fixtures and betting lines current.
 FIXTURES_RECHECK_S = 6 * 3600
@@ -328,6 +334,16 @@ def checked_at(year: int, week: int) -> float | None:
     return float(at) if isinstance(at, (int, float)) else None
 
 
+def fetched_at(year: int, week: int) -> float | None:
+    """When the scoreboard last answered about a week with games in it - the
+    moment the scores on screen are from. An empty or unreadable answer moves
+    `checked_at` (it was asked) but never this. Weeks kept before this was
+    recorded fall back to `checked_at`."""
+    kept = _stored(year, week)
+    at = kept.get("ok", kept.get("at") if kept.get("scores") else None)
+    return float(at) if isinstance(at, (int, float)) else None
+
+
 def save(year: int, week: int, scores: list[Score], at: float | None = None) -> None:
     """Keep a week's scores. A game already final stays as it was kept - a
     later look that leaves it out, or has it in a worse state, never loses it."""
@@ -344,9 +360,12 @@ def save(year: int, week: int, scores: list[Score], at: float | None = None) -> 
                 merged[pair] = score
     else:
         merged = before         # an answer with nothing in it says nothing
+    moment = time.time() if at is None else at
     try:
         store.put(KIND, _key(year, week), {
-            "at": time.time() if at is None else at,
+            "at": moment,
+            # the last answer with games in it: what the screen's "updated" time is
+            "ok": moment if scores else fetched_at(year, week),
             "scores": [asdict(s) for s in merged.values()],
         })
     except store.StoreError:
@@ -542,7 +561,7 @@ def due(year: int, weeks, *, now: float | None = None, force: bool = False,
                 out.append(week)
                 continue
             wait = FIXTURES_RECHECK_S
-        if now - last >= wait:
+        if now - last >= wait - DUE_SLACK_S:
             out.append(week)
     return out
 
@@ -612,6 +631,19 @@ def unreachable_since(now: float | None = None, within: float = 6 * 3600) -> flo
         return None
     now = time.time() if now is None else now
     return float(at) if now - at <= within else None
+
+
+def last_failure() -> tuple[float, str] | None:
+    """The last failed look at the scoreboard and why, until a good one clears it."""
+    try:
+        from .. import store
+        kept = store.get(FAILURE_KIND, FAILURE_KEY)
+    except Exception:  # noqa: BLE001
+        return None
+    at = kept.get("at") if isinstance(kept, dict) else None
+    if not isinstance(at, (int, float)):
+        return None
+    return float(at), str(kept.get("why") or "")
 
 
 def summary(year: int, week: int, pairs: list[tuple[str, str]]) -> str:

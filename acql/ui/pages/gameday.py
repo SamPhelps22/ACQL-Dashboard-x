@@ -4,7 +4,7 @@ The scores, the clock and who has the ball for each game on; whether each of
 your picks is being credited right now; where you stand in the week and your
 chance of finishing first; what to root for; the Big Losers and the suicide
 pool as they stand. While this page is open and a game is on, the scoreboard
-is asked every minute and the page redraws itself (the window does the
+is asked every 30 seconds and the page redraws itself (the window does the
 asking - app.py). All the working out is in gameday.py.
 """
 
@@ -530,7 +530,7 @@ class GameDayPage(Page):
         self.status.setObjectName("StatusText")
         bar.addWidget(self.status, 1)
         footnote = (
-            "Scores are checked every minute while a game is on. A game's chances come from the score, "
+            "Scores are checked every 30 seconds while a game is on. A game's chances come from the score, "
             "the time left and the betting line. Your chance of finishing first plays the rest of the "
             f"week out {GD.SIMS:,} times against everyone's cards. Money follows the pool's rule: a "
             "dollar for each game behind the week's best card.")
@@ -756,7 +756,7 @@ class GameDayPage(Page):
         if bd.mode in ("pre", "between") and bd.next_kickoff:
             parts.insert(0, f"Next kickoff {GD.kickoff_text(bd.next_kickoff)} ({_countdown(bd.next_kickoff)})")
         if bd.live:
-            parts.append("updating every minute")
+            parts.append("updating every 30 seconds")
         self.status.setText("  ·  ".join(parts))
 
     def _show_no_games(self, week: int) -> None:

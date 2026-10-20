@@ -6,6 +6,12 @@ then the finals - shown only while a week is being played. Your pick in each
 game is in gold. A chip opens Game Day at that game's card (app.py does the
 opening). The scores are the ones Game Day reads: what ESPN gave at the last
 look (pool/gameday.py), so the ribbon and the page never disagree.
+
+At its right end: the slate in numbers, the next kickoff counting down, a
+warning only when the scores on screen are stale or the last look failed,
+and the way into Cinema mode (cinema.py). A score that really changed at the
+last good look washes gold once; a game changing state fades into its new
+look once (both decided by cinema.LiveFeed, never by a redraw).
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QToolBut
 
 from ..feeds import results
 from ..pool import gameday as GD
+from ..pool import livestate as LS
 from . import icons
 from .pages.gameday import ME_KEY, ScoreChip
 
@@ -84,14 +91,26 @@ class RibbonChip(ScoreChip):
 
     pressed = Signal(int)          # the game's index
 
-    def __init__(self, st, you) -> None:
+    def __init__(self, st, you, fresh=None) -> None:
         super().__init__(st, you)
         self.index = st.index
         self.setFixedWidth(CHIP_WIDTH)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         if st.state == "pre" and st.kickoff:
             self.state_label.setText(kickoff_words(st.kickoff))
-        self.setToolTip(self.toolTip() + "\nOpen it on Game Day")
+        cs = LS.card_state(st.state, feed=fresh)
+        self.setProperty("status", cs.status)
+        self.setProperty("warn", cs.warn)
+        tip = self.toolTip() + "\nOpen it on Game Day"
+        if cs.warn and fresh is not None:
+            tip += "\n" + fresh.headline()
+        self.setToolTip(tip)
+
+    def flash_score(self, gold: str) -> None:
+        from .cinema import flash
+        for label in self.findChildren(QLabel, "ChipScore"):
+            if label.text():
+                flash(label, gold)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
@@ -116,6 +135,7 @@ class ScoreboardRibbon(QFrame):
     """The week's games in one sideways-scrolling row, above every page."""
 
     game_chosen = Signal(int, int)     # week, game index
+    cinema_wanted = Signal()
 
     def __init__(self, palette, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -167,6 +187,35 @@ class ScoreboardRibbon(QFrame):
 
         self.ahead = self._arrow("chevron-right", "Later games", 1)
         row.addWidget(self.ahead)
+
+        # the next kickoff, the feed's health and Cinema mode
+        clock = QVBoxLayout()
+        clock.setSpacing(0)
+        self.next_label = QLabel("")
+        self.next_label.setObjectName("RibbonCount")
+        self.countdown = QLabel("")
+        self.countdown.setObjectName("RibbonCountdown")
+        clock.addStretch(1)
+        clock.addWidget(self.next_label, 0, Qt.AlignmentFlag.AlignRight)
+        clock.addWidget(self.countdown, 0, Qt.AlignmentFlag.AlignRight)
+        clock.addStretch(1)
+        row.addLayout(clock)
+        self.fresh_pill = QLabel("")
+        self.fresh_pill.setObjectName("RibbonFresh")
+        self.fresh_pill.hide()
+        row.addWidget(self.fresh_pill, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.cinema_btn = QToolButton()
+        self.cinema_btn.setObjectName("RibbonCinema")
+        self.cinema_btn.setText("CINEMA")
+        self.cinema_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.cinema_btn.setToolTip("Cinema mode: the week full screen (F11; Esc to come back)")
+        self.cinema_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cinema_btn.clicked.connect(lambda *_: self.cinema_wanted.emit())
+        row.addWidget(self.cinema_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.fresh: LS.Freshness | None = None
+        self._tick = QTimer(self)
+        self._tick.setInterval(1000)
+        self._tick.timeout.connect(self._tick_clock)
         self.restyle(palette)
         self.hide()
 
@@ -183,6 +232,7 @@ class ScoreboardRibbon(QFrame):
     def restyle(self, palette) -> None:
         self.palette_ = palette
         self.mark.setPixmap(icons.pixmap("football", palette.brand or palette.accent, 18))
+        self.cinema_btn.setIcon(icons.icon("screen", palette.ink_secondary, palette.accent, 16))
         for button in (self.back, self.ahead):
             button.setIcon(icons.icon(button.property("icon_name"), palette.ink_secondary, palette.accent, 16))
 
@@ -199,12 +249,34 @@ class ScoreboardRibbon(QFrame):
                 you = mine
         self.show_games(week, states, you)
 
+    def set_feed(self, feed, season, changes=None) -> None:
+        """The week as the window's LiveFeed read it (cinema.py): drawn, then
+        whatever really changed at the last good look played once."""
+        you = None
+        if feed.week and feed.states:
+            key = viewer(season)
+            if key:
+                you = next((c for c in GD.cards(season, feed.week, feed.states, key) if c.you), None)
+        self.fresh = feed.fresh
+        self.show_games(feed.week, feed.states, you)
+        if changes:
+            from .cinema import pulse
+            gold = self.palette_.brand or self.palette_.accent
+            for chip in self.chips:
+                if chip.index in changes.states:
+                    pulse(chip)
+                if chip.index in changes.scores:
+                    chip.flash_score(gold)
+
     def show_games(self, week: int, states: list, you) -> None:
         ordered = in_order(states) if week else []
         picks = tuple(sorted(you.picks.items())) if you is not None else ()
-        key = (week, picks, tuple((s.index, s.state, s.home_points, s.away_points, s.clock, s.kickoff,
-                                   s.possession) for s in ordered))
+        warn = self.fresh is not None and (self.fresh.warn or self.fresh.level == "error")
+        key = (week, picks, warn, tuple((s.index, s.state, s.home_points, s.away_points, s.clock, s.kickoff,
+                                         s.possession) for s in ordered))
+        self._show_fresh()
         if key == self._key:
+            self._tick_clock()
             return
         self._key = key
         self.week, self.states = week, ordered
@@ -213,21 +285,75 @@ class ScoreboardRibbon(QFrame):
             chip.deleteLater()
         self.chips = []
         for st in ordered:
-            chip = RibbonChip(st, you)
+            chip = RibbonChip(st, you, self.fresh)
             chip.pressed.connect(lambda index: self.game_chosen.emit(self.week, index))
             self.lane_row.insertWidget(len(self.chips), chip)
             self.chips.append(chip)
         live = sum(1 for s in ordered if s.state == "in")
         final = sum(1 for s in ordered if s.state == "final")
         self.title.setText(f"WEEK {week}")
-        self.count.setText(f"{live} LIVE" if live else
+        slate = LS.slate(week, ordered)
+        self.count.setText(f"{live} LIVE \u00b7 {final} OF {slate.total} FINAL" if live else
                            "FINAL" if final == len(ordered) else
-                           f"{final} OF {len(ordered)} FINAL" if final else f"{len(ordered)} GAMES")
+                           f"{final} OF {slate.total} FINAL" if final else f"{slate.total} GAMES")
+        self.count.setToolTip(slate.text())
         self.count.setProperty("live", "true" if live else "")
         self.count.style().unpolish(self.count)
         self.count.style().polish(self.count)
         self.setVisible(bool(ordered))
+        self._tick_clock()
         QTimer.singleShot(0, self._sync_arrows)
+
+    def _show_fresh(self) -> None:
+        """Said only when something is wrong: fresh data needs no badge."""
+        fresh = self.fresh
+        if fresh is None or fresh.level in ("fresh", "waiting"):
+            self.fresh_pill.hide()
+            return
+        words = {"stale": f"STALE \u00b7 {fresh.age_text().upper()}", "failed": "REFRESH FAILED",
+                 "error": "NO SCORES YET"}[fresh.level]
+        self.fresh_pill.setText(words)
+        self.fresh_pill.setToolTip("\n".join(filter(None, [fresh.headline(), fresh.detail()])))
+        if self.fresh_pill.property("level") != fresh.level:
+            self.fresh_pill.setProperty("level", fresh.level)
+            self.fresh_pill.style().unpolish(self.fresh_pill)
+            self.fresh_pill.style().polish(self.fresh_pill)
+        self.fresh_pill.show()
+
+    def _tick_clock(self) -> None:
+        """The next kickoff to the second, and the data's age - labels only,
+        nothing redrawn. Ticks only while the ribbon is up and a kickoff is ahead."""
+        now = time.time()
+        nxt = LS.next_kickoff(self.states, now) if self.states else None
+        if nxt is not None:
+            self.next_label.setText(f"NEXT \u00b7 {kickoff_words(nxt.at).upper()}")
+            self.countdown.setText(LS.countdown_text(nxt.at - now))
+        elif self.states and LS.kicking_off(self.states, now):
+            self.next_label.setText("KICKOFF")
+            self.countdown.setText("DUE NOW")
+        else:
+            self.next_label.setText("")
+            self.countdown.setText("")
+        if self.fresh is not None and self.fresh.last_success:
+            level = self.fresh.level
+            self.fresh = LS.freshness(self.fresh.category, self.fresh.last_success, self.fresh.last_attempt,
+                                      failed=level in ("failed", "error"), error=self.fresh.error,
+                                      live=self.live, now=now)
+            if self.fresh.level != level or self.fresh.level == "stale":
+                self._show_fresh()
+        want = nxt is not None and self.isVisible()
+        if want and not self._tick.isActive():
+            self._tick.start()
+        elif not want and self._tick.isActive():
+            self._tick.stop()
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().showEvent(event)
+        self._tick_clock()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._tick.stop()
+        super().hideEvent(event)
 
     @property
     def live(self) -> bool:
