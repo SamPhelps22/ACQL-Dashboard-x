@@ -757,8 +757,18 @@ def _deadline(season: Season, now: float | None = None) -> dict | None:
     kickoff when that comes sooner - for the countdown on the home page.
     None when no week's picks are still to close."""
     from ..feeds import oddslock, results
+    from ..site import mainsite
     now = time.time() if now is None else now
     year = results.season_year(season, now)
+    # The commissioner's page says when picks are due, in Eastern time.
+    posted = mainsite.due(year, now=now)
+    if posted:
+        try:
+            at = min(posted["at"], oddslock.kickoff_time(year, posted["week"]))
+        except Exception:  # noqa: BLE001 - no kickoff known: the posted time alone
+            at = posted["at"]
+        if at > now:
+            return {"week": posted["week"], "at": int(at * 1000)}
     for week in results.calendar_weeks(year, now):
         due = oddslock.lock_time(year, week)
         if due > now:

@@ -3331,13 +3331,32 @@ class PickDeadlineTests(unittest.TestCase):
         from acql.feeds import oddslock, results
         from acql.ui import poolpage
         locks = {6: 1000.0, 7: 5000.0}
-        with mock.patch.object(results, "season_year", return_value=2026), \
+        from acql.site import mainsite
+        with mock.patch.object(mainsite, "due", return_value=None), \
+             mock.patch.object(results, "season_year", return_value=2026), \
              mock.patch.object(results, "calendar_weeks", return_value=[6, 7]), \
              mock.patch.object(oddslock, "lock_time", side_effect=lambda y, w: locks[w]):
             self.assertEqual(poolpage._deadline(Season(), now=2000.0), {"week": 7, "at": 5_000_000})
             self.assertIsNone(poolpage._deadline(Season(), now=6000.0))
         shown = poolpage._as_shown({"deadline": {"week": 7, "at": 1}, "weeks": []})
         self.assertNotIn("deadline", shown)
+
+    def test_the_main_sites_due_time_is_read_as_eastern(self):
+        import io
+        from acql.site import mainsite
+        page = ("<p><span>Week 7&nbsp; <a href=x>Enter Picks</a>&nbsp;&nbsp; <b>(Due Thursday 6:30pm)</b></span></p>"
+                "<p>2026 Week 6 picks</p>").encode("cp1252")
+        self.assertEqual(mainsite.parse_due(mainsite.page_text(page)), (7, 3, 18, 30))
+        self.assertEqual(mainsite.parse_due("Week 12 Enter Picks (Due Wed 1 PM)"), (12, 2, 13, 0))
+        self.assertIsNone(mainsite.parse_due("Line-Pony takes the week with 10 wins"))
+        found = mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(page))
+        # Thursday 22 October 2026, 6:30pm EDT is 22:30 UTC
+        self.assertEqual(found, {"week": 7, "at": 1792708200})
+        # in November, after the clocks go back, it is five hours behind
+        from datetime import date
+        self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30) - mainsite.eastern(date(2026, 11, 12), 0, 0), 18.5 * 3600)
+        self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30), 1794526200)
+        self.assertIsNone(mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(b"<p>nothing here</p>")))
 
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
