@@ -163,12 +163,28 @@ def parse_workbook(
                     )
             week.game_count = len(week.games)
 
+            # A short week (fewer than 16 games) is typed in with the Big Loser
+            # and suicide picks moved left to sit right after the last game:
+            # "G16" holds Loser 1 and "Loser 3" holds the suicide pick. Seen
+            # as picks in a column with no game above them.
+            games = len(week.games)
+            shift = 0
+            if 0 < games < GAMES_PER_WEEK and any(
+                _text(at(r, COL_FIRST_GAME + games))
+                for r in range(ROW_FIRST_PLAYER, ROW_LAST_PLAYER + 1)
+                if player_for(at(r, COL_PLAYER)) is not None
+            ):
+                shift = GAMES_PER_WEEK - games
+            loser_cols = tuple(c - shift for c in (COL_LOSER_1, COL_LOSER_2, COL_LOSER_3))
+            suicide_col = COL_SUICIDE - shift
+            pick_cols = games if shift else GAMES_PER_WEEK
+
             for r in range(ROW_FIRST_PLAYER, ROW_LAST_PLAYER + 1):
                 person = player_for(at(r, COL_PLAYER))
                 if person is None:
                     continue
                 line = PlayerWeek(player=person.display, week=number)
-                for i in range(GAMES_PER_WEEK):
+                for i in range(pick_cols):
                     pick = _text(at(r, COL_FIRST_GAME + i))
                     if pick:
                         line.correct_picks[i + 1] = pick
@@ -176,7 +192,7 @@ def parse_workbook(
                 total = _int(at(r, COL_TOTAL_WINS))
                 regular = _int(at(r, COL_REGULAR_WINS))
 
-                for slot, col in enumerate((COL_LOSER_1, COL_LOSER_2, COL_LOSER_3)):
+                for slot, col in enumerate(loser_cols):
                     raw = at(r, col)
                     line.big_loser_raw[slot] = _text(raw)
                     # A correct big-loser pick is overwritten with 1 in place
@@ -202,7 +218,7 @@ def parse_workbook(
                 line.regular_wins = regular
                 line.total_wins = total
 
-                suicide = _text(at(r, COL_SUICIDE))
+                suicide = _text(at(r, suicide_col))
                 if suicide.casefold() in SUICIDE_OUT_MARKERS:
                     line.suicide_out = True
                 else:
