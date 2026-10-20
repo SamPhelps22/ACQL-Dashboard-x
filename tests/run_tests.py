@@ -3324,6 +3324,21 @@ class SurvivorFieldTests(unittest.TestCase):
         self.assertGreater(sf.fit(made), sf.fit(made[:1] + [sf.Made("y", 9, "c", chances, frozenset())] * 3))
 
 
+
+class PickDeadlineTests(unittest.TestCase):
+    def test_next_deadline_skips_one_already_past_and_stays_out_of_the_fingerprint(self):
+        from unittest import mock
+        from acql.feeds import oddslock, results
+        from acql.ui import poolpage
+        locks = {6: 1000.0, 7: 5000.0}
+        with mock.patch.object(results, "season_year", return_value=2026), \
+             mock.patch.object(results, "calendar_weeks", return_value=[6, 7]), \
+             mock.patch.object(oddslock, "lock_time", side_effect=lambda y, w: locks[w]):
+            self.assertEqual(poolpage._deadline(Season(), now=2000.0), {"week": 7, "at": 5_000_000})
+            self.assertIsNone(poolpage._deadline(Season(), now=6000.0))
+        shown = poolpage._as_shown({"deadline": {"week": 7, "at": 1}, "weeks": []})
+        self.assertNotIn("deadline", shown)
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")
