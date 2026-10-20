@@ -3336,7 +3336,7 @@ class PickDeadlineTests(unittest.TestCase):
              mock.patch.object(results, "season_year", return_value=2026), \
              mock.patch.object(results, "calendar_weeks", return_value=[6, 7]), \
              mock.patch.object(oddslock, "lock_time", side_effect=lambda y, w: locks[w]):
-            self.assertEqual(poolpage._deadline(Season(), now=2000.0), {"week": 7, "at": 5_000_000})
+            self.assertEqual(poolpage._deadline(Season(), now=2000.0), {"week": 7, "at": 5_000_000, "form": mainsite.FORM})
             self.assertIsNone(poolpage._deadline(Season(), now=6000.0))
         shown = poolpage._as_shown({"deadline": {"week": 7, "at": 1}, "weeks": []})
         self.assertNotIn("deadline", shown)
@@ -3351,7 +3351,9 @@ class PickDeadlineTests(unittest.TestCase):
         self.assertIsNone(mainsite.parse_due("Line-Pony takes the week with 10 wins"))
         found = mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(page))
         # Thursday 22 October 2026, 6:30pm EDT is 22:30 UTC
-        self.assertEqual(found, {"week": 7, "at": 1792708200})
+        self.assertEqual(found, {"week": 7, "at": 1792708200, "form": mainsite.FORM})
+        linked = page.replace(b"<a href=x>", b"<a href=\"http://example.com/form.cgi\"><span style='color:#92D050'>")
+        self.assertEqual(mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(linked))["form"], "http://example.com/form.cgi")
         # in November, after the clocks go back, it is five hours behind
         from datetime import date
         self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30) - mainsite.eastern(date(2026, 11, 12), 0, 0), 18.5 * 3600)

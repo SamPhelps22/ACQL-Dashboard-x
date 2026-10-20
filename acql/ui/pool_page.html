@@ -355,6 +355,7 @@ main {
 .deadline .dl-label { font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
 .deadline .dl-count { grid-row: span 2; font: 800 30px/1 var(--display); letter-spacing: 0.02em; color: var(--ink); }
 .deadline .dl-when { font-weight: 600; color: var(--ink-2); }
+.deadline .dl-go { grid-column: 1 / -1; justify-self: start; margin-top: 8px; }
 .deadline.soon { border-left-color: var(--live); }
 .deadline.soon .dl-count { color: var(--live); }
 .notice::before { content: "League notice"; font: 700 11px/1.4 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-text); }
@@ -2824,7 +2825,8 @@ a.weekpill { text-decoration: none; }
     return el("aside", { class: "deadline" + (soon ? " soon" : ""), "aria-label": "Pick deadline" }, [
       el("span", { class: "dl-label", text: "Week " + d.week + " picks due" }),
       el("b", { class: "dl-count num", "data-countdown": String(d.at), text: countdownText(d.at) }),
-      el("span", { class: "dl-when", text: due.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) + " · " + clock(due) })
+      el("span", { class: "dl-when", text: due.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) + " · " + clock(due) }),
+      /^https?:\/\//.test(d.form || "") ? el("a", { class: "btn primary dl-go", href: d.form, target: "_blank", rel: "noopener", text: "Enter picks" }) : null
     ]);
   }
   setInterval(function () {

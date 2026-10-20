@@ -19,6 +19,8 @@ import urllib.request
 from datetime import date, datetime, timedelta
 
 URL = "http://users.erols.com/merpdave/ACQL2007x.html"
+#: The commissioner's pick form, as the main page linked it last; the page's own link wins.
+FORM = "http://cgibin.rcn.com/merpdave/cgi-bin/form2x.cgi"
 TIMEOUT = 10
 #: Read the page at most this often (seconds); the site is built many times a day.
 KEEP = 30 * 60
@@ -28,7 +30,16 @@ _DUE = re.compile(
     r"week\s*(\d{1,2})\b.{0,200}?due\s*(?:on\s*)?(" + "|".join(_DAYS) + r"|mon|tue|wed|thu|fri|sat|sun)\w*\.?,?"
     r"\s*(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m", re.I | re.S)
 
+_FORM_LINK = re.compile(r"""<a\b[^>]*?href\s*=\s*["']?([^"'\s>]+)[^>]*>(?:\s|&nbsp;|<[^>]+>)*enter\s*(?:&nbsp;)?\s*picks""", re.I)
+
 _cache: dict = {"at": 0.0, "found": None}
+
+
+def form_link(raw: bytes) -> str | None:
+    """Where the page's "Enter Picks" link goes, when it has one."""
+    found = _FORM_LINK.search(raw.decode("cp1252", errors="replace"))
+    link = html.unescape(found.group(1)) if found else ""
+    return link if link.startswith(("http://", "https://")) else None
 
 
 def page_text(raw: bytes) -> str:
@@ -75,12 +86,13 @@ def due(year: int, opener=None, now: float | None = None) -> dict | None:
     found = None
     try:
         with (opener or urllib.request.urlopen)(URL, timeout=TIMEOUT) as reply:
-            said = parse_due(page_text(reply.read()))
+            raw = reply.read()
+        said = parse_due(page_text(raw))
         if said:
             from ..feeds import results
             week, weekday, hour, minute = said
             day = results.wednesday(year, week) + timedelta(days=(weekday - 2) % 7)   # Wednesday is 2
-            found = {"week": week, "at": eastern(day, hour, minute)}
+            found = {"week": week, "at": eastern(day, hour, minute), "form": form_link(raw) or FORM}
     except Exception:  # noqa: BLE001 - no signal, a moved page: the dashboard's setting stands
         found = None
     if opener is None:

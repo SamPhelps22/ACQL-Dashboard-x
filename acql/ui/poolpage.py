@@ -768,11 +768,11 @@ def _deadline(season: Season, now: float | None = None) -> dict | None:
         except Exception:  # noqa: BLE001 - no kickoff known: the posted time alone
             at = posted["at"]
         if at > now:
-            return {"week": posted["week"], "at": int(at * 1000)}
+            return {"week": posted["week"], "at": int(at * 1000), "form": posted.get("form") or mainsite.FORM}
     for week in results.calendar_weeks(year, now):
         due = oddslock.lock_time(year, week)
         if due > now:
-            return {"week": week, "at": int(due * 1000)}
+            return {"week": week, "at": int(due * 1000), "form": mainsite.FORM}
     return None
 
 
