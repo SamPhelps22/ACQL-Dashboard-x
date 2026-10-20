@@ -1,8 +1,8 @@
 {
- "version": "2.18.1",
- "file": "ACQL-Dashboard-2.18.1-update.zip",
- "sha256": "9730b70165e00206870a6cefacfa5c0e063f9203e505c5bfbf7f6cbecb8a85e9",
- "size": 1659518,
- "notes": "Fixes the blank website page from 2.18.0, and the suicide pool count on it.",
- "commit": "01ced602ad9a4db4d05e56fc56b16562f72cea9e"
+ "version": "2.18.2",
+ "file": "ACQL-Dashboard-2.18.2-update.zip",
+ "sha256": "29525390eb1c732a0af6313e1320ec4930a93aff1c6f3192c95c73c9dbfeb209",
+ "size": 1659985,
+ "notes": "The survivor wall shows the earlier suicide round too, faded, with its winner.",
+ "commit": "66198ab4a1daa31537d9eeba4b20610769b3817b"
 }
