@@ -554,6 +554,7 @@ def _restart_suicide_pool(season: Season, stats_week: int = 0,
         found = found + [{"week": from_stats["start"], "winners": from_stats["winners"]}]
     if not found:
         return
+    season.suicide_rounds = [dict(r) for r in found]
     start = season.suicide_restart = found[-1]["week"]
     season.suicide_winners = list(found[-1].get("winners") or [])
     if stats_week >= start:
