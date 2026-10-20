@@ -807,6 +807,9 @@ td.game, td.winner { white-space: normal; }
 .swall .cell img { width: 26px; height: 26px; object-fit: contain; }
 .swall .cell .tb { font-size: 9px; }
 .swall .cell.lost { background: color-mix(in srgb, var(--bad) 22%, transparent); }
+.swall .past { opacity: .5; }
+.swall .cell.won { background: color-mix(in srgb, var(--gold) 28%, transparent); }
+.swall .reset { border-left: 2px solid var(--gold); padding-left: 6px; }
 .swall .cell.lost::after { content: ""; position: absolute; inset: 3px; background:
   linear-gradient(45deg, transparent 46%, var(--bad) 46% 54%, transparent 54%),
   linear-gradient(-45deg, transparent 46%, var(--bad) 46% 54%, transparent 54%); }
@@ -5154,7 +5157,12 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   }
   function survivorWall() {
     var weeks = seasonWeeks();
-    var rows = DATA.players.filter(function (p) { return Object.keys(p.suicide.picks || {}).length || p.suicide.out; });
+    var rows = DATA.players.filter(function (p) {
+      return Object.keys(p.suicide.picks || {}).length || p.suicide.out || Object.keys(p.suicide.before || {}).length;
+    });
+    // Weeks before the pool started again: the earlier round, faded.
+    var restart = DATA.suicide_round_start || 0;
+    var champs = DATA.suicide_winners || [];
     if (!weeks.length || !rows.length) return null;
     var liveSui = {};
     var liveWeek = hasLive() && DATA.live.coaches ? DATA.live.week : null;
@@ -5166,14 +5174,23 @@ html.cine-on, html.cine-on body { overflow: hidden; }
     });
     var standing = rows.filter(function (p) { return p.suicide.alive; }).length;
     var body = rows.map(function (p, i) {
-      var s = p.suicide, gone = false;
+      var s = p.suicide, gone = false, goneBefore = false;
       var cells = cols.map(function (n) {
+        if (restart && n < restart) {
+          var old = (s.before || {})[String(n)];
+          var won = champs.indexOf(p.name) >= 0 && n === restart - 1;
+          if (goneBefore || !old) return el("td", { class: "past" }, [el("span", { class: "cell gone" })]);
+          var out = s.before_out === n;
+          if (out) goneBefore = true;
+          return el("td", { class: "past" }, [el("span", { class: "cell" + (out ? " lost" : "") + (won ? " won" : ""),
+            title: "Week " + n + ": " + teamFull(codeOf(old)) + (out ? " – knocked out" : won ? " – won the round" : "") }, [suicideLogo(old)])]);
+        }
         var team = (s.picks || {})[String(n)];
         var now = !team && n === liveWeek && s.alive ? liveSui[p.name] : null;
-        if (gone || (!team && !now)) return el("td", {}, [el("span", { class: "cell gone" })]);
+        if (gone || (!team && !now)) return el("td", { class: n === restart ? "reset" : null }, [el("span", { class: "cell gone" })]);
         var lost = s.out === n;
         if (lost) gone = true;
-        return el("td", {}, [el("span", { class: "cell" + (lost ? " lost" : "") + (now ? " now" : ""),
+        return el("td", { class: n === restart ? "reset" : null }, [el("span", { class: "cell" + (lost ? " lost" : "") + (now ? " now" : ""),
           title: "Week " + n + ": " + teamFull(codeOf(team || now)) + (lost ? " – knocked out" : now ? " – being played" : "") }, [suicideLogo(team || now)])]);
       });
       var cls = [s.alive ? "" : "out", isMe(p.name) ? "me" : "", i && i === standing ? "cut" : ""].filter(Boolean).join(" ");
@@ -5181,10 +5198,14 @@ html.cine-on, html.cine-on body { overflow: hidden; }
     });
     return module("Survivor wall", standing + " of " + rows.length + " still standing", [
       el("div", { class: "swall" }, [el("table", {}, [
-        el("thead", {}, [el("tr", {}, [el("th", { class: "coach", text: "Coach" })].concat(cols.map(function (n) { return el("th", { text: "Wk " + n }); })))]),
+        el("thead", {}, [el("tr", {}, [el("th", { class: "coach", text: "Coach" })].concat(cols.map(function (n) {
+          return el("th", { class: restart && n < restart ? "past" : n === restart ? "reset" : null, text: "Wk " + n });
+        })))]),
         el("tbody", {}, body)])]),
       el("p", { class: "note", text: "Every pick so far, a logo a week. A crossed logo is the pick that knocked a coach out" +
-        (Object.keys(liveSui).length ? "; a dashed one is this week’s pick, still being played." : ".") })
+        (Object.keys(liveSui).length ? "; a dashed one is this week’s pick, still being played." : ".") +
+        (restart ? " Faded weeks are the earlier round" + (champs.length ? ", won by " + champs.join(" & ") : "") +
+          "; the pool started again in week " + restart + "." : "") })
     ], { "data-card": "survivor-wall" });
   }
 
