@@ -645,6 +645,12 @@ def _reconcile(season: Season, authoritative: dict) -> list[Conflict]:
                     else "stats.xls kept; the pick sheet and results give this",
                 )
             )
+            # ...and kept it is: every page reads the week from these lines.
+            regular = person.weekly_regular.get(week)
+            big_loser = person.weekly_big_loser.get(week)
+            if regular is not None and big_loser is not None and regular + big_loser == official:
+                line.regular_wins, line.big_loser_wins = regular, big_loser
+            line.total_wins = official
     conflicts.sort(key=lambda c: (c.player.lower(), c.field))
     return conflicts
 
