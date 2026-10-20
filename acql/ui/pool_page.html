@@ -3476,12 +3476,8 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   function homeView() {
     var t = hasLive() ? liveTally() : null;
     var ph = phase(t);
-<<<<<<< HEAD
-    var kids = [notice()];
-    if (ph === "gameday" || ph === "preview") kids.push(slateStrip(t));
-=======
     var kids = [notice(), deadlineBanner()];
->>>>>>> 933e5817646008ea2e3fa6d74c558c3aacc2001a
+    if (ph === "gameday" || ph === "preview") kids.push(slateStrip(t));
     if (ph === "gameday") kids = kids.concat(gamedayHome(t));
     else if (ph === "final") kids = kids.concat(finalHome(t));
     else if (ph === "preview") kids = kids.concat(previewHome(t));

@@ -3388,7 +3388,6 @@ class SurvivorFieldTests(unittest.TestCase):
         self.assertGreater(sf.fit(made), sf.fit(made[:1] + [sf.Made("y", 9, "c", chances, frozenset())] * 3))
 
 
-<<<<<<< HEAD
 class TestScoreboardRibbon(unittest.TestCase):
     """The ribbon over every page: the week's games in ticker order, exact
     kickoff times, your pick in gold, and a chip that opens Game Day."""
@@ -3467,7 +3466,6 @@ class TestScoreboardRibbon(unittest.TestCase):
         ribbon.show_games(0, [], None)                                           # between weeks
         self.assertTrue(ribbon.isHidden())
 
-=======
 
 class PickDeadlineTests(unittest.TestCase):
     def test_next_deadline_skips_one_already_past_and_stays_out_of_the_fingerprint(self):
@@ -3503,7 +3501,6 @@ class PickDeadlineTests(unittest.TestCase):
         self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30) - mainsite.eastern(date(2026, 11, 12), 0, 0), 18.5 * 3600)
         self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30), 1794526200)
         self.assertIsNone(mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(b"<p>nothing here</p>")))
->>>>>>> 933e5817646008ea2e3fa6d74c558c3aacc2001a
 
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:

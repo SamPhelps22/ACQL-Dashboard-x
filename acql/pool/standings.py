@@ -215,6 +215,9 @@ def replay_suicide(season: Season, stats_week: int) -> bool:
     if len(alive) <= 1:
         # The export's round is already won (or none is running): a new one
         # starts the week after, with everyone in.
+        if stats_week and alive and not season.suicide_restart:
+            season.suicide_winners = [people[k].display for k in alive]
+            season.suicide_restart = stats_week + 1
         alive = set(people)
     moved = False
     for number in complete_weeks(season):
