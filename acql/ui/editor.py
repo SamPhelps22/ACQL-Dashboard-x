@@ -289,10 +289,16 @@ class WeekEditor(QWidget):
         self.week_picker.clear()
         for w in weeks:
             self.week_picker.addItem(f"Week {w}", w)
+        # Edits are written to the workbook, so open on a week it has rows for:
+        # the standings can run ahead of it on a week built from a pick sheet.
+        in_workbook = [w for w in weeks if w <= (season.current_week or 0)
+                       and getattr(season.weeks.get(w), "source", None) is not None
+                       and season.weeks[w].lines]
+        opening = in_workbook[-1] if in_workbook else season.current_week
         if current in weeks:
             self.week_picker.setCurrentIndex(weeks.index(current))
-        elif season.current_week in weeks:
-            self.week_picker.setCurrentIndex(weeks.index(season.current_week))
+        elif opening in weeks:
+            self.week_picker.setCurrentIndex(weeks.index(opening))
         self.week_picker.blockSignals(False)
 
         names = [p.display for p in season.ordered_players()]
