@@ -1,0 +1,844 @@
+[
+ {
+  "season": 2012,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "E_bayes",
+   "C_situational"
+  ],
+  "weights": [
+   0.5,
+   0.5
+  ]
+ },
+ {
+  "season": 2012,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "E_bayes",
+   "C_situational"
+  ],
+  "weights": [
+   0.529,
+   0.471
+  ]
+ },
+ {
+  "season": 2012,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "E_bayes",
+   "C_situational"
+  ],
+  "weights": [
+   0.009,
+   0.735,
+   0.323
+  ]
+ },
+ {
+  "season": 2013,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart",
+   "C_situational"
+  ],
+  "weights": [
+   0.333,
+   0.333,
+   0.333
+  ]
+ },
+ {
+  "season": 2013,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart",
+   "C_situational"
+  ],
+  "weights": [
+   0.356,
+   0.344,
+   0.3
+  ]
+ },
+ {
+  "season": 2013,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   -0.008,
+   0.636,
+   0.469
+  ]
+ },
+ {
+  "season": 2014,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart",
+   "C_situational"
+  ],
+  "weights": [
+   0.333,
+   0.333,
+   0.333
+  ]
+ },
+ {
+  "season": 2014,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart",
+   "C_situational"
+  ],
+  "weights": [
+   0.353,
+   0.323,
+   0.323
+  ]
+ },
+ {
+  "season": 2014,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart",
+   "F_matchup_additive",
+   "C_situational"
+  ],
+  "weights": [
+   0.033,
+   0.647,
+   0.496,
+   -0.596,
+   0.534
+  ]
+ },
+ {
+  "season": 2015,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   0.5,
+   0.5
+  ]
+ },
+ {
+  "season": 2015,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   0.559,
+   0.441
+  ]
+ },
+ {
+  "season": 2015,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "E_bayes",
+   "A_qb_weekstart",
+   "F_matchup_additive"
+  ],
+  "weights": [
+   0.013,
+   0.926,
+   0.491,
+   -0.292
+  ]
+ },
+ {
+  "season": 2016,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "E_bayes"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2016,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "E_bayes",
+   "C_situational"
+  ],
+  "weights": [
+   0.553,
+   0.447
+  ]
+ },
+ {
+  "season": 2016,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "E_bayes"
+  ],
+  "weights": [
+   0.011,
+   1.059
+  ]
+ },
+ {
+  "season": 2017,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "challenger_elo"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2017,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "challenger_elo"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2017,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "challenger_elo"
+  ],
+  "weights": [
+   0.058,
+   0.961
+  ]
+ },
+ {
+  "season": 2018,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "challenger_elo"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2018,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "challenger_elo"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2018,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "challenger_elo"
+  ],
+  "weights": [
+   0.055,
+   0.964
+  ]
+ },
+ {
+  "season": 2019,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "E_bayes",
+   "B_drive_sim"
+  ],
+  "weights": [
+   0.5,
+   0.5
+  ]
+ },
+ {
+  "season": 2019,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "E_bayes",
+   "B_drive_sim"
+  ],
+  "weights": [
+   0.611,
+   0.389
+  ]
+ },
+ {
+  "season": 2019,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "E_bayes"
+  ],
+  "weights": [
+   0.024,
+   1.07
+  ]
+ },
+ {
+  "season": 2020,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "B_drive_sim",
+   "C_situational"
+  ],
+  "weights": [
+   0.5,
+   0.5
+  ]
+ },
+ {
+  "season": 2020,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "B_drive_sim",
+   "C_situational"
+  ],
+  "weights": [
+   0.458,
+   0.542
+  ]
+ },
+ {
+  "season": 2020,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "B_drive_sim",
+   "C_situational"
+  ],
+  "weights": [
+   -0.008,
+   0.704,
+   0.545
+  ]
+ },
+ {
+  "season": 2021,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "A_qb_weekstart",
+   "B_drive_sim"
+  ],
+  "weights": [
+   0.5,
+   0.5
+  ]
+ },
+ {
+  "season": 2021,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "A_qb_weekstart",
+   "B_drive_sim"
+  ],
+  "weights": [
+   0.535,
+   0.465
+  ]
+ },
+ {
+  "season": 2021,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "A_qb_weekstart",
+   "B_drive_sim"
+  ],
+  "weights": [
+   -0.037,
+   0.601,
+   0.702
+  ]
+ },
+ {
+  "season": 2022,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2022,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2022,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   -0.062,
+   1.133
+  ]
+ },
+ {
+  "season": 2023,
+  "ensemble": "G_free_equal",
+  "chosen": [
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2023,
+  "ensemble": "G_free_weighted",
+  "chosen": [
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2023,
+  "ensemble": "G_free_stack",
+  "chosen": [
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   -0.055,
+   1.127
+  ]
+ },
+ {
+  "season": 2012,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2012,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2012,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   -0.051,
+   1.008
+  ]
+ },
+ {
+  "season": 2013,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2013,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2013,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   -0.046,
+   1.04
+  ]
+ },
+ {
+  "season": 2014,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2014,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2014,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   -0.02,
+   1.055
+  ]
+ },
+ {
+  "season": 2015,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "D_market_full"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2015,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "D_market_full"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2015,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "D_market_full",
+   "A_qb_confirmed"
+  ],
+  "weights": [
+   0.017,
+   0.929,
+   0.215
+  ]
+ },
+ {
+  "season": 2016,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "D_market_full",
+   "E_bayes",
+   "A_qb_confirmed"
+  ],
+  "weights": [
+   0.333,
+   0.333,
+   0.333
+  ]
+ },
+ {
+  "season": 2016,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "D_market_full",
+   "E_bayes",
+   "A_qb_confirmed"
+  ],
+  "weights": [
+   0.494,
+   0.261,
+   0.245
+  ]
+ },
+ {
+  "season": 2016,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "D_market_full",
+   "A_qb_confirmed"
+  ],
+  "weights": [
+   -0.007,
+   0.837,
+   0.293
+  ]
+ },
+ {
+  "season": 2017,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "challenger_elo",
+   "D_market_full"
+  ],
+  "weights": [
+   0.5,
+   0.5
+  ]
+ },
+ {
+  "season": 2017,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "challenger_elo",
+   "D_market_full"
+  ],
+  "weights": [
+   0.361,
+   0.639
+  ]
+ },
+ {
+  "season": 2017,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "challenger_elo",
+   "A_qb_confirmed",
+   "F_matchup_additive"
+  ],
+  "weights": [
+   0.003,
+   0.657,
+   0.758,
+   -0.29
+  ]
+ },
+ {
+  "season": 2018,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "D_market_full",
+   "challenger_elo",
+   "market_ml_close"
+  ],
+  "weights": [
+   0.333,
+   0.333,
+   0.333
+  ]
+ },
+ {
+  "season": 2018,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "D_market_full",
+   "challenger_elo"
+  ],
+  "weights": [
+   0.673,
+   0.327
+  ]
+ },
+ {
+  "season": 2018,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "D_market_full",
+   "challenger_elo",
+   "F_matchup_additive",
+   "A_qb_confirmed"
+  ],
+  "weights": [
+   0.038,
+   0.944,
+   0.381,
+   -0.6,
+   0.335
+  ]
+ },
+ {
+  "season": 2019,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "D_market_full"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2019,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "D_market_full"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2019,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "D_market_full"
+  ],
+  "weights": [
+   0.045,
+   1.04
+  ]
+ },
+ {
+  "season": 2020,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2020,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2020,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   -0.025,
+   1.044
+  ]
+ },
+ {
+  "season": 2021,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2021,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2021,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   -0.04,
+   1.06
+  ]
+ },
+ {
+  "season": 2022,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2022,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2022,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "market_ml_close",
+   "F_matchup_additive",
+   "A_qb_weekstart"
+  ],
+  "weights": [
+   -0.045,
+   1.089,
+   -0.444,
+   0.395
+  ]
+ },
+ {
+  "season": 2023,
+  "ensemble": "G_market_equal",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2023,
+  "ensemble": "G_market_weighted",
+  "chosen": [
+   "market_ml_close"
+  ],
+  "weights": [
+   1.0
+  ]
+ },
+ {
+  "season": 2023,
+  "ensemble": "G_market_stack",
+  "chosen": [
+   "market_ml_close",
+   "F_matchup_interaction",
+   "A_qb_weekstart",
+   "logistic_pointdiff"
+  ],
+  "weights": [
+   -0.024,
+   1.127,
+   -0.379,
+   0.368,
+   -0.129
+  ]
+ }
+]

@@ -43,3 +43,8 @@ data/tracker/
 # Recap pictures made for the pool: this computer's own too
 data/recaps/
 data/logos/
+
+# Research lab: downloaded public data and rebuildable derived tables
+data/research_lab/raw/
+data/research_lab/derived/
+data/research_lab/cache/
