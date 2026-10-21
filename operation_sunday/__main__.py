@@ -33,11 +33,13 @@ def _games(settings, args):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="operation_sunday")
     ap.add_argument("--settings")
+    ap.add_argument("--log", action="store_true", help="append output to <state>/run.log (for scheduled runs)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("calendar"); c.add_argument("--season", type=int, required=True); c.add_argument("--games")
     r = sub.add_parser("run")
     r.add_argument("--season", type=int); r.add_argument("--week", type=int); r.add_argument("--now")
     r.add_argument("--games"); r.add_argument("--no-fetch", action="store_true"); r.add_argument("--no-lock", action="store_true")
+    r.add_argument("--lock-now", action="store_true", help="lock now even outside the lock window")
     r.add_argument("--market", help="CSV of market snapshots (game_id, taken_at, home_prob/home_spread, source)")
     b = sub.add_parser("backtest"); b.add_argument("--seasons", type=int, nargs="*"); b.add_argument("--games")
     b.add_argument("--unlock-holdout"); b.add_argument("--out")
@@ -48,6 +50,26 @@ def main(argv=None) -> int:
     cd.add_argument("--since", help="only check weeks locking after this ISO time (default: the journal's first package)")
     args = ap.parse_args(argv)
     settings = load_settings(args.settings)
+    if args.log:
+        import contextlib
+        log = settings.state_path / "run.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with open(log, "a", encoding="utf-8") as fh, contextlib.redirect_stdout(fh), contextlib.redirect_stderr(fh):
+            print(f"--- {utc_now().isoformat()} {args.cmd}")
+            try:
+                code = _dispatch(args, settings)
+                if args.cmd == "run":     # every scheduled run also checks past deadlines
+                    args.since, args.now, args.games = None, None, None
+                    code = max(code, _dispatch(argparse.Namespace(**{**vars(args), "cmd": "check-deadline"}), settings))
+                return code
+            except Exception:  # noqa: BLE001 - keep the traceback in the log
+                import traceback
+                traceback.print_exc()
+                return 1
+    return _dispatch(args, settings)
+
+
+def _dispatch(args, settings) -> int:
 
     if args.cmd == "calendar":
         from .schedule import season_calendar
@@ -59,7 +81,7 @@ def main(argv=None) -> int:
         from .pipeline import run_week
         from .data import load_snapshots
         res = run_week(settings, args.season, args.week, parse_utc(args.now) if args.now else None,
-                       games_csv=args.games, fetch=not args.no_fetch, lock=not args.no_lock,
+                       games_csv=args.games, fetch=not args.no_fetch, lock=False if args.no_lock else (True if args.lock_now else "auto"),
                        snapshots=load_snapshots(args.market) if args.market else None)
         print(json.dumps({"season": res.season, "week": res.week, "status": res.status, "package": res.package_id,
                           "lock": res.lock, "decision": (res.decision or {}).get("action"),

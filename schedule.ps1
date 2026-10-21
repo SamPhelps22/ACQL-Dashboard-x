@@ -17,6 +17,13 @@
 #    ACQL Sunday brief   Sun at 9:00 AM: the week's top calls, line moves
 #                        since open and the odds budget, emailed to you -
 #                        from stored lines only, so it costs no requests.
+#    ACQL Operation      every day, every 2 hours from 9 AM to 9 PM: the
+#      Sunday            shadow forecast job (operation_sunday/). Refreshes
+#                        the week's draft on the latest stored lines and locks
+#                        it within 3 hours of the Thursday deadline (or an
+#                        earlier first kickoff). Uses stored lines only, so it
+#                        costs no Odds API requests. Changes no pick, page or
+#                        site. Log: data\operation_sunday\run.log
 #
 #  Run it again after moving the folder. To take them all away:
 #      powershell -ExecutionPolicy Bypass -File schedule.ps1 -Remove
@@ -26,7 +33,8 @@ param([switch]$Remove)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$names = "ACQL Daily", "ACQL Game-day poll", "ACQL Deadeye email", "ACQL Training", "ACQL Sunday brief"
+$names = "ACQL Daily", "ACQL Game-day poll", "ACQL Deadeye email", "ACQL Training", "ACQL Sunday brief",
+    "ACQL Operation Sunday"
 
 foreach ($name in $names) {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
@@ -81,10 +89,21 @@ Register-ScheduledTask -TaskName "ACQL Sunday brief" -Action $brief -Settings $w
     -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 9:00AM) `
     -Description "ACQL Dashboard: Sunday's top calls, line moves and odds budget, emailed to you." | Out-Null
 
+# Operation Sunday: every 2 hours, 9 AM - 9 PM, so a run always falls inside the
+# 3-hour lock window - Thursday's deadline, a Wednesday opener or Thanksgiving noon.
+$opsun = New-ScheduledTaskAction -Execute $python -Argument "-m operation_sunday --log run" -WorkingDirectory $root
+$opsunTrigger = New-ScheduledTaskTrigger -Daily -At 9:00AM
+$opsunTrigger.Repetition = (New-ScheduledTaskTrigger -Once -At 9:00AM `
+    -RepetitionInterval (New-TimeSpan -Hours 2) -RepetitionDuration (New-TimeSpan -Hours 12)).Repetition
+Register-ScheduledTask -TaskName "ACQL Operation Sunday" -Action $opsun -Settings $wake `
+    -Trigger $opsunTrigger `
+    -Description "ACQL Dashboard: Operation Sunday's shadow forecasts, locked before the Thursday deadline." | Out-Null
+
 Write-Host "  Scheduled:"
 Write-Host "    ACQL Daily          every day at 3:00 AM"
 Write-Host "    ACQL Game-day poll  Thu/Sun/Mon, every 10 min, 9 AM - midnight"
 Write-Host "    ACQL Deadeye email  Tue/Wed/Thu at 12:00 noon"
 Write-Host "    ACQL Training       Tue/Wed/Thu at 12:30 PM"
 Write-Host "    ACQL Sunday brief   Sun at 9:00 AM"
+Write-Host "    ACQL Operation Sunday  daily, every 2 h, 9 AM - 9 PM (locks before Thursday's deadline)"
 Write-Host "  Runs while you're signed in to Windows. Log: data\acql-log.txt"

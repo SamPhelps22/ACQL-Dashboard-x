@@ -26,11 +26,19 @@ State lives in `data/operation_sunday/` (override with `OPERATION_SUNDAY_STATE`)
   if that is sooner. Computed per week from that week's fixtures and that date's UTC offset, so Wednesday
   openers, Thanksgiving, Christmas, international games and postponements are handled. Check with
   `calendar`.
-* **Run due** = lock − `run_lead_hours` (default 12 h; Thursday 06:00 ET normally).
-* Run the job **daily** in season; it acts on the next unlocked week and is a no-op for weeks already locked:
-  * cron (UTC host): `0 11 * * * cd /path/to/repo && python -m operation_sunday run >> data/operation_sunday/run.log 2>&1`
-  * Windows Task Scheduler: `operation_sunday\scripts\weekly.ps1` daily at 06:00.
-  * Watchdog: `python -m operation_sunday check-deadline` after each Thursday deadline; non-zero exit = alert.
+* **Run due / lock window** = lock − 3 h (`run_lead_hours`, `lock_window_minutes`). With the default
+  `run` (lock = auto), runs before the window only refresh the draft (one package, replaced in place); the
+  first run inside the window locks it. `--lock-now` locks immediately; `--no-lock` never locks.
+* **Scheduled on Windows by `schedule.ps1`** (task "ACQL Operation Sunday"): daily, every 2 hours from
+  9 AM to 9 PM, waking the PC, with `--log` (output and tracebacks go to `data/operation_sunday/run.log`).
+  Every scheduled run also performs the missed/late-deadline check. Re-run
+  `powershell -ExecutionPolicy Bypass -File schedule.ps1` once to register it; `-Remove` removes it with
+  the others. Other systems: `operation_sunday/scripts/weekly.sh` from cron every 2 hours, 9-21 local.
+* **Market snapshot**: read automatically from the dashboard's stored Odds API fetches (the noon
+  "ACQL Deadeye email" task fetches Tue/Wed/Thu; "Update lines" fetches on demand). The last fetch before
+  the cutoff is used, with its fetch time as `taken_at`; no extra requests are spent. Commissioner pool
+  lines typed into the dashboard are used for ACQL picks ahead of the habit rule. A week with no
+  pre-cutoff line raises a `NO MARKET SNAPSHOT` alert. `--market file.csv` adds or overrides snapshots.
 * A run that starts after `run_due` is labelled `late_start`; after the lock, `LATE RUN` — the package is
   stored with `on_time = 0`, the real lock time, and an alert. Games that already kicked off get no forecast.
   Nothing is backdated.

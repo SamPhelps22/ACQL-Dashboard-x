@@ -52,7 +52,7 @@ class Settings:
     #: forecasts must be locked this long before the earliest counted kickoff
     kickoff_margin_minutes: int = 0
     #: the weekly job is due this many hours before the lock
-    run_lead_hours: float = 12.0
+    run_lead_hours: float = 3.0
     #: how long after kickoff a final score is assumed published (for eligibility)
     result_delay_hours: float = 4.0
     first_training_season: int = 2006
@@ -63,6 +63,11 @@ class Settings:
     promotion: PromotionCriteria = field(default_factory=PromotionCriteria)
     state_dir: str = ""
     games_csv_url: str = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"
+    #: read Thursday market snapshots and pool lines from the dashboard's own store
+    market_from_dashboard: bool = True
+    #: with lock="auto", a run locks only within this many minutes of the lock
+    #: time (earlier runs refresh the draft, so the freshest lines are used)
+    lock_window_minutes: int = 180
     #: data older than this many hours at run time raises a freshness warning
     stale_after_hours: float = 36.0
 

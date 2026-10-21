@@ -5,7 +5,7 @@ shadow-production workflow: it never changes Deadeye's pricing, ACQL scoring, th
 
 ```bash
 python -m operation_sunday calendar --season 2026   # when each week locks
-python -m operation_sunday run                      # the weekly job (daily in season; no-op once locked)
+python -m operation_sunday run                      # the weekly job: refreshes the draft, locks within 3 h of the deadline
 python tests/test_operation_sunday.py               # tests (no network)
 ```
 
@@ -16,3 +16,6 @@ python tests/test_operation_sunday.py               # tests (no network)
 
 Current status: no Thursday-eligible model beats the Elo baseline under the predefined rules, so Elo runs as a
 disclosed fallback. The closing market is better but is not available on Thursday.
+
+Scheduling: `schedule.ps1` registers "ACQL Operation Sunday" (every 2 h, 9 AM–9 PM). Thursday market
+snapshots come from the dashboard's stored line fetches; no extra Odds API requests.

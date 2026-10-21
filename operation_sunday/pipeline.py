@@ -26,6 +26,7 @@ from .config import Settings
 from .ensemble import ENSEMBLES, ensemble_walk_forward, live_weights, combine
 from .features import FEATURE_VERSION, MarketSnapshot, build_features
 from .journal import Journal, LockError
+from . import market as market_mod
 from .models import base_candidates, build, logit
 from .registry import Registry, code_revision
 from .schedule import deadline_for, next_week, timing
@@ -131,7 +132,7 @@ def _predict_live(name: str, feats, week_rows, cutoff, scored, settings, registr
 
 def run_week(settings: Settings, season: int | None = None, week: int | None = None,
              now: datetime | None = None, games_csv=None, fetch: bool = True,
-             snapshots: list[MarketSnapshot] | None = None, lock: bool = True,
+             snapshots: list[MarketSnapshot] | None = None, lock="auto",
              game_type: str = "REG", write_report: bool = True,
              fail_stage: str | None = None, dataset: data_mod.Dataset | None = None) -> RunResult:
     real = utc_now()
@@ -185,6 +186,21 @@ def run_week(settings: Settings, season: int | None = None, week: int | None = N
 
         stage("features", "running")
         snapshots = list(snapshots or [])
+        slate = games[(games["season"] == d.season) & (games["week"] == d.week)
+                      & ((games["game_type"] == "REG") == (d.game_type == "REG")) & (games["status"] != "canceled")]
+        pool_map = {}
+        if settings.market_from_dashboard:
+            dash, notes = market_mod.from_dashboard(slate, d.week, d.lock_utc)
+            have = {s.game_id for s in snapshots}
+            snapshots += [s for s in dash if s.game_id not in have]
+            warnings += [f"market: {n}" for n in notes]
+            pool_map = market_mod.pool_lines_from_dashboard(d.season, d.week)
+        covered = {s.game_id for s in snapshots if s.taken_at <= d.lock_utc}
+        if not covered & set(slate["game_id"]):
+            msg = ("NO MARKET SNAPSHOT for this week before the cutoff: picks are straight-up and the market "
+                   "gains no evidence this week. Update lines in the dashboard (or pass --market) before the lock.")
+            journal.alert(d.season, d.week, "market", msg)
+            res.alerts.append(msg)
         archived = journal_snapshots(journal)
         feats = build_features(games, settings, archived + snapshots)
         target = feats[(feats["season"] == d.season) & (feats["week"] == d.week)
@@ -254,9 +270,19 @@ def run_week(settings: Settings, season: int | None = None, week: int | None = N
             snap = snaps.get(r.game_id)
             line_spread = snap.home_spread if snap and snap.home_spread is not None else None
             flags = list(r.missing_flags)
-            if line_spread is None:
+            sheet = pool_map.get(frozenset((r.home, r.away)))
+            if sheet:
+                fav, pts = sheet
+                line_spread, line = (pts if fav == r.home else -pts), pts
+                flags.append("pool_line_from_commissioner_sheet")
+            elif line_spread is None:
+                line = None
                 flags.append("pool_line_unknown_no_spread_at_cutoff")
-            pc = credited_home_prob(p, line_spread)
+            else:
+                line = pool_line_for(line_spread)
+                if line is not None:
+                    flags.append("pool_line_from_habit_rule_on_market_spread")
+            pc = credited_home_prob(p, line_spread, line)
             rows.append({
                 "season": int(r.season), "week": int(r.week), "game_id": r.game_id, "home": r.home, "away": r.away,
                 "kickoff_utc": iso(r.kickoff_utc.to_pydatetime()), "created_at": created, "cutoff_utc": iso(cutoff),
@@ -271,7 +297,7 @@ def run_week(settings: Settings, season: int | None = None, week: int | None = N
                                                "excluded": ["qb", "injuries", "weather", "closing line"]}),
                 "missing_flags_json": json.dumps(flags), "selection_decision": decision["action"],
                 "pick": r.home if pc >= 0.5 else r.away, "p_pick_credited": max(pc, 1 - pc),
-                "pool_line": pool_line_for(line_spread),
+                "pool_line": line,
             })
         header = {"model_name": chosen, "model_version": version, "fallback": fallback,
                   "selection": {k: v for k, v in decision.items() if k != "candidates"},
@@ -290,6 +316,11 @@ def run_week(settings: Settings, season: int | None = None, week: int | None = N
             raise LockError("; ".join(problems))
         stage("verify", "done")
 
+        if lock == "auto":
+            lock = now >= d.lock_utc - pd.Timedelta(minutes=settings.lock_window_minutes)
+            if not lock:
+                warnings.append(f"draft only: locks on the first run after "
+                                f"{iso(d.lock_utc - pd.Timedelta(minutes=settings.lock_window_minutes))}")
         if lock:
             stage("lock", "running")
             res.lock = journal.lock(pid, scheduled, None if mode == "live" else now)

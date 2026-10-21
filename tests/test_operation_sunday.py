@@ -43,7 +43,7 @@ SMALL = PromotionCriteria(min_games=100, min_weeks=10, bootstrap_samples=300)
 
 def settings(tmp, **kw):
     base = dict(state_dir=str(tmp), first_training_season=2101, dev_eval_seasons=(2104, 2105),
-                holdout_seasons=(2107,), promotion=SMALL)
+                holdout_seasons=(2107,), promotion=SMALL, market_from_dashboard=False)
     base.update(kw)
     return load_settings("/nonexistent.json", **base)
 
@@ -463,8 +463,8 @@ class PipelineTests(Tmp):
         s = settings(self.tmp)
         ds = dataset(loaded_at=self.NOW)
         with self.assertRaises(RuntimeError):
-            run_week(s, now=self.NOW, dataset=ds, fail_stage="train", write_report=False)
-        res = run_week(s, now=self.NOW, dataset=ds)
+            run_week(s, now=self.NOW, dataset=ds, fail_stage="train", write_report=False, lock=True)
+        res = run_week(s, now=self.NOW, dataset=ds, lock=True)
         self.assertEqual(res.status, "locked")
         self.assertTrue(res.lock["in_time"])
         self.assertEqual(res.lock["mode"], "replay")
@@ -499,7 +499,7 @@ class PipelineTests(Tmp):
     def test_stale_data_and_ingest_failure(self):
         s = settings(self.tmp, games_csv_url="http://127.0.0.1:9/none.csv")
         old = dataset(loaded_at=self.NOW - timedelta(days=5))
-        res = run_week(s, now=self.NOW, dataset=old, write_report=False)
+        res = run_week(s, now=self.NOW, dataset=old, write_report=False, lock=True)
         self.assertTrue(any("STALE" in w for w in res.warnings))
         s2 = settings(self.tmp / "b", games_csv_url="http://127.0.0.1:9/none.csv")
         with self.assertRaises(RuntimeError):
@@ -518,12 +518,63 @@ class PipelineTests(Tmp):
         import operation_sunday.pipeline as pl
         pl.decide = forced
         try:
-            res = run_week(s, now=self.NOW, dataset=dataset(loaded_at=self.NOW), write_report=False)
+            res = run_week(s, now=self.NOW, dataset=dataset(loaded_at=self.NOW), write_report=False, lock=True)
         finally:
             pl.decide = orig
         pkg = Journal(s.state_path / "journal.sqlite").official(res.season, res.week)[0]
         self.assertEqual(pkg["model_name"], "elo")
         self.assertIn("baseline", pkg["fallback"])
+
+
+class AutoLockAndMarketTests(Tmp):
+    def _week(self, s):
+        ds = dataset()
+        f = build_features(ds.games, s)
+        wk = f[f["season"] == 2108].sort_values("cutoff_utc")
+        key = wk["week_key"].iloc[2]
+        return ds, key, wk[wk["week_key"] == key]
+
+    def test_auto_lock_waits_for_window_then_locks(self):
+        s = settings(self.tmp)
+        ds, key, week = self._week(s)
+        lock = week["cutoff_utc"].iloc[0].to_pydatetime()
+        early = run_week(s, 2108, key[2], now=lock - timedelta(hours=20), dataset=ds, write_report=False)
+        self.assertEqual(early.status, "draft")
+        again = run_week(s, 2108, key[2], now=lock - timedelta(hours=10), dataset=ds, write_report=False)
+        self.assertEqual(again.status, "draft")                        # draft refreshed, not duplicated
+        final = run_week(s, 2108, key[2], now=lock - timedelta(hours=1), dataset=ds, write_report=False)
+        self.assertEqual(final.status, "locked")
+        self.assertTrue(final.lock["in_time"])
+        self.assertEqual(len(Journal(s.state_path / "journal.sqlite").packages()), 1)
+
+    def test_no_market_snapshot_alerts(self):
+        s = settings(self.tmp)
+        ds, key, week = self._week(s)
+        res = run_week(s, 2108, key[2], now=week["cutoff_utc"].iloc[0].to_pydatetime() - timedelta(hours=1),
+                       dataset=ds, write_report=False)
+        self.assertTrue(any("NO MARKET SNAPSHOT" in a for a in res.alerts))
+
+    def test_dashboard_store_reader_respects_cutoff_and_season(self):
+        from operation_sunday.market import snapshots_from_store
+        s = settings(self.tmp)
+        _, key, week = self._week(s)
+        cut = week["cutoff_utc"].iloc[0].to_pydatetime()
+        g0, g1 = week.iloc[0], week.iloc[1]
+        k0, k1 = f"{g0.away.lower()}@{g0.home.lower()}", f"{g1.away.lower()}@{g1.home.lower()}"
+        t = cut.timestamp()
+        store = {"weeks": {str(key[2]): {
+            "at": t + 3600,
+            "kickoff": {k0: g0.kickoff_utc.isoformat(), k1: "1999-01-01T00:00:00Z"},
+            "win": {k0: 0.9},
+            "history": [{"at": t - 7200, "lines": {k0: 3.0, k1: 1.0}},
+                        {"at": t - 60, "lines": {k0: 4.5}},
+                        {"at": t + 3600, "lines": {k0: 9.0}}]}}}
+        snaps, notes = snapshots_from_store(store, week, key[2], cut)
+        self.assertEqual(len(snaps), 1)                      # k1's kickoff is another season's game
+        self.assertEqual(snaps[0].home_spread, 4.5)          # last line BEFORE the cutoff
+        self.assertIsNone(snaps[0].home_prob)                # moneyline chance is post-cutoff
+        self.assertLessEqual(snaps[0].taken_at, cut)
+        self.assertTrue(any("not this season" in n for n in notes))
 
 
 if __name__ == "__main__":

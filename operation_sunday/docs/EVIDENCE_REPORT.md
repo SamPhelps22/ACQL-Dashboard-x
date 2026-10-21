@@ -98,8 +98,9 @@ what the "ensemble must earn its complexity" rule is meant to catch.
    Thursday cutoff historically. Snapshots passed with `--market` are stored in each locked package and
    re-used, so `market_snapshot` and `ens_market_informed` gain evidence week by week. Until they reach the
    promotion sample (500 games, 30 weeks), they can't be promoted. **Recommendation:** supply a Thursday
-   snapshot every week, and consider making `market_snapshot` the designated baseline once the user accepts
-   that this is a policy choice, not an evidence-based promotion.
+   snapshot every week. **Adopted (2026-10-21):** snapshots are now read automatically from the dashboard's
+   stored Odds API fetches each run, and the job is scheduled by `schedule.ps1`. `market_snapshot` stays a
+   candidate that must earn promotion on journaled Thursday evidence; it is not made the default by policy.
 2. **QB availability, injuries, weather, tactical matchups, drive simulation:** not built. nflverse lists
    actual starters (known at kickoff), there are no timestamped injury reports, weather is observed, and the
    play-by-play point-in-time aggregation isn't wired in. These are excluded from every model, and the report
