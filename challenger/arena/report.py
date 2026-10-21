@@ -98,8 +98,8 @@ def write_report(out_dir: Path, split: str, summary: dict, t: dict) -> None:
                   "completeness, not for a verdict.", "",
                   f"Matched decided games: {summary['deadeye_live_coverage'].get('matched_decided_games', 0)}", "",
                   to_markdown(t["deadeye_live_2026"]), "",
-                  (f"Challenger - Deadeye live, log loss x1000: {lp['mean'] * 1000:+.1f} "
-                   f"[{lp['lo'] * 1000:+.1f}, {lp['hi'] * 1000:+.1f}] - {lp['verdict']}" if lp else ""), ""]
+                  (f"Challenger - Deadeye live, mean log loss difference x1000: {lp['mean'] * 1000:+.1f} over "
+                   f"{lp['games']} games in {lp['clusters']} weeks - {lp['verdict']}" if lp else ""), ""]
     if len(t["variants"]):
         lines += ["## 6. Other Challenger variants (separate runs; never mixed into the tables above)", "",
                   "`market_informed` adds the CLOSING spread and moneyline as inputs - information from after the "
@@ -118,7 +118,10 @@ def write_report(out_dir: Path, split: str, summary: dict, t: dict) -> None:
     if len(t["acql_real_weeks"]):
         lines += ["### Real pick sheets on file (real pool lines, real coaches' picks)", "",
                   "Each model's card scored on the commissioner's real lines, with its place among the real field "
-                  "(1 = tied for or holding first). Blank = that model has no forecast for every game that week.", "",
+                  "(1 = tied for or holding first). Blank = that model has no forecast for every game that week. "
+                  "`deadeye_stored_card` is Deadeye's own stored result for that week from acql/data/pool_weeks.json "
+                  "(a replay priced off closing lines, by that file's note), shown where the weeks overlap. "
+                  "Eight weeks is far too few to rank anything.", "",
                   to_markdown(t["acql_real_weeks"], 2), ""]
     lines += ["## What this does and does not show", "",
               "- A difference whose interval includes zero is not evidence either way; one hot season is not a verdict.",

@@ -229,7 +229,7 @@ def field_comparison(weeks: list[dict], forecasts: pd.DataFrame, models: list[st
                "coaches": len(scores), "pool_average": float(scores.mean()), "best_coach": int(scores.max())}
         for m in models:
             f = forecasts[forecasts["model"] == m].drop_duplicates("game_id").set_index("game_id")
-            if m != "home_team" and not s["game_id"].isin(f.index).all():
+            if m not in ("home_team", "market_spread_line") and not s["game_id"].isin(f.index).all():
                 row[f"{m}"] = None
                 continue
             t = s.copy()
@@ -237,11 +237,27 @@ def field_comparison(weeks: list[dict], forecasts: pd.DataFrame, models: list[st
                 t[f"m_{m}"] = t["game_id"].map(f["deadeye_margin"])
                 if "deadeye_sd" in f.columns:
                     t[f"sd_{m}"] = t["game_id"].map(f["deadeye_sd"])
-            if m != "home_team":
+            if m not in ("home_team", "market_spread_line"):
                 t[f"p_{m}"] = t["game_id"].map(f["p_home"])
+            if m == "market_spread_line" and t["spread_line"].isna().any():
+                row[m] = None
+                continue
             p = card_probabilities(t, m)
             pts = int(sum(1 for side, tr in zip(np.where(p >= 0.5, "home", "away"), truth) if side == tr))
             row[m] = pts
             row[f"{m}_place"] = int(1 + (scores > pts).sum())
+        stored = _stored_deadeye_cards().get((w["season"], w["week"]))
+        if stored is not None:
+            row["deadeye_stored_card"] = stored["model"]
+            row["deadeye_stored_card_place"] = stored["place"]
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _stored_deadeye_cards() -> dict:
+    """Deadeye's own stored card results (acql/data/pool_weeks.json; priced off closing lines, by its note)."""
+    try:
+        raw = json.loads((ROOT / "acql" / "data" / "pool_weeks.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return {(w["season"], w["week"]): w for w in raw.get("weeks", [])}

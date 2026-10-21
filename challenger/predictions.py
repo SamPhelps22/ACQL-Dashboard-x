@@ -35,7 +35,9 @@ class ImmutableError(RuntimeError):
 def git_commit() -> str:
     try:
         out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, timeout=10)
-        dirty = subprocess.run(["git", "status", "--porcelain", "challenger"], cwd=ROOT, capture_output=True,
+        # code only: the run's own outputs (results, journal, artifacts) do not make the code dirty
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", "challenger", ":!challenger/results",
+                                ":!challenger/journal", ":!challenger/artifacts"], cwd=ROOT, capture_output=True,
                                text=True, timeout=10).stdout.strip()
         return out.stdout.strip() + ("+dirty" if dirty else "")
     except (OSError, subprocess.SubprocessError):

@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 
 EPS = 1e-6
+#: Below this many weeks a week-clustered bootstrap interval is not trustworthy, and no verdict is given.
+MIN_CLUSTERS = 10
 
 
 def log_loss_each(p, y) -> np.ndarray:
@@ -73,6 +75,8 @@ def bootstrap_paired(diff: np.ndarray, clusters: np.ndarray, n: int = 4000, seed
 
 def verdict(ci: dict, better_when_negative: bool = True) -> str:
     """Plain words for an interval on (model A - model B)."""
+    if ci.get("clusters", 99) < MIN_CLUSTERS:
+        return f"too few weeks ({ci['clusters']}) for a reliable interval - no verdict"
     lo, hi = ci["lo"], ci["hi"]
     if lo > 0:
         return "B better (CI excludes 0)" if better_when_negative else "A better (CI excludes 0)"
