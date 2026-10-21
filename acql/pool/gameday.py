@@ -608,6 +608,34 @@ class Board:
         return min(times) if times else None
 
 
+CLINCHED, SHARE, OUT = "clinched", "clinched a share", "out"
+
+
+def certainty(bd: Board) -> dict[str, str]:
+    """Card key -> CLINCHED / SHARE / OUT where the week is already decided for it.
+
+    Exact, not simulated: a card is out when even every undecided pick and Big
+    Loser going its way (Standing.most) can't reach what another card in the
+    field has already banked; it has clinched when what it has banked is more
+    than any other card can reach (a share, with ties shared, when equal).
+    A chance of 0.0% from the simulation is not proof; this is."""
+    field = [s for s in bd.standings if s.card.in_field]
+    out: dict[str, str] = {}
+    if len(field) < 2 or not any(st.started for st in bd.states):
+        return out
+    for s in field + [x for x in (bd.you, bd.ghost) if x is not None and not x.card.in_field]:
+        others = [o for o in field if o.card.key != s.card.key]
+        if not others:
+            continue
+        if s.most < max(o.total_banked for o in others):
+            out[s.card.key] = OUT
+        elif s.total_banked > max(o.most for o in others):
+            out[s.card.key] = CLINCHED
+        elif s.total_banked >= max(o.most for o in others):
+            out[s.card.key] = SHARE
+    return out
+
+
 def _seed(year: int, week: int, states: list[GameNow], cards_: list[Card]) -> int:
     text = repr((year, week, [(s.index, s.state, s.home_points, s.away_points, round(s.left, 3))
                               for s in states], sorted((c.key, sorted(c.picks.items())) for c in cards_)))

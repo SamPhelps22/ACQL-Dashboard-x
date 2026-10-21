@@ -31,6 +31,7 @@ only where they are kept has changed.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 import threading
@@ -379,6 +380,74 @@ def _daily_backup(conn: sqlite3.Connection, path: Path) -> None:
             stale.unlink(missing_ok=True)
     except (OSError, sqlite3.Error):
         pass          # a backup is never worth failing a start over
+    if _OVERRIDE is None:
+        mirror_backup(target)
+
+
+# ---- a second copy, outside the synced folder -----------------------------------------
+# The database and its daily copies all sit in the project folder, which
+# OneDrive syncs: a sync conflict or a delete reaches every copy at once (the
+# nflverse and tracker folders vanished from it on 2026-10-12, cause unknown).
+# So each day's copy is also put where OneDrive doesn't reach, checked with
+# SQLite's own integrity check, and the result written down for Readiness.
+MIRROR_KEEP_DAILY = 14
+MIRROR_KEEP_WEEKLY = 8
+MIRROR_STATUS = "status.json"
+
+
+def mirror_folder() -> Path | None:
+    base = os.environ.get("LOCALAPPDATA")
+    return Path(base) / "ACQL" / "backups" if base else None
+
+
+def verify(path: str | Path) -> tuple[bool, str, int]:
+    """(sound, SQLite's word, documents in it) for a copy, opened read-only."""
+    try:
+        conn = sqlite3.connect(f"file:{Path(path).as_posix()}?mode=ro", uri=True)
+        try:
+            word = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
+            rows = int(conn.execute("SELECT count(*) FROM docs").fetchone()[0])
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        return False, str(exc), 0
+    return word == "ok", word, rows
+
+
+def mirror_backup(daily: Path, folder: Path | None = None, now: float | None = None) -> dict | None:
+    """Copy a day's backup outside the synced folder, check it, and prune old copies."""
+    import json
+    folder = folder or mirror_folder()
+    if folder is None or not Path(daily).is_file():
+        return None
+    now = time.time() if now is None else now
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / Path(daily).name
+        if not target.exists():
+            shutil.copy2(daily, target)
+        sound, word, rows = verify(target)
+        status = {"at": now, "file": target.name, "ok": sound, "word": word, "documents": rows}
+        (folder / MIRROR_STATUS).write_text(json.dumps(status), encoding="utf-8")
+        dated = sorted(folder.glob("acql-????-??-??.db"))
+        keep = set(dated[-MIRROR_KEEP_DAILY:])
+        weekly = [p for p in dated if time.strptime(p.stem[5:], "%Y-%m-%d").tm_wday == 6]
+        keep |= set(weekly[-MIRROR_KEEP_WEEKLY:])
+        for stale in dated:
+            if stale not in keep:
+                stale.unlink(missing_ok=True)
+        return status
+    except (OSError, ValueError, sqlite3.Error):
+        return None
+
+
+def mirror_status(folder: Path | None = None) -> dict | None:
+    import json
+    folder = folder or mirror_folder()
+    try:
+        return json.loads((folder / MIRROR_STATUS).read_text(encoding="utf-8")) if folder else None
+    except (OSError, ValueError):
+        return None
 
 
 def backup_now(target: str | Path) -> Path:

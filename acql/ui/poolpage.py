@@ -479,6 +479,21 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
     return out
 
 
+def curve() -> dict:
+    """The dashboard's own spread of results (analytics.py), for the page's live chances.
+
+    The page used to price games on a single wide bell of its own, so the site and
+    the dashboard could give the same game different chances - by up to 7 points.
+    With these numbers it uses the same curve: two bells and the key-number weights
+    before kickoff (analytics.margin_distribution), two bells shrunk by the time left
+    during play (gameday.outlook). Matched to six decimals on 1,170 chances when it
+    was added (2026-10-20)."""
+    from .. import analytics
+    return {"sd": analytics.SPREAD_SD, "ratio": analytics.TAIL_RATIO, "share": analytics.TAIL_SHARE,
+            "low": analytics.MARGIN_RANGE[0],
+            "keys": [round(analytics.KEY_WEIGHT.get(abs(d), 1.0), 6) for d in analytics.MARGIN_RANGE]}
+
+
 def _live(season: Season, latest: int) -> dict | None:
     """The week being played: its games, the pool's lines and everyone's
     picks, so the page can follow the games live. From the commissioner's
@@ -794,6 +809,8 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
     money, money_from = _money_table(season, weeks, official=official)
     suicide = _suicide_status(season, weeks, official=official)
     round_start = _round_start(season, weeks)
+    # The rounds before the pool started again, for the survivor wall's history.
+    earlier = _suicide_status(season, [w for w in weeks if w < round_start], official=False) if round_start else {}
     try:
         found, chaos = _patterns(season, weeks)
     except Exception:  # noqa: BLE001 - the page goes up without them
@@ -844,6 +861,10 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
                 # the same teams as codes, for the board's "teams left"
                 "used": [team_code(t) for w, t in sorted(player.suicide_picks.items())
                          if w in weeks and w >= round_start and team_code(t)],
+                # the earlier round, shown faded on the survivor wall
+                "before": {str(w): display_team(t) for w, t in sorted(player.suicide_picks.items())
+                           if w in weeks and w < round_start},
+                "before_out": earlier.get(key, (False, None))[1],
             },
             "patterns": found.get(key),
         })
@@ -876,10 +897,13 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         note, history = None, {"champions": [], "seasons": []}
     return {
         "live": live,
+        "curve": curve(),
         "schema": SCHEMA,
         "title": getattr(season, "title", "") or "ACQL",
         "generated": stamp,
         "through_week": latest,
+        "suicide_round_start": round_start,
+        "suicide_winners": list(getattr(season, "suicide_winners", []) or []) if round_start else [],
         "buy_in": _money(season.buy_in),
         "entrants": len(season.players),
         "money": money_from,               # "" when the files don't give it

@@ -115,6 +115,17 @@ def offer(window) -> None:
         return
     found, path = pending
     window._pending_update = None
+    from .. import store, updater
+    risk = updater.work_at_risk(store.project_root())
+    if risk:
+        # A git checkout with work GitHub hasn't got: installing would overwrite it (2026-10-20).
+        write_log(f"update {found.version} held back: {risk}")
+        if getattr(window, "_held_update", None) != found.version:
+            window._held_update = found.version
+            QMessageBox.information(window, f"Update {found.version} held back", risk)
+        window.statusBar().showMessage(
+            f"Update {found.version} is held back: this folder has work that isn't on GitHub (see Readiness).", 15000)
+        return
     box = QMessageBox(window)
     box.setWindowTitle("Update ready")
     box.setText(f"ACQL Dashboard {found.version} is ready to install (this is {current_version()}).")

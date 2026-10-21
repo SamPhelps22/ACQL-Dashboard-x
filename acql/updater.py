@@ -311,8 +311,74 @@ class Installed:
     missing_own: list[str]            # files this computer should have and doesn't
 
 
+# ---- a folder someone is working in -------------------------------------------------
+# On 2026-10-20 the dashboard installed 2.18.2 into the project folder while it
+# held an evening's uncommitted work and a commit not yet on GitHub: every code
+# file the update carried was replaced, and the work came back only from the
+# backup zip. An update is a copy of what is on GitHub; where the folder is a
+# git checkout with work GitHub hasn't got, installing would throw that work
+# away. So the install is refused there, and the dashboard says why.
+#: The folders and files an update carries; work anywhere else is not at risk.
+CODE_PATHS = ("acql", "tests", "packaging", "run.py", "requirements.txt")
+
+
+def _git(root: Path, *args: str) -> str | None:
+    try:
+        done = subprocess.run(["git", "-c", "core.quotepath=off", *args], cwd=str(root), capture_output=True,
+                              text=True, timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _listed(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def work_at_risk(root: Path) -> str:
+    """Why installing into `root` would destroy work, or "" when it wouldn't.
+
+    Only for a git checkout (a folder with .git): there an update would
+    overwrite files that differ from what is committed (line-ending-only
+    differences don't count), files not committed yet in the code folders,
+    and commits that exist only on this computer. A folder git can't be asked
+    about is treated as at risk - better an update waits than work is lost."""
+    root = Path(root)
+    if not (root / ".git").exists():
+        return ""
+    # --numstat, not --name-only: a file whose only change is its line endings counts 0 and 0 lines
+    numstat = _git(root, "diff", "--ignore-cr-at-eol", "--numstat", "HEAD", "--", *CODE_PATHS)
+    changed = None if numstat is None else "\n".join(
+        line.split("\t", 2)[2] for line in numstat.splitlines()
+        if line.count("\t") >= 2 and not line.startswith("0\t0\t"))
+    untracked = _git(root, "ls-files", "--others", "--exclude-standard", "--", *CODE_PATHS)
+    local = _git(root, "rev-list", "--count", "HEAD", "--not", "--remotes")
+    if changed is None or untracked is None or local is None:
+        return ("This folder is a git checkout, and git couldn't be asked whether it holds work that isn't "
+                "on GitHub, so the update wasn't installed. Install it by hand once that's checked.")
+    changed_files, new_files = _listed(changed), _listed(untracked)
+    try:
+        commits = int(local.strip() or 0)
+    except ValueError:
+        commits = 0
+    if not (changed_files or new_files or commits):
+        return ""
+    parts = []
+    if changed_files:
+        parts.append(f"{len(changed_files)} changed file{'' if len(changed_files) == 1 else 's'} not committed "
+                     f"({', '.join(changed_files[:3])}{', ...' if len(changed_files) > 3 else ''})")
+    if new_files:
+        parts.append(f"{len(new_files)} new file{'' if len(new_files) == 1 else 's'} not committed "
+                     f"({', '.join(new_files[:3])}{', ...' if len(new_files) > 3 else ''})")
+    if commits:
+        parts.append(f"{commits} commit{'' if commits == 1 else 's'} not pushed to GitHub")
+    return ("The update wasn't installed: this folder holds work that isn't on GitHub - " + "; ".join(parts)
+            + ". Installing would overwrite it with the released files. Commit and push the work (or merge "
+              "the release into it with git), and the update has nothing left to replace.")
+
+
 def install(update: Update, root: Path, *, check=None, say=print,
-            allow_same: bool = False) -> Installed:
+            allow_same: bool = False, over_work: bool = False) -> Installed:
     """Install `update` into the project at `root`. Rolls back if anything fails.
 
     `check(root)` is run after copying and must return "" if the app still
@@ -324,6 +390,10 @@ def install(update: Update, root: Path, *, check=None, say=print,
     root = Path(root)
     if not is_project(root):
         raise UpdateError(f"{root} doesn't look like the dashboard's folder (no run.py and acql folder).")
+    if not over_work:
+        risk = work_at_risk(root)
+        if risk:
+            raise UpdateError(risk)
     current = installed_version(root)
     if current and not allow_same and version_tuple(update.version) <= version_tuple(current):
         raise UpdateError(

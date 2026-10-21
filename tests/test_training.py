@@ -773,6 +773,31 @@ class QuarterbackNews(unittest.TestCase):
         self.assertEqual(injuries.newer_than(report["aaa"], 0.0), [])
 
 
+class PreRegisteredTests(unittest.TestCase):
+    """Plans fixed before their games: the fingerprint holds, the games are the plan's, the score is fair."""
+
+    def test_plans_are_fixed_and_scored_on_their_own_games(self):
+        from acql.training import prereg
+        prints = [prereg.fingerprint(p) for p in prereg.PLANS]
+        self.assertEqual(prints, [prereg.fingerprint(dict(p)) for p in prereg.PLANS])
+        self.assertNotEqual(prereg.fingerprint(dict(prereg.PLANS[0], rule="changed")), prints[0])
+        rows = [{"week": 7, "matchup": f"g{i}", "favourite_home": i % 2 == 0, "market": m, "margin": m,
+                 "need": 1, "p_fav": analytics.cover_chance(m, 1), "credited": i % 3 != 0}
+                for i, m in enumerate([1.0, 2.5, 6.5, 10.0, 1.5, 3.0])]
+        small = prereg.score(prereg.PLANS[0], rows)
+        self.assertEqual(small["games"], 3)                        # only favourites under 3 points
+        self.assertTrue(small["call"].startswith("running"))
+        lean = prereg.score(prereg.PLANS[1], rows)
+        self.assertEqual(lean["games"], 6)
+
+    def test_deadeyes_recorded_chance_is_reproduced(self):
+        from acql.training import prereg
+        for margin, need in ((2.5, 1), (6.0, 7), (-1.0, 1)):
+            for chance in (analytics.cover_chance(margin, need, 8.7), analytics.cover_chance(margin, need, 12.0)):
+                sd = prereg._sd_for(margin, need, chance)
+                self.assertAlmostEqual(analytics.cover_chance(margin, need, sd), chance, places=3)
+
+
 def main() -> int:
     suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1

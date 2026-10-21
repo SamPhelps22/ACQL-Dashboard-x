@@ -2330,7 +2330,8 @@ class TestReadiness(unittest.TestCase):
             "ACQL Game-day poll": {"found": True, "last": now - 600, "next": now + 60, "result": 1},
             "ACQL Deadeye email": {"found": False},
         }
-        daily, poll, mail = readiness._tasks(states, now)
+        daily, poll, mail, training, brief = readiness._tasks(states, now)
+        self.assertEqual((training.state, brief.state), (readiness.BAD, readiness.BAD))   # neither registered here
         self.assertEqual((daily.state, daily.headline), (readiness.OK, "Last ran 60 min ago, next in 22 h"))
         self.assertEqual(poll.state, readiness.WARN)                         # its last run ended in an error
         self.assertEqual(mail.state, readiness.BAD)                          # never set up on this computer
@@ -2678,6 +2679,471 @@ class TestMarketColumnsAreNotModels(unittest.TestCase):
         self.assertAlmostEqual(f.edge, f.consensus - 3.5)
         self.assertAlmostEqual(f.expected(0.25), 3.5 + f.model_weight(0.25) * f.live_edge())
         self.assertEqual(f.expected(0.0), 3.5)
+
+
+class TestPredictionsGate(_ScratchStore):
+    """A season archive must never be taken for one week's predictions file.
+
+    On 2026-10-18 nfl24.csv (285 games of 2024, in Downloads) was read as week
+    7's file because its division games covered most of the week's pairings.
+    """
+
+    TEAMS = ["Chicago", "New England", "Green Bay", "Detroit", "Dallas", "Philadelphia",
+             "Buffalo", "Miami", "Denver", "Seattle", "Atlanta", "Tampa Bay", "Houston",
+             "Tennessee", "Baltimore", "Pittsburgh", "Arizona", "Los Angeles Rams",
+             "Minnesota", "Carolina", "Cleveland", "Cincinnati", "Kansas City", "Las Vegas"]
+
+    def setUp(self):
+        super().setUp()
+        from acql.models import Game
+        t = self.TEAMS
+        self.slate = [Game(i + 1, t[2 * i], t[2 * i + 1]) for i in range(12)]
+        self.dir = self.folder / "files"
+        self.dir.mkdir()
+
+    def _write(self, name, rows, extra_head="", extra=""):
+        path = self.dir / name
+        lines = ["road,home,line,linesag,linemass" + extra_head]
+        lines += [f"{road},{home},3.5,4,2{extra}" for road, home in rows]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return path
+
+    def _week_rows(self):
+        return [(g.away, g.home) for g in self.slate]
+
+    def test_a_weeks_file_passes(self):
+        from acql.model import predictions
+        self.assertIsNone(predictions.refusal(self._write("nflpredictions.csv", self._week_rows()), self.slate))
+
+    def test_archive_name_scores_size_and_duplicates_are_refused(self):
+        from acql.model import predictions
+        week = self._week_rows()
+        season = week * 3 + [(a, b) for a in self.TEAMS[:12] for b in self.TEAMS[12:]]
+        self.assertIn("archive", predictions.refusal(self._write("nfl24.csv", week)))
+        self.assertIn("final scores", predictions.refusal(
+            self._write("season.csv", week, ",hscore,rscore,week", ",24,17,7")))
+        self.assertIn("games", predictions.refusal(self._write("season2.csv", season), self.slate))
+        self.assertIn("twice", predictions.refusal(self._write("dupes.csv", week + week[:1])))
+        wild = self._write("wild.csv", week)
+        wild.write_text(wild.read_text().replace(",3.5,", ",45,", 1), encoding="utf-8")
+        self.assertIn("betting line", predictions.refusal(wild))
+
+    def test_find_file_skips_the_archive_and_records_why(self):
+        from acql.model import predictions
+        week = self._week_rows()
+        season = week * 2 + [(a, b) for a in self.TEAMS[:12] for b in self.TEAMS[12:]]
+        self._write("nflpredictions.csv", week)
+        time.sleep(0.05)
+        newest = self._write("nfl lines.csv", season)        # newer, covers the slate, but a season
+        original = predictions.search_folders
+        predictions.search_folders = lambda workbook=None: [self.dir]
+        try:
+            found = predictions.find_file(7, None, self.slate)
+        finally:
+            predictions.search_folders = original
+        self.assertEqual(found.name, "nflpredictions.csv")
+        refused = {Path(r["path"]).name: r["reason"] for r in predictions.turned_away()}
+        self.assertIn(newest.name, refused)
+
+
+class TestSubmittedCardCheck(_ScratchStore):
+    """The sheet's row for you against the card you saved: a slip on the form is caught once."""
+
+    def _pair(self, sheet_side="Philadelphia", losers=("dal", "nyg", "car")):
+        from acql.pool import cards, picks
+        saved = cards.Snapshot(at=1.0, take={1: "Chicago", 2: "Philadelphia"}, chance={1: .6, 2: .55},
+                               label={1: "New England @ Chicago", 2: "Dallas @ Philadelphia"},
+                               losers=["dal", "nyg", "car"])
+        sheet = picks.WeekPicks(7, games=[
+            picks.GamePicks("New England", "Chicago", "", {"Phelpy": "Chicago", "Jules": "New England"}),
+            picks.GamePicks("Dallas", "Philadelphia", "", {"Phelpy": sheet_side, "Jules": "Dallas"}),
+        ], losers={"Phelpy": list(losers)})
+        return saved, sheet
+
+    def test_a_matching_sheet_passes(self):
+        from acql.pool import cardcheck
+        found = cardcheck.compare(7, *self._pair(), "phelpy ")
+        self.assertTrue(found.matches)
+        self.assertEqual(found.games, 2)
+
+    def test_a_different_pick_and_big_loser_are_reported_once(self):
+        from acql.pool import cardcheck
+        found = cardcheck.compare(7, *self._pair("Dallas", ("dal", "nyg", "mia")), "Phelpy")
+        self.assertEqual([d.what for d in found.diffs], ["Game 2", "Big Losers"])
+        self.assertIn("sheet has Dallas", found.lines()[0])
+        self.assertTrue(cardcheck.keep(found))
+        self.assertFalse(cardcheck.keep(found))          # the same difference is not news twice
+
+    def test_nothing_to_compare_says_why(self):
+        from acql.pool import cardcheck
+        saved, sheet = self._pair()
+        self.assertIn("no saved card", cardcheck.compare(7, None, sheet, "Phelpy").reason)
+        self.assertIn("isn't on the pick sheet", cardcheck.compare(7, saved, sheet, "Nobody").reason)
+
+
+class TestConsistencySentinel(_ScratchStore):
+    """Sources that describe the same game must agree (consistency.py).
+
+    The 2026-10-18 case: the week-7 record had Chicago -6.5 beside moneylines
+    that made Chicago 54% - the line had come from a 2024 archive file."""
+
+    def _season(self, pool_line=None):
+        from acql.models import Game, Season, Week
+        game = Game(1, "Chicago", "New England", line=pool_line, line_favourite="Chicago" if pool_line else "")
+        return Season(title="ACQL 2026", weeks={7: Week(7, [game])})
+
+    def _forecast(self, market, win, total=50.0):
+        from acql.model import predictions
+        predictions.save(7, [predictions.Forecast("New England", "Chicago", market=market, opinions=(market,),
+                                                  market_win=win, total=total)], "test.csv")
+
+    def test_agreeing_sources_raise_nothing(self):
+        from acql import consistency
+        self._forecast(3.0, 0.58)
+        self.assertEqual(consistency.week(self._season(3.5), 7), [])
+
+    def test_line_against_moneyline_total_and_pool_line(self):
+        from acql import consistency
+        self._forecast(6.5, 0.54, total=12.0)
+        kinds = {p.kind for p in consistency.week(self._season(12.0), 7)}
+        self.assertEqual(kinds, {"moneyline", "total", "pool line"})
+
+    def test_open_record_against_the_line_now(self):
+        from acql import consistency, store
+        self._forecast(3.0, 0.58)
+        store.put("known", "2026-7", {"at": 1.0, "frozen": False, "games": {
+            "1": {"line": "Chicago −6.5", "favourite": "Chicago", "pool_line": ""}}})
+        found = [p for p in consistency.week(self._season(), 7) if p.kind == "record"]
+        self.assertEqual(len(found), 1)
+        self.assertIn("6.5", found[0].text)
+
+
+class TestFlipPoints(unittest.TestCase):
+    """The margin at which a pick turns: just short of it the pick holds, just past it it changes."""
+
+    def test_flip_points_on_straight_and_lined_games(self):
+        from acql import analytics
+        from acql.model import flips
+        from acql.models import Game
+        cases = [(Game(1, "Chicago", "New England"), 3.0),
+                 (Game(2, "Houston", "New York Giants", line=10.0, line_favourite="Houston"), 10.2),
+                 (Game(3, "Minnesota", "Indianapolis", line=7.0, line_favourite="Minnesota"), 4.0),
+                 (Game(4, "Dallas", "Philadelphia"), -6.5)]
+        for game, margin in cases:
+            at = flips.flip_margin(game, margin, 13.0)
+            self.assertIsNotNone(at, game)
+            before = analytics.predict_margin(game, margin, sd=13.0).pick
+            step = 0.05 if at > margin else -0.05
+            self.assertEqual(analytics.predict_margin(game, at - step, sd=13.0).pick, before)
+            past = analytics.predict_margin(game, at + 10 * step, sd=13.0)
+            self.assertTrue(past.pick != before or past.reason == "pick 'em", (game, margin, at))
+
+    def test_key_numbers_and_fragility(self):
+        from acql.model import flips
+        f = flips.Flip(1, "a @ b", "b", 0.55, 3.5, 2.5, 0.8)
+        self.assertTrue(f.fragile and f.crosses_key)
+        self.assertFalse(flips.Flip(1, "a @ b", "b", 0.6, 5.5, 4.0, 1.5).crosses_key)
+
+
+class TestStandingNotes(_ScratchStore):
+    """A note the load repeats every run is logged once a day, saying how long it has stood."""
+
+    def test_repeats_are_held_back_and_resurface_daily(self):
+        from acql import headless
+        t = 1_790_000_000.0
+        self.assertEqual(headless._new_notes(["A", "B"], t), ["A", "B"])
+        self.assertEqual(headless._new_notes(["A", "B", "C"], t + 600), ["C"])
+        again = headless._new_notes(["A"], t + 2 * 86400)
+        self.assertEqual(again, ["A (standing for 2 days)"])
+        self.assertEqual(headless._new_notes(["B"], t + 2 * 86400 + 60), ["B"])   # gone and back: new again
+
+
+class TestBackupMirror(_ScratchStore):
+    """Each day's copy is also kept outside the synced folder, checked sound, and pruned."""
+
+    def test_mirror_copies_checks_and_prunes(self):
+        from acql import store
+        store.put("meta", "x", 1)
+        daily = self.folder / "daily"
+        mirror = self.folder / "mirror"
+        for day in range(1, 26):                          # 25 days of October 2026
+            target = daily / f"acql-2026-10-{day:02d}.db"
+            store.backup_now(target)
+            status = store.mirror_backup(target, mirror)
+        self.assertTrue(status["ok"])
+        self.assertGreaterEqual(status["documents"], 1)
+        kept = sorted(p.name for p in mirror.glob("acql-*.db"))
+        self.assertEqual(kept[-14:], [f"acql-2026-10-{d:02d}.db" for d in range(12, 26)])
+        self.assertIn("acql-2026-10-04.db", kept)          # a Sunday, kept as a weekly copy
+        self.assertNotIn("acql-2026-10-05.db", kept)
+        broken = mirror / "acql-2026-10-26.db"
+        broken.write_bytes(b"not a database")
+        self.assertFalse(store.verify(broken)[0])
+
+
+class TestGoldenWeek(_ScratchStore):
+    """A whole made-up week priced end to end, held to a fingerprint.
+
+    Any change to how a game is priced - the share of the models, the home
+    lean, the curve, the pool's line rule, the Big Loser chances - changes the
+    picks, and that needs Sam's approval. This fails on every such change,
+    approved or not; when one is approved, run this test, read the new values
+    it prints, and put the new fingerprint below (say so in the commit).
+    Made-up numbers only: the repository is public.
+    """
+
+    FINGERPRINT = "15892b819a2530ac"
+    TEAMS = [("New England", "Chicago", 3.0, [1.4, -2.8, 2.4, 1.1, 2.6, 1.0, 3.5], 0.59, 50.5),
+             ("Pittsburgh", "New Orleans", -3.5, [-1.2, -4.0, -2.5, -3.3, -0.4, -5.1, -2.0], 0.38, 44.5),
+             ("San Francisco", "Atlanta", -3.0, [-4.4, -1.5, -3.8, -2.2, -6.0, -2.9, -3.1], 0.39, 49.5),
+             ("Cincinnati", "Baltimore", 2.5, [3.9, 1.0, 2.2, 4.4, 0.5, 2.8, 3.0], 0.57, 51.0),
+             ("New York Giants", "Houston", 10.0, [9.0, 11.5, 8.2, 10.6, 12.0, 9.4, 7.7], 0.83, 41.0),
+             ("Indianapolis", "Minnesota", 6.5, [5.1, 7.9, 6.0, 4.4, 8.8, 6.3, 5.5], 0.73, 45.5),
+             ("Miami", "New York Jets", 5.0, [2.2, 6.4, 4.8, 3.9, 7.1, 5.5, 4.0], 0.68, 42.0),
+             ("Dallas", "Philadelphia", -4.5, [-3.0, -6.2, -4.1, -5.5, -2.4, -4.9, -3.8], 0.33, 47.5)]
+
+    def _outputs(self):
+        from acql import analytics, consistency
+        from acql.model import flips, predictions, pricing
+        from acql.models import Game, Season, Week
+        forecasts = [predictions.Forecast(road, home, market=m, opening=m - 0.5, opinions=tuple(o),
+                                          market_win=w, total=t) for road, home, m, o, w, t in self.TEAMS]
+        predictions.save(7, forecasts, "golden.csv")
+        games = [Game(i + 1, home, road) for i, (road, home, *_r) in enumerate(self.TEAMS)]
+        games[4].line, games[4].line_favourite = 10.0, "Houston"       # pool lines on two games
+        games[5].line, games[5].line_favourite = 7.0, "Minnesota"
+        season = Season(title="ACQL 2026", weeks={7: Week(7, games)})
+        prices = pricing.price_week(season, 7, games)
+        out = {"prices": [[p.game.index, round(p.margin, 4), round(p.sd, 4), p.prediction().pick,
+                           round(p.prediction().chance, 5)] for p in prices],
+               "flips": [[f.index, None if f.distance is None else round(f.distance, 3)]
+                         for f in flips.week_flips(season, 7)],
+               "big_losers": [[b.team, round(b.chance, 5)] for b in pricing.big_loser_candidates(prices)[:5]],
+               "sources_agree": [p.kind for p in consistency.week(season, 7)],
+               "curve": [round(analytics.cover_chance(s, n), 5) for s, n in ((3, 3), (6.5, 7), (10, 10), (1, 1))]}
+        return out
+
+    def test_the_week_comes_out_as_it_did(self):
+        import hashlib
+        import json
+        out = self._outputs()
+        text = json.dumps(out, sort_keys=True)
+        found = hashlib.sha256(text.encode()).hexdigest()[:16]
+        self.assertEqual(found, self.FINGERPRINT,
+                         "Pricing changed - picks may differ. If the change was approved, set FINGERPRINT to "
+                         f"{found!r}. The new values:\n{json.dumps(out, indent=1)}")
+
+
+class TestClinchedAndOut(unittest.TestCase):
+    """Clinched and out are exact: from what is banked and what each card can still reach."""
+
+    def test_marks(self):
+        from acql.pool import gameday as GD
+        from types import SimpleNamespace as NS
+
+        def standing(key, banked, most, in_field=True):
+            card = GD.Card(key, key, in_field=in_field)
+            return GD.Standing(card, banked, 0, banked, 0, most, 1, None, None, None)
+        field = [standing("a", 12, 13), standing("b", 9, 12), standing("c", 8, 11), standing("d", 10, 12)]
+        bd = NS(standings=field, you=None, ghost=standing("g", 7, 9, in_field=False),
+                states=[NS(started=True)])
+        marks = GD.certainty(bd)
+        self.assertEqual(marks.get("c"), GD.OUT)            # 11 can't reach a's banked 12
+        self.assertEqual(marks.get("g"), GD.OUT)
+        self.assertEqual(marks.get("a"), GD.SHARE)          # b and d can at best tie its 12
+        self.assertNotIn("b", marks)
+        field[1] = standing("b", 9, 11)
+        field[3] = standing("d", 10, 11)
+        self.assertEqual(GD.certainty(bd).get("a"), GD.CLINCHED)   # 12 banked beats every 11
+        field[1] = standing("b", 9, 13)
+        self.assertNotIn("a", GD.certainty(bd))                    # b can still pass it
+        bd.states = [NS(started=False)]
+        self.assertEqual(GD.certainty(bd), {})                     # nothing before kickoff
+
+
+class TestWebsiteCurve(unittest.TestCase):
+    """The website prices games on the dashboard's own curve: same chances, both surfaces."""
+
+    def test_page_data_carries_the_curve(self):
+        from acql import analytics
+        from acql.ui import poolpage
+        found = poolpage.curve()
+        self.assertEqual(len(found["keys"]), len(analytics.MARGIN_RANGE))
+        self.assertEqual((found["sd"], found["low"]), (analytics.SPREAD_SD, analytics.MARGIN_RANGE[0]))
+
+    def test_the_page_and_the_dashboard_agree(self):
+        import html
+        import json
+        import re
+        import subprocess
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packaging"))
+        import guard
+        browser = guard.chrome()
+        if browser is None:
+            self.skipTest("no Chrome or Edge to run the page's script in")
+        from acql import analytics
+        from acql.pool import gameday
+        from acql.ui import poolpage
+        page = poolpage.TEMPLATE.read_text(encoding="utf-8")
+        engine = page[page.index("  var SQRT2"):page.index("  function oldOutlook")]
+        phi = page[page.index("  function phi(z) {"):page.index("  // A game level at the end of regulation")]
+        ks = [1, 0, 3, 4, 7, 8, 15, -14]
+        pre = [-10.5, -3.0, 0.0, 2.5, 6.5, 13.5]
+        live = [(-3, 0.5, 3.0), (4, 0.25, 3.0), (0, 0.05, -6.5), (14, 0.75, 0.0)]
+        probe = (f"<!doctype html><title>x</title><script>var DATA = {{curve: {json.dumps(poolpage.curve())}}};"
+                 f"var OT_TIE = {gameday.OT_TIE}, OT_MARGIN = {gameday.OT_MARGIN};\n{phi}\n{engine}\n"
+                 "function at(d, k) { var i = Math.max(0, k - d.lo); return i >= d.c.length ? 0 : 1 - (i ? d.c[i - 1] : 0); }"
+                 f"var ks = {json.dumps(ks)};"
+                 f"document.title = JSON.stringify([{json.dumps(pre)}.map(function (s) {{ var d = preDist(s); return ks.map(function (k) {{ return at(d, k); }}); }}),"
+                 f"{json.dumps(live)}.map(function (c) {{ var d = liveDist(c[0], c[1], c[2]); return ks.map(function (k) {{ return at(d, k); }}); }})]);"
+                 "</script>")
+        folder = Path(tempfile.mkdtemp(prefix="acql-test-"))
+        try:
+            (folder / "p.html").write_text(probe, encoding="utf-8")
+            done = subprocess.run([browser, "--headless=new", "--disable-gpu", f"--user-data-dir={folder / 'u'}",
+                                   "--dump-dom", (folder / "p.html").as_uri()], capture_output=True, timeout=90)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+        js_pre, js_live = json.loads(html.unescape(re.search(rb"<title>(.*?)</title>", done.stdout).group(1).decode()))
+        for s, row in zip(pre, js_pre):
+            want = [sum(p for d, p in analytics.margin_distribution(s) if d >= k) for k in ks]
+            for a, b in zip(row, want):
+                self.assertAlmostEqual(a, b, places=4, msg=f"before kickoff, spread {s}")
+        for (now, left, exp), row in zip(live, js_live):
+            want = [gameday.outlook(now, left, exp, analytics.SPREAD_SD, started=True).at_least(k) for k in ks]
+            for a, b in zip(row, want):
+                self.assertAlmostEqual(a, b, places=4, msg=f"in play {now}, {left}, {exp}")
+
+
+class TestDecisionJournal(_ScratchStore):
+    """Games taken against Deadeye, with a reason each, scored by reason once graded."""
+
+    def _season(self):
+        from acql.models import Game, Season, Week
+        from acql.pool import cards, picks
+        games = [Game(1, "Chicago", "New England", winner="Chicago"),
+                 Game(2, "Philadelphia", "Dallas", winner="Dallas"),
+                 Game(3, "Houston", "Miami", winner="Houston"),
+                 Game(4, "Detroit", "Green Bay")]                       # still to play
+        cards._put(7, "model", cards.Snapshot(at=1.0, take={1: "Chicago", 2: "Philadelphia", 3: "Houston", 4: "Detroit"},
+                                              chance={}, label={}))
+        sheet = picks.WeekPicks(7, games=[
+            picks.GamePicks("New England", "Chicago", "", {"Phelpy": "NEW ENGLAND"}),
+            picks.GamePicks("Dallas", "Philadelphia", "", {"Phelpy": "dallas"}),
+            picks.GamePicks("Miami", "Houston", "", {"Phelpy": "Houston"}),
+            picks.GamePicks("Green Bay", "Detroit", "", {"Phelpy": "Green Bay"})])
+        original = picks.load
+        picks.load = lambda week, **_: sheet if week == 7 else None
+        self.addCleanup(lambda: setattr(picks, "load", original))
+        return Season(title="ACQL 2026", weeks={7: Week(7, games)})
+
+    def test_overrides_reasons_and_tallies(self):
+        from acql.pool import journal
+        from acql.version import MODEL_NAME
+        season = self._season()
+        found = journal.overrides(season, "Phelpy")
+        self.assertEqual([(o.index, o.yours, o.outcome) for o in found],
+                         [(1, "New England", MODEL_NAME), (2, "Dallas", "you"), (4, "Green Bay", "to play")])
+        journal.give_reason(7, 2, "injury", "  their QB  was out ")
+        journal.give_reason(7, 1, "gut")
+        found = journal.overrides(season, "Phelpy")
+        self.assertEqual((found[1].tag, found[1].note), ("injury", "their QB was out"))
+        by = {t.tag: t for t in journal.tallies(found)}
+        self.assertEqual((by["injury"].you, by["gut"].deadeye, by["all"].games, by["all"].decided), (1, 1, 3, 2))
+        journal.give_reason(7, 1, "", "")                           # nothing given: forgotten
+        self.assertEqual(journal.overrides(season, "Phelpy")[0].tag, "")
+
+
+class TestFlightRecorder(_ScratchStore):
+    """A live look adds a point only when a score, a game's state or your chance moved."""
+
+    def test_points_only_on_change(self):
+        from types import SimpleNamespace as NS
+        from acql.models import Season
+        from acql.pool import recorder
+        season = Season(title="ACQL 2026")
+
+        def board(home, chance, live=True):
+            st = NS(index=1, state="in" if live else "final", home_points=home, away_points=7, left=0.5)
+            you = NS(chance=chance, place=3, total_now=8)
+            return NS(states=[st], live=[st] if live else [], you=you)
+        self.assertTrue(recorder.record(season, 7, board=board(10, 0.20), now=1.0))
+        self.assertFalse(recorder.record(season, 7, board=board(10, 0.202), now=2.0))   # noise
+        self.assertTrue(recorder.record(season, 7, board=board(17, 0.31), now=3.0))     # a touchdown
+        self.assertFalse(recorder.record(season, 7, board=board(17, 0.5, live=False), now=4.0))  # no game on
+        kept = recorder.trace(2026, 7)
+        self.assertEqual([p["chance"] for p in kept], [0.2, 0.31])
+
+
+class TestSinceLastHere(unittest.TestCase):
+    """The opening digest reads the log back to the last visit: problems and quiet days first."""
+
+    def test_digest_from_a_log(self):
+        from acql import digest
+        folder = Path(tempfile.mkdtemp(prefix="acql-test-"))
+        try:
+            log = folder / "acql-log.txt"
+            log.write_text("\n".join([
+                "[2026-10-16 03:00:00] headless: loaded 35 players, week 5; ESPN results for week(s) [5]",
+                "[2026-10-18 03:00:00] headless: loaded 35 players, week 5; ESPN results for week(s) [6]",
+                "[2026-10-18 03:00:10] headless: website updated: https://example.org/",
+                "[2026-10-18 09:00:00] headless: sunday brief not sent: Couldn't reach Gmail",
+                "[2026-10-18 09:10:00] headless: note: Week 6 is not covered",
+                "[2026-10-18 10:00:00] slow: Game Day took 900 ms to refresh",
+            ]), encoding="utf-8")
+            since = time.mktime(time.strptime("2026-10-15 20:00", "%Y-%m-%d %H:%M"))
+            now = time.mktime(time.strptime("2026-10-20 18:00", "%Y-%m-%d %H:%M"))
+            texts = [i.text for i in digest.gather(since, now, log)]
+            self.assertTrue(texts[0].startswith("1 problem in the scheduled runs"))
+            self.assertIn("No scheduled run on Sat Oct 17, Mon Oct 19", texts[1])
+            self.assertIn("Results read for week 6", texts)
+            self.assertTrue(any(t.startswith("The website was updated 1 time") for t in texts))
+            self.assertEqual(digest.gather(now - 600, now, log), [])          # back within the hour: nothing
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+
+class TestTrainingCatchUp(_ScratchStore):
+    """An overdue training answer starts the weekly run once - as its own process, never an import."""
+
+    def test_overdue_answer_starts_one_run(self):
+        from acql import headless
+        from acql.model import challengers
+        started = []
+        original = challengers.read
+        try:
+            challengers.read = lambda path=None: challengers.Answer(made=1_790_000_000.0)
+            now = 1_790_000_000.0 + 9 * 86400
+            self.assertTrue(headless._heal_training(now=now, start=started.append))
+            self.assertFalse(headless._heal_training(now=now + 3600, start=started.append))  # not again so soon
+            self.assertEqual(started, [[sys.executable, "-m", "acql.training", "weekly"]])
+            challengers.read = lambda path=None: challengers.Answer(made=now)
+            self.assertFalse(headless._heal_training(now=now + 2 * 86400, start=started.append))  # fresh: nothing
+        finally:
+            challengers.read = original
+
+
+class TestMeaningfulAlerts(_ScratchStore):
+    """Only a pick changing side, or a deadline close with no card saved, is worth an email."""
+
+    def test_only_changed_sides_are_reported(self):
+        from acql.pool import alerts
+        before = {"1": ["Chicago", 3.0], "2": ["Dallas", -4.5]}
+        now = {"1": ["New England", 1.5], "2": ["Dallas", -5.0]}
+        turned = alerts.compare_picks(before, now)
+        self.assertEqual([(t.index, t.was, t.now) for t in turned], [(1, "Chicago", "New England")])
+        self.assertIn("from +3 to +1.5", turned[0].text())
+
+    def test_the_guardian_speaks_once_and_only_for_card_savers(self):
+        from acql.feeds import oddslock
+        from acql.pool import alerts, cards
+        lock = oddslock.lock_time(2026, 8)
+        soon = lock - 3600
+        self.assertIsNone(alerts.deadline_due(2026, 8, soon))           # never saved a card: stays quiet
+        cards._put(7, "mine", cards.Snapshot(at=1.0, take={1: "Chicago"}, chance={1: .6}, label={1: "a @ b"}))
+        self.assertIn("due in about 1 hour", alerts.deadline_due(2026, 8, soon))
+        self.assertIsNone(alerts.deadline_due(2026, 8, soon + 60))      # once a week
+        self.assertIsNone(alerts.deadline_due(2026, 9, oddslock.lock_time(2026, 9) - 5 * 3600))  # too early
 
 
 class TestComputerModels(_ScratchStore):
@@ -3202,6 +3668,52 @@ class TestUpdaterInstall(unittest.TestCase):
         self.assertEqual((self.root / "acql-picks.json").read_text(), '{"mine": 1}')
         self.assertEqual((self.root / "data" / "acql.db").read_text(), "database")
 
+    def _git(self, *args, cwd=None):
+        import subprocess
+        done = subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false",
+                               *args], cwd=str(cwd or self.root), capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def _checkout(self):
+        """The scratch project as a git checkout with everything pushed to a scratch remote."""
+        remote = self.tmp / "remote.git"
+        self._git("init", "--bare", str(remote), cwd=self.tmp)
+        self._git("init")
+        self._git("add", "-A")
+        self._git("commit", "-m", "start")
+        self._git("remote", "add", "origin", str(remote))
+        self._git("push", "origin", "HEAD:refs/heads/main")
+        self._git("fetch", "origin")
+
+    def test_a_checkout_with_work_not_on_github_is_never_overwritten(self):
+        import shutil as _shutil
+        from acql import updater
+        if _shutil.which("git") is None:
+            self.skipTest("git isn't installed")
+        self._checkout()
+        self.assertEqual(updater.work_at_risk(self.root), "")
+        module = self.root / "acql" / "gone.py"
+        data = module.read_bytes()                                             # line endings only: not work
+        module.write_bytes(data.replace(b"\r\n", b"\n") if b"\r\n" in data else data.replace(b"\n", b"\r\n"))
+        self.assertEqual(updater.work_at_risk(self.root), "")
+        module.write_text("my edit\n")                                         # real work, not committed
+        with self.assertRaises(updater.UpdateError) as caught:
+            updater.install(self._zip(self._good()), self.root, check=lambda r: "", say=lambda *_: None)
+        self.assertIn("1 changed file not committed (acql/gone.py)", str(caught.exception))
+        self.assertEqual((self.root / "run.py").read_text(), "old run\n")      # nothing was touched
+        self.assertFalse((self.root / "backups").exists())
+        self._git("add", "-A")
+        self._git("commit", "-m", "mine")                                       # committed, not pushed
+        self.assertIn("1 commit not pushed to GitHub", updater.work_at_risk(self.root))
+        (self.root / "acql" / "brand_new.py").write_text("x = 1\n")
+        self.assertIn("1 new file not committed (acql/brand_new.py)", updater.work_at_risk(self.root))
+        (self.root / "acql" / "brand_new.py").unlink()
+        self._git("push", "origin", "HEAD:refs/heads/main")
+        self._git("fetch", "origin")
+        self.assertEqual(updater.work_at_risk(self.root), "")                  # all on GitHub: installs
+        done = updater.install(self._zip(self._good()), self.root, check=lambda r: "", say=lambda *_: None)
+        self.assertEqual(done.version, "1.1.0")
+
     def test_a_failed_start_puts_every_overwritten_file_back(self):
         from acql import updater
         with self.assertRaises(updater.UpdateError):
@@ -3388,7 +3900,6 @@ class SurvivorFieldTests(unittest.TestCase):
         self.assertGreater(sf.fit(made), sf.fit(made[:1] + [sf.Made("y", 9, "c", chances, frozenset())] * 3))
 
 
-<<<<<<< HEAD
 class TestScoreboardRibbon(unittest.TestCase):
     """The ribbon over every page: the week's games in ticker order, exact
     kickoff times, your pick in gold, and a chip that opens Game Day."""
@@ -3467,7 +3978,6 @@ class TestScoreboardRibbon(unittest.TestCase):
         ribbon.show_games(0, [], None)                                           # between weeks
         self.assertTrue(ribbon.isHidden())
 
-=======
 
 class PickDeadlineTests(unittest.TestCase):
     def test_next_deadline_skips_one_already_past_and_stays_out_of_the_fingerprint(self):
@@ -3503,7 +4013,6 @@ class PickDeadlineTests(unittest.TestCase):
         self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30) - mainsite.eastern(date(2026, 11, 12), 0, 0), 18.5 * 3600)
         self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30), 1794526200)
         self.assertIsNone(mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(b"<p>nothing here</p>")))
->>>>>>> 933e5817646008ea2e3fa6d74c558c3aacc2001a
 
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:

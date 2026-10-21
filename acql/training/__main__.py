@@ -161,6 +161,7 @@ def weekly(args) -> int:
     args.quiet = args.no_trees = args.no_check = args.no_books = False
     done = snapshot(args)
     _weekly_pfm()
+    _weekly_prereg()
     newest = verdict.latest()
     age = time.time() - float(newest.get("made", 0)) if newest else None
     if not args.force and age is not None and age < RUN_EVERY_S:
@@ -272,6 +273,24 @@ def pfm(args) -> int:
 PFM_EVERY_S = 20 * 3600
 
 
+def prereg(args) -> int:
+    """The pre-registered tests (prereg.py), scored on the frozen weeks so far."""
+    from . import prereg as plans
+    for found in plans.run():
+        rng = "" if found["low"] is None else f" (range {found['low']:+.4f} to {found['high']:+.4f})"
+        print(f"{found['id']} [{found['fingerprint']}]: {found['games']} games, "
+              f"edge {found['edge']:+.4f}{rng} - {found['call']}")
+    return 0
+
+
+def _weekly_prereg() -> None:
+    """The weekly job's pre-registered tests. Never stops the rest of the job."""
+    try:
+        prereg(None)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Pre-registered tests skipped ({type(exc).__name__}: {exc})")
+
+
 def _weekly_pfm() -> None:
     """The weekly job's PFM step (Sam approved weekly pulls on 2026-10-18).
     Never stops the rest of the job."""
@@ -344,13 +363,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="one line timing only (then the report is joined again), or just join the parts")
     pf = commands.add_parser("pfm", help="Pro Football Mania's ratings: a snapshot, then measured (shadow only)")
     pf.add_argument("--no-pull", action="store_true", help="measure on the snapshots already kept; do not go online")
+    commands.add_parser("prereg", help="the tests written down before their games, scored (shadow only)")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
     args = parser.parse_args(argv)
     _logging(args.verbose)
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
             "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
-            "features": featurevalue, "calibration": calibration, "pfm": pfm}.get(args.command)
+            "features": featurevalue, "calibration": calibration, "pfm": pfm,
+            "prereg": prereg}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0

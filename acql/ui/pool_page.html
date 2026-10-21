@@ -807,6 +807,9 @@ td.game, td.winner { white-space: normal; }
 .swall .cell img { width: 26px; height: 26px; object-fit: contain; }
 .swall .cell .tb { font-size: 9px; }
 .swall .cell.lost { background: color-mix(in srgb, var(--bad) 22%, transparent); }
+.swall .past { opacity: .5; }
+.swall .cell.won { background: color-mix(in srgb, var(--gold) 28%, transparent); }
+.swall .reset { border-left: 2px solid var(--gold); padding-left: 6px; }
 .swall .cell.lost::after { content: ""; position: absolute; inset: 3px; background:
   linear-gradient(45deg, transparent 46%, var(--bad) 46% 54%, transparent 54%),
   linear-gradient(-45deg, transparent 46%, var(--bad) 46% 54%, transparent 54%); }
@@ -1707,6 +1710,9 @@ a.weekpill { text-decoration: none; }
 .slate .next .m { font-size: 12px; color: var(--onair-muted); }
 .slate .fresh { font: 700 11px/1.2 var(--body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--onair-muted); max-width: 13em; }
 .slate .fresh.stale, .slate .fresh.failed { color: var(--stale); }
+.notice.behind { border-left: 3px solid var(--stale); }
+.notice.behind::before { content: "Standings"; color: var(--stale); }
+.notice.behind b { color: var(--stale); }
 .slate .fresh.error { color: var(--bad); }
 .cinebtn { display: inline-flex; align-items: center; gap: 6px; background: var(--onair); color: var(--onair-ink); border: 0; cursor: pointer;
   font: 700 12px/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; }
@@ -2530,17 +2536,97 @@ html.cine-on, html.cine-on body { overflow: hidden; }
     if (typeof s === "number") return s;   // kept by an older version of the page
     return s.home === g.hc ? s.pts : -s.pts;
   }
+  // The dashboard's own curve (analytics.margin_distribution before kickoff,
+  // gameday.outlook during play), so the site and the dashboard give the same
+  // chance for the same game. Its numbers come with the page data (DATA.curve,
+  // written by poolpage.py from analytics.py); without them the site falls
+  // back to the single bell it used before.
+  var SQRT2 = Math.SQRT2, REACH = 80, REGULATION = 3600, OVERTIME = 600;
+  function erfc(z) { return 2 * (1 - phi(z * SQRT2)); }
+  function withCumulative(d) {             // running totals, for sampling
+    var c = new Array(d.p.length), s = 0;
+    for (var i = 0; i < d.p.length; i++) { s += d.p[i]; c[i] = s; }
+    d.c = c;
+    return d;
+  }
+  var preCache = {};
+  function preDist(spread) {               // analytics.margin_distribution
+    var C = DATA.curve, key = (Math.round(spread * 10) / 10).toFixed(1);
+    if (preCache[key]) return preCache[key];
+    var target = +key, narrow = C.sd, wide = C.sd * C.ratio, S = C.share, keys = C.keys, lo = C.low;
+    function shape(centre) {
+      var w = new Array(keys.length), tot = 0;
+      for (var i = 0; i < keys.length; i++) {
+        var off = lo + i - centre;
+        w[i] = ((1 - S) * Math.exp(-(off / narrow) * (off / narrow) / 2) / narrow
+                + S * Math.exp(-(off / wide) * (off / wide) / 2) / wide) * keys[i];
+        tot += w[i];
+      }
+      for (i = 0; i < w.length; i++) w[i] /= tot;
+      return w;
+    }
+    function mean(w) { var m = 0; for (var i = 0; i < w.length; i++) m += w[i] * (lo + i); return m; }
+    var a = target - 8, b = target + 8;
+    for (var it = 0; it < 40; it++) { var mid = (a + b) / 2; if (mean(shape(mid)) < target) a = mid; else b = mid; }
+    return (preCache[key] = withCumulative({ lo: lo, p: shape((a + b) / 2) }));
+  }
+  function liveDist(now, left, expected) { // gameday.outlook, once a game is under way
+    var C = DATA.curve, S = C.share, scale = Math.sqrt(left);
+    var narrow = C.sd * scale, wide = C.sd * C.ratio * scale, centre = now + expected * left;
+    function tail(x) {
+      return (1 - S) * 0.5 * erfc((x - centre) / (narrow * SQRT2)) + S * 0.5 * erfc((x - centre) / (wide * SQRT2));
+    }
+    var lo = Math.round(now) - REACH, n = 2 * REACH + 1, p = new Array(n), tot = 0, i;
+    for (i = 0; i < n; i++) { p[i] = Math.max(0, tail(lo + i - 0.5) - tail(lo + i + 0.5)); tot += p[i]; }
+    for (i = 0; i < n; i++) p[i] /= tot;
+    var z = -lo;                           // where a level score sits: overtime
+    if (z >= 0 && z < n && p[z]) {
+      var settled = p[z] * (1 - OT_TIE) / 2;
+      p[z] *= OT_TIE;
+      if (z + OT_MARGIN < n) p[z + OT_MARGIN] += settled;
+      if (z - OT_MARGIN >= 0) p[z - OT_MARGIN] += settled;
+    }
+    return withCumulative({ lo: lo, p: p });
+  }
   function outlook(x) {
     var g = x.g;
     var spread = marketSpread(g);
     if (spread == null) spread = g.line != null && g.fav ? (g.fav === g.hc ? g.line : -g.line) : 0;
     if (x.state === "post") return { fixed: (x.hs || 0) - (x.as || 0) };
+    if (!DATA.curve) return oldOutlook(x, spread);
+    if (x.state === "in" && x.sc) {
+      var per = x.sc.period || 1, now = (x.hs || 0) - (x.as || 0), clock = Math.max(0, x.sc.clock || 0);
+      if (per > 4) return { dist: liveDist(now, Math.max(clock, 60) / REGULATION, 0) };      // overtime
+      var left = ((4 - per) * 900 + clock) / REGULATION;
+      if (left * REGULATION < 1) {
+        if (now !== 0) return { fixed: now };
+        return { dist: liveDist(0, OVERTIME / REGULATION, 0) };                          // level: overtime
+      }
+      return { dist: liveDist(now, left, spread) };
+    }
+    return { dist: preDist(spread) };
+  }
+  function oldOutlook(x, spread) {         // the single bell, for page data without the curve
     if (x.state === "in" && x.sc) {
       var per = x.sc.period || 1;
       var left = per > 4 ? 0.04 : Math.max(0, ((4 - per) * 900 + Math.max(0, x.sc.clock || 0)) / 3600);
       return { mean: (x.hs || 0) - (x.as || 0) + spread * left, sd: FULL_SD * Math.sqrt(Math.max(left, 0.01)) };
     }
     return { mean: spread, sd: FULL_SD };
+  }
+  function drawMargin(o, rand, normal) {   // one simulated final margin
+    if (o.fixed != null) return o.fixed;
+    if (o.dist) {
+      var c = o.dist.c, u = rand(), a = 0, b = c.length - 1;
+      while (a < b) { var m = (a + b) >> 1; if (c[m] < u) a = m + 1; else b = m; }
+      return o.dist.lo + a;
+    }
+    var margin = Math.round(o.mean + o.sd * normal());
+    if (margin === 0) {                     // level after regulation: overtime
+      var ot = rand();
+      margin = ot < OT_TIE ? 0 : ot < (1 + OT_TIE) / 2 ? OT_MARGIN : -OT_MARGIN;
+    }
+    return margin;
   }
   function phi(z) {                        // the standard normal curve, to a millionth
     var t = 1 / (1 + 0.2316419 * Math.abs(z));
@@ -2556,6 +2642,10 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   // taken into account.
   function atLeast(o, k) {
     if (o.fixed != null) return o.fixed >= k ? 1 : 0;
+    if (o.dist) {                          // the dashboard's curve: add up the margins from k
+      var d = o.dist, i = Math.max(0, k - d.lo);
+      return i >= d.c.length ? 0 : Math.min(1, Math.max(0, 1 - (i ? d.c[i - 1] : 0)));
+    }
     var p = 1 - phi((k - 0.5 - o.mean) / o.sd);
     var settled = (phi((0.5 - o.mean) / o.sd) - phi((-0.5 - o.mean) / o.sd)) * (1 - OT_TIE) / 2;
     if (k > 0 && k <= OT_MARGIN) p += settled;          // won by 3 in overtime: now it reaches k
@@ -2614,11 +2704,7 @@ html.cine-on, html.cine-on body { overflow: hidden; }
     for (var s = 0; s < SIMS; s++) {
       for (var i = 0; i < games.length; i++) {
         var pl = plan[i];
-        margins[i] = pl.fixed != null ? pl.fixed : Math.round(pl.mean + pl.sd * normal());
-        if (pl.fixed == null && margins[i] === 0) {   // level after regulation: overtime
-          var ot = rand();
-          margins[i] = ot < OT_TIE ? 0 : ot < (1 + OT_TIE) / 2 ? OT_MARGIN : -OT_MARGIN;
-        }
+        margins[i] = drawMargin(pl, rand, normal);
       }
       var best = -1;
       for (var c = 0; c < n; c++) {
@@ -3097,6 +3183,28 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   }
 
   // ---- the announcement, the footer ------------------------------------------------------
+  // The week is over on ESPN's scoreboard, but these standings were built
+  // before it ended: the computer that publishes the site hasn't since (it may
+  // be off). The live scores come straight from ESPN; the standings don't.
+  var BEHIND_AFTER = 11 * 3600 * 1000;     // kickoff of the last game + about 11 hours
+  function standingsBehind() {
+    if (!hasLive() || !(DATA.live.week > DATA.through_week)) return null;
+    var t = liveTally(), last = 0;
+    for (var i = 0; i < t.games.length; i++) {
+      var x = t.games[i];
+      if (x.state !== "post") return null;
+      if (x.kick && x.kick > last) last = x.kick;
+    }
+    return last && Date.now() - last > BEHIND_AFTER ? DATA.live.week : null;
+  }
+  function behindNote() {
+    var week = standingsBehind();
+    if (!week) return null;
+    return el("aside", { class: "notice behind", "aria-label": "Standings not updated yet" }, [
+      el("b", { text: "Week " + week + " is over, but the standings here are still after week " + DATA.through_week + "." }),
+      el("span", { class: "when", text: "They catch up when the pool's computer next updates the site. Scores on the Live page come straight from ESPN." })
+    ]);
+  }
   function notice() {
     var n = DATA.note;
     if (!n || !n.text) return null;
@@ -3147,7 +3255,8 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   function footer() {
     var foot = el("footer", {}, [
       hasLogo() ? el("div", { class: "fbrand" }, [logoImg("logo"), "Arm Chair Quarterback League"]) : null,
-      "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every number comes from the pool’s own sheets.",
+      "Updated " + when(DATA.generated) + ", after week " + DATA.through_week + "’s results. Every number comes from the pool’s own sheets."
+        + (standingsBehind() ? " Week " + standingsBehind() + " is over but not in these standings yet." : ""),
       el("a", { class: "mainsite", href: MAIN_SITE, target: "_blank", rel: "noopener", text: "The league's main site" }),
       typeof ownerFooter === "function" ? ownerFooter() : null,
       homeScreenTip()
@@ -3476,12 +3585,8 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   function homeView() {
     var t = hasLive() ? liveTally() : null;
     var ph = phase(t);
-<<<<<<< HEAD
-    var kids = [notice()];
+    var kids = [behindNote(), notice(), deadlineBanner()];
     if (ph === "gameday" || ph === "preview") kids.push(slateStrip(t));
-=======
-    var kids = [notice(), deadlineBanner()];
->>>>>>> 933e5817646008ea2e3fa6d74c558c3aacc2001a
     if (ph === "gameday") kids = kids.concat(gamedayHome(t));
     else if (ph === "final") kids = kids.concat(finalHome(t));
     else if (ph === "preview") kids = kids.concat(previewHome(t));
@@ -5158,7 +5263,12 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   }
   function survivorWall() {
     var weeks = seasonWeeks();
-    var rows = DATA.players.filter(function (p) { return Object.keys(p.suicide.picks || {}).length || p.suicide.out; });
+    var rows = DATA.players.filter(function (p) {
+      return Object.keys(p.suicide.picks || {}).length || p.suicide.out || Object.keys(p.suicide.before || {}).length;
+    });
+    // Weeks before the pool started again: the earlier round, faded.
+    var restart = DATA.suicide_round_start || 0;
+    var champs = DATA.suicide_winners || [];
     if (!weeks.length || !rows.length) return null;
     var liveSui = {};
     var liveWeek = hasLive() && DATA.live.coaches ? DATA.live.week : null;
@@ -5170,14 +5280,23 @@ html.cine-on, html.cine-on body { overflow: hidden; }
     });
     var standing = rows.filter(function (p) { return p.suicide.alive; }).length;
     var body = rows.map(function (p, i) {
-      var s = p.suicide, gone = false;
+      var s = p.suicide, gone = false, goneBefore = false;
       var cells = cols.map(function (n) {
+        if (restart && n < restart) {
+          var old = (s.before || {})[String(n)];
+          var won = champs.indexOf(p.name) >= 0 && n === restart - 1;
+          if (goneBefore || !old) return el("td", { class: "past" }, [el("span", { class: "cell gone" })]);
+          var out = s.before_out === n;
+          if (out) goneBefore = true;
+          return el("td", { class: "past" }, [el("span", { class: "cell" + (out ? " lost" : "") + (won ? " won" : ""),
+            title: "Week " + n + ": " + teamFull(codeOf(old)) + (out ? " – knocked out" : won ? " – won the round" : "") }, [suicideLogo(old)])]);
+        }
         var team = (s.picks || {})[String(n)];
         var now = !team && n === liveWeek && s.alive ? liveSui[p.name] : null;
-        if (gone || (!team && !now)) return el("td", {}, [el("span", { class: "cell gone" })]);
+        if (gone || (!team && !now)) return el("td", { class: n === restart ? "reset" : null }, [el("span", { class: "cell gone" })]);
         var lost = s.out === n;
         if (lost) gone = true;
-        return el("td", {}, [el("span", { class: "cell" + (lost ? " lost" : "") + (now ? " now" : ""),
+        return el("td", { class: n === restart ? "reset" : null }, [el("span", { class: "cell" + (lost ? " lost" : "") + (now ? " now" : ""),
           title: "Week " + n + ": " + teamFull(codeOf(team || now)) + (lost ? " – knocked out" : now ? " – being played" : "") }, [suicideLogo(team || now)])]);
       });
       var cls = [s.alive ? "" : "out", isMe(p.name) ? "me" : "", i && i === standing ? "cut" : ""].filter(Boolean).join(" ");
@@ -5185,10 +5304,14 @@ html.cine-on, html.cine-on body { overflow: hidden; }
     });
     return module("Survivor wall", standing + " of " + rows.length + " still standing", [
       el("div", { class: "swall" }, [el("table", {}, [
-        el("thead", {}, [el("tr", {}, [el("th", { class: "coach", text: "Coach" })].concat(cols.map(function (n) { return el("th", { text: "Wk " + n }); })))]),
+        el("thead", {}, [el("tr", {}, [el("th", { class: "coach", text: "Coach" })].concat(cols.map(function (n) {
+          return el("th", { class: restart && n < restart ? "past" : n === restart ? "reset" : null, text: "Wk " + n });
+        })))]),
         el("tbody", {}, body)])]),
       el("p", { class: "note", text: "Every pick so far, a logo a week. A crossed logo is the pick that knocked a coach out" +
-        (Object.keys(liveSui).length ? "; a dashed one is this week’s pick, still being played." : ".") })
+        (Object.keys(liveSui).length ? "; a dashed one is this week’s pick, still being played." : ".") +
+        (restart ? " Faded weeks are the earlier round" + (champs.length ? ", won by " + champs.join(" & ") : "") +
+          "; the pool started again in week " + restart + "." : "") })
     ], { "data-card": "survivor-wall" });
   }
 

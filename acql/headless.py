@@ -42,6 +42,7 @@ from .model import predictions
 from .config import DATA_DIR, Settings
 from .names import AliasTable
 from .repository import load_season
+from .version import MODEL_NAME
 
 #: Held while a run is going, so a poll can't start on top of the 3am run.
 LOCK_FILE = Path(DATA_DIR) / "headless.lock"
@@ -175,6 +176,10 @@ def _download_predictions(season, week: int) -> None:
     with tempfile.TemporaryDirectory() as scratch:
         trial = Path(scratch) / "nflpredictions.csv"
         trial.write_bytes(body)
+        refused = predictions.refusal(trial, games)
+        if refused:
+            _log(f"the published predictions file was not kept: {refused}")
+            return
         if not predictions.covers_slate(trial, games):
             _log(f"the published predictions aren't week {week}'s games yet - not kept")
             return
@@ -513,7 +518,7 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     started = time.monotonic()
     settings = Settings.load()
     season = load_season(settings, AliasTable.load(), force=force)
-    for warning in season.warnings:
+    for warning in _new_notes(season.warnings):
         _log(f"note: {warning}")
     if season.is_empty:
         _log(f"no data found in {', '.join(map(str, settings.search_paths()))} - nothing to do")
@@ -529,6 +534,11 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     _ledger(season)
     _seasons()
     _known(season)
+    _card_check(season, dry_run=dry_run)
+    _sentinel(season, dry_run=dry_run)
+    _watch(season, dry_run=dry_run)
+    _record_live(season)
+    _heal_training(dry_run=dry_run)
     _computers()
     if _timelines(season):
         season = load_season(settings, AliasTable.load(), online=False)
@@ -545,6 +555,184 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     _log(f"done in {time.monotonic() - started:.0f}s")
     _ran(True, f"took {time.monotonic() - started:.0f}s")
     return 0
+
+
+#: A note the load repeats is written to the log again only this often.
+NOTE_AGAIN = 24 * 3600
+
+
+def _new_notes(warnings, now: float | None = None) -> list[str]:
+    """The load's notes worth writing down this run: new ones, and standing
+    ones once a day (with how long they have stood) - not the same lines every
+    ten minutes, which taught the log to be skimmed."""
+    from . import store
+    now = time.time() if now is None else now
+    try:
+        kept = store.get("headless", "notes", {}) or {}
+    except Exception:  # noqa: BLE001
+        kept = {}
+    out, seen = [], {}
+    for text in warnings:
+        entry = kept.get(text) if isinstance(kept, dict) else None
+        first = float(entry.get("first", now)) if isinstance(entry, dict) else now
+        last = float(entry.get("logged", 0)) if isinstance(entry, dict) else 0.0
+        logged = last
+        if now - last >= NOTE_AGAIN:
+            days = (now - first) / 86400
+            out.append(text if days < 1 else f"{text} (standing for {days:.0f} day{'' if round(days) == 1 else 's'})")
+            logged = now
+        seen[text] = {"first": first, "logged": logged}
+    try:
+        store.put("headless", "notes", seen)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _card_check(season, *, dry_run: bool = False) -> None:
+    """Your row on the commissioner's sheet against the card you saved (cardcheck.py):
+    written down every run, and one email the first time a difference shows."""
+    try:
+        from .pool import cardcheck
+        from .site import cardmail
+        year = results.season_year(season)
+        for week in results.calendar_weeks(year, time.time()):
+            found = cardcheck.check(season, week)
+            if not found.compared:
+                continue
+            new = cardcheck.keep(found)
+            if found.diffs:
+                _log(f"card check: {found.headline()}")
+            if new and not dry_run:
+                try:
+                    cardmail.send_note(f"Check your week {week} card - the sheet differs from what you saved",
+                                       found.headline() + ":\n\n" + "\n".join(found.lines())
+                                       + "\n\nIf that wasn't on purpose, tell the commissioner before kickoff.")
+                    cardcheck.mark_alerted(week)
+                    _log(f"card check: alert emailed for week {week}")
+                except Exception as exc:  # noqa: BLE001
+                    _log(f"card check: alert not sent: {exc}")
+    except Exception as exc:  # noqa: BLE001 - never the cause of a failed run
+        _log(f"card check failed: {exc!r}")
+
+
+def _sentinel(season, *, dry_run: bool = False) -> None:
+    """Sources against each other (consistency.py) for the week ahead: logged
+    each run, and one email the first time a serious disagreement shows."""
+    try:
+        from . import consistency, store
+        from .site import cardmail
+        week = analytics.upcoming_week(season)
+        found = consistency.week(season, week)
+        for problem in found:
+            _log(f"sources disagree, week {week}: {problem.game + ': ' if problem.game else ''}{problem.text}")
+        serious = sorted(f"{p.kind}|{p.game}|{p.text}" for p in found if p.kind in ("moneyline", "source", "pool line"))
+        told = store.get("consistency", str(week), {}) or {}
+        new = [s for s in serious if s not in (told.get("sent") or [])]
+        if new and not dry_run:
+            try:
+                cardmail.send_note(f"Week {week}: two sources disagree",
+                                   "\n".join(s.split("|", 1)[1].replace("|", ": ") for s in new)
+                                   + "\n\nTwo numbers that describe the same game can't both be right. "
+                                     "Readiness lists it until they agree.")
+                store.put("consistency", str(week), {"sent": sorted(set(serious) | set(told.get("sent") or [])),
+                                                     "at": time.time()})
+                _log(f"sources disagree: alert emailed for week {week}")
+            except Exception as exc:  # noqa: BLE001
+                _log(f"sources disagree: alert not sent: {exc}")
+    except Exception as exc:  # noqa: BLE001 - never the cause of a failed run
+        _log(f"consistency check failed: {exc!r}")
+
+
+def _record_live(season) -> None:
+    """A point for the game-day flight recorder (pool/recorder.py) when games are on."""
+    try:
+        from .pool import me, recorder
+        weeks = results.calendar_weeks(results.season_year(season), time.time())
+        if weeks and season.weeks.get(weeks[0]) is not None:
+            if recorder.record(season, weeks[0], me.key(season)):
+                _log(f"week {weeks[0]}: live point recorded")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"flight recorder: {exc!r}")
+
+
+#: The training ground's answer is redone weekly (Tue-Thu); older than this it is overdue.
+TRAINING_OVERDUE = 8 * 86400
+#: A started catch-up run is not started again for this long.
+TRAINING_RETRY = 12 * 3600
+
+
+def _heal_training(*, dry_run: bool = False, now: float | None = None, start=None) -> bool:
+    """Start the training package's weekly command on its own when its weekly answer
+    is overdue - the ACQL Training job had never run by 2026-10-20 and the
+    answer was 8 days old. A separate process, so nothing here imports the
+    training package (the dashboard must not). True when one was started."""
+    import subprocess
+    from . import store
+    from .model import challengers
+    now = time.time() if now is None else now
+    answer = challengers.read()
+    if answer is not None and now - answer.made < TRAINING_OVERDUE:
+        return False
+    try:
+        tried = float(store.get("headless", "training_started", 0) or 0)
+    except Exception:  # noqa: BLE001
+        tried = 0.0
+    if now - tried < TRAINING_RETRY or dry_run:
+        return False
+    try:
+        store.put("headless", "training_started", now)
+    except Exception:  # noqa: BLE001
+        pass
+    # its own process: the name is put together here so it is plainly a command to run,
+    # not an import (the dashboard never imports the training package)
+    args = [sys.executable, "-m", ".".join(("acql", "training")), "weekly"]
+    try:
+        if start is not None:
+            start(args)
+        else:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+            subprocess.Popen(args, cwd=str(Path(__file__).resolve().parent.parent), creationflags=flags,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        _log(f"training catch-up not started: {exc}")
+        return False
+    age = "none on disk" if answer is None else f"{(now - answer.made) / 86400:.0f} days old"
+    _log(f"training answer overdue ({age}) - weekly training started in the background")
+    return True
+
+
+def _watch(season, *, dry_run: bool = False) -> None:
+    """Deadeye's picks that changed side, and the deadline guardian (pool/alerts.py):
+    an email only when one of those happens, to the card's own addresses."""
+    try:
+        from .pool import alerts
+        from .site import cardmail
+        year = results.season_year(season)
+        week = analytics.upcoming_week(season)
+        if season.weeks.get(week) is None:
+            return
+        notes = []
+        turned = alerts.turned_picks(season, week, year)
+        if turned:
+            notes.append(f"{len(turned)} of {MODEL_NAME}'s week {week} picks changed side:\n"
+                         + "\n".join("  " + t.text() for t in turned))
+            for t in turned:
+                _log(f"pick changed side: {t.text()}")
+        guard = alerts.deadline_due(year, week)
+        if guard:
+            notes.append(guard)
+            _log(f"deadline guardian: {guard}")
+        if notes and not dry_run:
+            subject = (f"Week {week}: {len(turned)} pick{'' if len(turned) == 1 else 's'} changed side"
+                       if turned else f"Week {week}: cards due soon")
+            try:
+                cardmail.send_note(subject, "\n\n".join(notes))
+                _log("alert emailed: " + subject)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"alert not sent: {exc}")
+    except Exception as exc:  # noqa: BLE001 - never the cause of a failed run
+        _log(f"pick watch failed: {exc!r}")
 
 
 def _ran(ok: bool, note: str = "") -> None:

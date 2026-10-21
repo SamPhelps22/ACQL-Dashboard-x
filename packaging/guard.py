@@ -53,6 +53,66 @@ def problems(files: dict[str, bytes]) -> list[str]:
     return found
 
 
+#: Web pages whose inline scripts must at least parse: a script that doesn't
+#: parse leaves the pool's website blank on every phone.
+PAGES = ("acql/ui/pool_page.html",)
+#: Inline JavaScript only: a <script type="application/json"> data block is not code.
+_SCRIPT = re.compile(rb"<script(?![^>]*\bsrc=)(?![^>]*\btype=[\"']?(?!text/javascript|module)\w)[^>]*>(.*?)</script>",
+                     re.DOTALL | re.IGNORECASE)
+
+
+def chrome() -> str | None:
+    """A Chrome or Edge to parse scripts with, or None."""
+    import os
+    import shutil
+    for name in ("chrome", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "msedge"):
+        found = shutil.which(name)
+        if found:
+            return found
+    for base in (os.environ.get("PROGRAMFILES", ""), os.environ.get("PROGRAMFILES(X86)", ""),
+                 os.environ.get("LOCALAPPDATA", "")):
+        for tail in (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe"):
+            path = Path(base) / tail if base else None
+            if path is not None and path.is_file():
+                return str(path)
+    return None
+
+
+def script_problems(path: str, data: bytes, browser: str | None = None) -> list[str]:
+    """Each inline script of a page, parsed (not run) by a real browser. [] when
+    they all parse - or when there is no browser to ask, which is said on stdout."""
+    import json
+    import tempfile
+    browser = browser or chrome()
+    if browser is None:
+        print(f"  (no Chrome or Edge found: {path}'s scripts not parsed)")
+        return []
+    scripts = [m.group(1).decode("utf-8", "replace") for m in _SCRIPT.finditer(data)]
+    probe = ("<!doctype html><meta charset='utf-8'><title>probing</title><script>var out=[];"
+             f"{json.dumps(scripts)}.forEach(function(s,i){{try{{new Function(s)}}catch(e){{"
+             "out.push('script '+(i+1)+': '+e.name+': '+e.message)}});"
+             "document.title=out.length?out.join(' | '):'PARSED';</script>")
+    with tempfile.TemporaryDirectory() as folder:
+        page = Path(folder) / "probe.html"
+        page.write_text(probe, encoding="utf-8")
+        try:
+            done = subprocess.run([browser, "--headless=new", "--disable-gpu", "--no-sandbox",
+                                   f"--user-data-dir={Path(folder) / 'profile'}", "--dump-dom", page.as_uri()],
+                                  capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"  (the browser couldn't be run: {exc}; {path}'s scripts not parsed)")
+            return []
+    title = re.search(rb"<title>(.*?)</title>", done.stdout, re.DOTALL)
+    word = title.group(1).decode("utf-8", "replace") if title else ""
+    if word == "PARSED":
+        return []
+    if not word or word == "probing":
+        print(f"  (the browser gave no answer; {path}'s scripts not parsed)")
+        return []
+    import html
+    return [f"{path}: {html.unescape(part)}" for part in word.split(" | ")]
+
+
 def tracked_files(commit: str = "") -> dict[str, bytes]:
     names = [n for n in git("ls-tree" if commit else "ls-files", *(["-r", "--name-only", commit] if commit else []),
                             "-z").decode("utf-8").split("\0") if n]
@@ -71,7 +131,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--commit", default="", help="check the files as committed there, not the working folder")
     args = parser.parse_args()
-    found = problems(tracked_files(args.commit))
+    files = tracked_files(args.commit)
+    found = problems(files)
+    if not found:          # a page full of conflict markers needs no browser to say so
+        for page in PAGES:
+            if page in files:
+                found += script_problems(page, files[page])
     for line in found:
         print(f"  {line}")
     print(f"  Guard: {'FAILED, ' + str(len(found)) + ' problem(s)' if found else 'nothing wrong found'}.")

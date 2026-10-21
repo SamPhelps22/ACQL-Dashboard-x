@@ -32,13 +32,15 @@ from ...version import MODEL_NAME
 from ...feeds import oddslock
 from .base import Page
 
-HEADERS = ["#", "Game", "Take", "Chance", "Vs pool", "If flipped", "Pool line", "Why"]
-(COL_NUM, COL_GAME, COL_TAKE, COL_CHANCE, COL_EDGE, COL_FLIP, COL_LINE, COL_WHY) = range(8)
+HEADERS = ["#", "Game", "Take", "Chance", "Turns at", "Vs pool", "If flipped", "Pool line", "Why"]
+(COL_NUM, COL_GAME, COL_TAKE, COL_CHANCE, COL_TURNS, COL_EDGE, COL_FLIP, COL_LINE, COL_WHY) = range(9)
 #: A flip that moves the week-winning chance by less than this is noise.
 FLIP_NOISE = 0.001
 CHANGES_TITLE = "Did anything change?"
 
 CARD_TITLE = "The card in detail"
+GAP_TITLE = "Pool lines against the market"
+GAP_HEADERS = ["#", "Game", "Pool line", "Market", "Gap", "Take", "Chance", "Pool on the favourite"]
 SWING_TITLE = "Where the week is won"
 GLANCE_TITLE = f"{MODEL_NAME}'s card at a glance"
 WHY_TITLE = f"Why {MODEL_NAME} picked it"
@@ -307,6 +309,11 @@ class BriefingPage(Page):
         self.layout_.addWidget(self.card, 2)
         self.table: QWidget | None = None
 
+        self.gap_card = Card(GAP_TITLE)
+        self.gap_box = QVBoxLayout()
+        self.gap_card.body().addLayout(self.gap_box)
+        self.layout_.addWidget(self.gap_card)
+
         self.side_card = Card("The side pools", info=explain.BIG_LOSERS)
         self.side_box = QVBoxLayout()
         self.side_card.body().addLayout(self.side_box)
@@ -375,6 +382,7 @@ class BriefingPage(Page):
         self._update_tiles(brief)
         self._update_swings(brief)
         self._update_table(brief)
+        self._update_gaps(brief)
         self._update_side(brief)
 
     # ---- which card --------------------------------------------------------
@@ -491,6 +499,8 @@ class BriefingPage(Page):
         self.clear_layout(self.why_box)
         self._why_showing = None
         self.score_card.hide()
+        self.clear_layout(self.gap_box)
+        self.gap_card.hide()
         for box, message in (
             (self.swing_box, "The swings appear once the week is priced."),
             (self.card_box,
@@ -897,10 +907,66 @@ class BriefingPage(Page):
             line.setWordWrap(True)
             self.swing_box.addWidget(line)
 
+    def _update_gaps(self, brief: briefing.Brief) -> None:
+        """The lined games, widest gap between the commissioner's line and the market first."""
+        from ...model import flips
+        self.clear_layout(self.gap_box)
+        try:
+            gaps = flips.pool_gaps(self.season, brief.week)
+        except Exception:  # noqa: BLE001
+            gaps = []
+        if not gaps:
+            self.gap_card.hide()
+            return
+        self.gap_card.show()
+        rows, tones = [], {}
+        for r, p in enumerate(gaps):
+            market = self.NO_VALUE if p.market is None else (
+                f"{p.favourite} −{p.market:g}" if p.market > 0 else
+                "pick 'em" if p.market == 0 else f"{p.favourite} +{-p.market:g}")
+            gap = self.NO_VALUE if p.gap is None else f"{p.gap:+.1f}" + (" · across 3/7" if p.crosses_key else "")
+            rows.append([p.index, p.matchup, f"{p.favourite} by {p.pool_line:g} (needs {p.need})", market, gap,
+                         p.pick, f"{p.chance:.0%}",
+                         self.NO_VALUE if p.crowd_on_favourite is None else f"{p.crowd_on_favourite:.0%} usually"])
+            if p.gap is not None and abs(p.gap) >= 1:
+                tones[(r, 4)] = "good"
+            if p.chance < 0.53:
+                tones[(r, 6)] = "muted"
+        model = TableModel(GAP_HEADERS, rows, palette=self.palette, numeric_columns={0, 4, 6}, tones=tones,
+                           bold_columns={5})
+        view, _ = make_table(model, stretch_column=1, row_height=27)
+        self.gap_box.addWidget(view)
+        note = QLabel(
+            "The commissioner sets a line early in the week; the market keeps moving. A positive gap means the "
+            "market rates the favourite above the pool's line (the favourite is the value side); negative means "
+            "the underdog is. The chances are the card's own - this is where they come from, not a second model. "
+            "The last column is this pool's usual share on a lined favourite.")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        self.gap_box.addWidget(note)
+
+    def _turns(self, brief: briefing.Brief) -> dict[int, tuple[str, float, bool]]:
+        """Game index -> (the line the pick turns at, points away, fragile or across 3/7)."""
+        from ...model import flips
+        try:
+            found = flips.week_flips(self.season, brief.week)
+            games = {g.index: g for g in self.season.weeks[brief.week].games}
+        except Exception:  # noqa: BLE001 - a missing column, never a broken page
+            return {}
+        out = {}
+        for f in found:
+            g = games.get(f.index)
+            if g is None or f.distance is None:
+                continue
+            out[f.index] = (f.flips_at(g.home, g.away), f.distance, f.fragile or (f.crosses_key and f.distance <= 2))
+        return out
+
     def _update_table(self, brief: briefing.Brief) -> None:
         rows, tones = [], {}
+        turns = self._turns(brief)
         for r, choice in enumerate(brief.choices):
             gain = choice.leverage
+            turn = turns.get(choice.index)
             rows.append([
                 choice.index,
                 choice.matchup,
@@ -909,6 +975,7 @@ class BriefingPage(Page):
                     " · against the pool" if choice.turned
                     else " · coin flip" if choice.coin_flip else ""
                 ),
+                f"{turn[0]} ({turn[1]:.1f} away)" if turn else self.NO_VALUE,
                 f"{gain:+.0%}" if gain is not None else self.NO_VALUE,
                 self._flip_text(brief, choice),
                 choice.line or self.NO_VALUE,
@@ -926,6 +993,8 @@ class BriefingPage(Page):
             )
             if choice.turned:
                 tones[(r, COL_TAKE)] = "warning"
+            if turn is not None:
+                tones[(r, COL_TURNS)] = "warning" if turn[2] else "muted"
             if choice.if_flipped is not None and brief.win_odds is not None:
                 cost = brief.win_odds - choice.if_flipped
                 tones[(r, COL_FLIP)] = (
@@ -938,6 +1007,7 @@ class BriefingPage(Page):
             numeric_columns={COL_NUM, COL_CHANCE, COL_EDGE, COL_FLIP},
             sort_values={
                 COL_CHANCE: [c.chance for c in brief.choices],
+                COL_TURNS: [turns[c.index][1] if c.index in turns else 99.0 for c in brief.choices],
                 COL_FLIP: [
                     c.if_flipped if c.if_flipped is not None else 1.0 for c in brief.choices
                 ],
@@ -1000,7 +1070,9 @@ class BriefingPage(Page):
             text += (
                 f" <b>If flipped</b> is the chance of winning the week with "
                 f"only that game taken the other way (now {brief.win_odds or 0.0:.1%}): "
-                f"the lower it is, the more that pick matters."
+                f"the lower it is, the more that pick matters. <b>Turns at</b> is the betting "
+                f"line at which the pick would change side, everything else as it is - amber "
+                f"when it is within a point, or close and across 3 or 7."
             )
             text += (
                 " Played against the pool's real cards."

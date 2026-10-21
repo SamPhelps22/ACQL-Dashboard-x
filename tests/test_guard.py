@@ -34,6 +34,32 @@ class GuardTests(unittest.TestCase):
     def test_updates_and_binary_types_are_left_alone(self):
         self.assertEqual(guard.problems({"updates/x.zip": OPEN + b" HEAD\n", "logo.png": OPEN + b" \n"}), [])
 
+    @unittest.skipUnless(guard.chrome(), "no Chrome or Edge to parse scripts with")
+    def test_a_page_script_that_does_not_parse_is_reported(self):
+        self.assertEqual(guard.script_problems("p.html", b"<script>var a = 1;</script><script src='x.js'></script>"), [])
+        found = guard.script_problems("p.html", b"<script>var a = 1;</script><script>var b = ;</script>")
+        self.assertEqual(len(found), 1)
+        self.assertIn("script 2: SyntaxError", found[0])
+
+
+class HeartbeatTests(unittest.TestCase):
+    """The off-PC check: behind only when games finished well after the site was built."""
+
+    def test_verdicts(self):
+        from datetime import datetime, timezone
+        import heartbeat
+        board = {"events": [{"date": "2026-10-18T17:00Z", "shortName": "NE @ CHI",
+                             "status": {"type": {"completed": True}}},
+                            {"date": "2026-10-20T00:15Z", "shortName": "KC @ SEA",
+                             "status": {"type": {"completed": False}}}]}
+        old = '{"generated":"2026-10-18 09:00"}'
+        new = '{"generated":"2026-10-18 18:00"}'
+        monday = datetime(2026, 10, 19, 12, tzinfo=timezone.utc)
+        self.assertTrue(heartbeat.verdict(old, board, monday)["behind"])
+        self.assertFalse(heartbeat.verdict(new, board, monday)["behind"])          # built after it ended
+        self.assertFalse(heartbeat.verdict(old, board, datetime(2026, 10, 18, 22, tzinfo=timezone.utc))["behind"])
+        self.assertFalse(heartbeat.verdict("<p>no time</p>", board, monday)["behind"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

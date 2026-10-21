@@ -766,6 +766,7 @@ class GameDayPage(Page):
                            (self.final_card, self.final_grid)):
             self.clear_layout(grid)
             self._placed.pop(id(grid), None)
+            self.__dict__.get("_card_keys", {}).pop(id(grid), None)
             card.hide()
         self.clear_layout(self.root_box)
         self.root_card.hide()
@@ -927,16 +928,46 @@ class GameDayPage(Page):
         return row
 
     # ---- the games ---------------------------------------------------------------
+    def _card_key(self, st: GD.GameNow, you: GD.Card | None, ghost: GD.Card | None) -> tuple:
+        """Everything a GameCard draws from: a card with the same key looks the same."""
+        mine = you.picks.get(st.index, GD.NOBODY) if you is not None else GD.NOBODY
+        theirs = ghost.picks.get(st.index, GD.NOBODY) if ghost is not None else GD.NOBODY
+        return (repr(st), mine, theirs, id(self.palette))
+
     def _render_games(self, card: Card, grid: QGridLayout, states: list[GD.GameNow], bd: GD.Board,
                       you: GD.Card | None, ghost: GD.Card | None, title: str) -> None:
-        self.clear_layout(grid)
-        self._placed.pop(id(grid), None)
+        # Every half minute during games this used to throw away all fourteen
+        # cards and build them again (0.3-3.8 s on the window's thread, Oct 18).
+        # Now a card is rebuilt only when what it shows has changed.
+        keys_by_grid = self.__dict__.setdefault("_card_keys", {})
+        previous = self._placed.get(id(grid))
         if not states:
+            self.clear_layout(grid)
+            self._placed.pop(id(grid), None)
+            keys_by_grid.pop(id(grid), None)
             card.hide()
             return
         card.show()
         card.set_title(title)
-        cards = [GameCard(st, bd, self.palette, you, ghost) for st in states]
+        keys = [self._card_key(st, you, ghost) for st in states]
+        if previous is not None and keys_by_grid.get(id(grid)) == keys:
+            return                                          # nothing on these cards changed
+        reusable: dict[tuple, list] = {}
+        if previous is not None:
+            for key, old in zip(keys_by_grid.get(id(grid), []), previous[1]):
+                reusable.setdefault(key, []).append(old)
+                grid.removeWidget(old)
+        else:
+            self.clear_layout(grid)
+        cards = []
+        for st, key in zip(states, keys):
+            kept = reusable.get(key)
+            cards.append(kept.pop() if kept else GameCard(st, bd, self.palette, you, ghost))
+        for leftovers in reusable.values():
+            for old in leftovers:
+                old.hide()
+                old.deleteLater()
+        keys_by_grid[id(grid)] = keys
         self._placed[id(grid)] = (grid, cards, 0)
         self._place(grid)
 
@@ -972,6 +1003,11 @@ class GameDayPage(Page):
 
     # ---- the scoreboard strip --------------------------------------------------------
     def _set_chips(self, states: list[GD.GameNow], you: GD.Card | None) -> None:
+        key = [(repr(st), you.picks.get(st.index, GD.NOBODY) if you is not None else GD.NOBODY, id(self.palette))
+               for st in states]
+        if key and key == getattr(self, "_chip_key", None) and getattr(self, "_chips", None):
+            return                                          # the strip shows the same thing already
+        self._chip_key = key
         self.clear_layout(self.strip_grid)
         self._chips = [ScoreChip(st, you) for st in states]
         self.strip_more = QLabel("")
@@ -1030,6 +1066,7 @@ class GameDayPage(Page):
                 entries.append((extra, ahead + 1.5))
         entries.sort(key=lambda pair: (pair[1], -(pair[0].chance or 0.0)))
         highlight = mix(self.palette.accent, self.palette.surface, 0.22)
+        decided = GD.certainty(bd)
         for r, (st, place) in enumerate(entries):
             card = st.card
             name = card.name
@@ -1037,6 +1074,9 @@ class GameDayPage(Page):
                 name = f"{MODEL_NAME} \N{BOW AND ARROW}  (not in the pool)"
             elif card.you:
                 name = f"{card.name}  (you)" + ("" if card.in_field else " - saved card")
+            mark = decided.get(card.key, "")
+            if mark:
+                name += f"  ·  {mark.upper()}"
             rows.append([
                 st.place if st.place is not None else "–",
                 name,
@@ -1053,8 +1093,10 @@ class GameDayPage(Page):
                 tones[(r, 7)] = "good"
             if st.money_now is not None:
                 tones[(r, 8)] = "good" if st.money_now > 0 else "muted"
-            if card.ghost:
+            if card.ghost or mark == GD.OUT:
                 tones[(r, 1)] = "muted"
+            elif mark:
+                tones[(r, 1)] = "good"
             if card.you:
                 for column in range(len(BOARD_HEADERS)):
                     colors[(r, column)] = highlight
@@ -1072,7 +1114,8 @@ class GameDayPage(Page):
         self.board_note.setText(
             "Now counts finished games and games in progress. Banked counts finished games only. "
             "Can reach is the most a card can still score. To win is the chance of finishing first, "
-            "with ties shared. If it ended now is the money at today's scores. "
+            "with ties shared. If it ended now is the money at today's scores. CLINCHED and OUT are "
+            "certain, not simulated: no result still to come can change them. "
             f"{MODEL_NAME} is shown for comparison and takes no place or prize.")
 
     # ---- the side pools ------------------------------------------------------------

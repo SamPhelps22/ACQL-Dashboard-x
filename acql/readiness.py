@@ -38,7 +38,9 @@ SOURCES, CARD, AUTOMATION = "Data sources", "This week's card", "Automation"
 #: The scheduled jobs schedule.ps1 registers, and how long each may go without running.
 TASKS = (("ACQL Daily", "the nightly run", 27 * 3600),
          ("ACQL Game-day poll", "the game-day check", 8 * 86400),
-         ("ACQL Deadeye email", "the card email job", 8 * 86400))
+         ("ACQL Deadeye email", "the card email job", 8 * 86400),
+         ("ACQL Training", "the weekly training run", 8 * 86400),
+         ("ACQL Sunday brief", "the Sunday brief", 8 * 86400))
 #: Task Scheduler's "all is well" results: done, still running, not yet run.
 TASK_FINE = {0, 267009, 267011}
 #: A line may be this much older than the cadence it is fetched on before it is called stale.
@@ -285,6 +287,82 @@ def _pool_files(season: Season) -> Check:
     return Check(SOURCES, "The pool's files", OK, words, "Loaded with nothing to report.")
 
 
+def _turned_away(now: float) -> Check | None:
+    """Files refused as a week's predictions in the last week (predictions.refusal)."""
+    from .model import predictions
+    recent = predictions.turned_away(since=now - 7 * DAY)
+    if not recent:
+        return None
+    names = "; ".join(f"{r.get('name') or r['path']}: {r.get('reason', '')}" for r in recent[:4])
+    more = f"; and {len(recent) - 4} more" if len(recent) > 4 else ""
+    return Check(SOURCES, "Files turned away", NOTE,
+                 f"{len(recent)} file{'' if len(recent) == 1 else 's'} not taken as a week's predictions",
+                 names + more + ". Nothing was loaded from them.", recent[0].get("at"))
+
+
+def _consistency(season: Season, week: int) -> Check | None:
+    """Do the sources agree with each other (consistency.py)?"""
+    from . import consistency
+    found = consistency.week(season, week)
+    if season.weeks.get(week) is None:
+        return None
+    if not found:
+        return Check(SOURCES, "Sources agree", OK, f"Week {week}: line, moneyline, total, pool lines and the record agree")
+    serious = [p for p in found if p.kind in ("moneyline", "source", "pool line")]
+    detail = "; ".join(f"{p.game + ': ' if p.game else ''}{p.text}" for p in found[:5])
+    if len(found) > 5:
+        detail += f"; and {len(found) - 5} more"
+    return Check(SOURCES, "Sources agree", WARN if serious else NOTE,
+                 f"Week {week}: {len(found)} disagreement{'' if len(found) == 1 else 's'} between sources",
+                 detail + ". Two numbers that describe the same game can't both be right - check where each came from.")
+
+
+def _backups(now: float) -> Check:
+    """The daily copy kept outside the synced folder, and whether it opens sound (store.mirror_backup)."""
+    from . import store
+    status = store.mirror_status()
+    if status is None:
+        return Check(AUTOMATION, "Backup outside OneDrive", NOTE, "Not made yet",
+                     "Each day's database copy is also put in %LOCALAPPDATA%\\ACQL\\backups, where a OneDrive "
+                     "sync problem can't reach it. The first one is made the next time the app opens.")
+    at = float(status.get("at") or 0) or None
+    age = now - at if at else None
+    if not status.get("ok"):
+        return Check(AUTOMATION, "Backup outside OneDrive", BAD, f"The latest copy failed its check ({status.get('word')})",
+                     f"{status.get('file')} - the copies in data/backups are still there.", at)
+    return Check(AUTOMATION, "Backup outside OneDrive", OK if age is not None and age < 2 * DAY else WARN,
+                 f"{status.get('file')} checked sound {ago(age)} ({status.get('documents')} records)",
+                 "Kept in %LOCALAPPDATA%\\ACQL\\backups: the last 14 days and 8 Sundays.", at)
+
+
+def _updates() -> Check | None:
+    """Would an automatic update overwrite work here (updater.work_at_risk)? Only said for a git checkout."""
+    from . import store, updater
+    root = store.project_root()
+    if not (root / ".git").exists():
+        return None
+    risk = updater.work_at_risk(root)
+    if not risk:
+        return Check(AUTOMATION, "Updates", OK, "Everything here is on GitHub - an update can install safely")
+    return Check(AUTOMATION, "Updates", NOTE, "Held back: this folder has work that isn't on GitHub",
+                 risk.replace("The update wasn't installed: ", "No update installs while "))
+
+
+def _training(now: float) -> Check:
+    """Is the training ground's weekly answer current?"""
+    from .model import challengers
+    answer = challengers.read()
+    if answer is None:
+        return Check(AUTOMATION, "Training verdict", NOTE, "No training answer on disk yet",
+                     "The ACQL Training job writes it, Tue-Thu; the nightly run starts it when it is overdue.")
+    age = now - answer.made
+    return Check(AUTOMATION, "Training verdict", WARN if answer.stale(now) else OK,
+                 f"Made {ago(age)}" + (" - stale" if answer.stale(now) else ""),
+                 answer.call if not answer.stale(now) else
+                 "The weekly training job hasn't run since; the nightly run starts it when it is this late. "
+                 "If it stays stale, check the ACQL Training task.", answer.made)
+
+
 def _inputs(season: Season, week: int, to_lock: float) -> Check:
     from .feeds import oddslock, results
     games, prices, ctx = _slate(season, week)
@@ -380,6 +458,20 @@ def _my_card(week: int, to_lock: float, now: float) -> Check:
     return Check(CARD, "Your own card", WARN if to_lock < DAY else NOTE,
                  f"Not saved yet - cards are due {until(to_lock)}",
                  "Save card on Deadeye Picks remembers the one you are handing in.")
+
+
+def _submitted(season: Season, week: int) -> Check | None:
+    """Your row on the commissioner's sheet against the card you saved (pool/cardcheck.py)."""
+    from .pool import cardcheck, picks
+    if picks.load(week) is None:
+        return None
+    found = cardcheck.check(season, week)
+    if not found.compared:
+        return Check(CARD, "Card as submitted", NOTE, found.reason,
+                     "The sheet is compared with the card saved on My picks, to catch a slip on the entry form.")
+    if found.diffs:
+        return Check(CARD, "Card as submitted", WARN, found.headline(), "; ".join(found.lines()) + ".")
+    return Check(CARD, "Card as submitted", OK, found.headline())
 
 
 def _autopsy(season: Season, year: int) -> Check:
@@ -538,16 +630,22 @@ def build(season: Season, now: float | None = None, tasks: dict[str, dict] | Non
     add(_weather, year, ahead, to_lock, now)
     add(_efficiency, year, ahead)
     add(_pool_files, season)
+    add(_turned_away, now)
+    add(_consistency, season, ahead)
     add(_inputs, season, ahead, to_lock)
     if playing != ahead and season.weeks.get(playing) is not None:
         add(_kept_card, season, year, playing, now)
     add(_kept_card, season, year, ahead, now)
     add(_my_card, ahead, to_lock, now)
+    add(_submitted, season, playing if season.weeks.get(playing) is not None else ahead)
     add(_known, year, ahead, to_lock, now)
     add(_autopsy, season, year)
     if tasks is not False:
         add(_tasks, task_states() if tasks is True else tasks, now)
     add(_last_run, now)
+    add(_training, now)
+    add(_backups, now)
+    add(_updates)
     add(_website, now)
     add(_email, ahead, now)
     return Readiness(checks, ahead, lock, now)

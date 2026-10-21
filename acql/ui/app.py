@@ -42,6 +42,7 @@ from .pages.base import (
     write_log,
 )
 from .watch import FolderWatcher, describe
+from .widgets import Banner
 from .pages.thisweek import BriefingPage
 from .pages.charts import ChartsPage
 from .pages.data import DataPage
@@ -210,6 +211,21 @@ class MainWindow(QMainWindow):
         self.live_feed = LiveFeed(self)
         self.cinema: CinemaWindow | None = None
         column.addWidget(self.ribbon)
+        # "since you were last here": what the scheduled runs did while closed (digest.py)
+        self.digest_row = QWidget()
+        digest_layout = QHBoxLayout(self.digest_row)
+        digest_layout.setContentsMargins(12, 6, 12, 0)
+        self.digest = Banner()
+        digest_layout.addWidget(self.digest, 1)
+        self.digest_close = QPushButton("Dismiss")
+        self.digest_close.setObjectName("BannerToggle")
+        self.digest_close.setFlat(True)
+        self.digest_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.digest_close.clicked.connect(self.digest_row.hide)
+        digest_layout.addWidget(self.digest_close, 0, Qt.AlignmentFlag.AlignTop)
+        self.digest_row.hide()
+        self._digest_done = not remember_state       # hidden test windows never show it
+        column.addWidget(self.digest_row)
         self.stack = QStackedWidget()
         fade_stack(self.stack)
         column.addWidget(self.stack, 1)
@@ -910,12 +926,23 @@ class MainWindow(QMainWindow):
         # Game Day and the ribbon draw the scores as kept, so a look redraws
         # them at once - a finished game reloads everything anyway.
         self._redraw_ribbon()
+        self._record_live()
         page = self._game_day_page()
         if page is not None and self._game_day_showing():
             try:
                 page.invalidate()
             except Exception as exc:  # noqa: BLE001
                 write_log(f"game day redraw failed: {exc!r}")
+
+    def _record_live(self) -> None:
+        """A point for the game-day flight recorder (pool/recorder.py), while games are on."""
+        if self.season.is_empty or not getattr(self.ribbon, "live", False):
+            return
+        try:
+            from ..pool import me, recorder
+            recorder.record(self.season, ribbon_week(self.season), me.key(self.season))
+        except Exception as exc:  # noqa: BLE001
+            write_log(f"flight recorder: {exc!r}")
 
     def _game_day_page(self) -> GameDayPage | None:
         return next((p for p in getattr(self, "pages", []) if isinstance(p, GameDayPage)), None)
@@ -980,6 +1007,33 @@ class MainWindow(QMainWindow):
             except Exception as exc:  # noqa: BLE001
                 write_log(f"refresh at the odds lock failed on {page.title}: {exc!r}")
 
+    def _show_digest(self) -> None:
+        """Once a session: what happened since the window was last open."""
+        if self._digest_done or self._state is None:
+            return
+        self._digest_done = True
+        import time as _time
+        from .. import digest
+        now = _time.time()
+        try:
+            since = float(self._state.value("digest/last_open", 0) or 0)
+        except (TypeError, ValueError):
+            since = 0.0
+        self._state.setValue("digest/last_open", now)
+        try:
+            items = digest.gather(since, now)
+        except Exception as exc:  # noqa: BLE001 - a note, never a broken start
+            write_log(f"since-last-here digest failed: {exc!r}")
+            return
+        if not items:
+            return
+        gone = now - since
+        when = f"{gone / 86400:.0f} days" if gone >= 1.5 * 86400 else f"{gone / 3600:.0f} hours"
+        self.digest.show_messages([f"Since you were last here ({when} ago): " + items[0].text]
+                                  + [i.text for i in items[1:]],
+                                  tone="warning" if items[0].rank == 0 else "info")
+        self.digest_row.show()
+
     def _on_loaded(self, season: Season) -> None:
         if self._closing:
             return
@@ -1013,6 +1067,7 @@ class MainWindow(QMainWindow):
                 write_log(f"set_season failed on {page.title}: {exc!r}")
         self._redraw_ribbon()
         self._lock_state = self._lock_now()
+        self._show_digest()
 
         conflicts = len(season.conflicts)
         self.conflict_btn.setVisible(conflicts > 0)

@@ -49,6 +49,7 @@ FEW = 20
 VALUE_TITLE = "Closing line value - did the line come round to the picks?"
 TAUGHT_TITLE = "Challengers taught on past seasons - is any clearly better than the rule in use?"
 PFM_TITLE = "Pro Football Mania's ratings - do they add anything to the card? (shadow only)"
+PREREG_TITLE = "Tests written down before their games (shadow only)"
 PFM_WEEK_TITLE = "This week beside PFM - the shadow chance is not a pick"
 WEEKS_TITLE = "Week by week - each recipe's record, on the games it priced"
 #: The page's views. It had grown to eight tiles and sixteen cards on one
@@ -161,6 +162,7 @@ class ModelLabPage(Page):
         self.pfm_lead.setTextFormat(Qt.TextFormat.RichText)
         self.extra["pfm"][0].body().insertWidget(1, self.pfm_lead)
         self.extra["pfm_week"] = self._card(PFM_WEEK_TITLE)
+        self.extra["prereg"] = self._card(PREREG_TITLE)
         self.extra["kinds"] = self._card(KINDS_TITLE)
         self.extra["kinds_by_season"] = self._card(KINDS_BY_SEASON)
         self.extra["seasons"] = self._card(SEASONS_TITLE)
@@ -195,7 +197,7 @@ class ModelLabPage(Page):
         for tiles, cards in (
             (self._tiles, (self.lab_card, card("duel"), card("parts"), self.weeks_card, self.recipes_card)),
             (self._more_tiles, (card("form"), card("shocks"), card("calib"))),
-            ((), (card("taught"), card("pfm"), card("pfm_week"), card("kinds"), card("kinds_by_season"),
+            ((), (card("taught"), card("prereg"), card("pfm"), card("pfm_week"), card("kinds"), card("kinds_by_season"),
                   card("seasons"))),
             ((), (card("record"), self.value_card, card("cover"), self.versions_card)),
         ):
@@ -276,6 +278,7 @@ class ModelLabPage(Page):
         self._update_weeks(lab)
         self._update_taught()
         self._update_pfm()
+        self._update_prereg()
         self._update_kinds()
         self._update_seasons()
         self._update_value(value)
@@ -734,6 +737,26 @@ class ModelLabPage(Page):
             f"Worked out {_when(found.made)} by the weekly training job. A case here is a reason to look, "
             f"never a switch: the rule above ({modellab.ENOUGH_GAMES} games priced live) is untouched.",
             *doubts]))
+
+    def _update_prereg(self) -> None:
+        """The pre-registered tests' standing, read from the file the training job leaves."""
+        from ...model import preregcheck
+        found = preregcheck.read()
+        about = ("Two leads from the calibration audit (small favourites and home sides looking overrated) were "
+                 "written down on 2026-10-20 with their rule, their games and the decision rule, before any of "
+                 "those games were played - the only fair test of a lead found by looking at the past. Each is "
+                 f"scored only on weeks whose record froze at the deadline after that date, against {MODEL_NAME}'s "
+                 f"own recorded chance. The fingerprint changes if a word of a plan does. A plus is better; the "
+                 f"decision needs {modellab.ENOUGH_GAMES} games and a range wholly above zero, and it is Sam's "
+                 "call - nothing here changes a pick.")
+        if found is None:
+            self._fill("prereg", preregcheck.HEADERS, [], note="No score yet: the weekly training job scores them "
+                                                               "(also a step of the weekly training job). " + about)
+            return
+        stale = " <b>More than a week old</b> - the training job has not run since." if found.stale() else ""
+        self._fill("prereg", preregcheck.HEADERS, found.rows, numeric_columns={3, 4},
+                   tones={(r, 6): "good" for r in found.cases}, bold_columns={0}, stretch=2,
+                   note=f"Scored {_when(found.made)}.{stale} " + about)
 
     def _update_pfm(self) -> None:
         """The PFM check's answer, read from the file the training job leaves; nothing is run here."""

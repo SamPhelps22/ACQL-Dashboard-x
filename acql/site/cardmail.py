@@ -234,6 +234,24 @@ def message(card: CardMail, settings: mailer.MailSettings | None = None) -> Emai
     return msg
 
 
+def send_note(subject: str, text: str, *, smtp_factory=None, dry_run: bool = False) -> list[str]:
+    """A short plain-text alert to the card's own addresses (never the pool's
+    recap list). Returns who it went to; with dry_run, who it would go to."""
+    settings = mailer.MailSettings.load()
+    to = recipients(settings)
+    if not settings.sender or not settings.sealed_password or not to:
+        raise mailer.MailError("Email isn't set up in the dashboard yet (Results > Email settings).")
+    if dry_run:
+        return to
+    msg = EmailMessage()
+    msg["From"] = settings.sender
+    msg["To"] = ", ".join(to)
+    msg["Subject"] = subject
+    msg.set_content(text + "\n\n- Operation Sunday")
+    mailer.send(settings, msg, smtp_factory=smtp_factory)
+    return to
+
+
 def send(card: CardMail, *, smtp_factory=None) -> list[str]:
     """Send the card and remember it. Returns who it went to."""
     settings = mailer.MailSettings.load()

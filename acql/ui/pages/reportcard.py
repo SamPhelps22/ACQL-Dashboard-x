@@ -9,10 +9,11 @@ acql.reportcard; this file is layout.
 from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from ...model import grades, reportcard
-from ...pool import me
+from ...pool import journal, me
 from ..charts import LineChart
 from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from ...version import MODEL_NAME
@@ -29,6 +30,7 @@ STANDING_TITLE = "Where its card would stand in the pool"
 STANDING_HEADERS = ["Place", "Coach", "Games right"]
 LOSER_TITLE = "Big Losers - its three likeliest against yours"
 LOSER_HEADERS = ["Week", f"{MODEL_NAME}'s three", "Its points", "Your points"]
+JOURNAL_TITLE = "Your calls against it - and whose reasons hold up"
 LONG_TITLE = "Over the long run - 2011 to 2025 under this pool's rules"
 #: Shared with The Model > Details so both pages remember the same coach.
 ME_KEY = "insights/me"
@@ -143,6 +145,40 @@ class ReportCardPage(Page):
         self.loser_card.body().addLayout(self.loser_box)
         self.layout_.addWidget(self.loser_card)
 
+        # The decision journal (pool/journal.py): each game taken against Deadeye, why, and who was right.
+        self.journal_card = Card(JOURNAL_TITLE)
+        self.journal_lead = QLabel("")
+        self.journal_lead.setWordWrap(True)
+        self.journal_lead.setTextFormat(Qt.TextFormat.RichText)
+        self.journal_card.add(self.journal_lead)
+        self.journal_box = QVBoxLayout()
+        self.journal_card.body().addLayout(self.journal_box)
+        editor = QHBoxLayout()
+        self.journal_game = QComboBox()
+        self.journal_game.setMinimumWidth(320)
+        self.journal_game.currentIndexChanged.connect(self._journal_pick)
+        self.journal_tag = QComboBox()
+        self.journal_tag.addItem("no reason", "")
+        for tag in journal.TAGS:
+            self.journal_tag.addItem(tag, tag)
+        self.journal_note = QLineEdit()
+        self.journal_note.setPlaceholderText("Why, in a line (optional)")
+        self.journal_note.setMaxLength(200)
+        self.journal_save = QPushButton("Keep reason")
+        self.journal_save.clicked.connect(self._journal_keep)
+        for widget, stretch in ((QLabel("Game"), 0), (self.journal_game, 0), (QLabel("Reason"), 0),
+                                (self.journal_tag, 0), (self.journal_note, 1), (self.journal_save, 0)):
+            editor.addWidget(widget, stretch)
+        self.journal_editor = QWidget()
+        self.journal_editor.setLayout(editor)
+        self.journal_card.add(self.journal_editor)
+        self.journal_note_label = QLabel("")
+        self.journal_note_label.setObjectName("Muted")
+        self.journal_note_label.setWordWrap(True)
+        self.journal_card.add(self.journal_note_label)
+        self.layout_.addWidget(self.journal_card)
+        self._overrides: list = []
+
         self.long_card = Card(LONG_TITLE)
         self.long_label = QLabel("")
         self.long_label.setWordWrap(True)
@@ -195,7 +231,77 @@ class ReportCardPage(Page):
         self._render_running(report, card)
         self._render_standing(report, card)
         self._render_losers(report)
+        self._render_journal(key)
         self._render_long_run(report)
+
+    # ---- the decision journal ---------------------------------------------------
+    def _render_journal(self, key: str) -> None:
+        self.clear_layout(self.journal_box)
+        season = self.season
+        mine = bool(key) and key == me.key(season)
+        self.journal_editor.setVisible(mine)
+        if not mine:
+            self._overrides = []
+            self.journal_lead.setText(f"The journal is {me.NAME}'s own: choose {me.NAME} above to see it.")
+            self.journal_note_label.setText("")
+            return
+        found = journal.overrides(season)
+        self._overrides = found
+        tallies = journal.tallies(found)
+        total = next((t for t in tallies if t.tag == "all"), None)
+        if total is None:
+            self.journal_lead.setText(f"No game yet where your card went against {MODEL_NAME}'s.")
+            self.journal_note_label.setText("")
+            self.journal_editor.hide()
+            return
+        self.journal_lead.setText(
+            f"<b>{_plural(total.games, 'game')} taken against {MODEL_NAME}</b>: you were right and it wrong "
+            f"{total.you} time{'' if total.you == 1 else 's'}, it right and you wrong {total.deadeye}"
+            + (f", {total.games - total.decided} still to play" if total.games > total.decided else "")
+            + ". Give each one a reason and the reasons are scored below: the ones worth keeping show themselves.")
+        rows = [[t.tag, t.games, t.decided, t.you, t.deadeye, f"{t.net:+d}"] for t in tallies]
+        tones = {(r, 5): ("good" if t.net > 0 else "bad" if t.net < 0 else "muted") for r, t in enumerate(tallies)}
+        model = TableModel(["Reason", "Games", "Decided", "You right", f"{MODEL_NAME} right", "Net"], rows,
+                           palette=self.palette, numeric_columns={1, 2, 3, 4, 5}, tones=tones, bold_columns={0})
+        view, _ = make_table(model, stretch_column=0, row_height=26)
+        self.journal_box.addWidget(view)
+        detail = [[o.week, o.matchup, o.yours, o.deadeye + (" (rebuilt)" if o.rebuilt else ""), o.credited or "-",
+                   o.outcome, o.tag or "-", o.note] for o in reversed(found)]
+        tones = {(r, 5): ("good" if row[5] == "you" else "bad" if row[5] == MODEL_NAME else "muted")
+                 for r, row in enumerate(detail)}
+        model = TableModel(["Week", "Game", "You took", f"{MODEL_NAME} took", "Credited", "Right", "Reason", "Note"],
+                           detail, palette=self.palette, numeric_columns={0}, tones=tones, bold_columns={2})
+        view, _ = make_table(model, stretch_column=7, row_height=26)
+        self.journal_box.addWidget(view)
+        self.journal_game.blockSignals(True)
+        current = self.journal_game.currentData()
+        self.journal_game.clear()
+        for o in reversed(found):
+            self.journal_game.addItem(f"Week {o.week} · {o.matchup} · you {o.yours}", o.key)
+        at = self.journal_game.findData(current) if current else -1
+        self.journal_game.setCurrentIndex(max(at, 0))
+        self.journal_game.blockSignals(False)
+        self._journal_pick()
+        rebuilt = sorted({o.week for o in found if o.rebuilt})
+        self.journal_note_label.setText(
+            "Your side is your row on the commissioner's sheet; " + MODEL_NAME + "'s is its card as kept at the "
+            "deadline" + (f" (weeks {', '.join(map(str, rebuilt))}: rebuilt afterwards, as nothing was kept then)"
+                          if rebuilt else "") + ". Right means credited by the pool's rule. Small counts say little: "
+            "a reason needs a dozen or so decided games before its net means much.")
+
+    def _journal_pick(self, _index: int = 0) -> None:
+        key = self.journal_game.currentData()
+        found = next((o for o in self._overrides if o.key == key), None)
+        self.journal_tag.setCurrentIndex(max(self.journal_tag.findData(found.tag if found else ""), 0))
+        self.journal_note.setText(found.note if found else "")
+
+    def _journal_keep(self) -> None:
+        key = self.journal_game.currentData()
+        if not key:
+            return
+        week, index = (int(part) for part in str(key).split("-"))
+        journal.give_reason(week, index, self.journal_tag.currentData() or "", self.journal_note.text())
+        self._render_journal(self.me_picker.currentData())
 
     # ---- the answer ---------------------------------------------------------
     def _render_verdict(self, report: reportcard.Report) -> None:

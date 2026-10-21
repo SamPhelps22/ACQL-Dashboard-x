@@ -719,6 +719,122 @@ def covers_slate(path: Path, slate: list[Game]) -> bool:
     return hits >= max(MATCH_LEAST, int(len(slate) * MATCH_SHARE))
 
 
+# ---- the gate: files that are not one week's predictions --------------------
+# On 2026-10-18 the Prediction Tracker's whole-season archive (nfl24.csv, 285
+# games from 2024, sitting in Downloads) was read as week 7's file: a season
+# of division games shares most of any week's pairings, so the 60% match let
+# it through and its 2024 line went into the week's record. A week's file is
+# never a season, never carries final scores, and never names a game twice.
+#: A season archive's name: nfl99.csv .. nfl26.csv.
+_ARCHIVE_NAME = re.compile(r"^nfl\d{2}$", re.IGNORECASE)
+#: Columns only an archive of played games has.
+_RESULT_COLUMNS = ("hscore", "rscore", "week")
+#: Most games a week has ever had, with room for a stray extra row.
+MOST_GAMES = 18
+#: The widest believable betting line.
+WIDEST_LINE = 30.0
+_VETTED: dict[tuple[str, float, int], str | None] = {}
+#: Files turned away this run, so each is written down once.
+TURNED_AWAY_KIND = "turned-away"
+
+
+def refusal(path: str | Path, slate: list[Game] | None = None) -> str | None:
+    """Why this file can't be a week's predictions, or None when it can be."""
+    path = Path(path)
+    try:
+        info = path.stat()
+    except OSError:
+        return "can't be read"
+    key = (str(path), info.st_mtime, info.st_size)
+    if key in _VETTED:
+        reason = _VETTED[key]
+    else:
+        reason = _refusal(path)
+        _VETTED[key] = reason
+    if reason is None and slate and len(slate) and _row_count(path) > max(len(slate) * 1.5 + 2, len(slate) + 4):
+        reason = f"{_row_count(path)} games for a {len(slate)}-game week"
+    return reason
+
+
+@lru_cache(maxsize=64)
+def _rows_cached(path: str, mtime: float) -> int:
+    try:
+        return len(read_csv(path))
+    except (OSError, ValueError, csv.Error):
+        return 0
+
+
+def _row_count(path: Path) -> int:
+    try:
+        return _rows_cached(str(path), path.stat().st_mtime)
+    except OSError:
+        return 0
+
+
+def _refusal(path: Path) -> str | None:
+    if _ARCHIVE_NAME.match(path.stem):
+        return "named like a season archive (nflYY.csv), not a week's file"
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as handle:
+            header = next(csv.reader(handle), [])
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return "can't be read as a CSV"
+    columns = {(h or "").strip().casefold() for h in header}
+    if not {"road", "home"} <= columns:
+        return "has no road/home columns"
+    results = [c for c in _RESULT_COLUMNS if c in columns]
+    if results:
+        return f"carries final scores ({', '.join(results)}): an archive of played games"
+    try:
+        forecasts = read_csv(path)
+    except (OSError, ValueError, csv.Error):
+        return "can't be read as a CSV"
+    if len(forecasts) > MOST_GAMES:
+        return f"{len(forecasts)} games - a week has at most {MOST_GAMES - 2}"
+    pairs = [(f.road_code, f.home_code) for f in forecasts]
+    if len(set(pairs)) < len(pairs):
+        return "lists the same game twice"
+    wild = [f for f in forecasts if f.market is not None and abs(f.market) > WIDEST_LINE]
+    if wild:
+        return f"a betting line of {wild[0].market:+g} ({wild[0].road} @ {wild[0].home})"
+    return None
+
+
+def _turned_away(path: Path, reason: str) -> None:
+    """Write the refusal down once, for Data & Update and Readiness to show."""
+    from .. import store
+    try:
+        kept = store.get(TURNED_AWAY_KIND, str(path))
+        if isinstance(kept, dict) and kept.get("reason") == reason:
+            return
+        store.put(TURNED_AWAY_KIND, str(path), {"reason": reason, "at": time.time(), "name": path.name})
+    except Exception as exc:  # noqa: BLE001 - never stop a load over the record of a refusal
+        from ..logbook import trouble
+        trouble(f"predictions file turned away ({path.name}: {reason})", exc)
+        return
+    from ..logbook import trouble
+    trouble("predictions file turned away", ValueError(f"{path.name}: {reason}"))
+
+
+def turned_away(since: float = 0.0) -> list[dict]:
+    """Files refused as a week's predictions, newest first."""
+    from .. import store
+    try:
+        found = store.items(TURNED_AWAY_KIND)
+    except Exception:  # noqa: BLE001
+        return []
+    out = [dict(v, path=k) for k, v in found.items() if isinstance(v, dict) and v.get("at", 0) >= since]
+    return sorted(out, key=lambda v: -v.get("at", 0))
+
+
+def acceptable(path: Path, slate: list[Game] | None = None) -> bool:
+    reason = refusal(path, slate)
+    if reason is None:
+        return True
+    _turned_away(path, reason)
+    return False
+
+
 def find_file(
     week: int,
     workbook: str | Path | None = None,
@@ -729,11 +845,14 @@ def find_file(
     A name that says the week wins, because it is unambiguous and costs
     nothing to read. Failing that, and given a slate to check against, the
     newest file whose games are this week's games - so a download keeps
-    working when the week is nowhere in its name.
+    working when the week is nowhere in its name. Either way a file has to
+    pass the gate (`refusal`): a season archive is never a week's file.
     """
     best: tuple[float, Path] | None = None
     for path in candidate_files(workbook):
         if week_in_name(path) != week:
+            continue
+        if not acceptable(path, slate):
             continue
         try:
             when = path.stat().st_mtime
@@ -747,7 +866,7 @@ def find_file(
     for path in candidate_files(workbook):
         # A file that names a different week is that week's, whatever its
         # contents say; only unnamed ones are opened and checked.
-        if week_in_name(path) is None and covers_slate(path, slate or []):
+        if week_in_name(path) is None and acceptable(path, slate) and covers_slate(path, slate or []):
             return path
     return None
 

@@ -1178,6 +1178,11 @@ class NextWeekPage(Page):
         )
         if not path or self._locked_now():
             return                # nothing chosen, or kicked off while choosing
+        refused = predictions.refusal(path)
+        if refused:
+            self.paste_note.setText(f"Not loaded - that file isn't one week's predictions ({refused}).")
+            self.paste_note.show()
+            return
         try:
             forecasts = predictions.read_csv(path)
         except (OSError, ValueError) as problem:

@@ -1,0 +1,58 @@
+name: Pool site heartbeat
+
+# The pool website is published from one PC. When that PC is off, nothing on
+# it can say so (2026-10-19: no run all day). Every three hours GitHub checks
+# whether games finished well after the site was last built; if so it opens
+# one issue - which GitHub emails to the repository's owner - and closes it
+# once the site has caught up. The issue text says nothing private.
+on:
+  schedule:
+    - cron: "23 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: heartbeat
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: packaging/heartbeat.py
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Is the site keeping up?
+        id: check
+        run: |
+          python packaging/heartbeat.py --json > verdict.json || true
+          cat verdict.json
+          echo "behind=$(python -c 'import json;print(str(json.load(open("verdict.json"))["behind"]).lower())')" >> "$GITHUB_OUTPUT"
+
+      - name: Open or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEHIND: ${{ steps.check.outputs.behind }}
+        run: |
+          TITLE="Pool website is behind"
+          OPEN=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          WHY=$(python -c 'import json;print(json.load(open("verdict.json"))["why"])')
+          if [ "$BEHIND" = "true" ]; then
+            if [ -z "$OPEN" ]; then
+              gh issue create --title "$TITLE" --body "$WHY
+
+          Checked by .github/workflows/heartbeat.yml. It closes itself once the site is rebuilt."
+            fi
+          elif [ -n "$OPEN" ]; then
+            gh issue close "$OPEN" --comment "The site has caught up: $WHY"
+          fi
