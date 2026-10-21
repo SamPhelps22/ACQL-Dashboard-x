@@ -63,6 +63,11 @@ EFFICIENCY_GAP = 0.05
 LINE_LIKELY = 6.5
 
 
+#: Which signal makes the best one-line reason, most telling first. The models are
+#: shown on their own line, so they are not in it.
+REASON_ORDER = ("Quarterback", "Line move", "Betting line", "Efficiency", "Form", "Rest", "Pool line")
+
+
 def strength(chance: float) -> str:
     return next(name for floor, name in STRENGTHS if chance >= floor)
 
@@ -73,6 +78,7 @@ class Signal:
     verdict: str            # FOR, AGAINST or INFO
     headline: str
     detail: str = ""
+    short: str = ""         # a few words for the card's Evidence column: "line moved 1.5 toward Chicago"
 
 
 @dataclass(frozen=True)
@@ -116,12 +122,38 @@ class Case:
     def doubts(self) -> int:
         return sum(1 for s in self.signals if s.verdict == AGAINST)
 
-    def summary(self) -> str:
+    def tally(self) -> str:
         """"4 for, 1 against" - the signals that take a side."""
         parts = [f"{self.backing} for"]
         if self.doubts:
             parts.append(f"{self.doubts} against")
         return ", ".join(parts)
+
+    def models(self) -> str:
+        """What the other computer models say, whichever way: "7 of 9 models agree"."""
+        found = next((s for s in self.signals if s.name == "Computer models"), None)
+        return found.short if found is not None else ""
+
+    def reason(self) -> str:
+        """The strongest piece of evidence for the pick, in a few words - or, with
+        none for it, the strongest against."""
+        def best(verdict: str) -> Signal | None:
+            ranked = [s for s in self.signals if s.verdict == verdict and s.short and s.name in REASON_ORDER]
+            return min(ranked, key=lambda s: REASON_ORDER.index(s.name), default=None)
+        found = best(FOR)
+        if found is not None:
+            return found.short
+        found = best(AGAINST)
+        return f"against: {found.short}" if found is not None else ""
+
+    def lines(self) -> list[str]:
+        """The Evidence column: the models, the top reason, then the tally."""
+        out = [x for x in (self.models(), self.reason()) if x]
+        return [x[:1].upper() + x[1:] for x in out] + [self.tally()]
+
+    def summary(self) -> str:
+        """"7 of 9 models agree · Line moved 1.5 toward Chicago · 3 for, 1 against"."""
+        return " \u00b7 ".join(self.lines())
 
 
 # ---- what the season so far says about each team ------------------------------------
@@ -214,7 +246,8 @@ def _market(game: Game, pick: str, pick_home: bool, forecast) -> Signal | None:
         detail = f"The moneyline makes {pick} {outright:.0%} to win outright."
     else:
         detail = f"The market makes {pick} {outright:.0%} to win outright."
-    return Signal("Betting line", verdict, _spread(margin, game), detail)
+    return Signal("Betting line", verdict, _spread(margin, game), detail,
+                  f"market has {pick} {credited:.0%}")
 
 
 def _line_coming(game: Game, forecast, lines_posted: bool) -> Signal | None:
@@ -230,6 +263,7 @@ def _line_coming(game: Game, forecast, lines_posted: bool) -> Signal | None:
         "Pool line", AGAINST, "not posted yet - expect one",
         f"{favourite} is favoured by {abs(margin):g}, and favourites this big usually get a pool line. "
         f"Priced straight up for now: enter the line with Line games\u2026 when it is posted - the pick often changes.",
+        "pool line not posted yet",
     )
 
 
@@ -285,7 +319,8 @@ def _efficiency(pick: str, other: str, pick_code: str, other_code: str, year: in
         "Efficiency", verdict, f"{words(pick, mine)} \u00b7 {words(other, theirs)}",
         f"Expected points added a play over each side's last {found.window} games: {pick} "
         f"{mine.attack:+.2f} with the ball and {mine.defence:+.2f} allowed; {other} {theirs.attack:+.2f} and "
-        f"{theirs.defence:+.2f}. The line has weighed this already - it is the football under the number.{stale}")
+        f"{theirs.defence:+.2f}. The line has weighed this already - it is the football under the number.{stale}",
+        f"{pick if gap > 0 else other} better per play")
 
 
 def _quarterback(pick: str, other: str, pick_code: str, other_code: str,
@@ -316,7 +351,8 @@ def _quarterback(pick: str, other: str, pick_code: str, other_code: str,
                   + (" Questionable is not out - the line may barely move." if all(not i.missing for i in late)
                      else "")))
     headline = f"{words(pick, mine)} \u00b7 {words(other, theirs)}" + (" \u00b7 newer than the line" if late else "")
-    return Signal("Quarterback", verdict, headline, detail)
+    short = (f"{other} QB out" if verdict == FOR else f"{pick} QB out" if verdict == AGAINST else "")
+    return Signal("Quarterback", verdict, headline, detail, short)
 
 
 def _steps(game: Game, choice, pick_home: bool, price, forecast) -> tuple[Step, ...]:
@@ -381,11 +417,11 @@ def _move(game: Game, pick: str, pick_home: bool, forecast) -> Signal | None:
     if toward >= MOVE:
         return Signal("Line move", FOR, headline,
                       f"{toward:g} point{'' if toward == 1 else 's'} toward {pick} {since}: the news and the "
-                      f"money have come in on this side.")
+                      f"money have come in on this side.", f"line moved {toward:g} toward {pick}")
     if toward <= -MOVE:
         return Signal("Line move", AGAINST, headline,
                       f"{-toward:g} point{'' if toward == -1 else 's'} away from {pick} {since}: the news and "
-                      f"the money have gone the other way.")
+                      f"the money have gone the other way.", f"line moved {-toward:g} away from {pick}")
     return Signal("Line move", INFO, headline, "Hasn't moved enough to say anything.")
 
 
@@ -407,7 +443,8 @@ def _models(game: Game, pick: str, pick_home: bool, forecast) -> Signal | None:
         f"{_spread(high, game)}."
     )
     verdict = FOR if share >= 0.55 else AGAINST if share <= 0.45 else INFO
-    return Signal("Computer models", verdict, f"{agree} of {len(votes)} side with {pick}", detail)
+    return Signal("Computer models", verdict, f"{agree} of {len(votes)} side with {pick}", detail,
+                  f"{agree} of {len(votes)} models agree")
 
 
 def _form(pick_code: str, other_code: str, pick: str, other: str, form: dict[str, Form]) -> Signal | None:
@@ -419,7 +456,8 @@ def _form(pick_code: str, other_code: str, pick: str, other: str, form: dict[str
     headline = (f"{pick} {mine.record} ({mine.margin:+.1f} a game) · "
                 f"{other} {theirs.record} ({theirs.margin:+.1f})")
     detail = f"Last time out, {pick} {mine.last}; {other} {theirs.last}."
-    return Signal("Form", verdict, headline, detail)
+    return Signal("Form", verdict, headline, detail,
+                  f"form {mine.margin:+.1f} a game vs {theirs.margin:+.1f}")
 
 
 def _rest(pick: str, other: str, pick_code: str, other_code: str, kickoff: float | None,
@@ -436,7 +474,8 @@ def _rest(pick: str, other: str, pick_code: str, other_code: str, kickoff: float
     def words(days: int) -> str:
         return f"{days} days" + (" (off a bye)" if days >= 12 else " (short week)" if days <= 5 else "")
     return Signal("Rest", FOR if a > b else AGAINST, f"{pick} {words(a)} · {other} {words(b)}",
-                  "Already in the line, but worth knowing.")
+                  "Already in the line, but worth knowing.",
+                  f"{abs(a - b)} {'more' if a > b else 'fewer'} days' rest")
 
 
 def _crowd(choice) -> Signal | None:
@@ -607,6 +646,7 @@ def _discounted(signal: Signal | None, doubted: dict[str, SignalRecord]) -> Sign
         signal.name, INFO, signal.headline,
         f"{signal.detail} Not counted: when it has disagreed with the betting line this season "
         f"it has been right {record.split_right} of {record.split} times.",
+        signal.short,
     )
 
 

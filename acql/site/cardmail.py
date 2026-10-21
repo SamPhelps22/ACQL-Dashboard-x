@@ -180,7 +180,7 @@ def compose(season: Season, week: int, *, now: float | None = None, before: dict
             + (f" · pool line {e(c.line)}" if c.line else "") + "</span></td>"
             f"<td style='padding:7px 8px;white-space:nowrap'><b style='color:{colour}'>{c.chance:.0%}</b>"
             f"<br><span style='color:{colour};font-size:12px'>{label}</span></td>"
-            f"<td style='padding:7px 8px;color:#6b7280;font-size:13px'>{e(case.summary()) if case else ''}</td>"
+            f"<td style='padding:7px 8px;color:#6b7280;font-size:13px'>{'<br>'.join(e(x) for x in case.lines()) if case else ''}</td>"
             "</tr>")
     body = [
         f"<div style='{font};font-size:15px;color:#111;max-width:640px'>",

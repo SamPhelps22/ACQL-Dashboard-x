@@ -686,6 +686,17 @@ class TestFirstSeenIsNotTheOpener(_ScratchStore):
         fetched_only = odds.overlay(3, [], 0)[0]
         self.assertEqual((fetched_only.opening, fetched_only.opening_seen), (5.5, True))
 
+    def test_the_evidence_column_shows_models_and_top_reason(self):
+        from acql.model import evidence as ev
+        case = ev.Case(1, "Indianapolis @ Minnesota", "Minnesota", "Indianapolis", 0.51, "", False, (
+            ev.Signal("Form", ev.FOR, "", "", "form +4.0 a game vs -1.0"),
+            ev.Signal("Line move", ev.FOR, "", "", "line moved 1.5 toward Minnesota"),
+            ev.Signal("Computer models", ev.AGAINST, "", "", "3 of 9 models agree"),
+        ))
+        self.assertEqual(case.lines(), ["3 of 9 models agree", "Line moved 1.5 toward Minnesota", "2 for, 1 against"])
+        alone = ev.Case(2, "", "X", "Y", 0.5, "", False, (ev.Signal("Rest", ev.AGAINST, "", "", "3 fewer days' rest"),))
+        self.assertEqual(alone.lines(), ["Against: 3 fewer days' rest", "0 for, 1 against"])
+
     def test_the_evidence_card_says_first_seen(self):
         from types import SimpleNamespace
         from acql.model import evidence
