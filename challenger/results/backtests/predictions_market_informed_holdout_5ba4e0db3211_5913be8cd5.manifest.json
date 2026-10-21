@@ -1,0 +1,296 @@
+{
+ "split": "holdout",
+ "variant": "market_informed",
+ "seasons": [
+  2020,
+  2021,
+  2022,
+  2023,
+  2024,
+  2025,
+  2026
+ ],
+ "model_version": "challenger-1.0.0-5ba4e0db3211-market_informed",
+ "config_hash": "5ba4e0db3211",
+ "config": {
+  "elo": {
+   "k": 20.0,
+   "home_advantage": 55.0,
+   "hfa_step": 0.0,
+   "season_carry": 0.6,
+   "mean": 1505.0,
+   "mov_multiplier": true
+  },
+  "ratings": {
+   "half_life_long": 8.0,
+   "half_life_short": 3.0,
+   "prior_games": 4.0,
+   "season_carry": 0.45,
+   "qb_half_life": 400.0,
+   "qb_prior_dropbacks": 250.0,
+   "qb_replacement_shift": -0.1,
+   "qb_season_carry": 0.7
+  },
+  "models": {
+   "lr_C_grid": [
+    0.01,
+    0.03,
+    0.1,
+    0.3,
+    1.0
+   ],
+   "gbm_grid": [
+    {
+     "num_leaves": 4,
+     "n_estimators": 150,
+     "learning_rate": 0.03,
+     "min_child_samples": 60
+    },
+    {
+     "num_leaves": 4,
+     "n_estimators": 400,
+     "learning_rate": 0.02,
+     "min_child_samples": 60
+    },
+    {
+     "num_leaves": 8,
+     "n_estimators": 200,
+     "learning_rate": 0.03,
+     "min_child_samples": 80
+    },
+    {
+     "num_leaves": 8,
+     "n_estimators": 400,
+     "learning_rate": 0.015,
+     "min_child_samples": 120
+    },
+    {
+     "num_leaves": 15,
+     "n_estimators": 250,
+     "learning_rate": 0.02,
+     "min_child_samples": 150
+    },
+    {
+     "num_leaves": 3,
+     "n_estimators": 600,
+     "learning_rate": 0.02,
+     "min_child_samples": 40
+    }
+   ],
+   "gbm_common": {
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.7,
+    "reg_lambda": 5.0,
+    "random_state": 7,
+    "n_jobs": 1,
+    "deterministic": true,
+    "force_col_wise": true,
+    "verbose": -1
+   },
+   "inner_folds": 3,
+   "calibration": "platt",
+   "stack_C": 1.0
+  },
+  "first_pbp_season": 2001,
+  "first_train_season": 2003,
+  "dev_seasons": [
+   2010,
+   2011,
+   2012,
+   2013,
+   2014,
+   2015,
+   2016,
+   2017,
+   2018,
+   2019
+  ],
+  "holdout_seasons": [
+   2020,
+   2021,
+   2022,
+   2023,
+   2024,
+   2025,
+   2026
+  ],
+  "deadline_minutes_before_first_kickoff": 60,
+  "game_duration_hours": 4.5,
+  "qb_source": "previous_start",
+  "use_epa": true,
+  "seed": 7
+ },
+ "data_manifest": {
+  "pbp_2001": {
+   "bytes": 14007738,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "43f0eea9f76de070a09382a5f3438b0ddb509c9ca48ac98dee77639e35724bca",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2001.parquet"
+  },
+  "pbp_2002": {
+   "bytes": 14742308,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "4930befb7ce6597fa149d53e56565eb1377bad778a04fec1e6c21b0537c4aa17",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2002.parquet"
+  },
+  "pbp_2003": {
+   "bytes": 14620361,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "a5bc20c69eee0c18364bea7fa1d3c2817941c8d9026058c694ab1ee73a2d279d",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2003.parquet"
+  },
+  "pbp_2004": {
+   "bytes": 14568240,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "94658bc15788eda63a8cdba0d8f1c8aa9253fb5baa9c0d07b9c2e35e75ae6a03",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2004.parquet"
+  },
+  "pbp_2005": {
+   "bytes": 14612857,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "1b93d868e286fc556192e642ec09ff76b29880b441674dcb0f3b51fb0064df92",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2005.parquet"
+  },
+  "pbp_2006": {
+   "bytes": 18555685,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "f3d45c8cf41fa860ec22519490781eb19a00cf04cbf039b28af671bfcb11c2b4",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2006.parquet"
+  },
+  "pbp_2007": {
+   "bytes": 18716524,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "bcfded2ff41b221617e38e48cbc56fd797f336363436ed5b5da17659caede9a9",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2007.parquet"
+  },
+  "pbp_2008": {
+   "bytes": 18565820,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "f625e836a0117698feaad1a6e84f4ab341ff03197c1904313836ef7313af0f07",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2008.parquet"
+  },
+  "pbp_2009": {
+   "bytes": 18905386,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "17ba96f594a7b84c86060a99a3082158ebab206672d6c16036a069829d77dee7",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2009.parquet"
+  },
+  "pbp_2010": {
+   "bytes": 19059048,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "d2ef9c407319719910ad8de8c4c1b88f0ea945ffb3f78f48ef32fa3ed3a7573b",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2010.parquet"
+  },
+  "pbp_2011": {
+   "bytes": 19117830,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "c54753b8137b88dab260489b1462cbf1309c3d11741eb8d10e5f1b0a9b8795b1",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2011.parquet"
+  },
+  "pbp_2012": {
+   "bytes": 19322039,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "447b90789104aac70427ec9d3b51df7247234029d0ecabd269279369b1cc6278",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2012.parquet"
+  },
+  "pbp_2013": {
+   "bytes": 19521610,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "f454605a1983b3946baf0ffadf3a0b9f5e04735c4b84732e0483f2049a780d00",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2013.parquet"
+  },
+  "pbp_2014": {
+   "bytes": 19360792,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "54c01408d8f0ff9e013a4ea51428b91d610101f72545d082e932f5710e2fb4f7",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2014.parquet"
+  },
+  "pbp_2015": {
+   "bytes": 19545842,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "01b5ae7d06633a2e66b418404461a3d4ff055ad2f3a87d453cebcc8d3fda7ed9",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2015.parquet"
+  },
+  "pbp_2016": {
+   "bytes": 19344382,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "95eba04e2145e3c1c8ca502f2a3a76cfb0a5990680c3fb480f02a74a45f54a3b",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2016.parquet"
+  },
+  "pbp_2017": {
+   "bytes": 19050401,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "84eacd963c1fdd45965f6222c62e9329a7f3412f029d92c1ac5e34a1bb4d3710",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2017.parquet"
+  },
+  "pbp_2018": {
+   "bytes": 19072097,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "2e6f2dce7c7ebd46e985cabe0c17eb72b39a77f98cb4478409294f50b5820150",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2018.parquet"
+  },
+  "pbp_2019": {
+   "bytes": 19119729,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "60c3067017db2d28a78f66a79b657268be8578d9a5288e6a827efdcd7fe42540",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2019.parquet"
+  },
+  "pbp_2020": {
+   "bytes": 19286459,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "8889f5d8782b5c5dce3c3644acdc0322b228a7e9cb13fa36cbac250e260e9f60",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2020.parquet"
+  },
+  "pbp_2021": {
+   "bytes": 20249925,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "333ad34378e5339d5172717cc83378e908daf02c8699416ab3e17c2ec10f78d8",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2021.parquet"
+  },
+  "pbp_2022": {
+   "bytes": 20426548,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "931121d8897779d7944e2a293e92ed8799c8e5cceef84096ac42339003fedc09",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2022.parquet"
+  },
+  "pbp_2023": {
+   "bytes": 20534088,
+   "retrieved_at_utc": "2026-10-21T16:25:03+00:00",
+   "sha256": "bd3484731408def6b0ec93225bba2bd7b2c65769ca707a2b9444d891abdc6776",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2023.parquet"
+  },
+  "pbp_2024": {
+   "bytes": 20597560,
+   "retrieved_at_utc": "2026-10-21T16:25:04+00:00",
+   "sha256": "3fd2896bc0b911b615142d2f1fabae54a4bbba5ab7b73b28187b118ef8af6a3b",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2024.parquet"
+  },
+  "pbp_2025": {
+   "bytes": 20337029,
+   "retrieved_at_utc": "2026-10-21T16:25:04+00:00",
+   "sha256": "c6ecedd6d678cc37ed316b23ef84ee1ec6abb69c514bb11868a7ebd5a367df29",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2025.parquet"
+  },
+  "pbp_2026": {
+   "bytes": 6998248,
+   "retrieved_at_utc": "2026-10-21T16:25:04+00:00",
+   "sha256": "22c7b464a30612068ad3c853c993aa72b9b7b87df76b09f58fdc34efa9f95ff3",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.parquet"
+  },
+  "schedule": {
+   "bytes": 2185720,
+   "retrieved_at_utc": "2026-10-21T16:25:02+00:00",
+   "sha256": "e0c6c3cf4847266fdeeceecc21cbc3db317bc4afd3878acfc1e7ff38c565e014",
+   "url": "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv"
+  }
+ },
+ "started_at_utc": "2026-10-21T16:47:18.538366+00:00",
+ "retraining": "once per season, before week 1",
+ "run_id": "market_informed_holdout_5ba4e0db3211_5913be8cd5",
+ "file": "predictions_market_informed_holdout_5ba4e0db3211_5913be8cd5.csv.gz",
+ "sha256": "9183e77e91edd114408d3f5666553c7b4aa164c49c4e3faf646283d09068c5ec",
+ "rows": 7144,
+ "written_at_utc": "2026-10-21T16:48:45+00:00",
+ "git_commit": "f19b7b54d18a553e368ae446a7b99fb38e0c8c33+dirty"
+}

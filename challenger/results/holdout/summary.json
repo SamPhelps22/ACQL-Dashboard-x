@@ -1,0 +1,121 @@
+{
+ "split": "holdout",
+ "seasons": [
+  2020,
+  2021,
+  2022,
+  2023,
+  2024,
+  2025,
+  2026
+ ],
+ "challenger_run": "market_free_holdout_5ba4e0db3211_5913be8cd5",
+ "challenger_file_sha256": "1ea982312d61857abb1e278a7a705731fd80845dcda21ccb7d8162b1809c16d1",
+ "model_version": "challenger-1.0.0-5ba4e0db3211",
+ "coverage": {
+  "scheduled_games": 1887,
+  "completed": 1708,
+  "ties": 6,
+  "with_challenger": 1708,
+  "with_elo": 1708,
+  "with_logistic": 1708,
+  "with_boosting": 1708,
+  "with_deadeye_proxy": 1647,
+  "with_deadeye_core_closing": 1736,
+  "with_market_moneyline": 1736,
+  "with_market_spread": 1736,
+  "matched_decided_games": 1642
+ },
+ "playoff_coverage": {
+  "scheduled_games": 78,
+  "completed": 78,
+  "ties": 0,
+  "with_challenger": 78,
+  "with_elo": 78,
+  "with_logistic": 78,
+  "with_boosting": 78,
+  "with_market_moneyline": 78,
+  "with_market_spread": 78,
+  "matched_decided_games": 78
+ },
+ "deadeye_live_coverage": {
+  "scheduled_games": 272,
+  "completed": 93,
+  "ties": 1,
+  "with_challenger": 93,
+  "with_deadeye_live": 61,
+  "with_deadeye_core_closing": 121,
+  "with_market_moneyline": 121,
+  "with_elo": 93,
+  "matched_decided_games": 46
+ },
+ "deadeye_capture": {
+  "deadeye_proxy": {
+   "rated": 4207,
+   "matched": 4207,
+   "unmatched": 0,
+   "duplicates": 0,
+   "seasons": "2010-2026"
+  },
+  "deadeye_live": [
+   {
+    "week": 3,
+    "file": "nflpredictions week 3.csv",
+    "games": 16,
+    "matched": 16,
+    "file_first_committed_utc": "2026-09-25 04:13:33+00:00",
+    "week_first_kickoff_utc": "2026-09-25 00:15:00+00:00",
+    "committed_before_first_kickoff": false,
+    "consensus_weight": 0.25
+   },
+   {
+    "week": 4,
+    "file": "nflpredictions week 4.csv",
+    "games": 16,
+    "matched": 16,
+    "file_first_committed_utc": "2026-10-05 03:05:42+00:00",
+    "week_first_kickoff_utc": "2026-10-02 00:15:00+00:00",
+    "committed_before_first_kickoff": false,
+    "consensus_weight": 0.25
+   },
+   {
+    "week": 5,
+    "file": "nflpredictions week 5.csv",
+    "games": 15,
+    "matched": 15,
+    "file_first_committed_utc": "2026-10-09 03:41:47+00:00",
+    "week_first_kickoff_utc": "2026-10-09 00:15:00+00:00",
+    "committed_before_first_kickoff": false,
+    "consensus_weight": 0.25
+   },
+   {
+    "week": 7,
+    "file": "nflpredictions week 7.csv",
+    "games": 14,
+    "matched": 14,
+    "file_first_committed_utc": "2026-10-20 23:13:19+00:00",
+    "week_first_kickoff_utc": "2026-10-23 00:15:00+00:00",
+    "committed_before_first_kickoff": true,
+    "consensus_weight": 0.25
+   }
+  ]
+ },
+ "acql": {
+  "weeks_scored": 109,
+  "weeks_dropped_for_missing_forecasts": [
+   "2026-3",
+   "2026-4",
+   "2026-5",
+   "2026-6"
+  ]
+ },
+ "live_pair_challenger_vs_deadeye_live": {
+  "mean": -0.045742981566445705,
+  "lo": -0.04860780322118821,
+  "hi": -0.041560556565780074,
+  "clusters": 3,
+  "games": 46,
+  "p_two_sided": 0.0,
+  "verdict": "too few weeks (3) for a reliable interval - no verdict"
+ }
+}

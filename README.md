@@ -235,6 +235,7 @@ packaging/
 └── icon.png            window icon, bundled with the build
 tests/                  the dashboard's suites (run_tests.py) and four smaller ones
 nfl_pickem/             the separate NFL pick'em package, with its own tests
+challenger/             Project Challenger: an independent model tested against Deadeye (see challenger/README.md)
 ```
 
 ## Tests

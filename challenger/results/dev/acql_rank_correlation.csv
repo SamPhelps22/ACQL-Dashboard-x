@@ -1,0 +1,6 @@
+a,b,mean_within_week_spearman
+challenger,deadeye_proxy,0.9031458313267218
+challenger,deadeye_core_closing,0.858475210513191
+challenger,market_moneyline,0.8558248508974536
+deadeye_proxy,market_moneyline,0.8391749339390512
+challenger,elo,0.9359480398494239

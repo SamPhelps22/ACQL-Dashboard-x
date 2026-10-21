@@ -1,0 +1,3 @@
+variant,games,log_loss,brier,accuracy,vs_challenger_logloss_x1000,vs_challenger_verdict,vs_deadeye_proxy_logloss_x1000,vs_deadeye_proxy_verdict,vs_market_moneyline_logloss_x1000,vs_market_moneyline_verdict
+challenger__market_informed,2551,0.6158106342328492,0.21387849103877124,0.657781262250098,"-8.8 [-13.8, -3.8]",challenger__market_informed better (CI excludes 0),"-6.9 [-14.5, +0.7]",no clear difference (CI includes 0),"+5.3 [+1.1, +9.5]",market_moneyline better (CI excludes 0)
+challenger__no_epa,2551,0.6257017231492294,0.21837845513244925,0.6479811838494708,"+1.0 [-2.3, +4.3]",no clear difference (CI includes 0),"+3.0 [-1.9, +8.0]",no clear difference (CI includes 0),"+15.2 [+7.9, +22.5]",market_moneyline better (CI excludes 0)

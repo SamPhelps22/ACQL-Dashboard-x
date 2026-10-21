@@ -1,0 +1,882 @@
+[
+ {
+  "season": 2010,
+  "inner_folds": [
+   2007,
+   2008,
+   2009
+  ],
+  "inner_games": 800,
+  "lr_C": 0.1,
+  "lr_inner_log_loss": {
+   "0.01": 0.6139,
+   "0.03": 0.61188,
+   "0.1": 0.61153,
+   "0.3": 0.61155,
+   "1.0": 0.61161
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.62171,
+   "1": 0.62728,
+   "2": 0.62906,
+   "3": 0.62601,
+   "4": 0.62439,
+   "5": 0.62945
+  },
+  "inner_log_loss": {
+   "elo": 0.61397,
+   "logistic": 0.61153,
+   "boosting": 0.62171,
+   "challenger": 0.61057
+  },
+  "calibration": {
+   "elo": {
+    "a": 1.0713749601954043,
+    "b": -0.011246918852475904
+   },
+   "logistic": {
+    "a": 1.066409715406327,
+    "b": -0.031317855598007545
+   },
+   "boosting": {
+    "a": 1.040929679815393,
+    "b": 0.023484436005535934
+   }
+  },
+  "stack_weights": {
+   "elo": 0.36815077270977714,
+   "logistic": 0.6888489132711655,
+   "boosting": -0.04532360468053232,
+   "intercept": -0.003875068659635024
+  },
+  "train_seasons": "2003-2009",
+  "train_games": 1868,
+  "lr_coefficients": {
+   "elo_diff": 0.4552,
+   "home_field": 0.0692,
+   "d_net_points": 0.2996,
+   "d_rest": -0.0124,
+   "d_off_bye": 0.1042,
+   "d_short_week": -0.0325,
+   "d_travel": 0.0356,
+   "d_tz": 0.1155,
+   "intercept": 0.3325009326650525
+  },
+  "gbm_top_features": {
+   "elo_prob": 1043.7,
+   "elo_diff": 1010.6,
+   "d_net_points": 825.7,
+   "d_off_points": 320.4,
+   "d_qb_sack": 309.3,
+   "d_qb_epa": 270.2,
+   "d_travel": 269.6,
+   "h_qb_exp": 146.7,
+   "d_def_points": 139.0,
+   "d_rest": 98.4,
+   "d_qb_ints": 78.4,
+   "d_qb_exp": 75.1,
+   "d_qb_cpoe": 74.8,
+   "d_qb_recent_starts": 73.1,
+   "a_qb_exp": 73.0
+  },
+  "seconds": 3.3
+ },
+ {
+  "season": 2011,
+  "inner_folds": [
+   2008,
+   2009,
+   2010
+  ],
+  "inner_games": 800,
+  "lr_C": 0.03,
+  "lr_inner_log_loss": {
+   "0.01": 0.62702,
+   "0.03": 0.62654,
+   "0.1": 0.6269,
+   "0.3": 0.6272,
+   "1.0": 0.62739
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.62885,
+   "1": 0.63504,
+   "2": 0.63777,
+   "3": 0.63684,
+   "4": 0.63498,
+   "5": 0.63556
+  },
+  "inner_log_loss": {
+   "elo": 0.62704,
+   "logistic": 0.62654,
+   "boosting": 0.62885,
+   "challenger": 0.6248
+  },
+  "calibration": {
+   "elo": {
+    "a": 0.9810190932473954,
+    "b": -0.0032184570038721154
+   },
+   "logistic": {
+    "a": 0.9975300400629316,
+    "b": -0.021050921452588668
+   },
+   "boosting": {
+    "a": 0.9900749206779905,
+    "b": 0.003078204511525234
+   }
+  },
+  "stack_weights": {
+   "elo": 0.3748675939419678,
+   "logistic": 0.36474477106279907,
+   "boosting": 0.3009234752147349,
+   "intercept": -0.01094630522499803
+  },
+  "train_seasons": "2003-2010",
+  "train_games": 2135,
+  "lr_coefficients": {
+   "elo_diff": 0.4084,
+   "home_field": 0.0457,
+   "d_net_points": 0.3044,
+   "d_rest": 0.0657,
+   "d_off_bye": 0.0305,
+   "d_short_week": -0.0373,
+   "d_travel": 0.0258,
+   "d_tz": 0.1089,
+   "intercept": 0.3180992333270974
+  },
+  "gbm_top_features": {
+   "d_net_points": 1245.0,
+   "elo_diff": 1000.2,
+   "elo_prob": 989.7,
+   "d_off_points": 337.8,
+   "d_qb_sack": 304.5,
+   "d_travel": 299.3,
+   "d_qb_epa": 225.9,
+   "h_qb_exp": 174.8,
+   "d_rest": 142.8,
+   "d_qb_exp": 117.0,
+   "d_def_points": 110.2,
+   "d_qb_recent_starts": 106.3,
+   "a_tz_shift": 104.8,
+   "d_qb_rush": 90.3,
+   "d_qb_cpoe": 85.4
+  },
+  "seconds": 3.0
+ },
+ {
+  "season": 2012,
+  "inner_folds": [
+   2009,
+   2010,
+   2011
+  ],
+  "inner_games": 801,
+  "lr_C": 0.03,
+  "lr_inner_log_loss": {
+   "0.01": 0.62037,
+   "0.03": 0.61991,
+   "0.1": 0.62029,
+   "0.3": 0.62058,
+   "1.0": 0.62073
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.61731,
+   "1": 0.62115,
+   "2": 0.62494,
+   "3": 0.62398,
+   "4": 0.62445,
+   "5": 0.62039
+  },
+  "inner_log_loss": {
+   "elo": 0.62232,
+   "logistic": 0.61991,
+   "boosting": 0.61731,
+   "challenger": 0.61588
+  },
+  "calibration": {
+   "elo": {
+    "a": 1.000492491720946,
+    "b": -0.014914937970735394
+   },
+   "logistic": {
+    "a": 1.0308236403963205,
+    "b": -0.02528476147746657
+   },
+   "boosting": {
+    "a": 1.10525310642497,
+    "b": -0.04545925091205678
+   }
+  },
+  "stack_weights": {
+   "elo": 0.10769849652327712,
+   "logistic": 0.26566635350029777,
+   "boosting": 0.6555960671389635,
+   "intercept": -0.007761088505495275
+  },
+  "train_seasons": "2003-2011",
+  "train_games": 2402,
+  "lr_coefficients": {
+   "elo_diff": 0.3879,
+   "home_field": 0.0663,
+   "d_net_points": 0.3464,
+   "d_rest": 0.0553,
+   "d_off_bye": 0.0318,
+   "d_short_week": -0.0473,
+   "d_travel": 0.0428,
+   "d_tz": 0.087,
+   "intercept": 0.3203104745180826
+  },
+  "gbm_top_features": {
+   "d_net_points": 1920.3,
+   "elo_diff": 871.6,
+   "elo_prob": 804.4,
+   "d_off_points": 569.2,
+   "d_travel": 354.9,
+   "d_qb_sack": 309.1,
+   "d_qb_epa": 277.3,
+   "h_qb_exp": 229.2,
+   "d_qb_exp": 125.8,
+   "d_qb_recent_starts": 122.9,
+   "d_qb_rush": 108.0,
+   "a_qb_exp": 101.0,
+   "d_qb_cpoe": 95.3,
+   "d_rest": 94.7,
+   "d_def_points": 84.6
+  },
+  "seconds": 2.8
+ },
+ {
+  "season": 2013,
+  "inner_folds": [
+   2010,
+   2011,
+   2012
+  ],
+  "inner_games": 800,
+  "lr_C": 0.03,
+  "lr_inner_log_loss": {
+   "0.01": 0.62708,
+   "0.03": 0.62689,
+   "0.1": 0.62725,
+   "0.3": 0.62749,
+   "1.0": 0.62759
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.62524,
+   "1": 0.62799,
+   "2": 0.62951,
+   "3": 0.62951,
+   "4": 0.63132,
+   "5": 0.62768
+  },
+  "inner_log_loss": {
+   "elo": 0.63058,
+   "logistic": 0.62689,
+   "boosting": 0.62524,
+   "challenger": 0.62394
+  },
+  "calibration": {
+   "elo": {
+    "a": 0.9666942930083573,
+    "b": -0.013017740678324816
+   },
+   "logistic": {
+    "a": 1.0047836658647022,
+    "b": -0.019186036655985454
+   },
+   "boosting": {
+    "a": 1.049033192160812,
+    "b": -0.04329773525208738
+   }
+  },
+  "stack_weights": {
+   "elo": -0.004613599947711416,
+   "logistic": 0.4108113499891901,
+   "boosting": 0.6175609039878155,
+   "intercept": -0.0059285757282159695
+  },
+  "train_seasons": "2003-2012",
+  "train_games": 2668,
+  "lr_coefficients": {
+   "elo_diff": 0.3887,
+   "home_field": 0.0792,
+   "d_net_points": 0.3481,
+   "d_rest": 0.0412,
+   "d_off_bye": 0.0425,
+   "d_short_week": -0.0487,
+   "d_travel": 0.0026,
+   "d_tz": 0.1146,
+   "intercept": 0.3208266676360845
+  },
+  "gbm_top_features": {
+   "d_net_points": 2128.4,
+   "elo_prob": 1136.6,
+   "elo_diff": 761.2,
+   "d_off_points": 614.6,
+   "d_qb_epa": 339.4,
+   "d_travel": 312.6,
+   "d_qb_sack": 273.4,
+   "h_qb_exp": 222.9,
+   "d_qb_recent_starts": 162.7,
+   "d_qb_rush": 127.5,
+   "d_qb_exp": 122.6,
+   "d_rest": 117.6,
+   "d_def_points": 80.4,
+   "d_qb_cpoe": 74.1,
+   "h_season_games": 66.8
+  },
+  "seconds": 3.6
+ },
+ {
+  "season": 2014,
+  "inner_folds": [
+   2011,
+   2012,
+   2013
+  ],
+  "inner_games": 799,
+  "lr_C": 0.1,
+  "lr_inner_log_loss": {
+   "0.01": 0.61345,
+   "0.03": 0.61249,
+   "0.1": 0.61244,
+   "0.3": 0.6125,
+   "1.0": 0.61252
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.6198,
+   "1": 0.6217,
+   "2": 0.62452,
+   "3": 0.62299,
+   "4": 0.62579,
+   "5": 0.62276
+  },
+  "inner_log_loss": {
+   "elo": 0.61782,
+   "logistic": 0.61244,
+   "boosting": 0.6198,
+   "challenger": 0.61202
+  },
+  "calibration": {
+   "elo": {
+    "a": 1.0571123900348012,
+    "b": 0.026094704001689242
+   },
+   "logistic": {
+    "a": 1.0685206829124405,
+    "b": 0.02682700415468362
+   },
+   "boosting": {
+    "a": 1.064158762788018,
+    "b": 0.019396008458495415
+   }
+  },
+  "stack_weights": {
+   "elo": 0.06049414473648344,
+   "logistic": 0.8427046956595716,
+   "boosting": 0.10492909970211481,
+   "intercept": -0.0020589500107784926
+  },
+  "train_seasons": "2003-2013",
+  "train_games": 2934,
+  "lr_coefficients": {
+   "elo_diff": 0.3726,
+   "home_field": 0.0937,
+   "d_net_points": 0.3914,
+   "d_rest": 0.0346,
+   "d_off_bye": 0.0477,
+   "d_short_week": -0.0602,
+   "d_travel": -0.0339,
+   "d_tz": 0.1332,
+   "intercept": 0.3341485415946833
+  },
+  "gbm_top_features": {
+   "d_net_points": 2855.0,
+   "elo_prob": 1001.2,
+   "elo_diff": 874.6,
+   "d_qb_epa": 461.5,
+   "d_travel": 294.5,
+   "h_qb_exp": 284.0,
+   "d_qb_recent_starts": 248.5,
+   "d_off_points": 200.3,
+   "d_qb_exp": 142.1,
+   "d_qb_rush": 140.3,
+   "d_def_points": 131.0,
+   "a_qb_exp": 113.1,
+   "d_qb_sack": 102.7,
+   "d_rest": 81.1,
+   "d_qb_cpoe": 79.5
+  },
+  "seconds": 3.5
+ },
+ {
+  "season": 2015,
+  "inner_folds": [
+   2012,
+   2013,
+   2014
+  ],
+  "inner_games": 798,
+  "lr_C": 1.0,
+  "lr_inner_log_loss": {
+   "0.01": 0.61102,
+   "0.03": 0.60971,
+   "0.1": 0.60936,
+   "0.3": 0.60923,
+   "1.0": 0.60919
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.61763,
+   "1": 0.61997,
+   "2": 0.62066,
+   "3": 0.62091,
+   "4": 0.6235,
+   "5": 0.62184
+  },
+  "inner_log_loss": {
+   "elo": 0.61437,
+   "logistic": 0.60919,
+   "boosting": 0.61763,
+   "challenger": 0.60846
+  },
+  "calibration": {
+   "elo": {
+    "a": 1.09643831249769,
+    "b": 0.027043749744145865
+   },
+   "logistic": {
+    "a": 1.0883283835808295,
+    "b": 0.03627505629572578
+   },
+   "boosting": {
+    "a": 1.0698860051878074,
+    "b": 0.02346512507883996
+   }
+  },
+  "stack_weights": {
+   "elo": 0.12024516857896499,
+   "logistic": 0.8312711767336879,
+   "boosting": 0.057355708599091365,
+   "intercept": -0.0024320892425771477
+  },
+  "train_seasons": "2003-2014",
+  "train_games": 3200,
+  "lr_coefficients": {
+   "elo_diff": 0.3788,
+   "home_field": 0.1051,
+   "d_net_points": 0.4079,
+   "d_rest": -0.0294,
+   "d_off_bye": 0.0896,
+   "d_short_week": -0.0952,
+   "d_travel": -0.0488,
+   "d_tz": 0.143,
+   "intercept": 0.3367285277881058
+  },
+  "gbm_top_features": {
+   "d_net_points": 3064.4,
+   "elo_prob": 1198.3,
+   "elo_diff": 1050.1,
+   "d_qb_epa": 607.2,
+   "d_travel": 256.9,
+   "h_qb_exp": 254.8,
+   "d_qb_recent_starts": 217.7,
+   "d_off_points": 151.5,
+   "d_qb_exp": 146.6,
+   "d_qb_sack": 131.9,
+   "d_def_points": 122.2,
+   "d_qb_rush": 106.4,
+   "a_qb_exp": 103.9,
+   "h_season_games": 87.0,
+   "d_rest": 83.0
+  },
+  "seconds": 3.7
+ },
+ {
+  "season": 2016,
+  "inner_folds": [
+   2013,
+   2014,
+   2015
+  ],
+  "inner_games": 799,
+  "lr_C": 0.3,
+  "lr_inner_log_loss": {
+   "0.01": 0.61834,
+   "0.03": 0.61775,
+   "0.1": 0.61771,
+   "0.3": 0.61769,
+   "1.0": 0.6177
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.62239,
+   "1": 0.6251,
+   "2": 0.62996,
+   "3": 0.62694,
+   "4": 0.63031,
+   "5": 0.6268
+  },
+  "inner_log_loss": {
+   "elo": 0.62048,
+   "logistic": 0.61769,
+   "boosting": 0.62239,
+   "challenger": 0.61698
+  },
+  "calibration": {
+   "elo": {
+    "a": 1.0455212347150256,
+    "b": 0.00596657935106345
+   },
+   "logistic": {
+    "a": 1.0309365592455153,
+    "b": 0.011101669990400184
+   },
+   "boosting": {
+    "a": 1.0411694219607246,
+    "b": -0.0012135193103385037
+   }
+  },
+  "stack_weights": {
+   "elo": 0.22160954895592586,
+   "logistic": 0.6014105862706334,
+   "boosting": 0.20663196219598248,
+   "intercept": -0.007666394135763547
+  },
+  "train_seasons": "2003-2015",
+  "train_games": 3467,
+  "lr_coefficients": {
+   "elo_diff": 0.4028,
+   "home_field": 0.0725,
+   "d_net_points": 0.374,
+   "d_rest": -0.0062,
+   "d_off_bye": 0.0814,
+   "d_short_week": -0.0723,
+   "d_travel": -0.0256,
+   "d_tz": 0.1391,
+   "intercept": 0.3256486687272778
+  },
+  "gbm_top_features": {
+   "d_net_points": 2708.3,
+   "elo_prob": 1562.9,
+   "elo_diff": 1359.3,
+   "d_qb_epa": 652.5,
+   "d_travel": 259.2,
+   "h_qb_exp": 214.2,
+   "d_qb_rush": 162.2,
+   "d_qb_recent_starts": 156.7,
+   "d_def_points": 149.7,
+   "d_qb_sack": 143.4,
+   "a_qb_exp": 132.7,
+   "d_qb_exp": 112.4,
+   "d_rest": 110.0,
+   "d_off_points": 109.1,
+   "d_qb_cpoe": 87.2
+  },
+  "seconds": 3.9
+ },
+ {
+  "season": 2017,
+  "inner_folds": [
+   2014,
+   2015,
+   2016
+  ],
+  "inner_games": 798,
+  "lr_C": 0.03,
+  "lr_inner_log_loss": {
+   "0.01": 0.62351,
+   "0.03": 0.62336,
+   "0.1": 0.62346,
+   "0.3": 0.62349,
+   "1.0": 0.62351
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.62345,
+   "1": 0.62831,
+   "2": 0.63151,
+   "3": 0.63105,
+   "4": 0.63258,
+   "5": 0.62949
+  },
+  "inner_log_loss": {
+   "elo": 0.62271,
+   "logistic": 0.62336,
+   "boosting": 0.62345,
+   "challenger": 0.62022
+  },
+  "calibration": {
+   "elo": {
+    "a": 1.036260599088397,
+    "b": -0.010205374078759967
+   },
+   "logistic": {
+    "a": 1.0360384066720991,
+    "b": -0.018363998970164122
+   },
+   "boosting": {
+    "a": 1.0846124246413187,
+    "b": -0.038011877336082384
+   }
+  },
+  "stack_weights": {
+   "elo": 0.3735291508220359,
+   "logistic": 0.2557904471766863,
+   "boosting": 0.41438309238584126,
+   "intercept": -0.011529689572603979
+  },
+  "train_seasons": "2003-2016",
+  "train_games": 3732,
+  "lr_coefficients": {
+   "elo_diff": 0.3924,
+   "home_field": 0.0632,
+   "d_net_points": 0.3636,
+   "d_rest": 0.0124,
+   "d_off_bye": 0.0666,
+   "d_short_week": -0.0553,
+   "d_travel": -0.0008,
+   "d_tz": 0.0977,
+   "intercept": 0.32807194201196516
+  },
+  "gbm_top_features": {
+   "d_net_points": 2505.7,
+   "elo_prob": 2338.8,
+   "elo_diff": 1129.8,
+   "d_qb_epa": 767.2,
+   "d_travel": 276.1,
+   "d_qb_sack": 178.8,
+   "d_qb_exp": 173.5,
+   "d_qb_recent_starts": 171.1,
+   "h_qb_exp": 160.5,
+   "d_off_points": 157.5,
+   "d_def_points": 118.6,
+   "a_qb_exp": 107.5,
+   "d_qb_rush": 104.0,
+   "d_rest": 88.0,
+   "d_qb_ints": 68.4
+  },
+  "seconds": 4.5
+ },
+ {
+  "season": 2018,
+  "inner_folds": [
+   2015,
+   2016,
+   2017
+  ],
+  "inner_games": 799,
+  "lr_C": 0.01,
+  "lr_inner_log_loss": {
+   "0.01": 0.63004,
+   "0.03": 0.6305,
+   "0.1": 0.63089,
+   "0.3": 0.63104,
+   "1.0": 0.63111
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.63168,
+   "1": 0.635,
+   "2": 0.63836,
+   "3": 0.63755,
+   "4": 0.63866,
+   "5": 0.63504
+  },
+  "inner_log_loss": {
+   "elo": 0.62957,
+   "logistic": 0.63004,
+   "boosting": 0.63168,
+   "challenger": 0.62812
+  },
+  "calibration": {
+   "elo": {
+    "a": 0.9774993844664499,
+    "b": -0.007414797259063898
+   },
+   "logistic": {
+    "a": 1.0373937207527972,
+    "b": -0.04054780992188618
+   },
+   "boosting": {
+    "a": 1.0001954463230764,
+    "b": -0.021777906044245888
+   }
+  },
+  "stack_weights": {
+   "elo": 0.4386082988438381,
+   "logistic": 0.3416390254027513,
+   "boosting": 0.25409475464899495,
+   "intercept": -0.00946923519262503
+  },
+  "train_seasons": "2003-2017",
+  "train_games": 3999,
+  "lr_coefficients": {
+   "elo_diff": 0.3685,
+   "home_field": 0.0594,
+   "d_net_points": 0.3559,
+   "d_rest": 0.0323,
+   "d_off_bye": 0.0379,
+   "d_short_week": -0.0561,
+   "d_travel": 0.0155,
+   "d_tz": 0.0758,
+   "intercept": 0.3240731875328433
+  },
+  "gbm_top_features": {
+   "elo_prob": 2468.8,
+   "d_net_points": 2364.6,
+   "elo_diff": 1526.1,
+   "d_qb_epa": 848.4,
+   "d_travel": 303.6,
+   "d_qb_sack": 217.3,
+   "d_qb_recent_starts": 204.4,
+   "d_def_points": 195.3,
+   "h_qb_exp": 147.9,
+   "a_qb_exp": 113.4,
+   "d_off_points": 108.9,
+   "d_qb_cpoe": 106.1,
+   "d_qb_rush": 100.3,
+   "d_rest": 96.6,
+   "d_qb_exp": 83.2
+  },
+  "seconds": 4.7
+ },
+ {
+  "season": 2019,
+  "inner_folds": [
+   2016,
+   2017,
+   2018
+  ],
+  "inner_games": 797,
+  "lr_C": 0.01,
+  "lr_inner_log_loss": {
+   "0.01": 0.62264,
+   "0.03": 0.62273,
+   "0.1": 0.62295,
+   "0.3": 0.62304,
+   "1.0": 0.62308
+  },
+  "gbm_setting": {
+   "num_leaves": 4,
+   "n_estimators": 150,
+   "learning_rate": 0.03,
+   "min_child_samples": 60
+  },
+  "gbm_inner_log_loss": {
+   "0": 0.62458,
+   "1": 0.62687,
+   "2": 0.62999,
+   "3": 0.6289,
+   "4": 0.62907,
+   "5": 0.62739
+  },
+  "inner_log_loss": {
+   "elo": 0.62623,
+   "logistic": 0.62264,
+   "boosting": 0.62458,
+   "challenger": 0.62138
+  },
+  "calibration": {
+   "elo": {
+    "a": 0.9991029718539449,
+    "b": 0.05251078145360949
+   },
+   "logistic": {
+    "a": 1.0880256056336373,
+    "b": 0.017438582223485245
+   },
+   "boosting": {
+    "a": 1.0573524180549092,
+    "b": 0.032203680546188836
+   }
+  },
+  "stack_weights": {
+   "elo": 0.08673491563486221,
+   "logistic": 0.5871195060567681,
+   "boosting": 0.3534218213262178,
+   "intercept": -0.009025645483946422
+  },
+  "train_seasons": "2003-2018",
+  "train_games": 4264,
+  "lr_coefficients": {
+   "elo_diff": 0.3505,
+   "home_field": 0.0649,
+   "d_net_points": 0.3736,
+   "d_rest": 0.0271,
+   "d_off_bye": 0.0481,
+   "d_short_week": -0.0573,
+   "d_travel": 0.0311,
+   "d_tz": 0.0496,
+   "intercept": 0.3307671407172196
+  },
+  "gbm_top_features": {
+   "d_net_points": 3636.1,
+   "elo_prob": 2000.4,
+   "elo_diff": 1145.7,
+   "d_qb_epa": 925.9,
+   "d_travel": 363.3,
+   "d_qb_recent_starts": 228.3,
+   "d_qb_sack": 156.8,
+   "d_def_points": 140.3,
+   "d_rest": 133.4,
+   "d_off_points": 123.9,
+   "d_qb_exp": 120.6,
+   "h_qb_exp": 110.9,
+   "a_qb_exp": 101.0,
+   "d_qb_cpoe": 72.6,
+   "d_qb_rush": 68.8
+  },
+  "seconds": 4.4
+ }
+]
