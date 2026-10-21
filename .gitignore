@@ -43,3 +43,6 @@ data/tracker/
 # Recap pictures made for the pool: this computer's own too
 data/recaps/
 data/logos/
+
+# Challenger raw downloads and aggregates (re-fetchable: python -m challenger fetch)
+data/challenger/

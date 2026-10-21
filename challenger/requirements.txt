@@ -1,0 +1,10 @@
+# Project Challenger - versions the stored backtests were produced with (Python 3.13.16).
+# Install: python -m pip install -r challenger/requirements.txt
+# The evaluation stage (challenger/arena) also imports the dashboard's own modules
+# (acql.analytics, acql.model.*), which need only numpy and pandas - not Qt.
+numpy==2.5.3
+pandas==3.0.5
+pyarrow==26.0.0
+scikit-learn==1.9.1
+lightgbm==4.7.0
+scipy==1.18.1

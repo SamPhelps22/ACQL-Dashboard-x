@@ -1,0 +1,31 @@
+name: Challenger
+
+# Project Challenger's own suite (synthetic data; no network, no Qt). Separate
+# from tests.yml so the dashboard's pipeline is untouched.
+on:
+  push:
+    branches: ["**"]
+    paths: ["challenger/**", "tests/test_challenger.py", ".github/workflows/challenger.yml"]
+  pull_request:
+    paths: ["challenger/**", "tests/test_challenger.py", ".github/workflows/challenger.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r challenger/requirements.txt
+      - name: Challenger tests
+        run: python tests/test_challenger.py
+      - name: Stored forecasts and journals still match their hashes
+        run: python -m challenger verify
