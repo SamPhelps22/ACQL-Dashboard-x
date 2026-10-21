@@ -1,0 +1,102 @@
+{
+ "note": "2026 weeks 1, 2, 3, 4, 5 with Deadeye inputs in the repository (79 games). Deadeye recomputed = its own code at the default share on the tracker files / recorded inputs (weeks 1-2 had typed lines and no models, so Deadeye = the line there). Market is the nflverse closing moneyline. Tiny sample: no conclusion is possible from it.",
+ "rows": [
+  {
+   "model": "C_situational",
+   "n": 78,
+   "log_loss": 0.6274144840561312,
+   "brier": 0.21951325195814164,
+   "accuracy": 0.6025641025641025,
+   "vs_deadeye": -0.02172280302857339,
+   "lo": -0.050323060828925084,
+   "hi": 0.00687745477177832
+  },
+  {
+   "model": "E_bayes",
+   "n": 78,
+   "log_loss": 0.6355756975479795,
+   "brier": 0.22320636381853254,
+   "accuracy": 0.6025641025641025,
+   "vs_deadeye": -0.013561589536725075,
+   "lo": -0.04368773977388953,
+   "hi": 0.01673202688695144
+  },
+  {
+   "model": "challenger_elo",
+   "n": 78,
+   "log_loss": 0.6359389330515964,
+   "brier": 0.22362667296847205,
+   "accuracy": 0.6282051282051282,
+   "vs_deadeye": -0.01319835403310803,
+   "lo": -0.04596835887814716,
+   "hi": 0.018338803396580936
+  },
+  {
+   "model": "A_qb_weekstart",
+   "n": 78,
+   "log_loss": 0.6366749612078785,
+   "brier": 0.22314825857853535,
+   "accuracy": 0.6410256410256411,
+   "vs_deadeye": -0.01246232587682595,
+   "lo": -0.04126390929552873,
+   "hi": 0.014761221915586075
+  },
+  {
+   "model": "A_qb_confirmed",
+   "n": 78,
+   "log_loss": 0.6367189495994243,
+   "brier": 0.22298901017245043,
+   "accuracy": 0.6538461538461539,
+   "vs_deadeye": -0.012418337485280113,
+   "lo": -0.03590359987499463,
+   "hi": 0.005116328978174047
+  },
+  {
+   "model": "B_drive_sim",
+   "n": 78,
+   "log_loss": 0.6368245203845248,
+   "brier": 0.22303959775641025,
+   "accuracy": 0.5897435897435898,
+   "vs_deadeye": -0.012312766700179759,
+   "lo": -0.032964494855373935,
+   "hi": 0.012062988439730877
+  },
+  {
+   "model": "F_matchup_interaction",
+   "n": 78,
+   "log_loss": 0.6465269897325386,
+   "brier": 0.228163523922871,
+   "accuracy": 0.6025641025641025,
+   "vs_deadeye": -0.0026102973521656956,
+   "lo": -0.0395750960950179,
+   "hi": 0.03961355562776489
+  },
+  {
+   "model": "deadeye_recomputed",
+   "n": 78,
+   "log_loss": 0.6491372870847043,
+   "brier": 0.22857328649477943,
+   "accuracy": 0.6282051282051282
+  },
+  {
+   "model": "market_ml_close",
+   "n": 78,
+   "log_loss": 0.6507537097590552,
+   "brier": 0.22890252155360635,
+   "accuracy": 0.6410256410256411,
+   "vs_deadeye": 0.0016164226743507802,
+   "lo": -0.007374794582701705,
+   "hi": 0.010618751756781732
+  },
+  {
+   "model": "deadeye_line_only_proxy",
+   "n": 78,
+   "log_loss": 0.6508212747644038,
+   "brier": 0.22876146922253027,
+   "accuracy": 0.6410256410256411,
+   "vs_deadeye": 0.0016839876796993075,
+   "lo": -0.010807533446683684,
+   "hi": 0.018675984258531904
+  }
+ ]
+}

@@ -149,8 +149,8 @@ Model minus benchmark, per game; 95% interval from resampling whole weeks (2000 
 | phase | market_ml_close | deadeye_line_only_proxy | D_market_full | G_market_stack | G_free_stack | G_free_equal | A_qb_confirmed | A_qb_weekstart | E_bayes | C_situational | B_drive_sim | challenger_elo | F_matchup_interaction |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | weeks 1-4 | 0.6363 | 0.6383 | 0.6376 | 0.6360 | 0.6434 | 0.6423 | 0.6512 | 0.6535 | 0.6468 | 0.6512 | 0.6507 | 0.6463 | 0.6552 |
-| weeks 10-18 | 0.6001 | 0.5973 | 0.5993 | 0.6059 | 0.6278 | 0.6273 | 0.6177 | 0.6233 | 0.6262 | 0.6272 | 0.6314 | 0.6298 | 0.6299 |
 | weeks 5-9 | 0.6089 | 0.6097 | 0.6105 | 0.6086 | 0.6235 | 0.6234 | 0.6193 | 0.6220 | 0.6244 | 0.6268 | 0.6276 | 0.6254 | 0.6327 |
+| weeks 10-18 | 0.6001 | 0.5973 | 0.5993 | 0.6059 | 0.6278 | 0.6273 | 0.6177 | 0.6233 | 0.6262 | 0.6272 | 0.6314 | 0.6298 | 0.6299 |
 
 ## Does explicit uncertainty help? (E_bayes vs E_bayes_plugin)
 
@@ -371,7 +371,7 @@ Components were selected each season by forward selection on earlier seasons' ou
 
 ### Error correlation (market-free components)
 
-Correlation of (forecast - outcome) across games. High correlation = little to gain from combining.
+Correlation of (forecast - outcome) across games. Outcome noise is shared by every model, so these sit near 1 for any set of decent forecasts; the incremental-value table below is the sharper test.
 
 | component | A_qb_weekstart | B_drive_sim | C_situational | E_bayes | F_matchup_additive | F_matchup_interaction | challenger_elo | logistic_pointdiff |
 |---|---|---|---|---|---|---|---|---|
@@ -401,7 +401,7 @@ Walk-forward logistic stack with vs without the component (negative = it adds in
 
 ### Error correlation (market-informed components)
 
-Correlation of (forecast - outcome) across games. High correlation = little to gain from combining.
+Correlation of (forecast - outcome) across games. Outcome noise is shared by every model, so these sit near 1 for any set of decent forecasts; the incremental-value table below is the sharper test.
 
 | component | A_qb_confirmed | A_qb_weekstart | B_drive_sim | C_sit_weather | C_situational | D_market_full | E_bayes | F_matchup_additive | F_matchup_interaction | challenger_elo | logistic_pointdiff | market_ml_close |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -443,32 +443,32 @@ Each row compares two walk-forward logistic regressions on identical games (pena
 
 | family | comparison | n | ll_with | ll_without | diff | lo | hi | p_improves | verdict |
 |---|---|---|---|---|---|---|---|---|---|
-| qb_weekstart | market + family vs market | 3107.0000 | 0.6128 | 0.6115 | 0.0014 | -0.0004 | 0.0031 | 0.0670 | no clear effect |
-| qb_weekstart | football + family vs football | 3107.0000 | 0.6283 | 0.6310 | -0.0027 | -0.0058 | 0.0005 | 0.9490 | no clear effect |
-| qb_weekstart | full vs full without family | 3107.0000 | 0.6208 | 0.6198 | 0.0010 | -0.0006 | 0.0025 | 0.1185 | no clear effect |
-| qb_confirmed | market + family vs market | 3107.0000 | 0.6126 | 0.6115 | 0.0011 | -0.0008 | 0.0030 | 0.1435 | no clear effect |
-| qb_confirmed | football + family vs football | 3107.0000 | 0.6239 | 0.6310 | -0.0071 | -0.0117 | -0.0022 | 0.9980 | adds (CI < 0) |
-| qb_confirmed | full vs full without family | 3107.0000 | 0.6208 | 0.6198 | 0.0010 | -0.0008 | 0.0026 | 0.1295 | no clear effect |
-| rest_travel | market + family vs market | 3107.0000 | 0.6136 | 0.6115 | 0.0021 | -0.0006 | 0.0047 | 0.0695 | no clear effect |
-| rest_travel | football + family vs football | 3107.0000 | 0.6330 | 0.6310 | 0.0020 | -0.0010 | 0.0050 | 0.1020 | no clear effect |
-| rest_travel | full vs full without family | 3107.0000 | 0.6208 | 0.6188 | 0.0020 | -0.0008 | 0.0048 | 0.0780 | no clear effect |
-| environment | market + family vs market | 3107.0000 | 0.6131 | 0.6115 | 0.0016 | 0.0002 | 0.0032 | 0.0135 | hurts (CI > 0) |
-| environment | football + family vs football | 3107.0000 | 0.6326 | 0.6310 | 0.0016 | 0.0001 | 0.0034 | 0.0200 | hurts (CI > 0) |
-| environment | full vs full without family | 3107.0000 | 0.6208 | 0.6190 | 0.0018 | 0.0006 | 0.0032 | 0.0020 | hurts (CI > 0) |
-| tactical | market + family vs market | 3107.0000 | 0.6157 | 0.6115 | 0.0042 | 0.0019 | 0.0065 | 0.0000 | hurts (CI > 0) |
-| tactical | football + family vs football | 3107.0000 | 0.6350 | 0.6310 | 0.0040 | 0.0017 | 0.0064 | 0.0000 | hurts (CI > 0) |
-| tactical | full vs full without family | 3107.0000 | 0.6208 | 0.6171 | 0.0037 | 0.0014 | 0.0062 | 0.0015 | hurts (CI > 0) |
-| team_strength | market + family vs market | 3107.0000 | 0.6120 | 0.6115 | 0.0005 | -0.0006 | 0.0016 | 0.1830 | no clear effect |
-| team_strength | full vs full without family | 3107.0000 | 0.6208 | 0.6209 | -0.0001 | -0.0012 | 0.0010 | 0.5735 | no clear effect |
-| drive_sim | market + family vs market | 3107.0000 | 0.6117 | 0.6115 | 0.0002 | -0.0005 | 0.0010 | 0.2630 | no clear effect |
-| drive_sim | football + family vs football | 3107.0000 | 0.6307 | 0.6310 | -0.0003 | -0.0012 | 0.0006 | 0.7315 | no clear effect |
-| drive_sim | full vs full without family | 3107.0000 | 0.6208 | 0.6207 | 0.0001 | -0.0003 | 0.0004 | 0.3530 | no clear effect |
-| unit_ratings | market + family vs market | 3107.0000 | 0.6114 | 0.6115 | -0.0001 | -0.0004 | 0.0003 | 0.7230 | no clear effect |
-| unit_ratings | football + family vs football | 3107.0000 | 0.6312 | 0.6310 | 0.0002 | -0.0002 | 0.0006 | 0.1410 | no clear effect |
-| unit_ratings | full vs full without family | 3107.0000 | 0.6208 | 0.6217 | -0.0009 | -0.0020 | 0.0003 | 0.9315 | no clear effect |
-| market_detail | market + family vs market | 3107.0000 | 0.6115 | 0.6115 | 0.0000 | -0.0014 | 0.0014 | 0.4640 | no clear effect |
-| market_detail | football + family vs football | 3107.0000 | 0.6260 | 0.6310 | -0.0049 | -0.0085 | -0.0013 | 0.9970 | adds (CI < 0) |
-| market_detail | full vs full without family | 3107.0000 | 0.6208 | 0.6210 | -0.0002 | -0.0015 | 0.0011 | 0.5860 | no clear effect |
+| qb_weekstart | market + family vs market | 3107 | 0.6128 | 0.6115 | 0.0014 | -0.0004 | 0.0031 | 0.0670 | no clear effect |
+| qb_weekstart | football + family vs football | 3107 | 0.6283 | 0.6310 | -0.0027 | -0.0058 | 0.0005 | 0.9490 | no clear effect |
+| qb_weekstart | full vs full without family | 3107 | 0.6208 | 0.6198 | 0.0010 | -0.0006 | 0.0025 | 0.1185 | no clear effect |
+| qb_confirmed | market + family vs market | 3107 | 0.6126 | 0.6115 | 0.0011 | -0.0008 | 0.0030 | 0.1435 | no clear effect |
+| qb_confirmed | football + family vs football | 3107 | 0.6239 | 0.6310 | -0.0071 | -0.0117 | -0.0022 | 0.9980 | adds (CI < 0) |
+| qb_confirmed | full vs full without family | 3107 | 0.6208 | 0.6198 | 0.0010 | -0.0008 | 0.0026 | 0.1295 | no clear effect |
+| rest_travel | market + family vs market | 3107 | 0.6136 | 0.6115 | 0.0021 | -0.0006 | 0.0047 | 0.0695 | no clear effect |
+| rest_travel | football + family vs football | 3107 | 0.6330 | 0.6310 | 0.0020 | -0.0010 | 0.0050 | 0.1020 | no clear effect |
+| rest_travel | full vs full without family | 3107 | 0.6208 | 0.6188 | 0.0020 | -0.0008 | 0.0048 | 0.0780 | no clear effect |
+| environment | market + family vs market | 3107 | 0.6131 | 0.6115 | 0.0016 | 0.0002 | 0.0032 | 0.0135 | hurts (CI > 0) |
+| environment | football + family vs football | 3107 | 0.6326 | 0.6310 | 0.0016 | 0.0001 | 0.0034 | 0.0200 | hurts (CI > 0) |
+| environment | full vs full without family | 3107 | 0.6208 | 0.6190 | 0.0018 | 0.0006 | 0.0032 | 0.0020 | hurts (CI > 0) |
+| tactical | market + family vs market | 3107 | 0.6157 | 0.6115 | 0.0042 | 0.0019 | 0.0065 | 0.0000 | hurts (CI > 0) |
+| tactical | football + family vs football | 3107 | 0.6350 | 0.6310 | 0.0040 | 0.0017 | 0.0064 | 0.0000 | hurts (CI > 0) |
+| tactical | full vs full without family | 3107 | 0.6208 | 0.6171 | 0.0037 | 0.0014 | 0.0062 | 0.0015 | hurts (CI > 0) |
+| team_strength | market + family vs market | 3107 | 0.6120 | 0.6115 | 0.0005 | -0.0006 | 0.0016 | 0.1830 | no clear effect |
+| team_strength | full vs full without family | 3107 | 0.6208 | 0.6209 | -0.0001 | -0.0012 | 0.0010 | 0.5735 | no clear effect |
+| drive_sim | market + family vs market | 3107 | 0.6117 | 0.6115 | 0.0002 | -0.0005 | 0.0010 | 0.2630 | no clear effect |
+| drive_sim | football + family vs football | 3107 | 0.6307 | 0.6310 | -0.0003 | -0.0012 | 0.0006 | 0.7315 | no clear effect |
+| drive_sim | full vs full without family | 3107 | 0.6208 | 0.6207 | 0.0001 | -0.0003 | 0.0004 | 0.3530 | no clear effect |
+| unit_ratings | market + family vs market | 3107 | 0.6114 | 0.6115 | -0.0001 | -0.0004 | 0.0003 | 0.7230 | no clear effect |
+| unit_ratings | football + family vs football | 3107 | 0.6312 | 0.6310 | 0.0002 | -0.0002 | 0.0006 | 0.1410 | no clear effect |
+| unit_ratings | full vs full without family | 3107 | 0.6208 | 0.6217 | -0.0009 | -0.0020 | 0.0003 | 0.9315 | no clear effect |
+| market_detail | market + family vs market | 3107 | 0.6115 | 0.6115 | 0.0000 | -0.0014 | 0.0014 | 0.4640 | no clear effect |
+| market_detail | football + family vs football | 3107 | 0.6260 | 0.6310 | -0.0049 | -0.0085 | -0.0013 | 0.9970 | adds (CI < 0) |
+| market_detail | full vs full without family | 3107 | 0.6208 | 0.6210 | -0.0002 | -0.0015 | 0.0011 | 0.5860 | no clear effect |
 
 ### Not run (no usable historical data)
 

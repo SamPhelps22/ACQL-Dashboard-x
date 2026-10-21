@@ -1,0 +1,5 @@
+{
+ "frozen_at": "2026-10-21T18:11:14Z",
+ "commit": "06451f6b080c0abf6f3ed5b9131d1ae90e91ac3b",
+ "note": "configs, features, model list and selection rules frozen after the 2012-2023 development run; holdout 2024-2025 not yet scored"
+}

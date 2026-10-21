@@ -23,7 +23,7 @@ DEV_FROM, DEV_TO = 2012, 2023
 #: The frozen holdout. Scored once, after configs were frozen (see HOLDOUT_FROZEN_AT).
 HOLDOUT = (2024, 2025)
 #: Commit / date at which feature definitions, configs and selection rules were frozen.
-HOLDOUT_FROZEN_AT = None   # set by `python -m research_lab freeze`
+HOLDOUT_FROZEN_AT = "see research_lab/experiments/freeze.json"   # written by `python -m research_lab freeze`
 #: The season in progress (prospective shadow forecasting).
 CURRENT_SEASON = 2026
 

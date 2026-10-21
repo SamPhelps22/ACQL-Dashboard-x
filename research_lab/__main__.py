@@ -110,11 +110,16 @@ def main(argv=None) -> int:
         from .reports import build
         build.all_reports()
     elif cmd == "shadow":
-        from .shadow import journal
-        print(journal.forecast_next())
+        from .shadow import journal, report
+        r = journal.forecast_next()
+        print(r)
+        if "week" in r:
+            print(report.write(r["season"], r["week"]))
     elif cmd == "grade":
-        from .shadow import journal
+        from .shadow import journal, report
         print(journal.grade())
+        for s_, w_ in sorted({(e["season"], e["week"]) for e in journal.read()}):
+            print(report.write(s_, w_))
     elif cmd == "report":
         from .reports import build
         build.all_reports()

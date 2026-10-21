@@ -99,6 +99,10 @@ def ensemble_section(tag: str) -> list[str]:
     fc = _load(f"forecasts_all_{tag}.csv.gz")
     if ch is None or fc is None:
         return []
+    if tag == "holdout":           # incremental-value stacks are taught on the earlier (development) seasons
+        dev = _load("forecasts_dev.csv.gz")
+        if dev is not None:
+            fc = pd.concat([dev, fc]).drop_duplicates(["game_id", "model"], keep="last")
     from ..data import games
     from ..ensemble import stack
     from ..metrics.scoring import block_bootstrap
@@ -115,9 +119,11 @@ def ensemble_section(tag: str) -> list[str]:
     seasons = [s for s in sorted(scored) if s >= (config.DEV_FROM if tag == "dev" else config.HOLDOUT[0])]
     for label, comps in (("market-free", pipeline.FREE), ("market-informed", pipeline.INFORMED)):
         sub = fc[fc["season"].isin(seasons)]
+        seasons = [s for s in seasons if s in set(sub["season"])]
         cor = stack.error_correlation(sub, g, comps)
         L += [f"### Error correlation ({label} components)", "",
-              "Correlation of (forecast - outcome) across games. High correlation = little to gain from combining.", "",
+              "Correlation of (forecast - outcome) across games. Outcome noise is shared by every model, so these "
+              "sit near 1 for any set of decent forecasts; the incremental-value table below is the sharper test.", "",
               md.table(cor.reset_index().rename(columns={"model": "component"}), 2), ""]
         inc = stack.incremental(fc, g, comps, seasons)
         rows = []
@@ -142,7 +148,7 @@ def ablation_section(tag: str) -> list[str]:
             "Each row compares two walk-forward logistic regressions on identical games (penalty fixed in advance). "
             "`diff` = log loss with the family minus without; negative = the family adds information. "
             "Every run is in `research_lab/experiments/registry.jsonl`, including failures.", "",
-            md.table(ok[["family", "comparison", "n", "ll_with", "ll_without", "diff", "lo", "hi", "p_improves", "verdict"]], 4), "",
+            md.table(ok.assign(n=ok["n"].astype(int))[["family", "comparison", "n", "ll_with", "ll_without", "diff", "lo", "hi", "p_improves", "verdict"]], 4), "",
             "### Not run (no usable historical data)", "", md.table(nr[["family", "note"]]), ""]
 
 

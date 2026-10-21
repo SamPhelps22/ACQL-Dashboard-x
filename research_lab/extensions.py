@@ -39,6 +39,11 @@ def model_h(store: Store | None = None, log=print) -> dict:
                      ll_b=float(scoring.log_loss(w[b], w["home_win"])[w["home_win"].isin([0, 1])].mean()))
             rows.append({k: r[k] for k in ("period", "a", "b", "n", "ll_a", "ll_b", "diff", "lo", "hi")})
     out["rows"] = rows
+    from .experiments import registry
+    for r in rows:
+        registry.record("model_h", f"{r['a']} vs {r['b']} ({r['period']})", {"stats": list(scheme.STATS)}, "ok",
+                        {k: r[k] for k in ("n", "ll_a", "ll_b", "diff", "lo", "hi")}, test_period=r["period"],
+                        train_cutoff=f"seasons {scheme.FIRST_TRAIN}+ before each week")
     (config.OUTPUTS / "model_h.json").write_text(json.dumps(out, indent=1))
     return out
 
@@ -75,5 +80,8 @@ def current_season(store: Store | None = None, log=print) -> dict:
                    "recorded inputs (weeks 1-2 had typed lines and no models, so Deadeye = the line there). "
                    "Market is the nflverse closing moneyline. Tiny sample: no conclusion is possible from it.",
            "rows": sorted(rows, key=lambda r: r["log_loss"])}
+    from .experiments import registry
+    registry.record("current_season", "2026 to date vs Deadeye recomputed", {"weeks": [int(x) for x in sorted(m["week"].unique())]},
+                    "ok", {r["model"]: r["log_loss"] for r in rows}, test_period="2026 (retrospective reconstruction)")
     (config.OUTPUTS / "deadeye_2026.json").write_text(json.dumps(out, indent=1, default=float))
     return out
