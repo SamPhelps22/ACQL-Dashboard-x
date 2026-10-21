@@ -43,3 +43,6 @@ data/tracker/
 # Recap pictures made for the pool: this computer's own too
 data/recaps/
 data/logos/
+
+# Operation Sunday state: journal, experiments, artifacts, cached data (this computer's own)
+data/operation_sunday/

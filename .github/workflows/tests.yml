@@ -68,6 +68,9 @@ jobs:
           python tests/test_calibration.py
           python tests/test_gameday_live.py
 
+      - name: Operation Sunday (weekly learning and Thursday lock, shadow only)
+        run: python tests/test_operation_sunday.py
+
       - name: The app's own checks
         run: python -m acql.checks
 
