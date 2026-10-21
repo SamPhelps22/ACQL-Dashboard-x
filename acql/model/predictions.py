@@ -772,8 +772,9 @@ def save(week: int, forecasts: list[Forecast], source: str = "") -> None:
             "imported": time.time(),
             "games": [asdict(f) for f in forecasts],
         })
-    except store.StoreError:
-        pass
+    except store.StoreError as exc:
+        from .. import logbook
+        logbook.trouble(f"forecast file for week {week} not kept", exc)
 
 
 def _with_odds(week: int, games: list[Forecast], imported: object) -> list[Forecast]:

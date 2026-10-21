@@ -21,6 +21,7 @@ import mimetypes
 import smtplib
 import ssl
 import sys
+import time
 from dataclasses import asdict, dataclass, field
 from email.message import EmailMessage
 from pathlib import Path
@@ -161,24 +162,45 @@ def build_message(settings: MailSettings, image: Path, subject: str, summary: st
     return msg
 
 
-def send(settings: MailSettings, message: EmailMessage, *, smtp_factory=None) -> None:
-    """Send through Gmail. Raises MailError with a plain-English reason."""
+#: A scheduled send that finds the network down (a laptop just woken, a DNS blip) tries again.
+RETRIES = 3
+RETRY_PAUSE = 45
+
+
+def send(settings: MailSettings, message: EmailMessage, *, smtp_factory=None,
+         attempts: int | None = None, pause: float | None = None, sleep=None) -> None:
+    """Send through Gmail. Raises MailError with a plain-English reason.
+
+    A refused sign-in fails at once. A connection that cannot be made is tried
+    again a few times, `pause` seconds apart, before it gives up."""
     factory = smtp_factory or (
         lambda: smtplib.SMTP_SSL(GMAIL_HOST, GMAIL_PORT, timeout=TIMEOUT,
                                  context=ssl.create_default_context())
     )
-    try:
-        with factory() as server:
-            server.login(settings.sender, settings.password)
-            server.send_message(message)
-    except smtplib.SMTPAuthenticationError as exc:
-        raise MailError(
-            "Gmail turned down the sign-in. It needs an app password, not your "
-            f"normal one - make one at {APP_PASSWORD_PAGE} and enter it under "
-            "“Email settings”."
-        ) from exc
-    except (OSError, smtplib.SMTPException) as exc:
-        raise MailError(f"Couldn't reach Gmail to send it ({exc}). Check the connection and try again.") from exc
+    attempts = max(1, RETRIES if attempts is None else attempts)
+    pause = RETRY_PAUSE if pause is None else pause
+    sleep = sleep or time.sleep
+    for attempt in range(1, attempts + 1):
+        sent = False
+        try:
+            with factory() as server:
+                server.login(settings.sender, settings.password)
+                server.send_message(message)
+                sent = True
+            return
+        except smtplib.SMTPAuthenticationError as exc:
+            raise MailError(
+                "Gmail turned down the sign-in. It needs an app password, not your "
+                f"normal one - make one at {APP_PASSWORD_PAGE} and enter it under "
+                "“Email settings”."
+            ) from exc
+        except (OSError, smtplib.SMTPException) as exc:
+            if sent:
+                return                    # delivered; only closing the connection failed - never send twice
+            if attempt == attempts:
+                raise MailError(f"Couldn't reach Gmail to send it ({exc}), after {attempts} "
+                                "tries. Check the connection and try again.") from exc
+            sleep(pause)
 
 
 class MailError(Exception):

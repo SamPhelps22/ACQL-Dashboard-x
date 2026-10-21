@@ -337,7 +337,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
             for sql, args in statements:
                 conn.execute(sql, args)
             conn.execute("COMMIT")
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            from . import logbook
+            logbook.trouble("bringing in the old data files failed", exc)
             try:
                 conn.execute("ROLLBACK")
             except sqlite3.Error:

@@ -360,6 +360,19 @@ def _timelines(season) -> int:
     return kept
 
 
+def _retrying(call, error: type, *, tries: int = 3, pause: float = 60, sleep=time.sleep):
+    """`call()`, tried again after `pause` seconds when it raises `error` (a connection
+    that dropped or timed out), up to `tries` times; the last failure is raised."""
+    for attempt in range(1, tries + 1):
+        try:
+            return call()
+        except error as exc:
+            if attempt == tries:
+                raise
+            _log(f"try {attempt} of {tries} failed ({exc}); trying again in {pause:.0f}s")
+            sleep(pause)
+
+
 def _publish(season) -> str | None:
     """The website, brought up to date when something it shows has changed -
     the same steps as the window's AutoPublisher, on this thread."""
@@ -392,7 +405,8 @@ def _publish(season) -> str | None:
     except Exception as exc:  # noqa: BLE001
         _log(f"home-screen icon failed: {exc!r}")
     week = max(weeks)
-    url = webpublish.publish(settings, page, message=f"After week {week} (scheduled)", files=files)
+    url = _retrying(lambda: webpublish.publish(settings, page, message=f"After week {week} (scheduled)",
+                                               files=files), webpublish.WebPublishError)
     published(data, week, url)
     _log(f"website updated: {url}")
     _alert("results", lambda: pushalerts.results_in(week, url))

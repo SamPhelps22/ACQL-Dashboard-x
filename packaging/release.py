@@ -40,7 +40,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from acql import autoupdate, updater  # noqa: E402
+import guard  # noqa: E402
 
 #: What an update carries: these folders whole, and these files.
 FOLDERS = ("acql/", "tests/", "packaging/")
@@ -148,7 +151,10 @@ def main() -> int:
     args = parser.parse_args()
 
     commit = git("rev-parse", args.commit).strip()
-    since = git("rev-parse", args.since).strip() if args.since else last_release()
+    broken = guard.problems(guard.tracked_files(commit))
+    if broken:
+        raise SystemExit("Not releasing: the committed code is broken.\n  " + "\n  ".join(broken))
+    since =git("rev-parse", args.since).strip() if args.since else last_release()
     version = version_at(commit)
     if since and updater.version_tuple(version) <= updater.version_tuple(version_at(since)) and not args.check:
         raise SystemExit(f"The version is still {version}, as it was at the last release: raise it in "

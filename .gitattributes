@@ -1,0 +1,12 @@
+# One line ending in the repository, whatever Windows or git settings say.
+# Without this, git shows files as changed when only their line endings differ.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.xls binary
+*.xlsx binary
+*.gz binary

@@ -1,7 +1,9 @@
 name: Tests
 
-# Every push and pull request: the test suites, the app's own checks, and a
+# Every push and pull request: a look for leftover merge markers and code that
+# does not compile, the test suites, the app's own checks, and a
 # start-to-finish run of the window (every page drawn once, then closed).
+# Each small suite is its own step so a red run names the one that failed.
 on:
   push:
     branches: ["**"]
@@ -39,6 +41,9 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: No leftover merge markers, everything compiles
+        run: python packaging/guard.py
+
       - name: Install Qt's runtime libraries
         if: runner.os == 'Linux'
         run: |
@@ -53,20 +58,41 @@ jobs:
       - name: The dashboard's tests
         run: python tests/run_tests.py
 
+      - name: The release guard's tests
+        run: python tests/test_guard.py
+
+      - name: Mail retry tests
+        run: python tests/test_mail_retry.py
+
       - name: The training ground's tests
         run: python tests/test_training.py
 
       - name: The PFM ratings feed and study (shadow only)
         run: python tests/test_pfm.py
 
-      - name: The smaller suites (chaos, model lab, phone alerts, Sunday brief, calibration, game day live)
-        run: |
-          python tests/test_chaos.py
-          python tests/test_model_lab.py
-          python tests/test_pushalerts.py
-          python tests/test_sunday.py
-          python tests/test_calibration.py
-          python tests/test_gameday_live.py
+      - name: Chaos simulator tests
+        if: always()
+        run: python tests/test_chaos.py
+
+      - name: Model lab tests
+        if: always()
+        run: python tests/test_model_lab.py
+
+      - name: Phone alert tests
+        if: always()
+        run: python tests/test_pushalerts.py
+
+      - name: Sunday brief tests
+        if: always()
+        run: python tests/test_sunday.py
+
+      - name: Calibration tests
+        if: always()
+        run: python tests/test_calibration.py
+
+      - name: Game day live tests
+        if: always()
+        run: python tests/test_gameday_live.py
 
       - name: The app's own checks
         run: python -m acql.checks

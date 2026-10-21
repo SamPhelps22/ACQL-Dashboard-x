@@ -1037,8 +1037,9 @@ def _write_store(mapping: dict) -> None:
     from .. import store
     try:
         store.replace("picks", mapping)
-    except store.StoreError:
-        pass
+    except store.StoreError as exc:
+        from .. import logbook
+        logbook.trouble("pick sheets not saved", exc)
 
 
 #: The graded copy of each week, kept beside the sheet as it went out.
@@ -1141,8 +1142,9 @@ def save(week: WeekPicks) -> None:
             pass                # the blank sheet came after the full one
         elif not _keeps_place(held, week):
             store.put("picks", str(week.week), entry)
-    except store.StoreError:
-        pass
+    except store.StoreError as exc:
+        from .. import logbook
+        logbook.trouble(f"week {week.week} pick sheet not saved", exc)
     # A sheet saved now is this season's until the next load says otherwise.
     _OTHER_SEASON.discard(week.week)
 
