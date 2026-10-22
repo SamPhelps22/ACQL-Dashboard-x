@@ -912,6 +912,15 @@ def write(study: Study) -> Path:
     except Exception:  # noqa: BLE001 - the report stands without its one-line answer
         import logging
         logging.getLogger("acql.training").exception("the verdict could not be written")
+    try:
+        from . import journal, scorecards, verdict as said
+        scorecards.write(study, folder, said.IN_USE)
+        cards = json.loads((folder / scorecards.FILE).read_text(encoding="utf-8"))
+        head = study.headline
+        journal.record(cards, head.result.games[head.keep] if head is not None else None, folder, root)
+    except Exception:  # noqa: BLE001 - the report stands without its scorecards
+        import logging
+        logging.getLogger("acql.training").exception("the scorecards could not be written")
     for recipe in study.taught:
         registry.save(recipe, setting=study.taught_key, before=study.taught_before)
     latest = root / "latest"

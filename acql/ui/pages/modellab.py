@@ -733,6 +733,13 @@ class ModelLabPage(Page):
             if found.now_games else "",
             f"Worked out {_when(found.made)} by the weekly training job. A case here is a reason to look, "
             f"never a switch: the rule above ({modellab.ENOUGH_GAMES} games priced live) is untouched.",
+            f"<b>Champion:</b> {found.champion}. Status and pool picks come from three separate scorecards "
+            "(probability, against the line, pool picks a week against the champion); they are never added up."
+            if found.champion else "",
+            f"<b>Passed every gate, for your review:</b> {found.recommendation}. Nothing switches on its own."
+            if found.recommendation else "",
+            ("<b>Next to look at:</b> " + "; ".join(f"{q.get('model')} - {q.get('says')}" for q in found.queue[:4]))
+            if found.queue else "",
             *doubts]))
 
     def _update_pfm(self) -> None:
