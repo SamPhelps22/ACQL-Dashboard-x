@@ -1,8 +1,8 @@
 {
- "version": "2.18.0",
- "file": "ACQL-Dashboard-2.18.0-update.zip",
- "sha256": "41e0596df267d8082659af61a8acba6d6830ca9a171f67f26173e8900cce4692",
- "size": 1659583,
- "notes": "Standings work themselves out without stats.xls",
- "commit": "bcbe77ecfde9176d6a749541cffd74cbd5a2276b"
+ "version": "2.18.2",
+ "file": "ACQL-Dashboard-2.18.2-update.zip",
+ "sha256": "29525390eb1c732a0af6313e1320ec4930a93aff1c6f3192c95c73c9dbfeb209",
+ "size": 1659985,
+ "notes": "The survivor wall shows the earlier suicide round too, faded, with its winner.",
+ "commit": "66198ab4a1daa31537d9eeba4b20610769b3817b"
 }
