@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QPoint, QSettings, Qt, QTimer
+from PySide6.QtCore import QPoint, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QComboBox,
@@ -142,6 +142,96 @@ class ChanceBar(QWidget):
         middle = rect.width() // 2
         painter.drawRect(middle - 1, 0, 2, self.height())
         painter.end()
+
+
+class RiverChart(QWidget):
+    """Your chance of winning the week at every recorded look through the day
+    (pool/recorder.py), as one line, with a dot wherever a look moved it by
+    ten points or more - the scores that swung the day."""
+
+    SWING = 0.10
+
+    def __init__(self, palette, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.palette_ = palette
+        self._points: list[tuple[float, float]] = []
+        self.setMinimumHeight(120)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def set_points(self, points: list[tuple[float, float]]) -> None:
+        self._points = sorted(points)
+        self.update()
+
+    def swings(self) -> list[tuple[float, float, float]]:
+        """(at, before, after) for each look that moved the chance by SWING or more."""
+        pts = self._points
+        return [(b[0], a[1], b[1]) for a, b in zip(pts, pts[1:]) if abs(b[1] - a[1]) >= self.SWING]
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        pts = self._points
+        if len(pts) < 2:
+            return
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QPainterPath, QPen
+        p = self.palette_
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(34, 8, -8, -8)
+        t0, t1 = pts[0][0], pts[-1][0]
+        span = max(t1 - t0, 1.0)
+
+        def at(t: float, c: float) -> QPointF:
+            return QPointF(rect.left() + (t - t0) / span * rect.width(), rect.bottom() - c * rect.height())
+
+        painter.setPen(QPen(QColor(p.grid), 1))
+        for level in (0.0, 0.5, 1.0):
+            y = rect.bottom() - level * rect.height()
+            painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+            painter.setPen(QColor(p.ink_muted))
+            painter.drawText(QPointF(0, y + 4), f"{level:.0%}")
+            painter.setPen(QPen(QColor(p.grid), 1))
+        path = QPainterPath(at(*pts[0]))
+        for t, c in pts[1:]:
+            path.lineTo(at(t, c))
+        painter.setPen(QPen(QColor(p.accent), 2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+        painter.setPen(Qt.PenStyle.NoPen)
+        for t, before, after in self.swings():
+            painter.setBrush(QColor(p.good if after > before else p.critical))
+            painter.drawEllipse(at(t, after), 4, 4)
+        painter.end()
+
+
+def _settle(worker) -> None:
+    try:
+        if worker.isRunning():
+            worker.wait(5000)
+    except RuntimeError:        # already finished and deleted
+        pass
+
+
+class _BoardWorker(QThread):
+    """Game Day's sums (gameday.board) off the window's thread, plus the
+    flight recorder's point for the look (#70, #20)."""
+
+    done = Signal(object, object)       # (week, you), board
+
+    def __init__(self, season, week: int, you: str) -> None:
+        super().__init__()
+        self.season, self.week, self.you = season, week, you
+
+    def run(self) -> None:
+        bd = None
+        try:
+            bd = GD.board(self.season, self.week, self.you)
+            if bd is not None and bd.live:
+                from ...pool import recorder
+                recorder.record(self.season, self.week, self.you, board=bd)
+        except Exception as exc:  # noqa: BLE001 - the window keeps the last good look
+            from .base import write_log
+            write_log(f"Game Day in the background: {exc!r}")
+        self.done.emit((self.week, self.you), bd)
 
 
 class GameCard(QFrame):
@@ -510,6 +600,16 @@ class GameDayPage(Page):
         self.root_card.body().addLayout(self.root_box)
         self.insights_box.addWidget(self.root_card)
 
+        self.river_card = Card("Your chance through the day")
+        self.river = RiverChart(self.palette)
+        self.river_card.add(self.river)
+        self.river_note = QLabel("")
+        self.river_note.setObjectName("Muted")
+        self.river_note.setWordWrap(True)
+        self.river_card.add(self.river_note)
+        self.river_card.hide()
+        self.insights_box.addWidget(self.river_card)
+
         self.side_card = Card("The side pools, as they stand")
         self.side_box = QVBoxLayout()
         self.side_box.setSpacing(6)
@@ -716,7 +816,53 @@ class GameDayPage(Page):
         self._fill_pickers()
         you = self._you()
         week = self._week
+        key = (week, you)
+        if week and self.in_background and self._board is not None and self._board_key == key:
+            # the same week and coach already on screen: work out the new look
+            # off the window's thread and draw it when it arrives
+            self._render_status()
+            self._start_worker(season, week, you)
+            return
         bd = GD.board(season, week, you) if week else None
+        self._board_key = key
+        self._show(bd, week)
+
+    #: Off for tests that want the page drawn before refresh() returns.
+    in_background = True
+    _board_key: tuple = ()
+    _worker = None
+    _again = False
+
+    def _start_worker(self, season, week: int, you: str) -> None:
+        if self._worker is not None:
+            self._again = True          # one more look once this one lands
+            return
+        worker = _BoardWorker(season, week, you)
+        worker.done.connect(self._worker_done)
+        worker.finished.connect(worker.deleteLater)
+        self._worker = worker
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:     # never leave the app with a sum still running
+            app.aboutToQuit.connect(lambda w=worker: _settle(w))
+        worker.start(QThread.Priority.LowPriority)
+
+    def _worker_done(self, key, bd) -> None:
+        self._worker = None
+        if bd is not None and key == (self._week, self._you()):
+            self.setUpdatesEnabled(False)
+            try:
+                self._show(bd, key[0])
+            except Exception as exc:  # noqa: BLE001
+                from .base import write_log
+                write_log(f"Game Day drawing: {exc!r}")
+            finally:
+                self.setUpdatesEnabled(True)
+        if self._again and self.season is not None:
+            self._again = False
+            self._start_worker(self.season, self._week, self._you())
+
+    def _show(self, bd, week: int) -> None:
         self._board = bd
         self._render_status()
         if bd is None or not bd.states:
@@ -737,6 +883,25 @@ class GameDayPage(Page):
                            f"Final · {_plural(len(bd.final), 'game')}")
         self._render_board(bd)
         self._render_side(bd)
+        self._render_river(week)
+
+    def _render_river(self, week: int) -> None:
+        try:
+            from ...feeds import results
+            from ...pool import recorder
+            kept = recorder.trace(results.season_year(self.season), week)
+        except Exception:  # noqa: BLE001
+            kept = []
+        pts = [(float(k["at"]), float(k["chance"])) for k in kept if k.get("chance") is not None]
+        self.river_card.setVisible(len(pts) >= 2)
+        if len(pts) < 2:
+            return
+        self.river.set_points(pts)
+        hi, lo = max(c for _t, c in pts), min(c for _t, c in pts)
+        swung = len(self.river.swings())
+        self.river_note.setText(
+            f"From {pts[0][1]:.0%} to {pts[-1][1]:.0%} now · high {hi:.0%}, low {lo:.0%}"
+            + (f" · {swung} big swing{'s' if swung != 1 else ''} marked" if swung else ""))
 
     def tick(self) -> None:
         """Every half minute from the window: the clock words only."""
@@ -775,6 +940,7 @@ class GameDayPage(Page):
         self.board_note.setText(
             f"Week {week} has no games set up yet." if week else "No week to show yet.")
         self.side_card.hide()
+        self.river_card.hide()
 
     # ---- the headline numbers ----------------------------------------------
     def _render_tiles(self, bd: GD.Board) -> None:

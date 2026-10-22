@@ -2981,6 +2981,21 @@ class TestAutopsyBrief(_ScratchStore):
         self.assertEqual(len(sent), 1)
 
 
+class TestRiverChart(unittest.TestCase):
+    """The day's chance as a line; the big swings are the looks that moved it ten points."""
+
+    def test_swings(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        from acql.ui.pages.gameday import RiverChart
+        from acql.ui.theme import DARK
+        chart = RiverChart(DARK)
+        chart.set_points([(3, 0.40), (1, 0.58), (2, 0.55), (4, 0.62)])
+        self.assertEqual(chart.swings(), [(3, 0.55, 0.40), (4, 0.40, 0.62)])
+        chart.resize(400, 120)
+        chart.grab()            # paints without error
+
+
 class TestGoldenWeek(_ScratchStore):
     """A whole made-up week priced end to end, held to a fingerprint.
 
