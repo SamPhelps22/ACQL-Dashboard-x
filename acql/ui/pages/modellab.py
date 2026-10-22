@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QGridLayout, QLabel, QPushButton, QTabBar, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QTabBar, QVBoxLayout, QWidget,
 )
 
 import time
@@ -50,6 +50,7 @@ VALUE_TITLE = "Closing line value - did the line come round to the picks?"
 TAUGHT_TITLE = "Challengers taught on past seasons - is any clearly better than the rule in use?"
 PFM_TITLE = "Pro Football Mania's ratings - do they add anything to the card? (shadow only)"
 PREREG_TITLE = "Tests written down before their games (shadow only)"
+LIVE_TITLE = "Game Day's live chances, checked against how games ended"
 PFM_WEEK_TITLE = "This week beside PFM - the shadow chance is not a pick"
 WEEKS_TITLE = "Week by week - each recipe's record, on the games it priced"
 #: The page's views. It had grown to eight tiles and sixteen cards on one
@@ -147,6 +148,8 @@ class ModelLabPage(Page):
                              ("calib", CALIB_TITLE), ("cover", COVER_TITLE)):
             self.extra[key] = self._card(heading)
 
+        self._build_explorer()
+
         self.weeks_card = Card(WEEKS_TITLE)
         self.weeks_box = QVBoxLayout()
         self.weeks_card.body().addLayout(self.weeks_box)
@@ -163,6 +166,7 @@ class ModelLabPage(Page):
         self.extra["pfm"][0].body().insertWidget(1, self.pfm_lead)
         self.extra["pfm_week"] = self._card(PFM_WEEK_TITLE)
         self.extra["prereg"] = self._card(PREREG_TITLE)
+        self.extra["live"] = self._card(LIVE_TITLE)
         self.extra["kinds"] = self._card(KINDS_TITLE)
         self.extra["kinds_by_season"] = self._card(KINDS_BY_SEASON)
         self.extra["seasons"] = self._card(SEASONS_TITLE)
@@ -196,8 +200,8 @@ class ModelLabPage(Page):
         self._view_holders: list[QWidget] = []
         for tiles, cards in (
             (self._tiles, (self.lab_card, card("duel"), card("parts"), self.weeks_card, self.recipes_card)),
-            (self._more_tiles, (card("form"), card("shocks"), card("calib"))),
-            ((), (card("taught"), card("prereg"), card("pfm"), card("pfm_week"), card("kinds"), card("kinds_by_season"),
+            (self._more_tiles, (card("form"), self.explorer_card, card("shocks"), card("calib"))),
+            ((), (card("taught"), card("prereg"), card("live"), card("pfm"), card("pfm_week"), card("kinds"), card("kinds_by_season"),
                   card("seasons"))),
             ((), (card("record"), self.value_card, card("cover"), self.versions_card)),
         ):
@@ -228,6 +232,55 @@ class ModelLabPage(Page):
         if remember:
             QSettings().setValue(VIEW_KEY, index)
             self._scroll.verticalScrollBar().setValue(0)        # a new view is read from its top
+
+    # ---- the situation explorer (#31) ------------------------------------------
+    def _build_explorer(self) -> None:
+        from ...model import explorer
+        self.explorer_card = Card(f"Situation explorer · {MODEL_NAME} in any slice")
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self._explore: dict[str, QComboBox] = {}
+        for key, label, options in (("band", "Line", list(explorer.BANDS)), ("side", "Pick", explorer.SIDES),
+                                    ("pool_line", "Pool line", explorer.YES_NO),
+                                    ("division", "Division", explorer.YES_NO), ("night", "Night", explorer.YES_NO)):
+            box = QComboBox()
+            box.addItems([o if o != "Any" else f"{label}: any" for o in options])
+            box.setProperty("options", list(options))
+            box.currentIndexChanged.connect(self._explore_changed)
+            self._explore[key] = box
+            row.addWidget(box)
+        row.addStretch(1)
+        self.explorer_card.body().addLayout(row)
+        self.explorer_answer = QLabel("")
+        self.explorer_answer.setWordWrap(True)
+        self.explorer_card.add(self.explorer_answer)
+        self.explorer_note = QLabel("")
+        self.explorer_note.setObjectName("Muted")
+        self.explorer_note.setWordWrap(True)
+        self.explorer_card.add(self.explorer_note)
+        self._explored: set = set()
+        self._graded = None
+
+    def _explore_changed(self, *_args) -> None:
+        from ...model import autopsy, explorer
+        if self.season is None:
+            return
+        if self._graded is None:
+            try:
+                self._graded = autopsy.graded(self.season)
+            except Exception:  # noqa: BLE001
+                self._graded = []
+        picked = {k: b.property("options")[max(b.currentIndex(), 0)] for k, b in self._explore.items()}
+        s = explorer.Slice(**picked)
+        found = explorer.ask(self._graded, s)
+        if s != explorer.Slice():
+            self._explored.add(s)
+        self.explorer_answer.setText(found.words())
+        n = len(self._explored)
+        self.explorer_note.setText(
+            "Every graded game, priced as it stood before kickoff. "
+            + (f"You have looked at {_plural(n, 'slice')} this session - with that many, one may look "
+               "special by luck alone." if n >= 3 else "The interval is where the true rate likely sits."))
 
     def _card(self, heading: str, chart=None):
         """A card with room for a table and a note under it: (card, the table's box, the note).
@@ -279,9 +332,12 @@ class ModelLabPage(Page):
         self._update_taught()
         self._update_pfm()
         self._update_prereg()
+        self._update_live()
         self._update_kinds()
         self._update_seasons()
         self._update_value(value)
+        self._graded = None
+        self._explore_changed()
         self._update_tiles(lab, value)
         self.outside.refresh(results.season_year(season))
         self.versions_label.setText("<br><br>".join(
@@ -744,6 +800,29 @@ class ModelLabPage(Page):
             ("<b>Next to look at:</b> " + "; ".join(f"{q.get('model')} - {q.get('says')}" for q in found.queue[:4]))
             if found.queue else "",
             *doubts]))
+
+    def _update_live(self) -> None:
+        """The live rule replayed on every finished game with a kept timeline (#96)."""
+        from ...model import livecheck
+        try:
+            found = livecheck.study(self.season)
+        except Exception as exc:  # noqa: BLE001
+            self._fill("live", [], [], note=f"Couldn't be worked out: {exc}")
+            return
+        if not found.calls:
+            self._fill("live", [], [], note="No finished game has its scoring plays kept yet.")
+            return
+        rows = [[f"{b.low:.0%}-{b.high:.0%}", str(b.calls), f"{b.said:.0%}", f"{b.came:.0%}",
+                 "too few to say" if b.few else "about right" if abs(b.came - b.said) < 0.05
+                 else "surer than it should be" if abs(b.said - 0.5) > abs(b.came - 0.5) else "too timid"]
+                for b in found.bands]
+        brier = " · ".join(f"{livecheck.describe(k)} {v[0]:.3f}" for k, v in found.brier.items())
+        self._fill("live", ["Game Day said", "Calls", "Average said", "Happened", "Verdict"], rows,
+                   note=(f"{found.games} finished games replayed at kickoff, each quarter break and 6 minutes "
+                         f"left, using the home side's chance to win. Error by point of the game (Brier score, "
+                         f"0.25 is a coin flip, lower is better): {brier}. Calls from the same game lean "
+                         "together, so the bands are less sure than their counts suggest. Nothing here "
+                         "changes Game Day; it is for watching."))
 
     def _update_prereg(self) -> None:
         """The pre-registered tests' standing, read from the file the training job leaves."""

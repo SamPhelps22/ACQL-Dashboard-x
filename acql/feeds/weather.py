@@ -85,7 +85,10 @@ def _get(url: str, params: dict, opener=None) -> dict:
     open_url = opener or (lambda r: urllib.request.urlopen(r, timeout=TIMEOUT))
     try:
         with open_url(request) as reply:
-            return json.loads(reply.read().decode("utf-8"))
+            raw = reply.read()
+        from .. import rawarchive
+        rawarchive.keep("weather", raw, url)
+        return json.loads(raw.decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise WeatherError(f"couldn't reach the forecast ({getattr(exc, 'reason', exc)})") from exc
 

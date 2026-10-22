@@ -159,7 +159,10 @@ def fetch(event: str, opener=None) -> dict:
     open_url = opener or (lambda r: urllib.request.urlopen(r, timeout=TIMEOUT))
     try:
         with open_url(request) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = response.read()
+        from .. import rawarchive
+        rawarchive.keep("timeline", raw, f"event {event}")
+        return json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise TimelineError(f"ESPN's play-by-play answered with an error ({exc.code})") from exc
     except (urllib.error.URLError, OSError, TimeoutError) as exc:

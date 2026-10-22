@@ -173,6 +173,8 @@ def _download_predictions(season, week: int) -> None:
     request = urllib.request.Request(PREDICTIONS_URL, headers={"User-Agent": "ACQL-Dashboard"})
     with urllib.request.urlopen(request, timeout=30) as reply:
         body = reply.read()
+    from . import rawarchive
+    rawarchive.keep("predictions", body, f"week {week}")
     with tempfile.TemporaryDirectory() as scratch:
         trial = Path(scratch) / "nflpredictions.csv"
         trial.write_bytes(body)

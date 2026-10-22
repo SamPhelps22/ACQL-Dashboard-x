@@ -356,6 +356,8 @@ def _get(url: str, opener=None, sleep=time.sleep) -> tuple[str, dict]:
             with open_url(request) as reply:
                 body = reply.read()
                 status = getattr(reply, "status", 200)
+            from .. import rawarchive
+            rawarchive.keep("pfm", body, url)
             if status != 200:
                 raise PfmError(f"{url} answered {status}")
             text = body.decode("utf-8", "replace")

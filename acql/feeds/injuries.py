@@ -115,6 +115,8 @@ def fetch(*, opener=None) -> dict[str, list[dict]]:
     try:
         with open_url(request) as reply:
             body = reply.read().decode("utf-8")
+        from .. import rawarchive
+        rawarchive.keep("injuries", body)
     except (urllib.error.URLError, OSError) as exc:
         raise InjuryError(f"Couldn't reach ESPN's injury report ({getattr(exc, 'reason', exc)}).") from exc
     try:

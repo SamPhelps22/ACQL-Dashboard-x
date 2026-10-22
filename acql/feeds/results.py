@@ -291,7 +291,10 @@ def fetch(year: int, week: int, opener=None) -> list[Score]:
     open_url = opener or (lambda r: urllib.request.urlopen(r, timeout=TIMEOUT))
     try:
         with open_url(request) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            raw = response.read()
+        from .. import rawarchive
+        rawarchive.keep("espn-scores", raw, f"{int(year)} week {int(week)}")
+        payload = json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise ResultsError(f"ESPN's scoreboard answered with an error ({exc.code})") from exc
     except (urllib.error.URLError, OSError, TimeoutError) as exc:

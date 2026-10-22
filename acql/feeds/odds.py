@@ -207,6 +207,8 @@ def fetch(key: str, *, opener=None) -> tuple[list[Quote], int | None]:
     try:
         with open_url(request) as reply:
             body = reply.read().decode("utf-8")
+            from .. import rawarchive
+            rawarchive.keep("odds", body)
             left = reply.headers.get("x-requests-remaining") if reply.headers else None
     except urllib.error.HTTPError as exc:
         try:

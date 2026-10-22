@@ -76,6 +76,8 @@ class ScoutingDialog(QDialog):
         if r.made:
             plan.add(_text("How the number was made: " + escape(r.made), muted=True))
         layout.addWidget(plan)
+        if r.steps:
+            layout.addWidget(self._waterfall(r, p))
 
         teams = QHBoxLayout()
         teams.setSpacing(16)
@@ -109,6 +111,26 @@ class ScoutingDialog(QDialog):
         row.addStretch(1)
         row.addWidget(close)
         outer.addLayout(row)
+
+    @staticmethod
+    def _waterfall(r: scouting.Report, p: Palette) -> Card:
+        """The margin's arithmetic, one line a step, home side (#23)."""
+        card = Card(f"How {MODEL_NAME} got its number · {r.home.team} margin")
+        rows = []
+        for s in r.steps:
+            if s.kind == "move":
+                colour = p.good if s.points > 0 else p.critical if s.points < 0 else p.ink_muted
+                value = f"<span style='color:{colour}'>{s.points:+.1f}</span>"
+            else:
+                value = f"<b>{s.points:+.1f}</b>"
+            rows.append(f"<tr><td style='padding:3px 14px 3px 0'>{'<b>' if s.kind != 'move' else ''}"
+                        f"{escape(s.label)}{'</b>' if s.kind != 'move' else ''}</td>"
+                        f"<td align='right' style='padding:3px 14px 3px 0'>{value}</td>"
+                        f"<td style='color:{p.ink_muted}'>{escape(s.note)}</td></tr>")
+        card.add(_text("<table>" + "".join(rows) + "</table>"))
+        card.add(_text(f"Positive favours {escape(r.home.team)}. The last line is the margin the card's "
+                       f"chance of {r.chance:.0%} is worked out from.", muted=True))
+        return card
 
     @staticmethod
     def _signal(signal: evidence.Signal, p: Palette) -> str:

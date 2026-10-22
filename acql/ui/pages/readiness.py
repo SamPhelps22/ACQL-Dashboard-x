@@ -22,6 +22,11 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
+#: Readiness rows -> the raw archive's source for them (rawarchive.SOURCES).
+RAW_SOURCE = {"Scores": "espn-scores", "Betting lines": "odds", "Odds requests": "odds",
+              "Injury report": "injuries", "Computer models": "predictions", "Weather": "weather"}
+
+
 class ReadinessPage(Page):
     title = title_
     subtitle = "Whether everything the picks are made from is up to date - and what to look at if it isn't"
@@ -97,6 +102,12 @@ class ReadinessPage(Page):
                     label.setTextFormat(Qt.TextFormat.RichText)
                     label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
                     grid.addWidget(label, 2 * r, column)
+                raw = RAW_SOURCE.get(check.name)
+                if raw and not check.fix:
+                    button = QPushButton("Raw data")
+                    button.setToolTip("Open exactly what the source last sent, and when (kept outside the synced folder).")
+                    button.clicked.connect(lambda _=False, source=raw: self._open_raw(source))
+                    grid.addWidget(button, 2 * r, 3, Qt.AlignmentFlag.AlignTop)
                 if check.fix in readiness.FIXES:
                     button = QPushButton(readiness.FIXES[check.fix])
                     button.clicked.connect(lambda _=False, key=check.fix: self._fix(key))
@@ -106,6 +117,20 @@ class ReadinessPage(Page):
                     rule.setFixedHeight(1)
                     rule.setStyleSheet(f"background: {p.grid}; border: none;")
                     grid.addWidget(rule, 2 * r + 1, 0, 1, 4)
+
+    def _open_raw(self, source: str) -> None:
+        """The last payload a source sent, opened in the computer's own viewer (#1, #44)."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtWidgets import QMessageBox
+        from ... import rawarchive
+        row = rawarchive.latest(source)
+        path = rawarchive.open_copy(row) if row else None
+        if path is None:
+            QMessageBox.information(self, "Raw data", "Nothing from this source has been kept yet. "
+                                    "The next fetch will be.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _fix(self, key: str) -> None:
         """Run one of the fixes a check offers, then look again."""

@@ -22,6 +22,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Fetches in tests keep their raw payloads in a scratch folder, never the real archive.
+from acql import rawarchive as _rawarchive  # noqa: E402
+_rawarchive.use(Path(tempfile.mkdtemp(prefix="acql-raw-test-")))
+
 from acql.pool import awards
 from acql.config import Settings
 from acql.models import Player, Season
@@ -2996,6 +3000,48 @@ class TestRiverChart(unittest.TestCase):
         chart.grab()            # paints without error
 
 
+class TestRawArchive(unittest.TestCase):
+    """Every payload kept as it came, once per content, findable by source and time."""
+
+    def setUp(self):
+        from acql import rawarchive
+        self.was = rawarchive._OVERRIDE
+        self.root = Path(tempfile.mkdtemp(prefix="acql-raw-"))
+        rawarchive.use(self.root)
+
+    def tearDown(self):
+        from acql import rawarchive
+        rawarchive.use(self.was)
+
+    def test_keep_dedupe_latest_read(self):
+        from acql import rawarchive
+        a = rawarchive.keep("odds", '{"x": 1}', now=1000)
+        b = rawarchive.keep("odds", '{"x": 1}', now=2000)
+        rawarchive.keep("odds", '{"x": 2}', now=3000)
+        self.assertEqual(a, b)
+        self.assertEqual(len(list(self.root.rglob("*.gz"))), 2)          # same content, one file
+        self.assertEqual(len(rawarchive.index("odds")), 3)              # but every fetch is on record
+        self.assertEqual(rawarchive.read(rawarchive.latest("odds", before=2500)), b'{"x": 1}')
+        self.assertEqual(rawarchive.read(rawarchive.latest("odds")), b'{"x": 2}')
+        self.assertIsNone(rawarchive.latest("injuries"))
+        self.assertTrue(rawarchive.open_copy(rawarchive.latest("odds")).read_text().startswith("{"))
+
+    def test_a_fetch_keeps_its_payload(self):
+        import io, json as _json
+        from acql import rawarchive
+        from acql.feeds import results
+
+        class Reply(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        results.fetch(2026, 3, opener=lambda r: Reply(_json.dumps({"events": []}).encode()))
+        row = rawarchive.latest("espn-scores")
+        self.assertEqual(row["label"], "2026 week 3")
+
+
 class TestGoldenWeek(_ScratchStore):
     """A whole made-up week priced end to end, held to a fingerprint.
 
@@ -3047,6 +3093,78 @@ class TestGoldenWeek(_ScratchStore):
         self.assertEqual(found, self.FINGERPRINT,
                          "Pricing changed - picks may differ. If the change was approved, set FINGERPRINT to "
                          f"{found!r}. The new values:\n{json.dumps(out, indent=1)}")
+
+
+class TestWaterfall(_ScratchStore):
+    """A game's steps add up to exactly the margin pricing gives it (#23)."""
+
+    def test_steps_add_up_on_the_golden_week(self):
+        from acql.model import pricing, waterfall
+        self.TEAMS = TestGoldenWeek.TEAMS
+        TestGoldenWeek._outputs(self)
+        from acql.models import Game
+        games = [Game(i + 1, home, road) for i, (road, home, *_r) in enumerate(TestGoldenWeek.TEAMS)]
+        ctx = pricing.context(None, 7, games)
+        moved = 0
+        for g in games:
+            price = pricing.price(g, ctx)
+            found = waterfall.steps(g, ctx, price)
+            self.assertEqual(found[0].kind, "start")
+            self.assertEqual(found[-1].kind, "end")
+            self.assertAlmostEqual(waterfall.total(found), price.margin, places=9)
+            moved += sum(1 for s in found if s.kind == "move")
+        self.assertGreater(moved, len(games))       # the models (and more) show on most games
+
+
+class TestExplorer(unittest.TestCase):
+    """Any slice of the graded games, with its size and a plain interval (#31)."""
+
+    def _games(self):
+        from acql.model.autopsy import Graded
+        out = []
+        for i in range(40):
+            out.append(Graded(week=1 + i % 6, index=i, matchup="A @ B", pick="B", chance=0.6, right=i % 3 != 0,
+                              margin=3.0, line=2.5 if i % 2 else 7.0, line_pick="B", line_right=i % 4 != 0,
+                              pool_line=7.0 if i % 5 == 0 else None, home_pick=i % 2 == 0,
+                              divisional=i % 4 == 0, night=i % 8 == 0))
+        return out
+
+    def test_slices(self):
+        from acql.model import explorer
+        games = self._games()
+        everything = explorer.ask(games, explorer.Slice())
+        self.assertEqual(everything.games, 40)
+        self.assertAlmostEqual(everything.expected, 24.0)
+        close = explorer.ask(games, explorer.Slice(band="Pick'em to 3"))
+        self.assertEqual(close.games, 20)
+        both = explorer.ask(games, explorer.Slice(band="7 to 9.5", side="Home pick", division="Yes"))
+        self.assertTrue(all(g % 4 == 0 for g in [x.index for x in games if explorer.matches(x, both.slice)]))
+        self.assertTrue(both.few)
+        self.assertIn("Too few games", both.words())
+        self.assertLess(both.low, both.rate)
+        self.assertGreater(both.high, both.rate)
+        self.assertEqual(explorer.ask([], explorer.Slice()).words(), "No graded games match.")
+
+
+class TestLiveCheck(unittest.TestCase):
+    """The live rule replayed from scoring plays: scores rebuilt at each checkpoint, bands formed (#96)."""
+
+    def test_score_at_and_study(self):
+        from acql.feeds.timeline import Moment
+        from acql.model import livecheck as L
+        moments = [Moment(None, 0, 7, 1, "10:00", "TD"), Moment(None, 3, 7, 2, "0:30", "FG"),
+                   Moment(None, 3, 14, 4, "5:00", "TD")]
+        self.assertEqual(L.score_at(moments, 1.0), (0, 0))
+        self.assertEqual(L.score_at(moments, 0.75), (7, 0))
+        self.assertEqual(L.score_at(moments, 0.5), (7, 3))
+        self.assertEqual(L.score_at(moments, 0.1), (7, 3))      # the late TD came with 5:00 left, after 6:00
+        self.assertGreater(L.chance_at(14, 3, 0.05, 0.0, 13.5), 0.97)
+        self.assertAlmostEqual(L.chance_at(0, 0, 1.0, 0.0, 13.5), 0.5, places=2)
+        calls = [L.Call(1, "x", 0.5, 0.9, True), L.Call(1, "x", 0.5, 0.9, False), L.Call(1, "y", 0.5, 0.1, False)]
+        st = L.study(None, (2, calls))
+        self.assertAlmostEqual(st.brier[0.5][0], (0.01 + 0.81 + 0.01) / 3)
+        top = [b for b in st.bands if b.low == 0.8][0]
+        self.assertEqual((top.calls, top.came), (2, 0.5))
 
 
 class TestClinchedAndOut(unittest.TestCase):

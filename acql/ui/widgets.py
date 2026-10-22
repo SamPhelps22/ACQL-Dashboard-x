@@ -808,6 +808,10 @@ def current_sort(view, columns: int, default: tuple[int, bool] = (0, True)) -> t
     return column, header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
 
 
+#: Rows a table's column widths are measured from (QHeaderView precision).
+SIZE_ROWS = 150
+
+
 def make_table(
     model: TableModel,
     *,
@@ -861,6 +865,9 @@ def make_table(
     if sort_column is not None:
         order = Qt.SortOrder.AscendingOrder if ascending else Qt.SortOrder.DescendingOrder
         view.sortByColumn(sort_column, order)
+    # Size columns from the first SIZE_ROWS rows (plus those on screen), not
+    # every row: a long table measured every cell (#79). Shorter tables are unchanged.
+    header.setResizeContentsPrecision(SIZE_ROWS)
     view.resizeColumnsToContents()
     # What each column's values alone need (the header label can elide; they can't).
     values: dict[int, int] = {}

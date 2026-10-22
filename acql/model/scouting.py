@@ -85,6 +85,7 @@ class Report:
     weather: str = ""
     plan: str = ""
     made: str = ""                  # how the number was made, step by step (evidence.Case.made)
+    steps: tuple = ()               # the margin's arithmetic (waterfall.steps), home side
 
     @property
     def score_text(self) -> str:
@@ -257,6 +258,14 @@ def _cases(season: Season, week: int, me: str | None) -> dict[int, object]:
     return _KEPT[key]
 
 
+def _steps(game, ctx, price) -> list:
+    try:
+        from . import waterfall
+        return waterfall.steps(game, ctx, price)
+    except Exception:  # noqa: BLE001 - the report shows without it
+        return []
+
+
 def report(season: Season, index: int, week: int | None = None, me: str | None = None) -> Report | None:
     """The scouting report for one unplayed game of the week ahead, or None if it isn't priced."""
     slate = radar.build(season, week)
@@ -297,5 +306,6 @@ def report(season: Season, index: int, week: int | None = None, me: str | None =
         factors=tuple(weighing[:3]), also=tuple(weighing[3:]),
         risks=tuple(_risks(shape, case, home, away, game)), weather=sky,
         made=case.made() if case is not None and hasattr(case, "made") else "",
+        steps=tuple(_steps(game, ctx, price)),
     )
     return replace(made, plan=_plan(made))
