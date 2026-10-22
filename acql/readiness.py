@@ -81,6 +81,7 @@ class Check:
     headline: str
     detail: str = ""
     at: float | None = None     # when what it describes was last updated
+    fix: str = ""               # a fix the page can offer with one click (FIXES)
 
 
 @dataclass(frozen=True)
@@ -333,6 +334,48 @@ def _backups(now: float) -> Check:
     return Check(AUTOMATION, "Backup outside OneDrive", OK if age is not None and age < 2 * DAY else WARN,
                  f"{status.get('file')} checked sound {ago(age)} ({status.get('documents')} records)",
                  "Kept in %LOCALAPPDATA%\\ACQL\\backups: the last 14 days and 8 Sundays.", at)
+
+
+#: Fixes a check can offer: key -> button words.
+FIXES = {"old_sheets": "Clear them"}
+#: The start of the note the load leaves while other seasons' sheets are stored.
+OLD_SHEETS = "Stored pick sheets from another season"
+
+
+def standing(now: float | None = None) -> list[tuple[float, str]]:
+    """(first seen, note) for each note the nightly run has repeated for a day or more,
+    oldest first (headless._new_notes keeps them)."""
+    from . import store
+    now = time.time() if now is None else now
+    kept = store.get("headless", "notes", {}) or {}
+    if not isinstance(kept, dict):
+        return []
+    out = [(float(v.get("first", now)), str(text)) for text, v in kept.items()
+           if isinstance(v, dict) and now - float(v.get("first", now)) >= DAY]
+    return sorted(out)
+
+
+def forget_standing(start: str) -> None:
+    """Drop the standing notes that begin with `start` (after their fix ran),
+    so the page doesn't show them again before the next run."""
+    from . import store
+    kept = store.get("headless", "notes", {}) or {}
+    if isinstance(kept, dict):
+        store.put("headless", "notes", {t: v for t, v in kept.items() if not str(t).startswith(start)})
+
+
+def _standing(now: float) -> Check | None:
+    from html import escape
+    found = standing(now)
+    if not found:
+        return None
+    lines = [f"Since {time.strftime('%b %d', time.localtime(first)).replace(' 0', ' ')}: {escape(text)}"
+             for first, text in found]
+    fix = "old_sheets" if any(text.startswith(OLD_SHEETS) for _f, text in found) else ""
+    many = len(found) != 1
+    return Check(AUTOMATION, "Standing issues", NOTE,
+                 f"{len(found)} note{'s' if many else ''} the nightly run keep{'' if many else 's'} repeating",
+                 "<br>".join(lines), found[0][0], fix)
 
 
 def _updates() -> Check | None:
@@ -643,6 +686,7 @@ def build(season: Season, now: float | None = None, tasks: dict[str, dict] | Non
     if tasks is not False:
         add(_tasks, task_states() if tasks is True else tasks, now)
     add(_last_run, now)
+    add(_standing, now)
     add(_training, now)
     add(_backups, now)
     add(_updates)

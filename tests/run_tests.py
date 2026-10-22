@@ -2892,6 +2892,59 @@ class TestBackupMirror(_ScratchStore):
         self.assertFalse(store.verify(broken)[0])
 
 
+class TestStandingIssues(_ScratchStore):
+    """Notes the nightly run keeps repeating show once on Readiness, with when they began."""
+
+    def test_standing_after_a_day_and_fix_clears(self):
+        from acql import headless, readiness
+        old = "Stored pick sheets from another season were ignored (week 1). Clear them."
+        day = 86400
+        headless._new_notes([old, "fresh note"], now=1_000_000)
+        self.assertIsNone(readiness._standing(1_000_000 + 3600))      # not a day yet
+        headless._new_notes([old], now=1_000_000 + 2 * day)
+        headless._new_notes([old, "<odd> note"], now=1_000_000 + 2 * day + 60)
+        found = readiness._standing(1_000_000 + 2 * day + 120)
+        self.assertEqual(found.name, "Standing issues")
+        self.assertEqual(found.fix, "old_sheets")
+        self.assertIn("1 note", found.headline)
+        self.assertNotIn("fresh note", found.detail)                  # gone from the last run
+        self.assertNotIn("<odd>", found.detail)
+        readiness.forget_standing(readiness.OLD_SHEETS)
+        self.assertIsNone(readiness._standing(1_000_000 + 2 * day + 120))
+
+
+class TestCatchUp(_ScratchStore):
+    """Missed jobs that are safe to run late start when the dashboard opens; timed ones don't."""
+
+    def test_only_safe_overdue_jobs_and_not_twice(self):
+        from acql import heal
+        now = 2_000_000_000.0
+        states = {
+            "ACQL Daily": {"found": True, "last": now - 3 * 86400, "next": now + 3600, "result": 0},
+            "ACQL Training": {"found": True, "last": None, "next": None, "result": None},
+            "ACQL Deadeye email": {"found": True, "last": now - 30 * 86400, "next": None, "result": 0},
+            "ACQL Sunday brief": {"found": True, "last": now - 30 * 86400, "next": None, "result": 0},
+        }
+        ran = []
+        self.assertEqual(heal.catch_up(states, now, run=ran.append), ["ACQL Daily", "ACQL Training"])
+        self.assertEqual(heal.catch_up(states, now + 3600, run=ran.append), [])   # not again so soon
+        self.assertEqual(len(ran), 2)
+        fine = dict(states, **{"ACQL Daily": {"found": True, "last": now - 3600, "next": None, "result": 0},
+                               "ACQL Training": {"found": True, "last": None, "next": now + 86400}})
+        self.assertEqual(heal.overdue(fine, now), [])                # recent, or about to run
+        self.assertEqual(heal.overdue(None, now), [])
+
+    def test_a_failed_start_is_tried_again(self):
+        from acql import heal
+        now = 2_000_000_000.0
+        states = {"ACQL Daily": {"found": True, "last": now - 3 * 86400, "next": None}}
+
+        def refuse(_name):
+            raise OSError("access denied")
+        self.assertEqual(heal.catch_up(states, now, run=refuse), [])
+        self.assertEqual(heal.catch_up(states, now + 60, run=lambda n: None), ["ACQL Daily"])
+
+
 class TestGoldenWeek(_ScratchStore):
     """A whole made-up week priced end to end, held to a fingerprint.
 

@@ -1098,9 +1098,18 @@ class MainWindow(QMainWindow):
         self.check_updates()
         if first and not season.is_empty:
             QTimer.singleShot(300, self._warm_up)       # once the opening page is drawn
+        if first and self.auto_warm:
+            self._catch_up()
 
     #: Off for the smoke test and the self-check, which quit as soon as they are done.
     auto_warm = True
+
+    def _catch_up(self) -> None:
+        """Start scheduled jobs missed while the computer was off (heal.py),
+        off the window's thread: asking Task Scheduler takes a few seconds."""
+        import threading
+        from .. import heal
+        threading.Thread(target=heal.catch_up, name="catch-up", daemon=True).start()
 
     def _warm_up(self) -> None:
         """This Week's sums, off the window's thread (workers.warm_this_week)."""

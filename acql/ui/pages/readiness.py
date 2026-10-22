@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton
 
 from ... import readiness
 from ...places import READINESS as title_
@@ -97,11 +97,23 @@ class ReadinessPage(Page):
                     label.setTextFormat(Qt.TextFormat.RichText)
                     label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
                     grid.addWidget(label, 2 * r, column)
+                if check.fix in readiness.FIXES:
+                    button = QPushButton(readiness.FIXES[check.fix])
+                    button.clicked.connect(lambda _=False, key=check.fix: self._fix(key))
+                    grid.addWidget(button, 2 * r, 3, Qt.AlignmentFlag.AlignTop)
                 if r < len(rows) - 1:
                     rule = QFrame()
                     rule.setFixedHeight(1)
                     rule.setStyleSheet(f"background: {p.grid}; border: none;")
-                    grid.addWidget(rule, 2 * r + 1, 0, 1, 3)
+                    grid.addWidget(rule, 2 * r + 1, 0, 1, 4)
+
+    def _fix(self, key: str) -> None:
+        """Run one of the fixes a check offers, then look again."""
+        if key == "old_sheets":
+            from ...pool import picks
+            picks.forget_weeks(picks.other_season_weeks())
+            readiness.forget_standing(readiness.OLD_SHEETS)
+        self.refresh_now()
 
     def _update_tiles(self, found: readiness.Readiness) -> None:
         bad, warn = found.of(readiness.BAD), found.of(readiness.WARN)
