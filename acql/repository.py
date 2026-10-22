@@ -160,7 +160,7 @@ def load_season(settings: Settings, aliases: AliasTable | None = None, *,
 
     _split_provisional(season)
     _resolve_suicide_pool(season, suicide_week)
-    _restart_suicide_pool(season, suicide_week)
+    _restart_suicide_pool(season, suicide_week, (latest_stats or {}).get("suicide_round"))
     _rank_weeks(season)
     return season
 
@@ -541,7 +541,8 @@ def _resolve_suicide_pool(season: Season, stats_week: int | None = None) -> None
                 person.suicide_out_week = latest
 
 
-def _restart_suicide_pool(season: Season, stats_week: int = 0) -> None:
+def _restart_suicide_pool(season: Season, stats_week: int = 0,
+                          from_stats: dict | None = None) -> None:
     """Start the suicide pool again from the week the dashboard was told it did
     (survivor.start_again): somebody won it, so everyone is back in.
 
@@ -549,11 +550,17 @@ def _restart_suicide_pool(season: Season, stats_week: int = 0) -> None:
     round's survivors, so the new round is worked out here - everyone alive,
     then each week's picks from the new start on. Once the export has caught
     up, its survivors are the new round's and stay as they are.
+
+    The export says so itself once it has a "Suicide Pool #2" column
+    (`from_stats`); a later start told to the dashboard still wins.
     """
     from .pool import survivor
     found = survivor.rounds(season.results_year or results.season_year(season))
+    if from_stats and (not found or found[-1]["week"] < from_stats["start"]):
+        found = found + [{"week": from_stats["start"], "winners": from_stats["winners"]}]
     if not found:
         return
+    season.suicide_rounds = [dict(r) for r in found]
     start = season.suicide_restart = found[-1]["week"]
     season.suicide_winners = list(found[-1].get("winners") or [])
     if stats_week >= start:
@@ -645,6 +652,12 @@ def _reconcile(season: Season, authoritative: dict) -> list[Conflict]:
                     else "stats.xls kept; the pick sheet and results give this",
                 )
             )
+            # ...and kept it is: every page reads the week from these lines.
+            regular = person.weekly_regular.get(week)
+            big_loser = person.weekly_big_loser.get(week)
+            if regular is not None and big_loser is not None and regular + big_loser == official:
+                line.regular_wins, line.big_loser_wins = regular, big_loser
+            line.total_wins = official
     conflicts.sort(key=lambda c: (c.player.lower(), c.field))
     return conflicts
 

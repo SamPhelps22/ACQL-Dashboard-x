@@ -15,7 +15,10 @@ block is keyed by its own coach column rather than by row position:
 
     cols 0-13   main standings      (keyed by col 1)
     cols 15-17  big loser pool      (keyed by col 15)
-    col  18     suicide pool survivors
+    col  18     suicide pool survivors - or, once the pool has started again,
+                one column per round under "Suicide Pool #1", "#2", ...: the
+                newest round's survivors, the old rounds' winners (row 2 says
+                "Winner in wk 5")
     cols 25-29  rank movement/trend (aligned with col 1)
     cols 30+    per-week R/BL grid  (keyed by col 30)
 """
@@ -36,6 +39,8 @@ C_LINE_GAMES = 13
 # Side pools.
 C_BL_COACH, C_BL_POINTS = 15, 17
 C_SUICIDE_COACH = 18
+_SUICIDE_ROUND = re.compile(r"suicide\s*pool\s*#\s*(\d+)", re.I)
+_WON_IN_WEEK = re.compile(r"winner\s*in\s*w(?:ee)?k\.?\s*(\d+)", re.I)
 # Movement/trend block.
 C_PREV_POS, C_CUR_POS, C_3WK, C_TOTAL_WINS = 25, 26, 27, 28
 # Weekly grid.
@@ -114,6 +119,27 @@ def parse_stats(
     max_big_loser = _int(cell(2, C_GRID_FIRST + 1)) or 3
     result["max_regular"] = max_regular
     result["max_big_loser"] = max_big_loser
+
+    # The suicide pool's rounds: "Suicide Pool #1", "#2", ... on row 1. The
+    # newest round's column lists its survivors; an older round's lists its
+    # winners, under "Winner in wk N" - so the next round began in week N+1.
+    rounds = []
+    for c in range(sheet.ncols):
+        found = _SUICIDE_ROUND.search(_text(cell(1, c)) or "")
+        if found:
+            rounds.append((int(found.group(1)), c))
+    rounds.sort()
+    suicide_col = rounds[-1][1] if rounds else C_SUICIDE_COACH
+    if len(rounds) > 1:
+        before = rounds[-2][1]
+        won = _WON_IN_WEEK.search(_text(cell(2, before)) or "")
+        if won:
+            result["suicide_round"] = {
+                "pool": rounds[-1][0],
+                "start": int(won.group(1)) + 1,
+                "winners": [name for name in (_text(cell(r, before)) for r in range(5, sheet.nrows))
+                            if name and name.lower() not in {"coach", "pos", "total"}],
+            }
 
     def player_for(raw: object) -> Player | None:
         display = _text(raw)
@@ -205,7 +231,7 @@ def parse_stats(
                 bl_person.big_loser_points = points
 
         # --- suicide pool ---------------------------------------------------
-        suicide = player_for(cell(r, C_SUICIDE_COACH))
+        suicide = player_for(cell(r, suicide_col))
         if suicide is not None:
             # Presence in this column means still alive at this snapshot.
             alive_this_snapshot.add(suicide.key)

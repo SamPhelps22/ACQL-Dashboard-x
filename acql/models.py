@@ -334,6 +334,9 @@ class Season:  # noqa: D101
     #: team can be used again from this week. And who won the round before.
     suicide_restart: int = 0
     suicide_winners: list[str] = field(default_factory=list)
+    #: Every new start, oldest first: {"week": N, "winners": [...]} - the
+    #: winners being the round that ended the week before.
+    suicide_rounds: list[dict] = field(default_factory=list)
 
     # ---- convenience accessors -----------------------------------------
     def ordered_players(self) -> list[Player]:

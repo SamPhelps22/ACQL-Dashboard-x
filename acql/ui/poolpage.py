@@ -438,8 +438,39 @@ def _round_start(season: Season, weeks: list[int]) -> int:
     return start if start and max(weeks, default=0) >= start else 0
 
 
+def _past_rounds(season: Season, weeks: list[int]) -> list[dict]:
+    """The suicide pool's finished rounds, oldest first, for the survivor
+    wall's look back: each coach's picks in the round and the week they went
+    out. Empty until the pool has started again."""
+    restarts = [r for r in (getattr(season, "suicide_rounds", None) or [])
+                if r.get("week") and r["week"] <= max(weeks, default=0)]
+    out = []
+    begin = 0
+    for number, nxt in enumerate(restarts, 1):
+        end = nxt["week"] - 1
+        span = [w for w in weeks if begin <= w <= end]
+        if span:
+            status = _suicide_status(season, span, official=False, start=begin)
+            coaches = []
+            for key, person in season.players.items():
+                picks = {str(w): display_team(t) for w, t in sorted((person.suicide_picks or {}).items())
+                         if w in span}
+                alive, knocked = status.get(key, (False, None))
+                won = {" ".join(str(w).split()).casefold() for w in nxt.get("winners") or []}
+                if alive and won and " ".join(person.display.split()).casefold() not in won:
+                    # the round has a winner and it wasn't them: out in its last week
+                    alive, knocked = False, span[-1]
+                if picks or knocked:
+                    coaches.append({"name": person.display, "picks": picks,
+                                    "out": knocked, "alive": alive})
+            out.append({"pool": number, "start": span[0], "end": span[-1],
+                        "winners": list(nxt.get("winners") or []), "coaches": coaches})
+        begin = nxt["week"]
+    return out
+
+
 def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
-                    ) -> dict[str, tuple[bool, int | None]]:
+                    start: int | None = None) -> dict[str, tuple[bool, int | None]]:
     """key -> (still alive, week knocked out).
 
     Worked out week by week from each coach's pick and the result, with the
@@ -452,7 +483,7 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
     latest = max(weeks, default=0)
     # Once the page shows a week of a new round (the pool started again after
     # somebody won it), that round is the one it tells: everyone back in.
-    start = _round_start(season, weeks)
+    start = _round_start(season, weeks) if start is None else start
     out: dict[str, tuple[bool, int | None]] = {}
     for key, person in season.players.items():
         entered, knocked = bool(start), None
@@ -463,7 +494,7 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
             text = (line.suicide_pick or "").strip()
             if line.suicide_out or text.casefold() in recap.DEAD_MARKERS:
                 if entered and knocked is None:
-                    knocked = number - 1
+                    knocked = max(number - 1, start)
                 break
             if not team_code(text):
                 continue
@@ -475,6 +506,8 @@ def _suicide_status(season: Season, weeks: list[int], *, official: bool = True,
             # no picks to go on: take the files' word, within the page's weeks
             knocked = min(person.suicide_out_week, latest) or None
             entered = knocked is not None
+            if knocked and start and knocked < start:
+                knocked = start         # out of this round, which began in `start`
         out[key] = (entered and knocked is None, knocked)
     return out
 
@@ -918,6 +951,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "history": history,
         "teams": {code: display_team(code) for code in sorted(DISPLAY)},
         "team_rank": _team_ranks(latest),
+        "suicide_rounds": _past_rounds(season, weeks),
         "team_power": _team_power(latest),
         "weeks": [
             {**w, "chaos": chaos.get(w["week"])} for w in (
