@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import html
 import mimetypes
+import os
 import smtplib
 import ssl
 import sys
@@ -110,6 +111,13 @@ class MailSettings:
         from .. import store
         raw = store.get("settings", "email", {})
         if not isinstance(raw, dict):
+            raw = {}
+        # GitHub's cloud job (snapshot.py) brings the Gmail login in its own secrets
+        env_sender = os.environ.get("ACQL_GMAIL_ADDRESS", "").strip()
+        env_password = "".join(os.environ.get("ACQL_GMAIL_APP_PASSWORD", "").split())
+        if env_sender and env_password:
+            raw = {**raw, "sender": env_sender, "sealed_password": seal(env_password)}
+        if not raw:
             return cls()
         return cls(
             sender=str(raw.get("sender", "")),

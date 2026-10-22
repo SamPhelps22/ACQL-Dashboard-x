@@ -751,9 +751,26 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--poll", action="store_true", help="only when a look at ESPN is due")
     mode.add_argument("--email", action="store_true", help="email Deadeye's card for the week ahead")
     mode.add_argument("--brief", action="store_true", help="email the Sunday morning brief")
+    mode.add_argument("--alerts", action="store_true",
+                      help="only the deadline reminder (GitHub's cloud job runs this)")
     parser.add_argument("--dry-run", action="store_true",
                         help="do everything but publish the website, or send the email")
     args = parser.parse_args(argv)
+
+    # GitHub can send the emails and texts instead (site/snapshot.py): one sender, never two
+    from .site import snapshot
+    sending = args.email or args.brief or args.alerts
+    if sending and snapshot.in_cloud() and not args.dry_run and not snapshot.cloud_sends():
+        _log("cloud: sending is switched off on the PC (snapshot.py --cloud-on) - nothing sent")
+        return 0
+    if (args.email or args.brief) and snapshot.pc_should_skip("the card email" if args.email else "the Sunday brief"):
+        return 0
+
+    if args.alerts:
+        from .site import pushalerts
+        if not args.dry_run:
+            _alert("deadline", pushalerts.remind_deadline)
+        return 0
 
     if args.brief:
         try:
@@ -784,7 +801,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         try:
             from .site import pushalerts
-            _alert("deadline", pushalerts.remind_deadline)
+            if not snapshot.cloud_sends():
+                _alert("deadline", pushalerts.remind_deadline)
             if args.poll and not _poll_due():
                 return 0
             _log("daily run" if args.daily else "game-day poll")
@@ -792,6 +810,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001
             _log(f"run failed: {exc!r}\n{traceback.format_exc()}")
             return 1
+        finally:
+            # the locked copy GitHub sends from, at most hourly (nothing until a key is made)
+            if not args.dry_run and not snapshot.in_cloud():
+                snapshot.upload_quietly()
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import statistics
 import time
 import urllib.error
@@ -80,6 +81,9 @@ def stamp() -> tuple:
 # ---- the API key ------------------------------------------------------------
 def api_key() -> str:
     from ..site import mailer
+    env_key = os.environ.get("ACQL_ODDS_API_KEY", "").strip()   # GitHub's cloud job
+    if env_key:
+        return env_key
     sealed = _read().get("key", "")
     try:
         return mailer.unseal(sealed) if sealed else ""

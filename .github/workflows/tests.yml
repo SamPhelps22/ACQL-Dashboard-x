@@ -82,6 +82,10 @@ jobs:
         if: always()
         run: python tests/test_pushalerts.py
 
+      - name: Cloud mail snapshot tests
+        if: always()
+        run: python tests/test_snapshot.py
+
       - name: Sunday brief tests
         if: always()
         run: python tests/test_sunday.py
