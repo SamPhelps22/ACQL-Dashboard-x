@@ -52,6 +52,14 @@ Filenames do not matter. Every file is identified by reading what is inside it
 collapsed into one. The project root is watched as well as `data/`, and you can
 add more folders from the **Data & Update** page.
 
+**stats.xls is optional.** Once a week's games are final, the dashboard grades
+everyone's picks against the scores and works out every standings column the
+export carries - W/L, PCT, GB, -PTS/+PTS/NET, the weekly pot and its split,
+positions, big-loser points, line-game %, and the suicide pool (including
+starting it again once it is won). It starts from the newest stats.xls you have,
+if any, and rolls forward from there. The one thing it can't work out is
+**Pie Splits** (side-pool prize money): the last export's figure is kept.
+
 Because each weekly export is identified by its own week number, **leaving old
 exports in the folder rebuilds the season's history**: drop week 4's file in
 next to weeks 1–3 and the whole season assembles itself.
@@ -199,12 +207,19 @@ acql/
 ├── names.py            name normalisation and aliases
 ├── models.py           the domain model
 ├── repository.py       merges the sources into one Season
-├── awards.py           season superlatives
 ├── writeback.py        guarded Excel writing
+├── store.py            the app's SQLite database
+├── headless.py         scheduled jobs (results, website, email) without a window
+├── checks.py           the app's own self-checks (python -m acql.checks)
 ├── sources/
 │   ├── discovery.py    identifies files by content, not filename
 │   ├── stats_xls.py    the standings export parser
 │   └── workbook.py     the dashboard workbook parser
+├── model/              Deadeye pricing, the forecast ledger, backtests, the Model Lab
+├── pool/               picks, awards, money and Big Loser plans, the chaos simulator
+├── feeds/              ESPN results, odds, schedule, weather, nflverse
+├── site/               the public website and the emails
+├── training/           the Deadeye training ground (apart from the live app)
 └── ui/
     ├── app.py          window, navigation, background loading
     ├── theme.py        light and dark palettes
@@ -218,16 +233,24 @@ packaging/
 ├── build.py            one-command build
 ├── acql.ico / .icns    Windows and macOS app icons
 └── icon.png            window icon, bundled with the build
-tests/                  parser, merge, editor and write-back tests
+tests/                  the dashboard's suites (run_tests.py) and four smaller ones
+nfl_pickem/             the separate NFL pick'em package, with its own tests
 ```
 
 ## Tests
 
 ```bash
 python tests/run_tests.py
+python tests/test_training.py
+python tests/test_chaos.py
+python tests/test_model_lab.py
+python tests/test_pushalerts.py
+python tests/test_sunday.py
+python -m acql.checks
+python -m acql.ui.app --smoke-test
 ```
 
-39 tests covering name matching, file identification, both parsers, the merge
+`run_tests.py` holds the bulk of the tests (over 200 at the last count), covering name matching, file identification, both parsers, the merge
 rules, the awards, and the write-back guards — including that a formula cell is
 refused, that a change set containing an unsafe edit is abandoned whole, that
 big-loser win markers survive editing a neighbouring slot, and that the

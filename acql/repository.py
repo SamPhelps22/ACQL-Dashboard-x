@@ -26,7 +26,7 @@ from .config import Settings
 from .models import Conflict, Game, Player, Season, SourceFile, Week
 from . import analytics
 from .feeds import lines, results
-from .pool import picks
+from .pool import picks, standings
 from .names import AliasTable
 from .model.predictions import team_code
 from .sources import discover, parse_stats, parse_workbook
@@ -137,9 +137,16 @@ def load_season(settings: Settings, aliases: AliasTable | None = None, *,
     except Exception as exc:  # noqa: BLE001 - a note is a warning, not a failed load
         season.warnings.append(f"Couldn't read the pool lines: {exc}")
     _take_pick_sheets(season, settings, aliases, online=online, force=force, fetcher=fetcher, now=now)
+    standings.regrade(season)
     season.conflicts = _reconcile(season, authoritative)
     _fill_week_lines(season)
     _fill_player_weeks(season)
+    # Bring the standings past the newest stats.xls, so it needn't be uploaded.
+    stats_week = (latest_stats or {}).get("week") or 0
+    rolled = standings.roll_forward(season, stats_week)
+    suicide_week = stats_week
+    if standings.replay_suicide(season, stats_week):
+        suicide_week = max(stats_week, rolled)
     # The workbook holds its money as formulas and caches no results, so it
     # reads as blank from outside Excel. The scores are known, and the pool's
     # payout rule is arithmetic on the scores, so any week the files have not
@@ -152,9 +159,8 @@ def load_season(settings: Settings, aliases: AliasTable | None = None, *,
         season.current_week = played[-1] if played else 0
 
     _split_provisional(season)
-    _resolve_suicide_pool(season, (latest_stats or {}).get("week") or 0)
-    _restart_suicide_pool(season, (latest_stats or {}).get("week") or 0,
-                          (latest_stats or {}).get("suicide_round"))
+    _resolve_suicide_pool(season, suicide_week)
+    _restart_suicide_pool(season, suicide_week, (latest_stats or {}).get("suicide_round"))
     _rank_weeks(season)
     return season
 

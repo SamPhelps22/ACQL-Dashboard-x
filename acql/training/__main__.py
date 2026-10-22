@@ -11,8 +11,12 @@
     python -m acql.training decay      how much of the models' gap from the line survives open to close
     python -m acql.training margin     four ways of taking the bookmaker's margin out, against results
     python -m acql.training features   each football fact on its own, on top of the line, at each timing
+    python -m acql.training calibration  are Deadeye's chances honest? the margin-to-chance step, audited
     python -m acql.training fetch     the season archives from The Prediction Tracker (about 2 MB;
-                                       the one thing here that goes online, and only when asked)
+                                       goes online, and only when asked)
+    python -m acql.training pfm       Pro Football Mania's ratings: pull a snapshot (goes online,
+                                       36 pages two seconds apart), then measure them against Deadeye
+                                       (--no-pull measures only; shadow only, never a pick)
 
 Everything is written under data/training. The dashboard's database is read
 from a copy, the dashboard can be open, and nothing here changes a pick.
@@ -156,6 +160,7 @@ def weekly(args) -> int:
     from . import verdict
     args.quiet = args.no_trees = args.no_check = args.no_books = False
     done = snapshot(args)
+    _weekly_pfm()
     newest = verdict.latest()
     age = time.time() - float(newest.get("made", 0)) if newest else None
     if not args.force and age is not None and age < RUN_EVERY_S:
@@ -229,6 +234,59 @@ def featurevalue(args) -> int:
     return 0
 
 
+def calibration(args) -> int:
+    """Deadeye's chances against results: the curve, its width, and recalibration, walked forward."""
+    from . import calibration as found
+    if args.part == "join":
+        text, path = found.join()
+    elif args.part:
+        found.run_part(args.part)
+        text, path = found.join()
+    else:
+        text, path = found.run()
+    print(text)
+    print(f"Written to {path}")
+    return 0
+
+
+def pfm(args) -> int:
+    """PFM's ratings: one snapshot (unless --no-pull), then the study on every
+    snapshot kept. Writes data/training/pfm/; the Model Lab reads latest.json."""
+    from ..feeds import pfm as feed
+    from . import pfm as found
+    if not args.no_pull:
+        got = feed.refresh()
+        print(f"PFM pull: {got['what']}" + (f" ({got.get('status')}, update of {got.get('effective_date')}, "
+                                             f"{got.get('pages')} pages)" if got["what"] != "failed" else
+                                             f" - {got.get('detail')}"))
+        for issue in got.get("issues", [])[:12]:
+            print(f"  {issue['level']}: {issue['detail']}")
+        print(f"  {got['freshness']['words']}")
+    text, path = found.run()
+    print(text.split("\n\n")[1] if "\n\n" in text else text)    # the verdict line
+    print(f"Written to {path}")
+    return 0
+
+
+#: The weekly job pulls PFM again only when the newest snapshot is this old (PFM updates once a week).
+PFM_EVERY_S = 20 * 3600
+
+
+def _weekly_pfm() -> None:
+    """The weekly job's PFM step (Sam approved weekly pulls on 2026-10-18).
+    Never stops the rest of the job."""
+    try:
+        from ..feeds import pfm as feed
+        from . import pfm as found
+        newest = feed.latest()
+        if newest is None or time.time() - float(newest.get("collected_at") or 0) >= PFM_EVERY_S:
+            got = feed.refresh()
+            print(f"PFM pull: {got['what']} - {got['freshness']['words']}")
+        found.run()
+    except Exception as exc:  # noqa: BLE001 - PFM is a side study; the training run goes on
+        print(f"PFM step skipped ({type(exc).__name__}: {exc})")
+
+
 def fetch(args) -> int:
     """The season archives, one request each, a second apart. Files already
     on disk are left alone (this season's is fetched again with --refresh)."""
@@ -281,13 +339,18 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("margin", help="four ways of taking the margin out of the moneylines, measured")
     commands.add_parser("decay", help="the models' edge over the line, open to close, measured")
     commands.add_parser("features", help="each football fact on its own, on top of the line, measured")
+    c = commands.add_parser("calibration", help="Deadeye's chances against results, walked forward (shadow only)")
+    c.add_argument("part", nargs="?", choices=("midweek", "opening", "updated", "join"),
+                   help="one line timing only (then the report is joined again), or just join the parts")
+    pf = commands.add_parser("pfm", help="Pro Football Mania's ratings: a snapshot, then measured (shadow only)")
+    pf.add_argument("--no-pull", action="store_true", help="measure on the snapshots already kept; do not go online")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
     args = parser.parse_args(argv)
     _logging(args.verbose)
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
             "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
-            "features": featurevalue}.get(args.command)
+            "features": featurevalue, "calibration": calibration, "pfm": pfm}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0

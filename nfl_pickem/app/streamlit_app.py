@@ -6,7 +6,6 @@ Run from the nfl_pickem/ directory:
 
 from __future__ import annotations
 
-import os
 import sys
 from contextlib import contextmanager
 from datetime import datetime

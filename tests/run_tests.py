@@ -228,6 +228,70 @@ class TestDerivedStats(unittest.TestCase):
         self.assertEqual(blank.trend(), 0.0)
 
 
+class TestStandingsWithoutExport(unittest.TestCase):
+    """The standings stats.xls holds, worked out from the weekly scores."""
+
+    @staticmethod
+    def _season(scores, *, picks=None, suicide=None):
+        from acql.models import Game, PlayerWeek, Week
+        season = Season(buy_in=40)
+        for key in scores:
+            season.players[key] = Player(key=key, display=key.title())
+        for n in range(1, len(next(iter(scores.values()))) + 1):
+            games = [Game(index=1, home="Chicago", away="Detroit", winner="Chicago",
+                          home_points=20, away_points=17)]
+            week = Week(number=n, games=games, source=None)
+            for key, row in scores.items():
+                line = PlayerWeek(player=key, week=n, regular_wins=row[n - 1], total_wins=row[n - 1])
+                if suicide:
+                    line.suicide_pick = suicide[key][n - 1]
+                week.lines[key] = line
+            season.weeks[n] = week
+        return season
+
+    def test_points_pot_and_ties(self):
+        from acql.pool import standings
+        s = self._season({"a": [10, 8], "b": [10, 12], "c": [6, 12]})
+        self.assertEqual(standings.roll_forward(s, 0), 2)
+        a, b, c = (s.players[k] for k in "abc")
+        # week 1: a and b split c's 4 short; week 2: b and c split a's 4 short
+        self.assertEqual((a.points_won, b.points_won, c.points_won), (2.0, 4.0, 2.0))
+        self.assertEqual((a.points_paid, b.points_paid, c.points_paid), (-44.0, -40.0, -44.0))
+        self.assertEqual(b.net_points, -36.0)
+        self.assertEqual((b.pos, a.pos, c.pos), (1, 2, 3))   # a and c level: a was higher
+        self.assertEqual(c.games_behind, 4.0)
+        self.assertEqual(s.current_week, 2)
+
+    def test_export_weeks_are_left_alone(self):
+        from acql.pool import standings
+        s = self._season({"a": [10], "b": [9]})
+        self.assertEqual(standings.roll_forward(s, 1), 0)
+        self.assertEqual(s.players["a"].wins, 0)
+
+    def test_suicide_pool_is_won_and_starts_again(self):
+        from acql.pool import standings
+        s = self._season({"a": [1, 1], "b": [1, 1], "c": [1, 1]},
+                         suicide={"a": ["Chicago", "Chicago"], "b": ["Detroit", "Detroit"],
+                                  "c": ["Detroit", "Chicago"]})
+        self.assertTrue(standings.replay_suicide(s, 0))
+        self.assertEqual(s.suicide_winners, ["A"])
+        self.assertEqual(s.suicide_restart, 2)
+        self.assertEqual({k for k, p in s.players.items() if p.suicide_alive}, {"a", "c"})
+
+    def test_ungraded_workbook_row_is_graded(self):
+        from pathlib import Path as P
+        from acql.pool import standings
+        s = self._season({"a": [0]})
+        week = s.weeks[1]
+        week.source = P("ACQL Dashboard.xlsx")
+        line = week.lines["a"]
+        line.correct_picks = {1: "detroit"}     # picked the loser, never deleted
+        line.regular_wins = line.total_wins = 1
+        s.results_year = 2026
+        standings.regrade(s)
+        self.assertEqual((line.regular_wins, line.correct_picks), (0, {}))
+
+
 class TestAwards(unittest.TestCase):
     def test_awards_never_raise_on_an_empty_season(self):
         self.assertEqual(awards.compute(Season()), [])
@@ -621,6 +685,17 @@ class TestFirstSeenIsNotTheOpener(_ScratchStore):
         self.assertEqual((seen.opening, seen.market, seen.opening_seen), (4.0, 5.5, True))
         fetched_only = odds.overlay(3, [], 0)[0]
         self.assertEqual((fetched_only.opening, fetched_only.opening_seen), (5.5, True))
+
+    def test_the_evidence_column_shows_models_and_top_reason(self):
+        from acql.model import evidence as ev
+        case = ev.Case(1, "Indianapolis @ Minnesota", "Minnesota", "Indianapolis", 0.51, "", False, (
+            ev.Signal("Form", ev.FOR, "", "", "form +4.0 a game vs -1.0"),
+            ev.Signal("Line move", ev.FOR, "", "", "line moved 1.5 toward Minnesota"),
+            ev.Signal("Computer models", ev.AGAINST, "", "", "3 of 9 models agree"),
+        ))
+        self.assertEqual(case.lines(), ["3 of 9 models agree", "Line moved 1.5 toward Minnesota", "2 for, 1 against"])
+        alone = ev.Case(2, "", "X", "Y", 0.5, "", False, (ev.Signal("Rest", ev.AGAINST, "", "", "3 fewer days' rest"),))
+        self.assertEqual(alone.lines(), ["Against: 3 fewer days' rest", "0 for, 1 against"])
 
     def test_the_evidence_card_says_first_seen(self):
         from types import SimpleNamespace
@@ -3323,6 +3398,120 @@ class SurvivorFieldTests(unittest.TestCase):
         made = [sf.Made("x", w, "a", chances, frozenset()) for w in range(1, 9)]
         self.assertGreater(sf.fit(made), sf.fit(made[:1] + [sf.Made("y", 9, "c", chances, frozenset())] * 3))
 
+
+class TestScoreboardRibbon(unittest.TestCase):
+    """The ribbon over every page: the week's games in ticker order, exact
+    kickoff times, your pick in gold, and a chip that opens Game Day."""
+
+    @staticmethod
+    def _game(index, state, kickoff, away="Dallas", home="Green Bay", away_points=None, home_points=None,
+              clock=""):
+        from types import SimpleNamespace
+        from acql.pool import gameday as GD
+        margin = None if home_points is None or away_points is None else home_points - away_points
+        return SimpleNamespace(
+            index=index, state=state, kickoff=kickoff, clock=clock,
+            game=SimpleNamespace(away=away, home=home, label=f"{away} at {home}"),
+            home_points=home_points, away_points=away_points, margin=margin,
+            started=state in ("in", "final"), decided=state == "final",
+            leader=(GD.HOME if (margin or 0) > 0 else GD.AWAY if (margin or 0) < 0 else GD.NOBODY),
+            possession="", line_text=lambda: "straight up")
+
+    def test_on_now_then_by_kickoff_then_the_finals(self):
+        from acql.ui.ribbon import in_order
+        games = [self._game(1, "final", 100), self._game(2, "pre", 900), self._game(3, "in", 500),
+                 self._game(4, "pre", 700), self._game(5, "final", 300), self._game(6, "off", None)]
+        self.assertEqual([g.index for g in in_order(games)], [3, 4, 2, 6, 5, 1])
+
+    def test_kickoff_is_a_day_and_a_time_never_a_countdown(self):
+        import time as _time
+        from acql.ui.ribbon import kickoff_words
+        soon = _time.mktime((2026, 10, 18, 13, 0, 0, 0, 0, -1))      # a Sunday, 1 pm
+        self.assertEqual(kickoff_words(soon), "Sun 1:00 PM")
+        self.assertEqual(kickoff_words(_time.mktime((2026, 10, 19, 20, 15, 0, 0, 0, -1))), "Mon 8:15 PM")
+        self.assertEqual(kickoff_words(None), "")
+
+    def test_only_while_a_week_is_being_played(self):
+        from types import SimpleNamespace
+        from acql.feeds import results
+        from acql.ui.ribbon import playing_week
+        year = 2026
+        mid = results.week_starts(year, 6) + 4 * 86400
+        season = SimpleNamespace(is_empty=False, results_year=year, title="ACQL 2026",
+                                 weeks={6: SimpleNamespace(games=[object()])})
+        self.assertEqual(playing_week(season, mid), 6)
+        self.assertEqual(playing_week(season, results.week_starts(year, 7) + 3600), 0)   # no games set up
+        self.assertEqual(playing_week(season, results.week_starts(year, 1) - 86400), 0)  # before the season
+        self.assertEqual(playing_week(SimpleNamespace(is_empty=True), mid), 0)
+
+    def test_chips_are_one_row_in_order_with_your_pick_in_gold(self):
+        import os
+        from types import SimpleNamespace
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication, QLabel
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            self.skipTest(f"PySide6 unavailable: {exc}")
+        type(self).app = QApplication.instance() or QApplication([])
+        from acql.pool import gameday as GD
+        from acql.ui.ribbon import ScoreboardRibbon, kickoff_words
+        from acql.ui.theme import PALETTES
+        ribbon = ScoreboardRibbon(PALETTES["dark"])
+        games = [self._game(1, "final", 100, "Houston", "Jacksonville", 34, 31, "Final"),
+                 self._game(2, "pre", 900_000, "Arizona", "Los Angeles Rams"),
+                 self._game(3, "in", 500, "Chicago", "Atlanta", 21, 7, "Q2 1:02")]
+        you = SimpleNamespace(picks={3: GD.AWAY, 2: GD.HOME})
+        ribbon.show_games(6, games, you)
+        self.assertFalse(ribbon.isHidden())
+        self.assertTrue(ribbon.live)
+        self.assertEqual([c.index for c in ribbon.chips], [3, 2, 1])
+        self.assertTrue(all(ribbon.lane_row.indexOf(c) >= 0 for c in ribbon.chips))   # one row
+        self.assertEqual(ribbon.chips[1].state_label.text(), kickoff_words(900_000))
+        gold = {c.index: [lab.full_text() for lab in c.findChildren(QLabel) if lab.property("pick") == "true"]
+                for c in ribbon.chips}
+        self.assertEqual(gold, {3: ["Chicago"], 2: ["Los Angeles Rams"], 1: []})
+        chosen = []
+        ribbon.game_chosen.connect(lambda week, index: chosen.append((week, index)))
+        ribbon.chips[1].pressed.emit(ribbon.chips[1].index)
+        self.assertEqual(chosen, [(6, 2)])
+        ribbon.show_games(0, [], None)                                           # between weeks
+        self.assertTrue(ribbon.isHidden())
+
+
+class PickDeadlineTests(unittest.TestCase):
+    def test_next_deadline_skips_one_already_past_and_stays_out_of_the_fingerprint(self):
+        from unittest import mock
+        from acql.feeds import oddslock, results
+        from acql.ui import poolpage
+        locks = {6: 1000.0, 7: 5000.0}
+        from acql.site import mainsite
+        with mock.patch.object(mainsite, "due", return_value=None), \
+             mock.patch.object(results, "season_year", return_value=2026), \
+             mock.patch.object(results, "calendar_weeks", return_value=[6, 7]), \
+             mock.patch.object(oddslock, "lock_time", side_effect=lambda y, w: locks[w]):
+            self.assertEqual(poolpage._deadline(Season(), now=2000.0), {"week": 7, "at": 5_000_000, "form": mainsite.FORM})
+            self.assertIsNone(poolpage._deadline(Season(), now=6000.0))
+        shown = poolpage._as_shown({"deadline": {"week": 7, "at": 1}, "weeks": []})
+        self.assertNotIn("deadline", shown)
+
+    def test_the_main_sites_due_time_is_read_as_eastern(self):
+        import io
+        from acql.site import mainsite
+        page = ("<p><span>Week 7&nbsp; <a href=x>Enter Picks</a>&nbsp;&nbsp; <b>(Due Thursday 6:30pm)</b></span></p>"
+                "<p>2026 Week 6 picks</p>").encode("cp1252")
+        self.assertEqual(mainsite.parse_due(mainsite.page_text(page)), (7, 3, 18, 30))
+        self.assertEqual(mainsite.parse_due("Week 12 Enter Picks (Due Wed 1 PM)"), (12, 2, 13, 0))
+        self.assertIsNone(mainsite.parse_due("Line-Pony takes the week with 10 wins"))
+        found = mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(page))
+        # Thursday 22 October 2026, 6:30pm EDT is 22:30 UTC
+        self.assertEqual(found, {"week": 7, "at": 1792708200, "form": mainsite.FORM})
+        linked = page.replace(b"<a href=x>", b"<a href=\"http://example.com/form.cgi\"><span style='color:#92D050'>")
+        self.assertEqual(mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(linked))["form"], "http://example.com/form.cgi")
+        # in November, after the clocks go back, it is five hours behind
+        from datetime import date
+        self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30) - mainsite.eastern(date(2026, 11, 12), 0, 0), 18.5 * 3600)
+        self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30), 1794526200)
+        self.assertIsNone(mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(b"<p>nothing here</p>")))
 
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:

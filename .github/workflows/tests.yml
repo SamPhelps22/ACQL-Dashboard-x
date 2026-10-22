@@ -56,6 +56,18 @@ jobs:
       - name: The training ground's tests
         run: python tests/test_training.py
 
+      - name: The PFM ratings feed and study (shadow only)
+        run: python tests/test_pfm.py
+
+      - name: The smaller suites (chaos, model lab, phone alerts, Sunday brief, calibration, game day live)
+        run: |
+          python tests/test_chaos.py
+          python tests/test_model_lab.py
+          python tests/test_pushalerts.py
+          python tests/test_sunday.py
+          python tests/test_calibration.py
+          python tests/test_gameday_live.py
+
       - name: The app's own checks
         run: python -m acql.checks
 

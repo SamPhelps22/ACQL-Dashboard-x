@@ -35,6 +35,23 @@ MOTION_MS = 150
 #: accent; focus and the chosen item commit to it.
 HOVER_TINT = 0.45
 
+#: The game-day motion vocabulary, in milliseconds, for both surfaces: the
+#: gold wash on a score that really changed, a card changing state, a row
+#: moving place on the leaderboard, a points total counting up, and going
+#: into or out of Cinema mode. Each plays once, for a real change; with
+#: reduced motion each becomes a still mark instead.
+MOTION = {"flash": 1400, "state": 240, "rank": 450, "count": 700, "cinema": 220}
+
+#: One easing for all of it: quick out, gentle settle (CSS cubic-bezier;
+#: Qt's OutCubic is the same curve).
+EASE = (0.22, 1.0, 0.36, 1.0)
+
+#: How old a feed's last good look may get before the screen calls it stale,
+#: in seconds. Scores are looked at every 30 seconds while a game is on and
+#: every five minutes otherwise (feeds/results.py), so three missed looks is
+#: stale. Standings follow the scores and are worked out from them.
+FRESHNESS = {"scores_live_s": 90, "scores_s": 900, "standings_live_s": 90, "standings_s": 900}
+
 
 def tracking_px(size: float, em: float = LABEL["tracking_em"]) -> float:
     """Letter-spacing in pixels for a face set at `size` - Qt has no `em`."""
@@ -54,5 +71,10 @@ def css() -> str:
         f"--icon-stroke: {ICON_STROKE};",
         f"--motion: {MOTION_MS}ms;",
         f"--hover-tint: {round(HOVER_TINT * 100)}%;",
+        # game day: the motion vocabulary, and the freshness limits the page's
+        # script reads back as numbers (getComputedStyle), so one place holds them
+        *(f"--m-{name}: {ms}ms;" for name, ms in MOTION.items()),
+        f"--ease: cubic-bezier({', '.join(f'{v:g}' for v in EASE)});",
+        *(f"--fresh-{name.replace('_', '-')}: {s};" for name, s in FRESHNESS.items()),
     ]
     return ":root { " + " ".join(props) + " }"

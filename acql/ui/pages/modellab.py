@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 
 import time
 
-from ...model import challengers, closing, contenders, ledger, modellab
+from ...model import challengers, closing, contenders, ledger, modellab, pfmcheck
 from ...feeds import nflverse, oddslock, results
 from ...places import LAB as title_
 from ...version import MODEL_NAME, VERSION
@@ -48,6 +48,8 @@ SHOCK_WEEKS = 4
 FEW = 20
 VALUE_TITLE = "Closing line value - did the line come round to the picks?"
 TAUGHT_TITLE = "Challengers taught on past seasons - is any clearly better than the rule in use?"
+PFM_TITLE = "Pro Football Mania's ratings - do they add anything to the card? (shadow only)"
+PFM_WEEK_TITLE = "This week beside PFM - the shadow chance is not a pick"
 WEEKS_TITLE = "Week by week - each recipe's record, on the games it priced"
 #: The page's views. It had grown to eight tiles and sixteen cards on one
 #: scroll, answering four different questions; each now has a view of its own.
@@ -153,6 +155,12 @@ class ModelLabPage(Page):
         self.taught_lead.setWordWrap(True)
         self.taught_lead.setTextFormat(Qt.TextFormat.RichText)
         self.extra["taught"][0].body().insertWidget(1, self.taught_lead)      # under the card's title
+        self.extra["pfm"] = self._card(PFM_TITLE)
+        self.pfm_lead = QLabel("")
+        self.pfm_lead.setWordWrap(True)
+        self.pfm_lead.setTextFormat(Qt.TextFormat.RichText)
+        self.extra["pfm"][0].body().insertWidget(1, self.pfm_lead)
+        self.extra["pfm_week"] = self._card(PFM_WEEK_TITLE)
         self.extra["kinds"] = self._card(KINDS_TITLE)
         self.extra["kinds_by_season"] = self._card(KINDS_BY_SEASON)
         self.extra["seasons"] = self._card(SEASONS_TITLE)
@@ -187,7 +195,8 @@ class ModelLabPage(Page):
         for tiles, cards in (
             (self._tiles, (self.lab_card, card("duel"), card("parts"), self.weeks_card, self.recipes_card)),
             (self._more_tiles, (card("form"), card("shocks"), card("calib"))),
-            ((), (card("taught"), card("kinds"), card("kinds_by_season"), card("seasons"))),
+            ((), (card("taught"), card("pfm"), card("pfm_week"), card("kinds"), card("kinds_by_season"),
+                  card("seasons"))),
             ((), (card("record"), self.value_card, card("cover"), self.versions_card)),
         ):
             holder = QWidget()
@@ -266,6 +275,7 @@ class ModelLabPage(Page):
         self._update_coverage(lab)
         self._update_weeks(lab)
         self._update_taught()
+        self._update_pfm()
         self._update_kinds()
         self._update_seasons()
         self._update_value(value)
@@ -724,6 +734,50 @@ class ModelLabPage(Page):
             f"Worked out {_when(found.made)} by the weekly training job. A case here is a reason to look, "
             f"never a switch: the rule above ({modellab.ENOUGH_GAMES} games priced live) is untouched.",
             *doubts]))
+
+    def _update_pfm(self) -> None:
+        """The PFM check's answer, read from the file the training job leaves; nothing is run here."""
+        found = pfmcheck.read()
+        if found is None:
+            self.pfm_lead.setText("")
+            self._fill("pfm", pfmcheck.HEADERS, [], note=(
+                "No answer yet. The PFM study (its own command, and a step of the weekly training job) takes a "
+                f"snapshot of PFM's ratings and measures them against {MODEL_NAME}, on games the fit had not "
+                "seen. It changes no pick."))
+            self._fill("pfm_week", pfmcheck.WEEK_HEADERS, [], note="")
+            return
+        self.pfm_lead.setText(f"<b>{found.call.capitalize()}.</b> {found.why}")
+        tones = {(r, 6): "good" for r in found.better} | {(r, 6): "bad" for r in found.worse}
+        doubts = []
+        if found.fresh_state in ("stale", "none", "partial"):
+            doubts.append(f"<b>{found.freshness}.</b>")
+        if found.stale():
+            doubts.append("<b>This answer is more than a week old</b> - the study has not run since.")
+        if found.sealed is False:
+            doubts.append("<b>The study's own check failed</b> (a result could have leaked backwards): "
+                          "do not act on it.")
+        if found.revisions:
+            doubts.append(f"PFM has rewritten {found.revisions} past weekly score(s) since an earlier snapshot.")
+        self._fill("pfm", pfmcheck.HEADERS, found.rows, numeric_columns={1, 2, 3, 4}, tones=tones,
+                   bold_columns={0}, stretch=6, note=" ".join([
+            f"Each version priced only from what was known at the deadline, with any PFM weight taught on "
+            f"earlier weeks only. Log loss and Brier a game, lower is better; against {MODEL_NAME} is on the same "
+            "games, minus is better, and only a range wholly below zero counts. B is the betting line with no "
+            "models' share; C adds the PFM Team Score gap to the card, C2 to the bare line.",
+            f"{found.freshness}. Worked out {_when(found.made)}.",
+            f"A case here is a reason to look, never a switch: {MODEL_NAME}'s picks are untouched.",
+            *doubts]))
+        self._fill("pfm_week", pfmcheck.WEEK_HEADERS, found.week_rows, numeric_columns={2, 3, 4, 5, 6},
+                   bold_columns={0}, stretch=0, note=(
+            f"Week {found.week}: the home side's chance of being credited. {MODEL_NAME} is the card; the PFM "
+            "shadow is the card with the PFM gap added at the weight earlier weeks taught - kept in its own "
+            "ledger (data/training/pfm/shadow.jsonl), never the pick."
+            + ("" if found.weight is None else
+               f" The weight taught so far is {found.weight:+.2f} a spread of the gap"
+               + (" - minus: it fades PFM's favourite, so the shadow moves against PFM, not with it"
+                  if found.weight < 0 else "")
+               + ". Until the check above says otherwise, that is no better than luck.")
+            if found.week_rows else ""))
 
     def _update_kinds(self) -> None:
         try:

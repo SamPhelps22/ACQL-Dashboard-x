@@ -33,6 +33,8 @@ from ..version import MODEL_NAME
 from . import icons
 from .groups import GroupSpec, PageGroup
 from .motion import fade_stack
+from .ribbon import ScoreboardRibbon, playing_week as ribbon_week
+from .cinema import CinemaWindow, LiveFeed
 from .pages.base import (
     CHECK_RESULTS, CHECK_UPDATES, GO_TO_DATA, INSTALL_UPDATE, KEEPING, LIVE_CHECK, LIVE_CHECK_NOW, OPEN_FOLDER,
     POOL_EXTRAS, UPDATE_SETTINGS,
@@ -133,9 +135,9 @@ AUTO_RETRY_MS = 5000
 CLOCK_TICK_MS = 30_000
 #: How often the window considers looking at the scoreboard. It only goes
 #: online when a look is due (results.due: every few minutes while a game
-#: is on, every minute while Game Day is open), and only reloads when a game
-#: has finished.
-RESULTS_CHECK_MS = 60 * 1000
+#: is on, every 30 seconds while one is being watched), and only reloads
+#: when a game has finished.
+RESULTS_CHECK_MS = 30 * 1000
 
 
 def updated_text(loaded: datetime | None, now: datetime | None = None) -> str:
@@ -195,9 +197,23 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
 
         layout.addWidget(self._build_sidebar())
+        # the scoreboard ribbon over every page, the pages under it
+        main = QWidget()
+        column = QVBoxLayout(main)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        self.ribbon = ScoreboardRibbon(self.palette_)
+        self.ribbon.game_chosen.connect(self.open_game)
+        self.ribbon.cinema_wanted.connect(self.toggle_cinema)
+        # the week being played, read once per look for the ribbon and Cinema
+        # mode alike; what changed between two good looks is decided there, once
+        self.live_feed = LiveFeed(self)
+        self.cinema: CinemaWindow | None = None
+        column.addWidget(self.ribbon)
         self.stack = QStackedWidget()
         fade_stack(self.stack)
-        layout.addWidget(self.stack, 1)
+        column.addWidget(self.stack, 1)
+        layout.addWidget(main, 1)
         self.setCentralWidget(root)
 
         # One instance of every page, grouped into the sidebar's places.
@@ -560,6 +576,7 @@ class MainWindow(QMainWindow):
         add("Refresh", "Ctrl+R", self.refresh_by_hand)
         add("Toggle theme", "Ctrl+T", self.toggle_theme)
         add("Settings", "Ctrl+K", self.open_palette)
+        add("Cinema mode", "F11", self.toggle_cinema)
         add("Quit", QKeySequence.StandardKey.Quit, self.close)
         for i in range(len(NAV)):
             if page_shortcut(i):
@@ -609,6 +626,53 @@ class MainWindow(QMainWindow):
                 self.groups[index].select(tab)
             self._show_page(index)
 
+    def open_game(self, week: int, index: int) -> None:
+        """A chip on the scoreboard ribbon: Game Day, at that game's card."""
+        place, tab = group_of(GameDayPage)
+        self._select_page(place, tab)
+        page = self._game_day_page()
+        if page is not None:
+            page.show_game(week, index)
+
+    def _redraw_ribbon(self) -> None:
+        """The ribbon (and Cinema mode, when it is up) brought up to the scores
+        as kept; never stops the window."""
+        changes = None
+        try:
+            changes = self.live_feed.update(self.season)
+            self.ribbon.set_feed(self.live_feed, self.season, changes)
+        except Exception as exc:  # noqa: BLE001
+            write_log(f"scoreboard ribbon failed: {exc!r}")
+            self.ribbon.hide()
+        cinema = self.cinema
+        if cinema is not None and cinema.isVisible():
+            try:
+                cinema.refresh(changes)
+            except Exception as exc:  # noqa: BLE001
+                write_log(f"cinema mode redraw failed: {exc!r}")
+
+    # ---- Cinema mode: the week full screen (cinema.py) -------------------------
+    def cinema_showing(self) -> bool:
+        return self.cinema is not None and self.cinema.isVisible()
+
+    def toggle_cinema(self) -> None:
+        if self.cinema_showing():
+            self.cinema.leave()
+            return
+        if self.cinema is None:
+            self.cinema = CinemaWindow(self, self.live_feed, self.palette_)
+            self.cinema.closed.connect(self._cinema_closed)
+        self.cinema.enter()
+        # while it is up, the scoreboard is asked every 30 seconds, as for Game Day
+        self.check_results(live=True)
+
+    def _cinema_closed(self) -> None:
+        """Back to the window as it was left: same page, same size, same place."""
+        if self._closing:
+            return
+        self.raise_()
+        self.activateWindow()
+
     def current_page(self) -> Page:
         return self.groups[self.stack.currentIndex()].current_page()
 
@@ -619,6 +683,7 @@ class MainWindow(QMainWindow):
             Command(f"Switch to {other_theme} theme", "Ctrl+T", self.toggle_theme),
             Command("Open data folder", "", self.open_data_folder),
             Command("Check for results now", "", self.check_results_now),
+            Command("Cinema mode (the week full screen)", "F11", self.toggle_cinema),
             Command("Publish the pool page", "", self.export_pool_page),
             Command("Pool page website settings\u2026", "", self.pool_page_settings),
             Command("What the website says (announcement, champions)\u2026", "", self.pool_page_extras),
@@ -639,6 +704,12 @@ class MainWindow(QMainWindow):
             app.setProperty("theme", self.palette_.name)    # for widgets that draw themselves
             app.setStyleSheet(stylesheet(self.palette_))
         self._draw_icons()
+        ribbon = getattr(self, "ribbon", None)
+        if ribbon is not None:
+            ribbon.restyle(self.palette_)
+        cinema = getattr(self, "cinema", None)
+        if cinema is not None:
+            cinema.restyle(self.palette_)
 
     def _draw_icons(self) -> None:
         """The sidebar's icons and the mark, in the palette's colours: quiet
@@ -763,7 +834,7 @@ class MainWindow(QMainWindow):
 
     def check_results(self, *, live: bool | None = None, force: bool = False) -> None:
         """Every minute: ask the scoreboard if a look is due - a game under
-        way or about to start; every minute while Game Day is open (`live`)
+        way or about to start; every 30 seconds while a game is watched (`live`)
         - and reload once a game has finished. `force` asks now."""
         if self._closing or not self.auto_results:
             return
@@ -776,7 +847,7 @@ class MainWindow(QMainWindow):
         weeks = self._results_weeks()
         year = getattr(self.season, "results_year", 0) or 0
         if live is None:
-            live = self._game_day_showing()
+            live = self._game_day_showing() or self.ribbon.live or self.cinema_showing()
         every = results.LIVE_RECHECK_S if live else None
         if not weeks or not year or not (force or results.due(year, weeks, every=every)):
             return
@@ -836,8 +907,9 @@ class MainWindow(QMainWindow):
         if getattr(self, "_close_when_published", False):
             self.close()
             return
-        # Game Day draws the scores as kept, so a look redraws it at once -
-        # a finished game reloads everything anyway.
+        # Game Day and the ribbon draw the scores as kept, so a look redraws
+        # them at once - a finished game reloads everything anyway.
+        self._redraw_ribbon()
         page = self._game_day_page()
         if page is not None and self._game_day_showing():
             try:
@@ -871,6 +943,14 @@ class MainWindow(QMainWindow):
     def _on_clock(self) -> None:
         self._tick_updated()
         self._watch_lock()
+        try:
+            turned = self.ribbon.week != ribbon_week(self.season)   # a new week started, or the season ended
+        except Exception:  # noqa: BLE001 - _redraw_ribbon logs it
+            turned = True
+        if turned:
+            self._redraw_ribbon()
+        else:
+            self.ribbon._tick_clock()       # the data's age words keep counting
         page = self._game_day_page()
         if page is not None and self._game_day_showing():
             page.tick()
@@ -931,6 +1011,7 @@ class MainWindow(QMainWindow):
                 page.set_season(season)
             except Exception as exc:  # noqa: BLE001
                 write_log(f"set_season failed on {page.title}: {exc!r}")
+        self._redraw_ribbon()
         self._lock_state = self._lock_now()
 
         conflicts = len(season.conflicts)
@@ -1068,6 +1149,8 @@ class MainWindow(QMainWindow):
             self._tray.say_once()
             return
         self._closing = True
+        if self.cinema is not None:
+            self.cinema.close()
         if self._tray is not None:
             self._tray.hide()
         self.watcher.set_enabled(False)

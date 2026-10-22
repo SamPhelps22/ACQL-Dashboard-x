@@ -785,6 +785,30 @@ def _texts_on() -> str:
         return ""
 
 
+def _deadline(season: Season, now: float | None = None) -> dict | None:
+    """The next time picks are due - the pool's deadline, or the week's first
+    kickoff when that comes sooner - for the countdown on the home page.
+    None when no week's picks are still to close."""
+    from ..feeds import oddslock, results
+    from ..site import mainsite
+    now = time.time() if now is None else now
+    year = results.season_year(season, now)
+    # The commissioner's page says when picks are due, in Eastern time.
+    posted = mainsite.due(year, now=now)
+    if posted:
+        try:
+            at = min(posted["at"], oddslock.kickoff_time(year, posted["week"]))
+        except Exception:  # noqa: BLE001 - no kickoff known: the posted time alone
+            at = posted["at"]
+        if at > now:
+            return {"week": posted["week"], "at": int(at * 1000), "form": posted.get("form") or mainsite.FORM}
+    for week in results.calendar_weeks(year, now):
+        due = oddslock.lock_time(year, week)
+        if due > now:
+            return {"week": week, "at": int(due * 1000), "form": mainsite.FORM}
+    return None
+
+
 def snapshot(season: Season, *, generated: str | None = None, strict: bool = False) -> dict:
     """Everything the pool page shows, worked out from the season. `strict`
     (publishing) lets a store that can't be read stop the build rather than
@@ -803,6 +827,8 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
     money, money_from = _money_table(season, weeks, official=official)
     suicide = _suicide_status(season, weeks, official=official)
     round_start = _round_start(season, weeks)
+    # The rounds before the pool started again, for the survivor wall's history.
+    earlier = _suicide_status(season, [w for w in weeks if w < round_start], official=False) if round_start else {}
     try:
         found, chaos = _patterns(season, weeks)
     except Exception:  # noqa: BLE001 - the page goes up without them
@@ -853,6 +879,10 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
                 # the same teams as codes, for the board's "teams left"
                 "used": [team_code(t) for w, t in sorted(player.suicide_picks.items())
                          if w in weeks and w >= round_start and team_code(t)],
+                # the earlier round, shown faded on the survivor wall
+                "before": {str(w): display_team(t) for w, t in sorted(player.suicide_picks.items())
+                           if w in weeks and w < round_start},
+                "before_out": earlier.get(key, (False, None))[1],
             },
             "patterns": found.get(key),
         })
@@ -889,6 +919,8 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "title": getattr(season, "title", "") or "ACQL",
         "generated": stamp,
         "through_week": latest,
+        "suicide_round_start": round_start,
+        "suicide_winners": list(getattr(season, "suicide_winners", []) or []) if round_start else [],
         "buy_in": _money(season.buy_in),
         "entrants": len(season.players),
         "money": money_from,               # "" when the files don't give it
@@ -897,6 +929,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "title_by_week": title_by_week,
         "money_by_week": money_by_week,
         "note": note,
+        "deadline": _safe_deadline(season),
         "alerts": _alerts_link(),
         "texts": _texts_on(),
         "history": history,
@@ -913,6 +946,13 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
             if w is not None
         ],
     }
+
+
+def _safe_deadline(season: Season) -> dict | None:
+    try:
+        return _deadline(season)
+    except Exception:  # noqa: BLE001 - the page goes up without the countdown
+        return None
 
 
 def _clean(value):
@@ -1015,6 +1055,9 @@ def _as_shown(data: dict) -> dict:
     the page shows only the top ten and never the spreads, so those alone
     shouldn't put the site up again."""
     out = dict(data)
+    # the countdown runs on the viewer's clock; moving on to next week's
+    # deadline alone is no reason to put the site up again
+    out.pop("deadline", None)
     rank = data.get("team_rank") or {}
     out["team_rank"] = sorted(c for c, r in rank.items() if r <= TOP_TEAMS) if len(rank) >= 28 else []
     out["weeks"] = [

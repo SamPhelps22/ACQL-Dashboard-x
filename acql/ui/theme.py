@@ -483,6 +483,7 @@ def stylesheet(p: Palette) -> str:
         border-left: 4px solid {p.baseline};
         border-radius: {r["md"]}px;
     }}
+    #GameCard[target="true"] {{ border-color: {p.accent}; }}
     #GameCard[tone="good"] {{ border-left-color: {p.good}; }}
     #GameCard[tone="bad"] {{ border-left-color: {p.critical}; }}
     #GameCard[tone="live"] {{ border-left-color: {p.accent}; }}
@@ -492,7 +493,7 @@ def stylesheet(p: Palette) -> str:
         letter-spacing: 0.4px;
         color: {p.ink_secondary};
     }}
-    #GameState[live="true"] {{ color: {p.critical}; }}
+    #GameState[live="true"] {{ color: {p.accent}; }}
     #GameTeam {{ font-size: {t["body"] + 1}px; font-weight: 600; color: {p.ink}; }}
     #GameTeam[faded="true"] {{ color: {p.ink_muted}; font-weight: 500; }}
     #GameScore {{
@@ -528,6 +529,69 @@ def stylesheet(p: Palette) -> str:
     #ChipTeam[faded="true"] {{ color: {p.ink_muted}; font-weight: 500; }}
     #ChipScore {{ font-family: {DISPLAY_STACK}; font-size: {t["body"] + 2}px; font-weight: 700; color: {p.ink}; }}
     #ChipScore[faded="true"] {{ color: {p.ink_muted}; }}
+    #ChipTeam[pick="true"] {{ color: {brand}; font-weight: 700; }}
+
+    /* The scoreboard ribbon: the week's games in one row above every page. */
+    #ScoreRibbon {{
+        background: {p.surface};
+        border-bottom: 1px solid {line};
+    }}
+    #RibbonTrack, #RibbonLane {{ background: transparent; }}
+    #ScoreRibbon #ScoreChip:hover {{ border-color: {p.accent}; }}
+    #RibbonTitle {{
+        font-size: {t["label"]}px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
+        color: {brand};
+    }}
+    #RibbonCount {{
+        font-size: {t["caption"]}px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        color: {p.ink_muted};
+    }}
+    #RibbonCount[live="true"] {{ color: {p.accent}; }}
+    #RibbonCountdown {{
+        font-family: {MONO_STACK};
+        font-size: {t["body"]}px;
+        font-weight: 700;
+        color: {brand};
+    }}
+    /* shown only when the scores on screen are stale or the last look failed */
+    #RibbonFresh {{
+        font-size: {t["caption"]}px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        padding: 4px 8px;
+        border-radius: {r["sm"]}px;
+        color: {p.warning};
+        border: 1px solid {mix(p.warning, p.surface, 0.55)};
+    }}
+    #RibbonFresh[level="error"] {{ color: {p.critical}; border-color: {mix(p.critical, p.surface, 0.55)}; }}
+    QToolButton#RibbonCinema {{
+        background: transparent;
+        color: {p.ink_secondary};
+        border: 1px solid {line};
+        border-radius: {r["sm"]}px;
+        padding: 6px 10px;
+        font-size: {t["caption"]}px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+    }}
+    QToolButton#RibbonCinema:hover, QToolButton#RibbonCinema:focus {{ border-color: {brand}; color: {p.ink}; }}
+    /* a game's status and a data warning, as on Cinema mode's cards */
+    #ScoreChip[status="final"] {{ background: {p.surface}; }}
+    #ScoreChip[warn="stale"] {{ border-top: 2px solid {p.warning}; }}
+    #ScoreChip[warn="error"] {{ border-top: 2px solid {p.critical}; }}
+    #ChipScore[flash="still"] {{ border: 1px solid {brand}; border-radius: {r["sm"]}px; }}
+    QToolButton#RibbonArrow {{
+        background: transparent;
+        border: 1px solid {line};
+        border-radius: {r["sm"]}px;
+        padding: 6px 2px;
+    }}
+    QToolButton#RibbonArrow:hover {{ border-color: {p.accent}; }}
+    QToolButton#RibbonArrow:disabled {{ border-color: transparent; }}
     #RoomHeading {{
         font-size: {t["label"]}px;
         font-weight: 700;
