@@ -2945,6 +2945,42 @@ class TestCatchUp(_ScratchStore):
         self.assertEqual(heal.catch_up(states, now + 60, run=lambda n: None), ["ACQL Daily"])
 
 
+class TestAutopsyBrief(_ScratchStore):
+    """The week's look back: written from kept facts, sent once, and never once it is stale."""
+
+    def test_compose_says_what_happened(self):
+        from acql.site import autopsybrief as a
+        from acql.version import MODEL_NAME
+        f = a.Facts(6, you="Phelpy", hits=["Kansas City (A @ B)"], misses=["Seattle (Seattle @ Denver)"],
+                    rank=2, model_right=7, model_games=14, luck=(8, 7.8),
+                    splits=[("LAC @ KC", "Kansas City", "LA Chargers", "you")],
+                    swing=("Houston @ Jacksonville", "Houston", 2, 35),
+                    big_loser=[("Arizona", False)], suicide=("Buffalo", True), spots=["Division games: 11 of 27"])
+        b = a.compose(None, 6, found=f)
+        self.assertIn("Week 6 autopsy: you 1-1", b.subject)
+        for bit in ("1 of 2, week rank 2", f"{MODEL_NAME}: 7 of 14", "deserved 7.8 wins and got 8",
+                    "you were right", "only 2 of 35", "Arizona missed", "Buffalo - still alive", "Division games"):
+            self.assertIn(bit, b.text)
+        self.assertIn("Only you get this email", b.html)
+
+    def test_sent_once_and_skipped_when_stale(self):
+        from unittest import mock
+        from acql import headless, store
+        from acql.feeds import oddslock
+        from acql.site import autopsybrief as a
+        brief = a.Brief(6, "s", "t", "h")
+        sent = []
+        with mock.patch.object(a, "finished", return_value=6), mock.patch.object(a, "compose", return_value=brief),                 mock.patch.object(headless.results, "season_year", return_value=2026):
+            with mock.patch.object(oddslock, "lock_time", return_value=2e9):
+                self.assertEqual(headless._autopsy_brief(None, now=1e9, send=lambda b: sent.append(b) or ["me"]), 6)
+                self.assertIsNone(headless._autopsy_brief(None, now=1e9, send=sent.append))   # once only
+            store.put("autopsybrief", "sent", 5)
+            with mock.patch.object(oddslock, "lock_time", return_value=1e9 - 1):          # week 7 already locked
+                self.assertIsNone(headless._autopsy_brief(None, now=1e9, send=sent.append))
+            self.assertEqual(store.get("autopsybrief", "sent", 0), 6)
+        self.assertEqual(len(sent), 1)
+
+
 class TestGoldenWeek(_ScratchStore):
     """A whole made-up week priced end to end, held to a fingerprint.
 

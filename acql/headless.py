@@ -536,6 +536,7 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     _known(season)
     _card_check(season, dry_run=dry_run)
     _sentinel(season, dry_run=dry_run)
+    _autopsy_brief(season, dry_run=dry_run)
     _watch(season, dry_run=dry_run)
     _record_live(season)
     _heal_training(dry_run=dry_run)
@@ -587,6 +588,35 @@ def _new_notes(warnings, now: float | None = None) -> list[str]:
     except Exception:  # noqa: BLE001
         pass
     return out
+
+
+def _autopsy_brief(season, *, dry_run: bool = False, now: float | None = None, send=None) -> int | None:
+    """The look back at the week just finished (site/autopsybrief.py), emailed once
+    by the first nightly run after its last game. A week whose follow-on card
+    has already locked is past being useful and is skipped. The week sent, or None."""
+    from . import store
+    from .feeds import oddslock
+    from .site import autopsybrief, mailer
+    now = time.time() if now is None else now
+    try:
+        week = autopsybrief.finished(season)
+        if week is None or int(store.get("autopsybrief", "sent", 0) or 0) >= week:
+            return None
+        if oddslock.lock_time(results.season_year(season), week + 1) <= now:
+            store.put("autopsybrief", "sent", week)      # too late to matter: don't send it later either
+            return None
+        brief = autopsybrief.compose(season, week)
+        if brief is None or dry_run:
+            return None
+        to = (send or autopsybrief.send)(brief)
+        store.put("autopsybrief", "sent", week)
+        _log(f"autopsy brief sent: \"{brief.subject}\" to {len(to)} address(es)")
+        return week
+    except mailer.MailError as exc:
+        _log(f"autopsy brief not sent: {exc}")
+    except Exception as exc:  # noqa: BLE001 - never the cause of a failed run
+        _log(f"autopsy brief: {exc!r}")
+    return None
 
 
 def _card_check(season, *, dry_run: bool = False) -> None:
