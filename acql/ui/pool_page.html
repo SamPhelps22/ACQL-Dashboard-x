@@ -5156,16 +5156,39 @@ html.cine-on, html.cine-on body { overflow: hidden; }
     return holder;
   }
   function survivorWall() {
+    // Past pools (the suicide pool started again after someone won it) can
+    // be looked back at; the one being played is shown first.
+    var past = DATA.suicide_rounds || [];
+    var round = state.wallPool ? past.filter(function (r) { return r.pool === state.wallPool; })[0] : null;
+    var poolNow = past.length + 1;
+    var chooser = past.length ? el("div", { class: "weeks", role: "group", "aria-label": "Choose a suicide pool" },
+      [el("button", { type: "button", "aria-pressed": round ? "false" : "true",
+        onclick: function () { state.wallPool = 0; render(); }, text: "Pool #" + poolNow + " (now)" })].concat(
+      past.slice().reverse().map(function (r) {
+        return el("button", { type: "button", "aria-pressed": round === r ? "true" : "false",
+          onclick: function () { state.wallPool = r.pool; render(); }, text: "Pool #" + r.pool });
+      }))) : null;
     var weeks = seasonWeeks();
-    var rows = DATA.players.filter(function (p) {
+    var rows = DATA.players.filter(function (p) { return Object.keys(p.suicide.picks || {}).length || p.suicide.out; });
+    if (round) {
+      weeks = weeks.filter(function (n) { return n >= round.start && n <= round.end; });
+      rows = round.coaches.map(function (c) { return { name: c.name, suicide: { picks: c.picks, out: c.out, alive: c.alive } }; });
+    }
+    if (!round && past.length) {
+      // the round being played starts where the last one ended
+      var from = past[past.length - 1].end + 1;
+      weeks = weeks.filter(function (n) { return n >= from; });
+    }
+    // With the chooser the earlier round has its own view; without it, its
+    // weeks are shown faded before the restart.
+    var restart = round || past.length ? 0 : (DATA.suicide_round_start || 0);
+    var champs = restart ? (DATA.suicide_winners || []) : [];
+    if (restart) rows = DATA.players.filter(function (p) {
       return Object.keys(p.suicide.picks || {}).length || p.suicide.out || Object.keys(p.suicide.before || {}).length;
     });
-    // Weeks before the pool started again: the earlier round, faded.
-    var restart = DATA.suicide_round_start || 0;
-    var champs = DATA.suicide_winners || [];
     if (!weeks.length || !rows.length) return null;
     var liveSui = {};
-    var liveWeek = hasLive() && DATA.live.coaches ? DATA.live.week : null;
+    var liveWeek = !round && hasLive() && DATA.live.coaches ? DATA.live.week : null;
     if (liveWeek) DATA.live.coaches.forEach(function (c) { if (c.sui) liveSui[c.name] = c.sui; });
     var cols = weeks.slice();
     if (liveWeek && cols.indexOf(liveWeek) < 0 && Object.keys(liveSui).length) cols.push(liveWeek);
@@ -5196,7 +5219,10 @@ html.cine-on, html.cine-on body { overflow: hidden; }
       var cls = [s.alive ? "" : "out", isMe(p.name) ? "me" : "", i && i === standing ? "cut" : ""].filter(Boolean).join(" ");
       return el("tr", { class: cls || null }, [el("td", { class: "coach" }, [who(p.name)])].concat(cells));
     });
-    return module("Survivor wall", standing + " of " + rows.length + " still standing", [
+    var aside = round ? "weeks " + round.start + "–" + round.end + (round.winners.length ? " · won by " + round.winners.join(" & ") : "")
+      : standing + " of " + rows.length + " still standing";
+    return module("Survivor wall", aside, [
+      chooser,
       el("div", { class: "swall" }, [el("table", {}, [
         el("thead", {}, [el("tr", {}, [el("th", { class: "coach", text: "Coach" })].concat(cols.map(function (n) {
           return el("th", { class: restart && n < restart ? "past" : n === restart ? "reset" : null, text: "Wk " + n });
