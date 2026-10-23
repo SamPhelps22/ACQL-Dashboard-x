@@ -213,3 +213,8 @@ def send(settings: MailSettings, message: EmailMessage, *, smtp_factory=None,
 
 class MailError(Exception):
     """A send that failed, with a reason fit to show the person."""
+
+
+# every call kept as a success or a failure for email (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+send = _sourcehealth.watched("email", send)

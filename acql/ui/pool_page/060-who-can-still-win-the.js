@@ -235,6 +235,22 @@
     simCache = { key: key, sim: sim };
     return sim;
   }
+  // What a coach needs (#86): the results that went the same way in nearly every
+  // simulated week they won. Read off the same simulation as Win %, so it costs nothing more.
+  var NEED_SHARE = 0.95;
+  function needs(t, sim, name) {
+    var c = DATA.live.coaches.findIndex(function (co) { return co.name === name; });
+    if (c < 0 || !sim.wins[c] || sim.wins[c] < sim.sims * 0.005) return null;
+    var won = sim.wins[c], out = [];
+    sim.open.forEach(function (gi, o) {
+      var sp = sim.split[o], g = t.games[gi].g;
+      if (sp.h[1][c] / won >= NEED_SHARE) out.push(teamName(t.games[gi], g.hc));
+      else if (sp.a[1][c] / won >= NEED_SHARE) out.push(teamName(t.games[gi], g.ac));
+      if (sp.hb[1][c] / won >= NEED_SHARE) out.push(teamName(t.games[gi], g.hc) + " to lose by 15+");
+      else if (sp.ab[1][c] / won >= NEED_SHARE) out.push(teamName(t.games[gi], g.ac) + " to lose by 15+");
+    });
+    return out;
+  }
   function pct(v) { return v >= 0.995 ? "99%+" : v > 0 && v < 0.005 ? "<1%" : Math.round(v * 100) + "%"; }
   function liveDetail(x) { return x && x.sc && x.sc.detail ? x.sc.detail : ""; }
   function upDown(margin) { return margin > 0 ? "up " + margin : margin < 0 ? "down " + (-margin) : "level"; }

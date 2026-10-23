@@ -154,6 +154,12 @@ def _lines_due(now: float | None = None) -> int | None:
         return None
     every = (LINES_EVERY_LAST_HOURS if to_lock <= LAST_HOURS
              else LINES_EVERY_LOCK_DAY if to_lock < 86400 else LINES_EVERY)
+    if not predictions.market_time(week) and to_lock > 86400:
+        # No market number for the week yet: ask ESPN's free scoreboard whether the books
+        # have posted, and spend an odds request only once they have - then at once (#65).
+        from . import publishtimes
+        posted = publishtimes.lines_posted(year, week, now)
+        return week if posted else None
     return week if now - predictions.market_time(week) >= every else None
 
 
@@ -174,8 +180,15 @@ def _download_predictions(season, week: int) -> None:
         _log(f"week {week} has no games set up yet - predictions not fetched")
         return
     request = urllib.request.Request(PREDICTIONS_URL, headers={"User-Agent": "ACQL-Dashboard"})
-    with urllib.request.urlopen(request, timeout=30) as reply:
-        body = reply.read()
+    from . import sourcehealth
+    started = time.perf_counter()
+    try:
+        with urllib.request.urlopen(request, timeout=30) as reply:
+            body = reply.read()
+    except Exception as exc:
+        sourcehealth.record("predictions", False, time.perf_counter() - started, f"{type(exc).__name__}: {exc}")
+        raise
+    sourcehealth.record("predictions", True, time.perf_counter() - started)
     from . import rawarchive
     rawarchive.keep("predictions", body, f"week {week}")
     with tempfile.TemporaryDirectory() as scratch:
@@ -191,6 +204,11 @@ def _download_predictions(season, week: int) -> None:
         folder = predictions.ROOT / "predictions"
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / f"nflpredictions week {week}.csv"
+        try:
+            from . import publishtimes
+            publishtimes.note("predictions", week, results.season_year(season))   # when it first covered the week (#100)
+        except Exception:  # noqa: BLE001
+            pass
         if target.exists() and target.read_bytes() == body:
             return                                  # nothing new published
         target.write_bytes(body)
@@ -615,7 +633,7 @@ def _recheck(season, *, dry_run: bool = False) -> bool:
             try:
                 cardmail.send_note(f"{len(made)} final score{'s' if len(made) != 1 else ''} corrected",
                                    "\n".join(c.text() for c in made)
-                                   + "\n\nThe dashboard now grades with the corrected score.")
+                                   + "\n\nThe dashboard now grades with the corrected score.", event="correction")
             except Exception as exc:  # noqa: BLE001
                 _log(f"score correction note not sent: {exc}")
         return bool(made)
@@ -671,7 +689,7 @@ def _card_check(season, *, dry_run: bool = False) -> None:
                 try:
                     cardmail.send_note(f"Check your week {week} card - the sheet differs from what you saved",
                                        found.headline() + ":\n\n" + "\n".join(found.lines())
-                                       + "\n\nIf that wasn't on purpose, tell the commissioner before kickoff.")
+                                       + "\n\nIf that wasn't on purpose, tell the commissioner before kickoff.", event="cardcheck")
                     cardcheck.mark_alerted(week)
                     _log(f"card check: alert emailed for week {week}")
                 except Exception as exc:  # noqa: BLE001
@@ -698,7 +716,7 @@ def _sentinel(season, *, dry_run: bool = False) -> None:
                 cardmail.send_note(f"Week {week}: two sources disagree",
                                    "\n".join(s.split("|", 1)[1].replace("|", ": ") for s in new)
                                    + "\n\nTwo numbers that describe the same game can't both be right. "
-                                     "Readiness lists it until they agree.")
+                                     "Readiness lists it until they agree.", event="sources")
                 store.put("consistency", str(week), {"sent": sorted(set(serious) | set(told.get("sent") or [])),
                                                      "at": time.time()})
                 _log(f"sources disagree: alert emailed for week {week}")
@@ -791,7 +809,7 @@ def _watch(season, *, dry_run: bool = False) -> None:
             subject = (f"Week {week}: {len(turned)} pick{'' if len(turned) == 1 else 's'} changed side"
                        if turned else f"Week {week}: cards due soon")
             try:
-                cardmail.send_note(subject, "\n\n".join(notes))
+                cardmail.send_note(subject, "\n\n".join(notes), event="watch")
                 _log("alert emailed: " + subject)
             except Exception as exc:  # noqa: BLE001
                 _log(f"alert not sent: {exc}")

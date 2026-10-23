@@ -234,9 +234,38 @@ def message(card: CardMail, settings: mailer.MailSettings | None = None) -> Emai
     return msg
 
 
-def send_note(subject: str, text: str, *, smtp_factory=None, dry_run: bool = False) -> list[str]:
+#: The alerts, and where each goes unless changed (alert preferences, #91).
+ALERTS = {"correction": "A final score corrected after the game",
+          "cardcheck": "Your row on the sheet differs from your saved card",
+          "sources": "Two data sources disagree",
+          "watch": "Picks changed side / the deadline is near"}
+CHANNELS = ("email", "none")
+
+
+def alert_channel(event: str) -> str:
+    """Where an alert goes: "email" (the default) or "none"."""
+    from .. import store
+    try:
+        prefs = store.get("settings", "alerts", {}) or {}
+    except Exception:  # noqa: BLE001
+        prefs = {}
+    found = prefs.get(event, "email") if isinstance(prefs, dict) else "email"
+    return found if found in CHANNELS else "email"
+
+
+def set_alert_channel(event: str, channel: str) -> None:
+    from .. import store
+    prefs = dict(store.get("settings", "alerts", {}) or {})
+    prefs[event] = channel if channel in CHANNELS else "email"
+    store.put("settings", "alerts", prefs)
+
+
+def send_note(subject: str, text: str, *, smtp_factory=None, dry_run: bool = False, event: str = "") -> list[str]:
     """A short plain-text alert to the card's own addresses (never the pool's
-    recap list). Returns who it went to; with dry_run, who it would go to."""
+    recap list). Returns who it went to; with dry_run, who it would go to.
+    An alert you've set to "none" (alert preferences) isn't sent."""
+    if event and alert_channel(event) == "none":
+        return []
     settings = mailer.MailSettings.load()
     to = recipients(settings)
     if not settings.sender or not settings.sealed_password or not to:

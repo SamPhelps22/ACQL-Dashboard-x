@@ -279,3 +279,8 @@ def publish(settings: WebSettings, page: str, *, message: str = "Update the pool
         except Exception:  # noqa: BLE001 - the link is right either way
             pass
     return link
+
+
+# every call kept as a success or a failure for github (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+publish = _sourcehealth.watched("github", publish)

@@ -221,6 +221,16 @@ class BriefingPage(Page):
         self.lines_status.setObjectName("Muted")
         self.lines_status.setWordWrap(True)
         options.addWidget(self.lines_status, 1)
+        # the lock ceremony: the week's card sealed at the deadline (pool/seal.py, #10)
+        self.seal_label = QLabel("")
+        self.seal_label.setObjectName("SealLabel")
+        self.seal_label.hide()
+        self._sealed_shown: set[int] = set()
+        options.addWidget(self.seal_label, 0, Qt.AlignmentFlag.AlignTop)
+        self.ritual_label = QLabel("")
+        self.ritual_label.setObjectName("Muted")
+        self.ritual_label.setToolTip("The week's routine, ticked from what the app sees (#88)")
+        options.addWidget(self.ritual_label, 0, Qt.AlignmentFlag.AlignTop)
         options.addWidget(InfoIcon(explain.MARKET_MOVEMENT, "line movement"), 0, Qt.AlignmentFlag.AlignTop)
         self.layout_.addLayout(options)
         # Third row: putting the week's numbers in, without leaving the card.
@@ -328,6 +338,12 @@ class BriefingPage(Page):
         self.gap_card.body().addLayout(self.gap_box)
         self.layout_.addWidget(self.gap_card)
 
+        self.contested_card = Card("Where the computer models disagree with the line")
+        self.contested_box = QVBoxLayout()
+        self.contested_card.body().addLayout(self.contested_box)
+        self.contested_card.hide()
+        self.layout_.addWidget(self.contested_card)
+
         self.drift_card = Card("Lines likely to move before the deadline")
         self.drift_box = QVBoxLayout()
         self.drift_card.body().addLayout(self.drift_box)
@@ -405,6 +421,7 @@ class BriefingPage(Page):
         self._update_table(brief)
         self._update_gaps(brief)
         self._update_drift(brief)
+        self._update_contested(brief)
         self._update_side(brief)
 
     # ---- which card --------------------------------------------------------
@@ -424,7 +441,9 @@ class BriefingPage(Page):
         found = None
         if self.season is not None:
             behind, left = _goal.standing(self.season)
-            found = _goal.suggest(self.goal_picker.currentData() or "", behind, left)
+            goal = self.goal_picker.currentData() or ""
+            title, top3 = _goal.odds(self.season) if goal in ("title", "top3") else (None, None)
+            found = _goal.suggest(goal, behind, left, title=title, top3=top3)
         self._suggested = found
         if found is None:
             self.goal_picker.setToolTip("What you want from the season. It suggests a card; it never changes yours.")
@@ -1024,6 +1043,39 @@ class BriefingPage(Page):
         note.setWordWrap(True)
         self.gap_box.addWidget(note)
 
+    def analyst_cards(self) -> list:
+        return [self.why_card, self.swing_card, self.gap_card, self.contested_card, self.drift_card,
+                self.changes_card]
+
+    def _update_contested(self, brief: briefing.Brief) -> None:
+        """Games where the models' middle is far from the line (model/contested.py, #26). Information only."""
+        from ...model import contested
+        self.clear_layout(self.contested_box)
+        try:
+            found = contested.week(self.season, brief.week)
+        except Exception:  # noqa: BLE001
+            found = []
+        if not found:
+            self.contested_card.hide()
+            return
+        self.contested_card.show()
+        takes = {c.index: c.pick for c in brief.choices}
+        rows = [[c.index, c.matchup, f"toward {c.toward}", f"{c.gap:.1f}", c.models,
+                 self.NO_VALUE if c.apart is None else f"{c.apart:.1f}",
+                 "yes" if c.at_opening else "no", takes.get(c.index, self.NO_VALUE)] for c in found]
+        model = TableModel(["#", "Game", "Models lean", "Gap (pts)", "Models", "Spread among them", "Line unmoved",
+                            "Take"], rows, palette=self.palette, numeric_columns={0, 3, 4, 5})
+        view, _ = make_table(model, stretch_column=1, row_height=27)
+        self.contested_box.addWidget(view)
+        note = QLabel(
+            f"Games where the middle of the computer models sits {contested.GAP:g}+ points from the betting line. "
+            "Information, not a tip: since 2018 the market has closed a large share of such gaps from the opening "
+            "line and almost none after it moved, and the gap hasn't shown up in results at the later lines. "
+            f"{MODEL_NAME} already gives the models their share.")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        self.contested_box.addWidget(note)
+
     def _update_drift(self, brief: briefing.Brief) -> None:
         """Games still on their opening line and the move the edge-decay study says to expect (#21)."""
         from ...model import drift
@@ -1072,6 +1124,23 @@ class BriefingPage(Page):
             out[f.index] = (f.flips_at(g.home, g.away), f.distance, f.fragile or (f.crosses_key and f.distance <= 2))
         return out
 
+    #: The computer models count as split on a game when they are this many times
+    #: further apart than they usually are this week (#3).
+    SPLIT = 1.6
+
+    def _shaky(self, brief: briefing.Brief) -> set[int]:
+        """Games whose chance rests on models that disagree far more than usual: shown lighter."""
+        from ...model import pricing
+        try:
+            found = self.season.weeks.get(brief.week)
+            ctx = pricing.context(self.season, brief.week, sorted(found.games, key=lambda g: g.index))
+        except Exception:  # noqa: BLE001
+            return set()
+        if not ctx.typical:
+            return set()
+        return {i for i, f in ctx.forecasts.items()
+                if getattr(f, "disagreement", None) is not None and f.disagreement >= self.SPLIT * ctx.typical}
+
     def _update_table(self, brief: briefing.Brief) -> None:
         rows, tones = [], {}
         turns = self._turns(brief)
@@ -1083,6 +1152,9 @@ class BriefingPage(Page):
             chancetrail.record(brief.week, now_chances)
         except Exception:  # noqa: BLE001
             ghosts = {}
+        shaky = self._shaky(brief)
+        from .. import extras
+        plain = extras.plain_words()
         for r, choice in enumerate(brief.choices):
             gain = choice.leverage
             turn = turns.get(choice.index)
@@ -1091,7 +1163,9 @@ class BriefingPage(Page):
                 choice.index,
                 choice.matchup,
                 choice.pick + ("  \u21ba" if choice.turned else ""),
-                f"{choice.chance:.0%}" + (f" (was {was:.0%})" if was is not None else "") + (
+                (extras.chance_words(choice.chance) if plain else f"{choice.chance:.0%}")
+                + (" · models split" if choice.index in shaky else "")
+                + (f" (was {was:.0%})" if was is not None else "") + (
                     " · against the pool" if choice.turned
                     else " · coin flip" if choice.coin_flip else ""
                 ),
@@ -1108,8 +1182,8 @@ class BriefingPage(Page):
                 )
             tones[(r, COL_CHANCE)] = (
                 "warning" if choice.turned
-                else "good" if choice.chance >= briefing.CONFIDENT
-                else "muted" if choice.coin_flip else ""
+                else "muted" if choice.coin_flip or choice.index in shaky   # a shaky number set lighter (#3)
+                else "good" if choice.chance >= briefing.CONFIDENT else ""
             )
             if choice.turned:
                 tones[(r, COL_TAKE)] = "warning"
@@ -1190,7 +1264,9 @@ class BriefingPage(Page):
             text += (
                 f" <b>If flipped</b> is the chance of winning the week with "
                 f"only that game taken the other way (now {brief.win_odds or 0.0:.1%}): "
-                f"the lower it is, the more that pick matters. <b>Turns at</b> is the betting "
+                f"the lower it is, the more that pick matters. A chance set lighter with "
+                f"“models split” leans on computer models that disagree far more than usual this "
+                f"week - less sure than its number looks. <b>Turns at</b> is the betting "
                 f"line at which the pick would change side, everything else as it is - amber "
                 f"when it is within a point, or close and across 3 or 7."
             )
@@ -1255,7 +1331,46 @@ class BriefingPage(Page):
         return (f"No pick sheet for week {week} yet: the line games are the ones typed in "
                 f"with Line games\u2026 ({', '.join(f'{display_team(g.line_favourite)} by {g.line:g}' for g in lined)}).")
 
+    def _update_seal(self, week: int) -> None:
+        from ...feeds import oddslock, results
+        from ...pool import seal as _seal
+        from .. import motion
+        found = None
+        try:
+            year = results.season_year(self.season)
+            found = _seal.seal(year, week, oddslock.lock_time(year, week))
+        except Exception:  # noqa: BLE001
+            found = None
+        if found is None:
+            self.seal_label.hide()
+            return
+        when = time.strftime("%a %I:%M %p", time.localtime(found.at)).replace(" 0", " ")
+        colour = self.palette.accent if found.matches else self.palette.critical
+        self.seal_label.setText(f"<span style='color:{colour}; font-weight:800'>\U0001F512 Sealed {found.label}</span>")
+        self.seal_label.setToolTip(
+            f"Week {week}'s card was sealed after its deadline (fingerprint taken {when}). The code is a fingerprint of "
+            f"{MODEL_NAME}'s recorded card and the week's frozen snapshot: quote it later to show neither changed."
+            if found.matches else
+            "The recorded card or the frozen snapshot no longer gives the fingerprint kept at the deadline: "
+            "something was rewritten after the lock.")
+        self.seal_label.show()
+        if week not in self._sealed_shown:
+            self._sealed_shown.add(week)
+            motion.fade_in(self.seal_label)
+
+    def _update_ritual(self, week: int) -> None:
+        from ...pool import ritual
+        try:
+            found = ritual.ritual(self.season, week)
+        except Exception:  # noqa: BLE001
+            self.ritual_label.setText("")
+            return
+        self.ritual_label.setText(found.words())
+        self.ritual_label.setToolTip("\n".join(f"{'\u2713' if s.done else '\u25cb'} {s.name}" for s in found.steps))
+
     def _update_lines_status(self, week: int) -> None:
+        self._update_seal(week)
+        self._update_ritual(week)
         pool = self._pool_note(week)
         self._update_lines_text(
             week, (lambda text: self.lines_status.setText(pool + "  " + text)) if pool

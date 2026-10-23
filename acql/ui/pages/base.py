@@ -411,6 +411,11 @@ class Page(QWidget):
         self._dirty = False
         self._page_failure = ""
         self._page_views.setCurrentIndex(VIEW_CONTENT)
+        try:
+            from .. import extras
+            extras.apply_density(self)      # Glance hides the analyst cards (#6)
+        except Exception:  # noqa: BLE001
+            pass
         self._page_keep_scroll(position)
 
         took = (time.perf_counter() - started) * 1000
@@ -434,6 +439,10 @@ class Page(QWidget):
         super().showEvent(event)
         if self._dirty:
             self.refresh_now()
+
+    def analyst_cards(self) -> list:
+        """Cards Glance view hides (extras.py, #6); none unless a page says."""
+        return []
 
     def scroll_to_top(self) -> None:
         self._page_restore_to = None

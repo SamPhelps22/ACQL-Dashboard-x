@@ -56,6 +56,7 @@ def snapshot(season: Season, week: int) -> dict[str, dict]:
         if report is not None:
             kept = asdict(report)
             kept.pop("twins", None)         # derived from the archive, not something known that week
+            kept.pop("first_meeting", None)
             out[str(shape.index)] = kept
     return out
 

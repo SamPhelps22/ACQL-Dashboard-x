@@ -908,7 +908,30 @@ class GameDayPage(Page):
         self._render_side(bd)
         self._render_levers(bd)
         self._render_rivals(bd)
+        self._choreograph(bd, week)
         self._render_river(week)
+
+    def analyst_cards(self) -> list:
+        return [self.river_card, self.lever_card, self.board_card]
+
+    #: The chain after a score: the game, then your place, then your chance, this far apart (ms).
+    STEP_MS = 450
+    _last_scores: dict = {}
+
+    def _choreograph(self, bd, week: int) -> None:
+        """When a score lands, light what it moved in order: the game's card, your place,
+        your chance (#8). Nothing on the first look, or with Windows animations off."""
+        from .. import motion
+        now = {(week, s.index): (s.home_points, s.away_points) for s in bd.states}
+        before, self._last_scores = self._last_scores, now
+        if not before or motion.reduced():
+            return
+        changed = [idx for (wk, idx), pts in now.items() if before.get((wk, idx), pts) != pts]
+        if not changed:
+            return
+        steps = [self.game_card(i) for i in changed[:3]] + [self.tile_place, self.tile_chance]
+        for n, widget in enumerate(w for w in steps if w is not None):
+            QTimer.singleShot(min(n * self.STEP_MS, 1500), lambda w=widget: motion.fade_in(w))
 
     # ---- what the next score is worth (#14) and your rivals (#16) ----------------
     RIVALS_KEY = "gameday/rivals"

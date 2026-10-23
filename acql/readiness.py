@@ -401,6 +401,65 @@ def _corrections(year: int, now: float) -> Check | None:
                  "sheet may still have the old one.", found[-1].at)
 
 
+def _publish_windows(year: int) -> Check | None:
+    """When each source has usually had the week (publishtimes.py, #100)."""
+    from . import publishtimes
+    found = [w for w in (publishtimes.window(s, year) for s in publishtimes.NAMES) if w is not None]
+    if not found:
+        return None
+    return Check(SOURCES, "When sources publish", OK,
+                 "; ".join(f"{publishtimes.NAMES[w.source]} {w.words()}" for w in found),
+                 "Written down each week the first time a source had it. Next week's lines are fetched as soon "
+                 "as ESPN's free scoreboard shows them, not on a fixed clock.")
+
+
+def _second_source(year: int) -> Check | None:
+    """ESPN's finals against the nflverse games file on disk (feeds/crosscheck.py, #46)."""
+    from .feeds import crosscheck
+    found = crosscheck.check(year, range(1, 23))
+    if not found:
+        return None
+    agree = sum(c.agree for c in found)
+    differ = [d for c in found for d in c.differ]
+    behind = [c.week for c in found if c.missing and not c.agree]
+    checked = [c.week for c in found if c.agree or c.differ]
+    if differ:
+        return Check(SOURCES, "Second results source", WARN,
+                     f"ESPN and nflverse disagree on {len(differ)} final score{'s' if len(differ) != 1 else ''}",
+                     "<br>".join(differ))
+    span = f"weeks {min(checked)}-{max(checked)}" if checked else "no week yet"
+    return Check(SOURCES, "Second results source", OK if checked else NOTE,
+                 f"ESPN and nflverse agree on all {agree} finals ({span})",
+                 (f"The nflverse copy on this computer doesn't have week{'s' if len(behind) != 1 else ''} "
+                  f"{', '.join(map(str, behind))} yet; refreshing it is a download, asked for each time."
+                  if behind else ""))
+
+
+def _source_history(now: float) -> Check | None:
+    """Each source's last 30 days of fetches (sourcehealth.py, #41): one mark a day for the last two weeks."""
+    from html import escape
+    from . import sourcehealth
+    found = sourcehealth.every(now)
+    if not found:
+        return None
+    lines, worst = [], OK
+    for h in found:
+        rate = h.good / h.calls if h.calls else 1.0
+        recent_bad = h.last_bad is not None and now - h.last_bad < 3 * DAY
+        if recent_bad and (h.last_good is None or h.last_bad > h.last_good):
+            worst = WARN                      # failing now
+        elif recent_bad and worst == OK:
+            worst = NOTE
+        lines.append(f"<span style='font-family:monospace'>{h.days}</span> {escape(h.name)}: "
+                     f"{h.good} of {h.calls} good ({rate:.0%})"
+                     + (f", usually {h.median_s:.1f}s" if h.median_s is not None else "")
+                     + (f"; last failure {ago(now - h.last_bad)}: {escape(h.last_note[:80])}" if h.last_bad else ""))
+    failing = [h.name for h in found if h.last_bad and (h.last_good is None or h.last_bad > h.last_good)]
+    headline = (f"Failing at the last try: {', '.join(failing)}" if failing else
+                f"{len(found)} sources, the last two weeks a mark a day (✓ all good, ✕ a failure, · no call)")
+    return Check(AUTOMATION, "Source history", worst, headline, "<br>".join(lines))
+
+
 def _updates() -> Check | None:
     """Would an automatic update overwrite work here (updater.work_at_risk)? Only said for a git checkout."""
     from . import store, updater
@@ -698,6 +757,8 @@ def build(season: Season, now: float | None = None, tasks: dict[str, dict] | Non
     add(_pool_files, season)
     add(_turned_away, now)
     add(_corrections, year, now)
+    add(_second_source, year)
+    add(_publish_windows, year)
     add(_consistency, season, ahead)
     add(_inputs, season, ahead, to_lock)
     if playing != ahead and season.weeks.get(playing) is not None:
@@ -711,6 +772,7 @@ def build(season: Season, now: float | None = None, tasks: dict[str, dict] | Non
         add(_tasks, task_states() if tasks is True else tasks, now)
     add(_last_run, now)
     add(_standing, now)
+    add(_source_history, now)
     add(_training, now)
     add(_backups, now)
     add(_updates)

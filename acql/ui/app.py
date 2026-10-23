@@ -42,6 +42,7 @@ from .pages.base import (
     write_log,
 )
 from .watch import FolderWatcher, describe
+from . import extras
 from .widgets import Banner
 from .pages.thisweek import BriefingPage
 from .pages.charts import ChartsPage
@@ -404,6 +405,118 @@ class MainWindow(QMainWindow):
         from . import webpage
         webpage.edit_extras(self)
 
+    # ---- view conveniences (extras.py) ---------------------------------------------------
+    def toggle_density(self) -> None:
+        page = self.current_page()
+        self.statusBar().showMessage(f"{page.title}: {extras.toggle_density(page)} (Ctrl+D to switch)", 5000)
+
+    def toggle_plain_words(self) -> None:
+        QSettings().setValue(extras.PLAIN_KEY, not extras.plain_words())
+        self.current_page().refresh_now()
+
+    def toggle_phase_open(self) -> None:
+        QSettings().setValue(extras.PHASE_KEY, not extras._on(extras.PHASE_KEY, True))
+
+    def toggle_tray(self) -> None:
+        extras.set_tray(self, getattr(self, "_tray", None) is None)
+
+    def choose_cinema_screen(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+        screens = QApplication.screens()
+        names = [f"{s.name()} ({s.geometry().width()}x{s.geometry().height()})" for s in screens]
+        chosen, ok = QInputDialog.getItem(self, "Cinema mode", "Open Cinema mode on:", ["This window's screen"] + names,
+                                          0, False)
+        if ok:
+            QSettings().setValue(extras.SCREEN_KEY, "" if chosen.startswith("This window") else
+                                 screens[names.index(chosen)].name())
+
+    def alert_settings(self) -> None:
+        """Each alert, and whether it is emailed to you (#91)."""
+        from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout
+        from ..site import cardmail
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Alert settings")
+        form = QFormLayout(dialog)
+        boxes = {}
+        for event, words in cardmail.ALERTS.items():
+            box = QComboBox()
+            box.addItem("Email me", "email")
+            box.addItem("Don't send", "none")
+            box.setCurrentIndex(max(box.findData(cardmail.alert_channel(event)), 0))
+            boxes[event] = box
+            form.addRow(words, box)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec():
+            for event, box in boxes.items():
+                cardmail.set_alert_channel(event, box.currentData())
+        dialog.deleteLater()
+
+    def pin_card(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+        from .widgets import Card, StatTile
+        page = self.current_page()
+        titles = []
+        for card in page.findChildren(Card):
+            label = getattr(card, "title_label", None)
+            if label is not None and card.isVisible() and not isinstance(card, StatTile) and label.text():
+                titles.append(label.text())
+        if not titles:
+            self.statusBar().showMessage("No card on this page to pin.", 4000)
+            return
+        chosen, ok = QInputDialog.getItem(self, "Pin to My board", "Card:", titles, 0, False)
+        if ok:
+            place = self.stack.currentIndex()
+            extras.pin(place, self.groups[place].current_index(), page.title, chosen)
+            self.statusBar().showMessage(f"Pinned \u201c{chosen}\u201d to My board (Ctrl+K: Open My board).", 5000)
+
+    def open_board(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+        found = extras.pins()
+        if not found:
+            self.statusBar().showMessage("My board is empty: pin a card with Ctrl+K first.", 5000)
+            return
+        labels = [f"{p['card']}  \u00b7  {p['page']}" for p in found]
+        chosen, ok = QInputDialog.getItem(self, "My board", "Go to:", labels, 0, False)
+        if ok:
+            extras.go_to_card(self, found[labels.index(chosen)])
+
+    def story_key(self) -> None:
+        """The Anthropic API key for the weekly story, typed in by you and sealed here (#94)."""
+        from PySide6.QtWidgets import QInputDialog, QLineEdit
+        from ..site import storyteller
+        key, ok = QInputDialog.getText(self, "Story writer key",
+                                       "Your Anthropic API key (kept sealed on this computer; blank to remove):",
+                                       QLineEdit.EchoMode.Password)
+        if ok:
+            storyteller.set_key(key)
+
+    def write_story(self) -> None:
+        """The last finished week as a short story, checked against its facts; shown to copy (#94)."""
+        from PySide6.QtWidgets import QMessageBox
+        from ..site import storyteller
+        from . import recap as _recap
+        season = self.season
+        done = [n for n, w in (season.weeks.items() if season else []) if w.games and all(g.played for g in w.games)]
+        made = _recap.build(season, max(done)) if done else None
+        if made is None:
+            QMessageBox.information(self, "Weekly story", "No finished week to write about yet.")
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            story = storyteller.write(made)
+        except storyteller.StoryError as exc:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "Weekly story", str(exc))
+            return
+        QApplication.restoreOverrideCursor()
+        QApplication.clipboard().setText(story)
+        QMessageBox.information(self, f"Week {made.week} story (copied)",
+                                story + "\n\nEvery number was checked against the week's facts. It's on your "
+                                        "clipboard; nothing was sent.")
+
     def pool_page_private(self) -> None:
         from . import webpage
         webpage.edit_private(self)
@@ -594,6 +707,7 @@ class MainWindow(QMainWindow):
         add("Settings", "Ctrl+K", self.open_palette)
         add("Cinema mode", "F11", self.toggle_cinema)
         add("Quit", QKeySequence.StandardKey.Quit, self.close)
+        add("Glance / Analyst", "Ctrl+D", self.toggle_density)
         for i in range(len(NAV)):
             if page_shortcut(i):
                 add(f"Page {i + 1}", page_shortcut(i), lambda _=False, idx=i: self._select_page(idx))
@@ -704,10 +818,26 @@ class MainWindow(QMainWindow):
             Command("Pool page website settings\u2026", "", self.pool_page_settings),
             Command("What the website says (announcement, champions)\u2026", "", self.pool_page_extras),
             Command("Private page (your card on your phone, locked)\u2026", "", self.pool_page_private),
+            Command("Write this week's story (Claude, from the facts only)", "", self.write_story),
+            Command("Story writer key…", "", self.story_key),
+            Command("Glance / Analyst view of this page", "Ctrl+D", self.toggle_density),
+            Command(("Stop" if extras.plain_words() else "Start") + " saying chances in plain words", "",
+                    self.toggle_plain_words),
+            Command(("Keep the page I left" if extras._on(extras.PHASE_KEY, True) else
+                     "Open on the page the week calls for") + " when the app starts", "", self.toggle_phase_open),
+            Command(("Hide" if getattr(self, "_tray", None) else "Show") + " the tray icon", "", self.toggle_tray),
+            Command("Cinema mode on screen\u2026", "", self.choose_cinema_screen),
+            Command("Alert settings\u2026", "", self.alert_settings),
+            Command("Pin a card from this page to My board\u2026", "", self.pin_card),
+            Command("Open My board\u2026", "", self.open_board),
             Command("Run self-check (photograph every page)", "", self.run_self_check),
             Command("Install update\u2026", "", self.install_update),
             Command("Undo last update", "", lambda: self._page_action(UNDO_UPDATE)),
         ]
+        try:
+            commands += extras.jump_commands(self, Command)
+        except Exception as exc:  # noqa: BLE001 - the palette opens without them
+            write_log(f"palette jumps: {exc!r}")
         dialog = CommandPalette(commands, self)
         dialog.move(self.mapToGlobal(QPoint((self.width() - dialog.width()) // 2, 80)))
         dialog.exec()
@@ -1100,9 +1230,24 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(300, self._warm_up)       # once the opening page is drawn
         if first and self.auto_warm:
             self._catch_up()
+            self._phase_open()
+            extras.start_tray(self)
 
     #: Off for the smoke test and the self-check, which quit as soon as they are done.
     auto_warm = True
+
+    def _phase_open(self) -> None:
+        """Open on the page the moment of the week calls for, and say why (#2)."""
+        found = extras.phase_place(self.season)
+        if found is None:
+            return
+        title, why = found
+        titles = [spec.title for spec in NAV]
+        if title in titles and self.stack.currentIndex() != titles.index(title):
+            self._select_page(titles.index(title))
+            self.statusBar().showMessage(
+                f"Opened on {title} because {why}. Ctrl+K \u2192 \u201cKeep the page I left\u201d to turn this off.",
+                12000)
 
     def _catch_up(self) -> None:
         """Start scheduled jobs missed while the computer was off (heal.py),

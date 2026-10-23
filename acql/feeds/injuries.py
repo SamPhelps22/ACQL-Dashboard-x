@@ -193,3 +193,8 @@ def summary(code: str, most: int = 2) -> str:
     if doubt:
         parts.append(f"{doubt} questionable")
     return "; ".join(parts)
+
+
+# every call kept as a success or a failure for injuries (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+fetch = _sourcehealth.watched("injuries", fetch)

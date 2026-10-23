@@ -3508,6 +3508,68 @@ class TestShortGrids(unittest.TestCase):
         self.assertEqual(sorted(ann.correct_picks), [3])        # already at the official count
 
 
+class TestRoundFour(_ScratchStore):
+    """Seal, source health, story checker, publish times, chance words, ritual look-back, alerts."""
+
+    def test_seal_keeps_first_fingerprint(self):
+        from unittest import mock
+        from acql.pool import seal
+        with mock.patch.object(seal, "fingerprint", return_value="abcd"):
+            self.assertIsNone(seal.seal(2026, 7, lock=100.0, now=50.0))          # before the deadline
+            first = seal.seal(2026, 7, lock=100.0, now=200.0)
+        self.assertEqual((first.code, first.matches, first.label), ("abcd", True, "W7 · abcd"))
+        with mock.patch.object(seal, "fingerprint", return_value="ffff"):
+            later = seal.seal(2026, 7, lock=100.0, now=900.0)
+        self.assertEqual((later.code, later.matches), ("abcd", False))           # rewritten records show
+
+    def test_source_health(self):
+        from acql import sourcehealth
+        calls = sourcehealth.watched("odds", lambda x: x * 2)
+        self.assertEqual(calls(2), 4)
+        def bad():
+            raise OSError("down")
+        with self.assertRaises(OSError):
+            sourcehealth.watched("odds", bad)()
+        h = sourcehealth.health("odds")
+        self.assertEqual((h.calls, h.good), (2, 1))
+        self.assertIn("down", h.last_note)
+        self.assertEqual(sourcehealth.watched("odds", lambda opener=None: 1)(opener=object()), 1)
+        self.assertEqual(sourcehealth.health("odds").calls, 2)                   # test stand-ins not recorded
+
+    def test_story_checker(self):
+        from acql.site import storyteller
+        sheet = {"week": 6, "winners": ["Ann"], "top_score": 13}
+        self.assertEqual(storyteller.problems("Ann won week 6 with 13.", sheet), [])
+        self.assertTrue(storyteller.problems("Ann won with 14.", sheet))
+        self.assertTrue(storyteller.problems("Deadeye liked it.", sheet))
+
+    def test_publish_window(self):
+        import time as _t
+        from acql import publishtimes
+        base = _t.mktime((2026, 10, 6, 10, 0, 0, 0, 0, -1))                     # a Tuesday 10 am
+        for w, extra in ((1, 0), (2, 7 * 86400 + 3600), (3, 14 * 86400 + 7200)):
+            self.assertTrue(publishtimes.note("predictions", w, 2026, base + extra))
+        self.assertFalse(publishtimes.note("predictions", 1, 2026, base))
+        found = publishtimes.window("predictions", 2026)
+        self.assertEqual((found.weekday, found.weeks), ("Tue", 3))
+        self.assertIn("usually Tue 10 am-12 pm", found.words())
+
+    def test_alert_preferences(self):
+        from acql.site import cardmail
+        self.assertEqual(cardmail.alert_channel("watch"), "email")
+        cardmail.set_alert_channel("watch", "none")
+        self.assertEqual(cardmail.send_note("s", "t", event="watch"), [])        # muted: nothing sent
+
+    def test_words_and_look_back(self):
+        from acql.pool import ritual
+        from acql.ui import extras
+        self.assertEqual(extras.chance_words(0.5), "a coin flip")
+        self.assertEqual(extras.chance_words(0.6), "likely, about 3 in 5")
+        self.assertEqual(extras.chance_words(0.25), "unlikely, about 1 in 4")
+        self.assertIn("too few", ritual.LookBack(17, 5, 12).words())
+        self.assertIn("6 more points", ritual.LookBack(40, 10, 16).words())
+
+
 class TestClinchedAndOut(unittest.TestCase):
     """Clinched and out are exact: from what is banked and what each card can still reach."""
 

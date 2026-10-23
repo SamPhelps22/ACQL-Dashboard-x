@@ -78,6 +78,15 @@ class ScoutingDialog(QDialog):
         layout.addWidget(plan)
         if r.steps:
             layout.addWidget(self._waterfall(r, p))
+        if r.first_meeting is not None:
+            m = r.first_meeting
+            first = Card(f"The first meeting · week {m.week}")
+            first.add(_text(f"{escape(m.label)}" + (f", {escape(m.line)}" if m.line else "")
+                            + (f" - final {escape(m.score)}" if m.score else "")
+                            + (f". {escape(m.winner)} were credited." if m.winner else ".")))
+            first.add(_text("The pool tends to anchor on how the first game went; the line this week has had "
+                            "every week since to adjust.", muted=True))
+            layout.addWidget(first)
         if r.twins is not None and r.twins.count:
             layout.addWidget(self._twins(r))
 

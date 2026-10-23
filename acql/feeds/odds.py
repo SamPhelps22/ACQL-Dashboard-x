@@ -502,3 +502,8 @@ def describe_margin(game_label: str, home_margin: float) -> str:
         return "pick'em"
     team = home if home_margin > 0 else away
     return f"{team} -{abs(home_margin):g}"
+
+
+# every call kept as a success or a failure for odds (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+fetch = _sourcehealth.watched("odds", fetch)

@@ -53,6 +53,7 @@ class Facts:
     big_loser: list[tuple[str, bool]] = field(default_factory=list)
     suicide: tuple[str, bool] | None = None      # team, survived
     spots: list[str] = field(default_factory=list)
+    helped: str = ""            # what would have helped, across the season (ritual.look_back, #64)
 
 
 def finished(season: Season) -> int | None:
@@ -114,6 +115,11 @@ def facts(season: Season, week: int, *, graded=None) -> Facts | None:
         if blown is not None:
             out.big_loser = [(t, team_code(t) in blown) for t in line.big_loser_picks if t]
     try:
+        from ..pool import ritual
+        out.helped = ritual.look_back(season).words()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         from ..model import autopsy
         games = autopsy.graded(season) if graded is None else graded
         out.spots = [f"{r.name}: {r.right} of {r.picks} came in, it expected {r.expected:.1f} ({r.verdict})"
@@ -161,6 +167,8 @@ def compose(season: Season, week: int | None = None, *, found: Facts | None = No
         extra.append(f"Suicide: {f.suicide[0]} - {'still alive' if f.suicide[1] else 'out'}")
     if extra:
         sections.append(("Side pools", extra))
+    if f.helped:
+        sections.append(("What would have helped", [f.helped]))
     if f.spots:
         sections.append((f"Worth watching next week ({MODEL_NAME}'s weakest spots so far)", f.spots))
 

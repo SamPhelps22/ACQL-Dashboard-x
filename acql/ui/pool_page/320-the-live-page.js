@@ -1,3 +1,18 @@
+  // ---- what each coach needs to win the week (#86) ---------------------------------
+  function needsCard(t, sim) {
+    var rows = DATA.live.coaches.map(function (co) { return { name: co.name, p: sim.chance[co.name] || 0 }; })
+      .filter(function (r) { return r.p >= 0.01; })
+      .sort(function (a, b) { return b.p - a.p; }).slice(0, 8);
+    if (!rows.length || !sim.open.length) return null;
+    return module("What each coach needs", "to win the week from here", [el("div", { class: "records" }, rows.map(function (r) {
+      var need = needs(t, sim, r.name) || [];
+      return el("div", { class: "record" + (isMe(r.name) ? " me" : "") }, [
+        el("span", { class: "k", text: pct(r.p) + " to win" }), el("span", { class: "v", text: r.name }),
+        el("span", { class: "d", text: need.length ? "Needs " + listNames(need, 4) : "No single result they can't do without" })]);
+    })), el("p", { class: "note", text: "A result shows when it went that way in nearly every simulated finish where they won the week." })],
+      { "data-card": "needs" });
+  }
+
   // ---- the live page --------------------------------------------------------------
   function liveView() {
     var L = DATA.live;
@@ -50,6 +65,7 @@
         el("div", {}, weekOver(t) ? [] : [rootingCard(t, sim), swingCard(t, sim)]),
         el("div", {}, [swingsFeed(), limbCard(t)])
       ]),
+      weekOver(t) ? null : needsCard(t, sim),
       twoUp([weekLosersCard(t), weekSuicideCard(t)]),
       module("Every card", "tap a name for their week", [scroller(el("table", { id: "live-table" }, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, body)]))]),
       later.length ? module("Still to play", plural(later.length, "game"), [el("div", { class: "games" }, later.map(gameCard))], { "data-card": "to-play" }) : null,

@@ -233,6 +233,10 @@ class ModelLabPage(Page):
             QSettings().setValue(VIEW_KEY, index)
             self._scroll.verticalScrollBar().setValue(0)        # a new view is read from its top
 
+    def analyst_cards(self) -> list:
+        return [self.extra[k][0] for k in ("shocks", "calib", "cover", "kinds_by_season", "live") if k in self.extra] \
+            + [self.versions_card]
+
     # ---- the situation explorer (#31) ------------------------------------------
     def _build_explorer(self) -> None:
         from ...model import explorer

@@ -318,3 +318,8 @@ def refresh(year: int, weeks, *, now: float | None = None, board=None, summary=N
     if kept and not problems:
         _note_try(None)
     return kept, problems
+
+
+# every call kept as a success or a failure for timeline (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+fetch = _sourcehealth.watched("timeline", fetch)

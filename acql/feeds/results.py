@@ -664,3 +664,8 @@ def summary(year: int, week: int, pairs: list[tuple[str, str]]) -> str:
         day = "" if moment.tm_yday == today.tm_yday and moment.tm_year == today.tm_year else time.strftime("%a ", moment)
         when = f" · checked {day}{hour}:{moment.tm_min:02d} {'AM' if moment.tm_hour < 12 else 'PM'}"
     return f"{done} of {len(pairs)} final{when}"
+
+
+# every call kept as a success or a failure for espn-scores (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+fetch = _sourcehealth.watched("espn-scores", fetch)

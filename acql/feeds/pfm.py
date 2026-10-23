@@ -614,3 +614,8 @@ def refresh(*, opener=None, sleep=time.sleep, now: float | None = None, team_pag
             "effective_date": snapshot.get("effective_date"), "teams": len(snapshot.get("teams") or {}),
             "pages": len(snapshot.get("pages") or []), "issues": issues,
             "freshness": freshness(latest(), now)}
+
+
+# every call kept as a success or a failure for pfm (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+_get = _sourcehealth.watched("pfm", _get)

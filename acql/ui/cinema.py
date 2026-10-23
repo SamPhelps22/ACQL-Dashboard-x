@@ -552,7 +552,8 @@ class CinemaWindow(QWidget):
 
     # ---- in and out --------------------------------------------------------------------
     def enter(self) -> None:
-        screen = self.window_.screen()
+        from . import extras
+        screen = extras.cinema_screen(self.window_.screen())
         if screen is not None:
             self.setGeometry(screen.geometry())
         self.refresh(Changes(self.feed.week))

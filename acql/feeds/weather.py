@@ -216,3 +216,8 @@ def indoors(year: int, week: int, away: str, home: str) -> bool:
     kept = (_kept().get(f"{year}-{week}") or {}).get("games") or {}
     row = kept.get(f"{a}@{h}") or kept.get(f"{h}@{a}")
     return bool(isinstance(row, dict) and row.get("indoor"))
+
+
+# every call kept as a success or a failure for weather (sourcehealth.py, #41)
+from .. import sourcehealth as _sourcehealth  # noqa: E402
+_get = _sourcehealth.watched("weather", _get)
