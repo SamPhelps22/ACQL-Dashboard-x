@@ -592,6 +592,7 @@ class LineChart(Chart):
         reference: tuple[str, list[float]] | None = None,
         integer_x: bool = True,
         zero_baseline: bool = False,
+        front: tuple[str, ...] = (),
     ) -> None:
         if not x or not series:
             self.empty()
@@ -634,7 +635,7 @@ class LineChart(Chart):
                 marker="o", markersize=MARKER_SIZE,
                 # A 2px surface ring keeps overlapping markers readable.
                 markeredgecolor=p.surface, markeredgewidth=1.2,
-                label=name, zorder=3 + slot,
+                label=name, zorder=3 + slot + (len(series) if name in front else 0),
             )
             for xi, v in points:
                 self._columns.setdefault(xi, []).append((name, v))

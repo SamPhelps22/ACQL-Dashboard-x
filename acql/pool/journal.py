@@ -115,6 +115,7 @@ def overrides(season, name: str | None = None) -> list[Override]:
         model, sheet = cards.model(number), picks.load(number)
         if model is None or sheet is None or not week.games:
             continue
+        model = cards.aligned(model, cards._slate(week.games))   # the slate may have been renumbered
         coach = next((c for c in sheet.coaches if " ".join(c.split()).casefold() == wanted), None)
         if coach is None:
             continue

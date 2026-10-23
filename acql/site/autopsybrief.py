@@ -87,6 +87,7 @@ def facts(season: Season, week: int, *, graded=None) -> Facts | None:
             out.suicide = (line.suicide_pick, not line.suicide_out)
     model = cards.model(week)
     if model is not None:
+        model = cards.aligned(model, cards._slate(wk.games))
         took = [(g, model.take.get(g.index)) for g in played if model.take.get(g.index)]
         out.model_games = len(took)
         out.model_right = sum(1 for g, t in took if team_code(t) == team_code(g.winner))

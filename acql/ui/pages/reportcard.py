@@ -494,11 +494,18 @@ class ReportCardPage(Page):
             return out
 
         series = [(MODEL_NAME, running([w.model for w in weeks]))]
-        # the betting line's side, for as many weeks as it is known on the same games
+        # the betting line's side; a week where a game had no line is judged
+        # against the pool's average on just the games that had one
         line, known = [], True
         for w in weeks:
-            known = known and w.week in by_week and by_week[w.week][0] == w.games
-            line.append(by_week[w.week][1] if known else None)
+            n = by_week.get(w.week, (0, 0, 0.0))[0]
+            known = known and n > 0
+            if not known:
+                line.append(None)
+            elif n == w.games:
+                line.append(by_week[w.week][1])
+            else:
+                line.append(by_week[w.week][1] + w.pool_average * (w.games - n) / w.games)
         if sum(v is not None for v in line) >= 2:
             series.append(("Betting line", running(line)))
         if any(w.mine is not None for w in weeks):
@@ -506,6 +513,7 @@ class ReportCardPage(Page):
         self.running_chart.plot(
             [w.week for w in weeks], series, ylabel="Games ahead",
             reference=("Pool average", [0.0 for _ in weeks]),
+            front=(MODEL_NAME,),    # stays visible where it and the line agree
         )
 
     def _render_standing(self, report: reportcard.Report, card: grades.Card) -> None:
