@@ -82,6 +82,9 @@ jobs:
       - name: Strategy lab tests
         run: python tests/test_strategy_lab.py
 
+      - name: Deadeye record tests
+        run: python tests/test_record.py
+
       - name: Phone alerts tests
         run: python tests/test_pushalerts.py
 

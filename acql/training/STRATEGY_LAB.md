@@ -105,6 +105,20 @@ them into two tracks, each taught, chosen and judged on its own answer, each wit
 - Caveat: an earlier attempt (run 20261023-085721) crashed in the leak check after freezing; it left only
   `freeze.json` and one "seen-scored" registry line. Fixed (a meta-learner's members now join the leak check) and rerun.
 
+## Deadeye's own record (`python -m acql.training record`, 2026-10-23)
+
+`record.py` scores the cards Deadeye actually saved (cards.model) and the ledger's margins, not the lab's rebuild.
+Weeks 1-3 are rebuilt cards, week 4 was saved after its deadline, and **weeks 5-7 are the record** (week 7 has 1
+graded game so far). On the record: 29 graded games on the ACQL track, Deadeye 0.6664 vs the market line it used
+0.6548, picks 16 vs 17; 15 on the probability track (ledger margins, weeks 6-7). Three weeks is far too few for a
+range; none is shown.
+
+**Week 5's card priced 6 of its 15 games from another game's line.** For example, phi@jax used -1.5 (chi@gb's number)
+when Jacksonville was a 7.5-point favourite. The card is still the record of what Deadeye said, and those games are
+flagged and also scored without them. Weeks 6-7 match. The books' re-priced Deadeye differs from the saved cards by
+0.033 on average (up to 0.29) and takes the other side on 4 of 43 games: the lab's Deadeye is a reconstruction,
+not the record.
+
 ## What happens next (nothing automatic changes a pick)
 
 - **Each week:** the training task's Thursday run locks the finalists' forecasts for the coming week (12 hours or less

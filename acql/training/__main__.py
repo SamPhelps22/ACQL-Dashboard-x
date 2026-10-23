@@ -21,6 +21,8 @@
                                        track; judged only on locked weeks (--protocol 1: the old single
                                        question with its own test seasons)
                                        (lab lock | verify | score: the weekly locked forecasts, judged)
+    python -m acql.training record    Deadeye's saved deadline cards, scored on both lab questions -
+                                       the record kept apart from cards rebuilt or saved late
     python -m acql.training pfm       Pro Football Mania's ratings: pull a snapshot (goes online,
                                        36 pages two seconds apart), then measure them against Deadeye
                                        (--no-pull measures only; shadow only, never a pick)
@@ -299,6 +301,30 @@ def _weekly_prereg() -> None:
         print(f"Pre-registered tests skipped ({type(exc).__name__}: {exc})")
 
 
+def record(args) -> int:
+    """Deadeye's own record (record.py): the cards it saved before each deadline, scored on both tracks."""
+    from . import record as rec
+    found = rec.run(args.year)
+    print(f"Deadeye's saved cards, {args.year}:")
+    for week, w in found["weeks"].items():
+        flag = f"  card line not this game's: {', '.join(w['line_mismatch'])}" if w["line_mismatch"] else ""
+        print(f"  week {week:>2}: {w['status']:<26} {w['graded']:>2}/{w['games']} graded{flag}")
+    for pile, tracks in found["tracks"].items():
+        for track, s in tracks.items():
+            if s.get("games", 0) < 2:
+                continue
+            d, m, e = s["deadeye"], s["market"], s["deadeye_vs_market"]
+            rng = e.get("range") or f"{e['low']:+.4f} to {e['high']:+.4f}"
+            print(f"  {pile} / {track}: {s['games']} games, {s['weeks']} weeks - log loss Deadeye {d['logloss']:.4f}, "
+                  f"market {m['logloss']:.4f}; Deadeye's lead {e['edge']:+.4f} ({rng}); right {d['right']} vs {m['right']}")
+    drift = found.get("replay_drift") or {}
+    if drift.get("games"):
+        print(f"  The books' re-priced Deadeye against the saved card: {drift['mean']:.3f} apart on average "
+              f"(largest {drift['largest']:.3f}), other side on {drift['other_side']} of {drift['games']} games")
+    print(f"Written: {rec.folder() / 'latest.json'}")
+    return 0
+
+
 def lab(args) -> int:
     """The strategy lab (strategylab.py), or its locked weekly forecasts (lablocks.py)."""
     from . import lablocks, strategylab
@@ -435,6 +461,8 @@ def main(argv: list[str] | None = None) -> int:
     pf = commands.add_parser("pfm", help="Pro Football Mania's ratings: a snapshot, then measured (shadow only)")
     pf.add_argument("--no-pull", action="store_true", help="measure on the snapshots already kept; do not go online")
     commands.add_parser("prereg", help="the tests written down before their games, scored (shadow only)")
+    rc = commands.add_parser("record", help="Deadeye's saved deadline cards, scored on both lab questions (reads only)")
+    rc.add_argument("--year", type=int, default=2026)
     lb = commands.add_parser("lab", help="the strategy lab (shadow only), or its locked weekly forecasts")
     lb.add_argument("action", nargs="?", choices=("run", "lock", "verify", "score"), default="run")
     lb.add_argument("--timing", choices=("midweek", "opening", "updated"), help="one timing only")
@@ -451,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
             "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
             "features": featurevalue, "calibration": calibration, "pfm": pfm,
-            "prereg": prereg, "lab": lab}.get(args.command)
+            "prereg": prereg, "lab": lab, "record": record}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0
