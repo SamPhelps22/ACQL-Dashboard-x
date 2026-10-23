@@ -33,7 +33,7 @@ from . import data
 from .data import MODEL, NAMELESS, Notes, TIMINGS
 
 #: What a recipe must never be handed when it prices a game: the answers.
-ANSWERS = ("actual", "target", "credited", "credited_home", "home_points", "away_points")
+ANSWERS = ("actual", "target", "credited", "credited_home", "home_points", "away_points", "y")
 #: Fewest models before their middle counts as a crowd (predictions.MIN_KEPT).
 ENOUGH_MODELS = predictions.MIN_KEPT
 #: A slate needs this many games with a gap before it has a shared lean (predictions.home_lean).

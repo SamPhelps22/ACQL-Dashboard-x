@@ -245,6 +245,7 @@ python tests/test_training.py
 python tests/test_chaos.py
 python tests/test_model_lab.py
 python tests/test_research_lab.py
+python tests/test_strategy_lab.py
 python tests/test_pushalerts.py
 python tests/test_sunday.py
 python -m acql.checks

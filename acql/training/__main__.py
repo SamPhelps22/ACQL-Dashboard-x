@@ -14,6 +14,13 @@
     python -m acql.training calibration  are Deadeye's chances honest? the margin-to-chance step, audited
     python -m acql.training fetch     the season archives from The Prediction Tracker (about 2 MB;
                                        goes online, and only when asked)
+    python -m acql.training lab       the strategy lab: Elo, scoring model, logistic, boosted trees,
+                                       averages and a meta-learner against Deadeye and the market,
+                                       walked forward on two questions apart - did the home side win
+                                       (probability) and was it credited (ACQL) - finalists frozen per
+                                       track; judged only on locked weeks (--protocol 1: the old single
+                                       question with its own test seasons)
+                                       (lab lock | verify | score: the weekly locked forecasts, judged)
     python -m acql.training pfm       Pro Football Mania's ratings: pull a snapshot (goes online,
                                        36 pages two seconds apart), then measure them against Deadeye
                                        (--no-pull measures only; shadow only, never a pick)
@@ -162,6 +169,7 @@ def weekly(args) -> int:
     done = snapshot(args)
     _weekly_pfm()
     _weekly_prereg()
+    _weekly_lab_lock()
     newest = verdict.latest()
     age = time.time() - float(newest.get("made", 0)) if newest else None
     if not args.force and age is not None and age < RUN_EVERY_S:
@@ -291,6 +299,69 @@ def _weekly_prereg() -> None:
         print(f"Pre-registered tests skipped ({type(exc).__name__}: {exc})")
 
 
+def lab(args) -> int:
+    """The strategy lab (strategylab.py), or its locked weekly forecasts (lablocks.py)."""
+    from . import lablocks, strategylab
+    if args.action == "verify":
+        problems = lablocks.verify()
+        print("every lock is as it was written" if not problems else "\n".join(problems))
+        return 2 if problems else 0
+    if args.action == "score":
+        found = lablocks.score()
+        if found["weeks"]:
+            print(f"one-question locks scored: {', '.join(found['weeks'])}")
+            for sid, s in sorted(found["strategies"].items(), key=lambda kv: kv[1]["logloss"]):
+                print(f"  {sid:<22} {s['games']:>4} games  log loss {s['logloss']:.4f}  right {s['right']}")
+        judged = lablocks.judge(write=True)
+        if judged is None:
+            print("No two-track lab run yet (python -m acql.training lab run).")
+            return 0
+        for track, j in judged.items():
+            print(f"\n{track} track: {j['why']}")
+            for sid, r in j["finalists"].items():
+                if not r.get("games"):
+                    print(f"  {sid:<22}    0 games")
+                    continue
+                extra = (f"  picks a week vs Deadeye {r['picks_vs_deadeye']['edge']:+.2f}"
+                         if "picks_vs_deadeye" in r else "")
+                print(f"  {sid:<22} {r['games']:>4} games  log loss {r['logloss']:.4f}  vs Deadeye "
+                      f"{r['vs_deadeye']['edge']:+.4f}{extra}")
+        print(f"\nChampions: {strategylab.champions_path()}")
+        return 0
+    if args.action == "lock":
+        season, week = lablocks.current_week()
+        if season is None:
+            print("No week ahead on the books to lock.")
+            return 1
+        print(lablocks.lock_week(season, week, window=None if args.now else lablocks.LOCK_WINDOW_S))
+        return 0
+    print("Strategy lab - reads the archives and a copy of nothing else; changes no pick.", flush=True)
+    go = strategylab.run2 if args.protocol == "2" else strategylab.run
+    found = go(auto=not args.no_auto, leak_check=not args.no_check,
+               timings=[args.timing] if args.timing else None, progress=_progress())
+    if args.protocol == "2":
+        print(f"\nDone in {found['took']:.0f}s. Finalists frozen for both tracks; nominations come only from "
+              "locked weeks (lab score).")
+    else:
+        print(f"\nDone in {found['took']:.0f}s. Nominee: {found['nominee'] or 'none'}.")
+    print(f"Report:  {strategylab.folder() / 'latest' / 'report.md'}")
+    return 0
+
+
+def _weekly_lab_lock() -> None:
+    """The weekly job's locked lab forecasts: only within a day or so of the
+    deadline, only once a week, only if a lab run exists. Never stops the job."""
+    try:
+        from . import lablocks, strategylab
+        if not (strategylab.folder() / "latest" / "results.json").exists():
+            return
+        season, week = lablocks.current_week()
+        if season is not None:
+            print(f"Lab lock: {lablocks.lock_week(season, week)}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Lab lock skipped ({type(exc).__name__}: {exc})")
+
+
 def _weekly_pfm() -> None:
     """The weekly job's PFM step (Sam approved weekly pulls on 2026-10-18).
     Never stops the rest of the job."""
@@ -364,6 +435,15 @@ def main(argv: list[str] | None = None) -> int:
     pf = commands.add_parser("pfm", help="Pro Football Mania's ratings: a snapshot, then measured (shadow only)")
     pf.add_argument("--no-pull", action="store_true", help="measure on the snapshots already kept; do not go online")
     commands.add_parser("prereg", help="the tests written down before their games, scored (shadow only)")
+    lb = commands.add_parser("lab", help="the strategy lab (shadow only), or its locked weekly forecasts")
+    lb.add_argument("action", nargs="?", choices=("run", "lock", "verify", "score"), default="run")
+    lb.add_argument("--timing", choices=("midweek", "opening", "updated"), help="one timing only")
+    lb.add_argument("--no-auto", action="store_true", help="first-round candidates only, no proposals")
+    lb.add_argument("--no-check", action="store_true", help="skip the leak check")
+    lb.add_argument("--now", action="store_true", help="lock: lock now, however long before the deadline")
+    lb.add_argument("--protocol", choices=("1", "2"), default="2",
+                    help="run: strategy-lab-2 (two tracks, the default) or strategy-lab-1 "
+                         "(one question; each run opens its test seasons again)")
     f = commands.add_parser("fetch", help="the season archives from The Prediction Tracker (goes online)")
     f.add_argument("--refresh", action="store_true", help="fetch this season's file again")
     args = parser.parse_args(argv)
@@ -371,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
             "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
             "features": featurevalue, "calibration": calibration, "pfm": pfm,
-            "prereg": prereg}.get(args.command)
+            "prereg": prereg, "lab": lab}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0

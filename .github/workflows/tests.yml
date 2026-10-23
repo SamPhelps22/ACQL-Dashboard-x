@@ -79,6 +79,9 @@ jobs:
       - name: Research lab tests
         run: python tests/test_research_lab.py
 
+      - name: Strategy lab tests
+        run: python tests/test_strategy_lab.py
+
       - name: Phone alerts tests
         run: python tests/test_pushalerts.py
 
