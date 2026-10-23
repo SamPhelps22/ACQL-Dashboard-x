@@ -1112,8 +1112,8 @@ def site_fingerprint(data: dict) -> str:
     announcement or champions, or a dashboard update that changes the page."""
     from ..version import VERSION
     # the tokens and shared icons count as part of the page: a change to either republishes it
-    template = hashlib.sha256(_with_design(template()).encode("utf-8")).hexdigest()
-    return siteextras.fingerprint(_as_shown(data), [VERSION, template])
+    page = hashlib.sha256(_with_design(template()).encode("utf-8")).hexdigest()
+    return siteextras.fingerprint(_as_shown(data), [VERSION, page])
 
 
 def page_html(season: Season, *, generated: str | None = None) -> str:

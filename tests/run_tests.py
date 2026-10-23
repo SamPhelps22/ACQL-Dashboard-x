@@ -3610,6 +3610,16 @@ class TestWebsitePieces(unittest.TestCase):
         self.assertTrue(page.rstrip().endswith("})();\n</script>"))
         self.assertIn("__POOL_DATA__", page)
 
+    def test_site_fingerprint_works_and_follows_the_data(self):
+        # Every automatic website update starts here: when it raised (Oct 23, a
+        # local name hiding template()), the site stopped publishing.
+        from acql.ui import poolpage
+        empty = poolpage.site_fingerprint({})
+        self.assertIsInstance(empty, str)
+        self.assertTrue(empty)
+        self.assertEqual(empty, poolpage.site_fingerprint({}))
+        self.assertNotEqual(empty, poolpage.site_fingerprint({"announcement": "Week 8 is up"}))
+
     def test_the_page_helpers(self):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packaging"))
         import jsrun
