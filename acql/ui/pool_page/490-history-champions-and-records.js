@@ -143,9 +143,24 @@
           }))] : [el("p", { class: "note", text: "Records start once a week is done." })], { "data-card": "records" })])
       ])
     ];
+    var museum = museumModule();
+    if (museum) kids.push(museum);
     if (past.length) kids.push(allTimeModule(seasons, champs));
     else kids.push(el("p", { class: "note", text: "All-time standings start with the next season: the dashboard keeps each season as it publishes, and this one joins the history when it’s done." }));
     return el("div", { class: "view", "data-view": "history" }, kids);
+  }
+  // the latest swings that cost someone a week, across every replayed week (replay.museum)
+  function museumModule() {
+    var list = DATA.museum || [];
+    if (!list.length) return null;
+    return module("Bad-beat museum", "the latest swings that cost someone a week", [
+      el("div", { class: "records" }, list.map(function (b) {
+        return el("div", { class: "record" }, [el("span", { class: "k", text: "Week " + b.week }),
+          el("span", { class: "v", text: b.who }), el("span", { class: "w", text: b.title }),
+          el("span", { class: "d", text: b.detail })]);
+      })),
+      el("p", { class: "note", text: "From every week the site can replay play by play. A week whose official totals don’t add up is left out until it’s ruled on." })
+    ], { "data-card": "museum" });
   }
   function allTimeModule(seasons, champs) {
     var by = {};

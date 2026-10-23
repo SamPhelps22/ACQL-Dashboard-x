@@ -38,7 +38,7 @@ import csv
 import math
 import statistics
 import time
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from pathlib import Path
 
 from . import longrecord, predictions, pricing
@@ -164,11 +164,22 @@ class Reading:
     named: dict[str, float] = field(default_factory=dict)       # model -> its number, where the names were kept
     deadeye: float | None = None        # the margin the picks were made from
     actual: float | None = None         # the final home margin, once played
+    opening: float | None = None        # the opening line, home margin
+    close: float | None = None          # the line at kickoff, home margin (closing.py, else the last kept)
 
     @property
     def gap(self) -> float | None:
         """How far the models' middle sits from the betting line."""
         return None if self.line is None or self.middle is None else self.middle - self.line
+
+
+def _close(closes: dict, game, fallback: float | None) -> float | None:
+    """The last line kept before kickoff for this game, home side."""
+    entry = closes.get(frozenset((team_code(game.away), team_code(game.home))))
+    if not entry or not entry.get("runs"):
+        return fallback
+    margin = float(entry["runs"][-1][2])
+    return margin if entry.get("home") == team_code(game.home) else -margin
 
 
 def readings(season: Season) -> list[Reading]:
@@ -189,6 +200,12 @@ def readings(season: Season) -> list[Reading]:
             continue
         prices = {p.game.index: p for p in pricing.price_week(season, number, games, ctx)}
         finals = ghost._margins(season, number, week)
+        try:
+            from . import closing
+            from ..feeds import results as _results
+            closes = closing.lines(_results.season_year(season), number)
+        except Exception:  # noqa: BLE001
+            closes = {}
         entry = kept.get(str(number))
         names = {(g.get("road"), g.get("home")): g.get("named") or {}
                  for g in (entry.get("games", []) if isinstance(entry, dict) else [])}
@@ -208,6 +225,8 @@ def readings(season: Season) -> list[Reading]:
                 named=named,
                 deadeye=price.margin if price is not None else None,
                 actual=float(finals[game.index]) if game.played and game.index in finals else None,
+                opening=predictions.home_margin(game, f, f.opening),
+                close=_close(closes, game, pricing.market_margin(game, f)),
             ))
     return out
 
@@ -351,6 +370,8 @@ class Way:
     cover: int                  # games on the right side of the line...
     cover_games: int            # ...of those where it and the result both left the line
     in_use: bool = False
+    #: The in-use middle's average miss on this way's own games, when they aren't all of them.
+    against: float | None = None
 
 
 def _middle(share: float):
@@ -392,6 +413,52 @@ def _way(name: str, made: list[tuple[float, Reading]]) -> Way:
     )
 
 
+CLV_WAY = "Weighted by closing-line value (shadow)"
+#: A model's weight is its share of line moves it called, less this, floored at CLV_FLOOR:
+#: a model the market agreed with no more than a coin flip counts for little.
+CLV_BASE, CLV_FLOOR = 0.4, 0.05
+
+
+def clv_hit(value: float, r: Reading) -> bool | None:
+    """Did the line move from its opener toward this model's number by the close? None: no move."""
+    if r.opening is None or r.close is None or r.close == r.opening or value == r.opening:
+        return None
+    return (value > r.opening) == (r.close > r.opening)
+
+
+def clv_weights(earlier: list[Reading]) -> dict[str, float]:
+    """Each model's weight from the games before (#27): (hits + 1) / (calls + 2), less CLV_BASE."""
+    tally: dict[str, list[int]] = {}
+    for r in earlier:
+        for code, value in r.named.items():
+            hit = clv_hit(value, r)
+            if hit is None:
+                continue
+            t = tally.setdefault(code, [0, 0])
+            t[0] += hit
+            t[1] += 1
+    return {c: max(CLV_FLOOR, (h + 1) / (n + 2) - CLV_BASE) for c, (h, n) in tally.items()}
+
+
+def clv_way(found: list[Reading], graded: list[Reading]) -> Way | None:
+    """The shadow recipe: each graded game's models weighted by their closing-line
+    value on earlier weeks only. None until names and lines are kept for it."""
+    made = []
+    for r in graded:
+        if not r.named:
+            continue
+        weights = clv_weights([e for e in found if e.week < r.week])
+        weighted = [(weights[c], v) for c, v in r.named.items() if c in weights]
+        if len(weighted) < predictions.MIN_KEPT:
+            continue
+        total = sum(w for w, _ in weighted)
+        made.append((sum(w * v for w, v in weighted) / total, r))
+    if len(made) < 10:
+        return None
+    used = _middle(predictions.TRIM_SHARE)
+    return replace(_way(CLV_WAY, made), against=_miss((used(list(r.opinions)), r.actual) for _v, r in made))
+
+
 def averages(found: list[Reading], form: dict[str, float] | None = None) -> list[Way]:
     """Each way of boiling the models down to one number, on the same played
     games. With the models' form going into the season, two more: the same
@@ -406,6 +473,9 @@ def averages(found: list[Reading], form: dict[str, float] | None = None) -> list
             picked = [[v for c, v in r.named.items() if c in crowd] for r in graded]
             if all(len(values) >= predictions.MIN_KEPT for values in picked):
                 out.append(_way(name, [(middle(values), r) for values, r in zip(picked, graded)]))
+    shadow = clv_way(found, graded)
+    if shadow is not None:
+        out.append(shadow)
     out.sort(key=lambda w: w.miss)
     out.append(Way(LINE_ROW, len(graded), _miss((r.line, r.actual) for r in graded), 0, 0, 0))
     return out

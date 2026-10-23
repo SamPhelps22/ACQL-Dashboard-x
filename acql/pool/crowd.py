@@ -324,6 +324,28 @@ def past_observations(this_year: int = 0) -> list[Observation]:
     return out
 
 
+#: Line-size bands for the favourite-take grid (#49): label -> (low, high], market points.
+BANDS = (("Under 3", 0.0, 2.9), ("3 to 4.5", 2.9, 4.5), ("5 to 6.5", 4.5, 6.5), ("7 to 9.5", 6.5, 9.5),
+         ("10 or more", 9.5, 99.0))
+
+
+def favourite_grid(obs: list[Observation]) -> tuple[list[str], list[int], list[list[float | None]], list[list[int]]]:
+    """(band labels, weeks, share of the pool on the favourite as %, games in each cell)
+    from this season's sheets - how this pool takes favourites by line size, week by week."""
+    mine = [o for o in obs if o.teams and o.weight >= 1.0]
+    weeks = sorted({o.week for o in mine})
+    values, counts = [], []
+    for _label, low, high in BANDS:
+        row, n_row = [], []
+        for w in weeks:
+            cell = [o for o in mine if o.week == w and low < abs(o.situation.points) <= high]
+            row.append(100.0 * sum(o.on_favourite for o in cell) / len(cell) if cell else None)
+            n_row.append(len(cell))
+        values.append(row)
+        counts.append(n_row)
+    return [b[0] for b in BANDS], weeks, values, counts
+
+
 def fit(obs: list[Observation]) -> CrowdModel:
     """The pool's habits, from what it actually did."""
     if not obs:

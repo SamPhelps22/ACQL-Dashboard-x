@@ -156,10 +156,39 @@ def write_up(found: dict[str, dict[str, dict]]) -> str:
     return "\n".join(lines)
 
 
+#: The span the dashboard's drift outlook uses: the latest era, the market as it is now.
+DRIFT_SPAN = ERAS[-1]
+
+
+def drift_file(found: dict[str, dict[str, dict]]) -> dict | None:
+    """The share of the gap the market closes from each line, latest era, for the
+    dashboard (model/drift.py reads data/training/latest/drift.json; it never
+    imports this package)."""
+    import time
+    span = next((k for k in found if k.startswith(f"{DRIFT_SPAN[0]}-")), None)
+    if span is None:
+        return None
+    out = {}
+    for timing in ORDER[:-1]:
+        m = found[span].get(timing) or {}
+        if m.get("games", 0) >= 30 and "move_range" in m:
+            low, high = m["move_range"]
+            out[timing] = {"move": round(float(m["move"]), 4), "low": round(float(low), 4),
+                           "high": round(float(high), 4), "games": int(m["games"])}
+    return {"made": time.time(), "span": span, "from": out} if out else None
+
+
 def run() -> tuple[str, object]:
-    text = write_up(study())
+    import json
+    found = study()
+    text = write_up(found)
     where = data.folder() / "decay"
     where.mkdir(parents=True, exist_ok=True)
     path = where / "edge-decay.md"
     path.write_text(text, encoding="utf-8")
+    drift = drift_file(found)
+    if drift is not None:
+        latest = data.folder() / "latest"
+        latest.mkdir(parents=True, exist_ok=True)
+        (latest / "drift.json").write_text(json.dumps(drift, indent=1), encoding="utf-8")
     return text, path

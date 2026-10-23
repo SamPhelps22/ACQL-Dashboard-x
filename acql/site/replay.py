@@ -292,6 +292,30 @@ def fingerprint(data: dict) -> str:
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
+# ---- the all-time bad-beat museum (#50) ---------------------------------------------------
+MUSEUM = 10
+
+
+def museum(season: Season, most: int = MUSEUM) -> list[dict]:
+    """The latest swings that cost someone the week, across every week that can be
+    replayed: each week's bad beat and late swing, latest in the week first."""
+    out = []
+    for number in sorted(season.weeks):
+        try:
+            rep = build(season, number)
+        except Exception:  # noqa: BLE001 - one week that can't be told leaves the rest
+            rep = None
+        if rep is None or len(rep.frames) < 3:
+            continue
+        for beat in beats(rep):
+            if beat.get("kind") not in ("bad-beat", "swing"):
+                continue
+            out.append({"week": number, "kind": beat["kind"], "title": beat["title"], "who": beat["who"],
+                        "detail": beat["detail"], "late": round(beat["frame"] / (len(rep.frames) - 1), 4)})
+    out.sort(key=lambda b: (-b["late"], b["week"]))
+    return out[:most]
+
+
 # ---- the bad beats -------------------------------------------------------------------
 def _names(names: list[str]) -> str:
     names = list(names)

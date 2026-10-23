@@ -231,7 +231,9 @@ class ComputersPage(Page):
                 tones[(i, 0)] = "muted"
         note = "Shows up once games the models priced have been played."
         if ways:
-            best, used = ways[0], next((w for w in ways if w.in_use), None)
+            shadow = next((w for w in ways if w.name == computers.CLV_WAY), None)
+            ways_fair = [w for w in ways if w is not shadow]
+            best, used = ways_fair[0], next((w for w in ways if w.in_use), None)
             note = ("Each way boils the models down to one number for a game. Average miss is how many points that "
                     "number was from the final margin. ")
             if used is not None and best is not used:
@@ -247,6 +249,14 @@ class ComputersPage(Page):
                          + ("Neither has beaten the middle 60% of everyone so far." if not better else
                             f"{better[0].name} is ahead of the middle 60% of everyone so far, by "
                             f"{used.miss - better[0].miss:.2f} of a point."))
+        if shadow is not None and shadow.against is not None:
+            ahead = shadow.against - shadow.miss
+            note += (f" The closing-line-value crowd (shadow only) weights each model by how often the market later "
+                     f"moved its way, on earlier weeks only; it starts once there is a week to learn from, so it has "
+                     f"{_plural(shadow.games, 'game')}. On those same games it was "
+                     + (f"{ahead:.2f} of a point closer than the middle 60%" if ahead > 0 else
+                        f"{-ahead:.2f} of a point further off than the middle 60%")
+                     + " - far too few to judge; it changes no pick.")
         self._table(WAYS, ["Way", "Games", "Average miss", "Closer than the line", "Right side of the line"], rows,
                     note, numeric_columns={1, 2, 3, 4}, tones=tones,
                     sort_values={2: [w.miss for w in ways]})

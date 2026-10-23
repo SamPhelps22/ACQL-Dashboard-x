@@ -203,6 +203,20 @@ class BriefingPage(Page):
         options = QHBoxLayout()
         options.setSpacing(12)
         options.addWidget(self.style_picker, 0)
+        # what you're playing for this season, and the card it suggests (pool/goal.py, #90)
+        from ...pool import goal as _goal
+        self.goal_picker = QComboBox()
+        for key, name in _goal.GOALS.items():
+            self.goal_picker.addItem(f"Playing for: {name.lower() if key else 'not set'}", key)
+        self.goal_picker.setToolTip("What you want from the season. It suggests a card; it never changes yours.")
+        self.goal_picker.setCurrentIndex(max(self.goal_picker.findData(QSettings().value(self.GOAL_KEY, "")), 0))
+        self.goal_picker.currentIndexChanged.connect(self._goal_changed)
+        options.addWidget(self.goal_picker, 0)
+        self.goal_use = QPushButton("Use it")
+        self.goal_use.setToolTip("Switch to the suggested card")
+        self.goal_use.clicked.connect(self._use_goal)
+        self.goal_use.hide()
+        options.addWidget(self.goal_use, 0)
         self.lines_status = QLabel("")
         self.lines_status.setObjectName("Muted")
         self.lines_status.setWordWrap(True)
@@ -314,6 +328,12 @@ class BriefingPage(Page):
         self.gap_card.body().addLayout(self.gap_box)
         self.layout_.addWidget(self.gap_card)
 
+        self.drift_card = Card("Lines likely to move before the deadline")
+        self.drift_box = QVBoxLayout()
+        self.drift_card.body().addLayout(self.drift_box)
+        self.drift_card.hide()
+        self.layout_.addWidget(self.drift_card)
+
         self.side_card = Card("The side pools", info=explain.BIG_LOSERS)
         self.side_box = QVBoxLayout()
         self.side_card.body().addLayout(self.side_box)
@@ -354,6 +374,7 @@ class BriefingPage(Page):
         self._week_shown = week
         self._update_suicide(season, week)
         self._brief = briefing.build(season, week, self._style()) if week else None
+        self._show_goal()
         brief = self._brief
         self.card.set_title(f"{CARD_TITLE} - week {week}" if week else CARD_TITLE)
         self._update_lines_status(week)
@@ -383,18 +404,49 @@ class BriefingPage(Page):
         self._update_swings(brief)
         self._update_table(brief)
         self._update_gaps(brief)
+        self._update_drift(brief)
         self._update_side(brief)
 
     # ---- which card --------------------------------------------------------
     #: A new key in 2.9: the old one remembered "built to win the week",
     #: which was the default then, and the default is now the most-wins card.
     STYLE_KEY = "thisweek/card-2"
+    GOAL_KEY = "thisweek/goal"
+    _suggested = None
+
+    def _goal_changed(self, _index: int = 0) -> None:
+        QSettings().setValue(self.GOAL_KEY, self.goal_picker.currentData() or "")
+        self._show_goal()
+
+    def _show_goal(self) -> None:
+        """The goal's suggested card, beside the picker; a button only when it differs from yours."""
+        from ...pool import goal as _goal
+        found = None
+        if self.season is not None:
+            behind, left = _goal.standing(self.season)
+            found = _goal.suggest(self.goal_picker.currentData() or "", behind, left)
+        self._suggested = found
+        if found is None:
+            self.goal_picker.setToolTip("What you want from the season. It suggests a card; it never changes yours.")
+            self.goal_use.hide()
+            return
+        name = briefing.STYLE_NAMES[found.style]
+        self.goal_picker.setToolTip(f"Suggested card: {name}. {found.reason}")
+        self.goal_use.setText(f"Use {name}")
+        self.goal_use.setToolTip(found.reason)
+        self.goal_use.setVisible(found.style != self._style())
+
+    def _use_goal(self) -> None:
+        if self._suggested is not None:
+            self.style_picker.setCurrentIndex(max(self.style_picker.findData(self._suggested.style), 0))
+            self._show_goal()
 
     def _style(self) -> str:
         return self.style_picker.currentData() or briefing.DEFAULT_STYLE
 
     def _style_changed(self, _index: int = 0) -> None:
         QSettings().setValue(self.STYLE_KEY, self._style())
+        self._show_goal()
         self.refresh_now()
 
     # ---- the suicide pool ------------------------------------------------
@@ -944,6 +996,38 @@ class BriefingPage(Page):
         note.setObjectName("Muted")
         note.setWordWrap(True)
         self.gap_box.addWidget(note)
+
+    def _update_drift(self, brief: briefing.Brief) -> None:
+        """Games still on their opening line and the move the edge-decay study says to expect (#21)."""
+        from ...model import drift
+        self.clear_layout(self.drift_box)
+        try:
+            found = drift.outlook(self.season, brief.week)
+        except Exception:  # noqa: BLE001
+            found = []
+        if not found:
+            self.drift_card.hide()
+            return
+        self.drift_card.show()
+        rows, tones = [], {}
+        for r, d in enumerate(found):
+            rows.append([d.index, d.matchup, f"toward {d.toward}", f"about {d.points:.1f}", d.pick or self.NO_VALUE,
+                         "could turn it" if d.turns else "no"])
+            if d.turns:
+                tones[(r, 5)] = "warning"
+        model = TableModel(["#", "Game", "Expected move", "Points", "Take", "Turns the pick?"], rows,
+                           palette=self.palette, numeric_columns={0}, tones=tones)
+        view, _ = make_table(model, stretch_column=1, row_height=27)
+        self.drift_box.addWidget(view)
+        share, games = found[0].share, found[0].games
+        note = QLabel(
+            f"Only games whose line hasn't moved since it opened. In games since 2018 the market went on to close "
+            f"about {share:.0%} of the gap between the computer models and the opening line ({games:,} games); "
+            "once a line has moved, almost none. An average, not a forecast for this game - worth a second look "
+            "before the deadline where it could turn the pick.")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        self.drift_box.addWidget(note)
 
     def _turns(self, brief: briefing.Brief) -> dict[int, tuple[str, float, bool]]:
         """Game index -> (the line the pick turns at, points away, fragile or across 3/7)."""

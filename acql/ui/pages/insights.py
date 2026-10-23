@@ -83,6 +83,15 @@ class InsightsPage(Page):
         self.crowd_card.add(self.crowd_chart, 1)
         self.layout_.addWidget(self.crowd_card, 1)
 
+        self.fav_card = Card("How this pool takes favourites, by line size")
+        self.fav_chart = HeatmapChart(self.palette, height=3.4)
+        self.fav_card.add(self.fav_chart, 1)
+        self.fav_note = QLabel("")
+        self.fav_note.setObjectName("Muted")
+        self.fav_note.setWordWrap(True)
+        self.fav_card.add(self.fav_note)
+        self.layout_.addWidget(self.fav_card, 1)
+
         # What the pick sheets have taught the app about this pool - the
         # picture the win-the-week card plans against.
         self.habits_card = Card("How this pool picks")
@@ -154,7 +163,7 @@ class InsightsPage(Page):
         self.layout_.addWidget(self.h2h_card, 2)
 
     def restyle(self) -> None:
-        for chart in (self.form_chart, self.weeks_chart, self.crowd_chart,
+        for chart in (self.form_chart, self.weeks_chart, self.crowd_chart, self.fav_chart,
                       self.h2h_chart, self.luck_chart, self.chaos_chart, self.move_chart):
             chart.set_palette(self.palette)
         self.refresh_now()
@@ -174,6 +183,7 @@ class InsightsPage(Page):
         self._update_form(season)
         self._update_h2h(season)
         self._update_crowd_chart(season)
+        self._update_favourites(season)
         self._update_habits(season)
         self._update_luck(season)
         report = patterns.report(season)
@@ -446,6 +456,42 @@ class InsightsPage(Page):
             f"most contrarian: {odd_one} at {self.pct(averages[odd_one], 0)}",
         )
         self.tile_chalk.show_bar(pool, averages[odd_one], "warning", self.palette)
+
+    def _update_favourites(self, season) -> None:
+        """The share of the pool on the favourite, by the market's line and week (#49):
+        the habit the win-the-week card plays against."""
+        from ...pool import crowd
+        try:
+            bands, weeks, values, counts = crowd.favourite_grid(crowd.observations(season))
+        except Exception:  # noqa: BLE001
+            weeks = []
+        if not weeks:
+            self.fav_chart.empty("Load a pick sheet and this appears")
+            self.fav_note.setText("")
+            return
+
+        def tip(r: int, c: int) -> str:
+            n = counts[r][c]
+            v = values[r][c]
+            return (f"Week {weeks[c]}, line {bands[r].lower()}: " +
+                    (f"{v:.0f}% of the pool on the favourite ({n} game{'s' if n != 1 else ''})" if v is not None
+                     else "no games"))
+        self.fav_chart.plot(bands, [f"W{w}" for w in weeks], values, vmin=0, vmax=100, center=50,
+                            cell_text=len(weeks) <= 12, cell_format="{:.0f}",
+                            key_label="% of the pool on the favourite", tooltip_fn=tip)
+        flat = [(v, n) for row, nrow in zip(values, counts) for v, n in zip(row, nrow) if v is not None]
+        overall = sum(v * n for v, n in flat) / max(1, sum(n for _v, n in flat))
+        by_band = []
+        for label, row, nrow in zip(bands, values, counts):
+            n = sum(k for v, k in zip(row, nrow) if v is not None)
+            if n:
+                by_band.append((sum(v * k for v, k in zip(row, nrow) if v is not None) / n, label, n))
+        most, least = max(by_band), min(by_band)
+        self.fav_note.setText(
+            f"Across the season the pool has taken the favourite {overall:.0f}% of the time - most with lines "
+            f"{most[1].lower()} ({most[0]:.0f}%, {most[2]} games), least {least[1].lower()} ({least[0]:.0f}%, "
+            f"{least[2]} games). Where the pool piles on, an underdog that comes in is worth more to your week "
+            "than its chance alone suggests. Hover a square for its games.")
 
     def _update_crowd_chart(self, season) -> None:
         """Each coach's agreement with the pool, against what they score.

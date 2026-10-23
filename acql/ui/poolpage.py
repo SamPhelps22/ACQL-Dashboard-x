@@ -931,6 +931,8 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
     return {
         "live": live,
         "curve": curve(),
+        # the latest swings that cost someone a week, every replayed week (replay.museum, #50)
+        "museum": _museum(season),
         "schema": SCHEMA,
         "title": getattr(season, "title", "") or "ACQL",
         "generated": stamp,
@@ -980,6 +982,14 @@ def _clean(value):
     if isinstance(value, (list, tuple)):
         return [_clean(v) for v in value]
     return value
+
+
+def _museum(season: Season) -> list[dict]:
+    try:
+        from ..site import replay
+        return replay.museum(season)
+    except Exception:  # noqa: BLE001 - the page goes up without it
+        return []
 
 
 def to_json(data: dict) -> str:

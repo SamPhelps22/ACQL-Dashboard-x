@@ -3269,6 +3269,74 @@ class TestRulings(_ScratchStore):
             rulings.put(2026, 3, "maybe")
 
 
+class TestFavouriteGrid(unittest.TestCase):
+    """How the pool takes favourites, by line size and week (#49)."""
+
+    def test_grid(self):
+        from acql.pool import crowd
+        def ob(week, points, share, weight=1.0):
+            sit = crowd.Situation("A", "B", points, True, None)
+            return crowd.Observation(sit, share, 30, week, weight)
+        bands, weeks, values, counts = crowd.favourite_grid(
+            [ob(1, 2.5, 0.6), ob(1, 1.0, 0.8), ob(1, 7.0, 0.9), ob(2, 10.5, 0.75), ob(2, 3.0, 0.5, weight=0.4)])
+        self.assertEqual(weeks, [1, 2])
+        self.assertEqual(values[0][0], 70.0)               # under 3, week 1: (60 + 80) / 2
+        self.assertEqual(counts[0][0], 2)
+        self.assertEqual(values[3][0], 90.0)               # 7 to 9.5
+        self.assertEqual(values[4][1], 75.0)               # 10 or more, week 2
+        self.assertIsNone(values[1][1])                    # an older season's sheet isn't this pool's habit
+
+
+class TestDriftOutlook(unittest.TestCase):
+    """Only games still at their opening line; the expected move and whether it turns the pick (#21)."""
+
+    def test_at_opening(self):
+        from types import SimpleNamespace as NS
+        from acql.model import drift
+        self.assertTrue(drift.at_opening(NS(opening=-3.0, market=-3.0)))
+        self.assertTrue(drift.at_opening(NS(opening=None, market=-3.0)))
+        self.assertFalse(drift.at_opening(NS(opening=-3.0, market=-3.5)))
+
+    def test_read_needs_the_file(self):
+        from acql.model import drift
+        folder = Path(tempfile.mkdtemp(prefix="acql-drift-"))
+        self.assertIsNone(drift.read(folder / "missing.json"))
+        (folder / "d.json").write_text('{"from": {"opening": {"move": 0.4, "games": 2000}}}', encoding="utf-8")
+        self.assertEqual(drift.read(folder / "d.json")["from"]["opening"]["move"], 0.4)
+
+
+class TestClvShadow(unittest.TestCase):
+    """Each model weighted by how often the line later moved its way, on earlier weeks only (#27)."""
+
+    def _r(self, week, named, opening, close, actual):
+        from acql.model.computers import Reading
+        return Reading(week, 1, "A @ B", close, None, None, tuple(sorted(named.values())), named=named,
+                       actual=actual, opening=opening, close=close)
+
+    def test_hits_and_weights(self):
+        from acql.model import computers as C
+        r = self._r(1, {"good": 5.0, "bad": 1.0}, 3.0, 4.0, 7.0)
+        self.assertTrue(C.clv_hit(5.0, r))
+        self.assertFalse(C.clv_hit(1.0, r))
+        self.assertIsNone(C.clv_hit(5.0, self._r(1, {}, 3.0, 3.0, 7.0)))        # the line didn't move
+        w = C.clv_weights([r, r, r])
+        self.assertGreater(w["good"], w["bad"])
+        self.assertEqual(w["bad"], C.CLV_FLOOR)
+
+
+class TestSeasonGoal(unittest.TestCase):
+    """The goal suggests a card with its reason, and never one until it's set (#90)."""
+
+    def test_suggestions(self):
+        from acql.pool import briefing, goal
+        self.assertIsNone(goal.suggest("", 3.0, 10))
+        self.assertEqual(goal.suggest("money", 3.0, 10).style, briefing.STYLE_MONEY)
+        self.assertEqual(goal.suggest("top3", 3.0, 10).style, briefing.STYLE_STRAIGHT)
+        self.assertEqual(goal.suggest("title", 7.0, 12).style, briefing.STYLE_STRAIGHT)    # time to catch up
+        self.assertEqual(goal.suggest("title", 4.0, 5).style, briefing.STYLE_WIN)          # far back, late
+        self.assertEqual(goal.suggest("title", 1.0, 3).style, briefing.STYLE_STRAIGHT)     # close, late
+
+
 class TestClinchedAndOut(unittest.TestCase):
     """Clinched and out are exact: from what is banked and what each card can still reach."""
 
