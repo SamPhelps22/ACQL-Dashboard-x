@@ -2857,6 +2857,16 @@ class TestConsistencySentinel(_ScratchStore):
         kinds = {p.kind for p in consistency.week(self._season(12.0), 7)}
         self.assertEqual(kinds, {"moneyline", "total", "pool line"})
 
+    def test_deadeye_far_from_the_moneyline_is_pointed_out(self):
+        from acql import consistency
+        # Chicago by 3 on a lined game is about 59% to win; moneylines at 70% are inside the
+        # line-vs-moneyline alarm but more than 5 points from Deadeye's own chance
+        self._forecast(3.0, 0.70)
+        found = consistency.week(self._season(3.5), 7)
+        self.assertEqual({p.kind for p in found}, {"deadeye"})
+        self.assertIn("Chicago", found[0].text)
+        self.assertIn("70%", found[0].text)
+
     def test_open_record_against_the_line_now(self):
         from acql import consistency, store
         self._forecast(3.0, 0.58)

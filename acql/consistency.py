@@ -19,6 +19,10 @@ So these checks set numbers that describe the same thing against each other:
     from                   (predictions.refusal) would turn away today
     the week's record      the open "known before kickoff" record against the
                            numbers now, and whether it is complete
+    Deadeye vs moneyline   Deadeye's own chance a team wins against the
+                           moneylines' (margin taken out). Deadeye starts from
+                           the market and adds a little of the models, so a
+                           wide gap is more often a bad input than an edge
 
 Display only: nothing here changes a number, blocks a run or picks a side.
 No Qt here.
@@ -43,11 +47,14 @@ POOL_LINE_GAP = 4.5
 #: Points between the open record's line and the line now before the record
 #: is called out of date.
 RECORD_GAP = 2.0
+#: Chance points between Deadeye's chance a team wins and the moneylines'
+#: before it is pointed out (idea #20).
+DEADEYE_GAP = 0.05
 
 
 @dataclass(frozen=True)
 class Problem:
-    kind: str       # "moneyline" | "total" | "pool line" | "source" | "record"
+    kind: str       # "moneyline" | "total" | "pool line" | "source" | "record" | "deadeye"
     game: str       # "New England @ Chicago", or "" for the whole week
     text: str
 
@@ -82,11 +89,13 @@ def week(season, week_number: int) -> list[Problem]:
             pass
     ctx = pricing.context(season, week_number, games, forecasts) if forecasts else None
     by_game = ctx.forecasts if ctx is not None else {}
+    priced = {p.game.index: p for p in pricing.price_week(season, week_number, games, ctx)} if ctx else {}
     for g in games:
         f = by_game.get(g.index)
         if f is None or f.market is None:
             continue
         label = g.label
+        before = len(out)
         if f.market_win is not None:
             implied = analytics.win_chance(f.market)        # f.market: points in the file's home side's favour
             gap = abs(implied - f.market_win)
@@ -98,6 +107,17 @@ def week(season, week_number: int) -> list[Problem]:
                 out.append(Problem("moneyline", label,
                                    f"{fav} by {abs(f.market):g} implies {by_line:.0%} to win, "
                                    f"but the moneylines say {by_money:.0%}"))
+        deadeye = priced.get(g.index)
+        # once the line and moneyline disagree, that is the problem to fix - not Deadeye
+        if len(out) == before and f.market_win is not None and deadeye is not None and deadeye.margin is not None:
+            ours = _home_wins(deadeye.margin, deadeye.sd)
+            theirs = pricing.market_win(g, f)
+            if theirs is not None and abs(ours - theirs) > DEADEYE_GAP:
+                side = g.home if ours >= 0.5 else g.away
+                mine, money = (ours, theirs) if side == g.home else (1 - ours, 1 - theirs)
+                out.append(Problem("deadeye", label,
+                                   f"Deadeye gives {side} {mine:.0%} to win, the moneylines {money:.0%} - "
+                                   "check the inputs before trusting the gap"))
         if f.total:
             if not TOTAL_RANGE[0] <= f.total <= TOTAL_RANGE[1]:
                 out.append(Problem("total", label, f"a total of {f.total:g} points is outside any NFL price"))
@@ -113,6 +133,15 @@ def week(season, week_number: int) -> list[Problem]:
                                    f"{'favoured' if market_for_fav >= 0 else 'the underdog'} by {abs(market_for_fav):g}"))
     out.extend(record(season, week_number, games, by_game))
     return out
+
+
+def _home_wins(margin: float, sd: float) -> float:
+    """The home side's chance to win outright, from Deadeye's margin and spread of results."""
+    from . import analytics
+    if abs(margin) < 1e-9:
+        return 0.5
+    chance = analytics.cover_chance(abs(margin), 1, sd)
+    return chance if margin > 0 else 1 - chance
 
 
 def record(season, week_number: int, games, by_game) -> list[Problem]:
