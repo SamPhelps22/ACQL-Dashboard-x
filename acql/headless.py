@@ -119,6 +119,9 @@ def _poll_due() -> bool:
     weeks |= {w - 1 for w in weeks if w > 1}
     if results.due(year, weeks):
         return True
+    from .feeds import recheck
+    if recheck.due(year, weeks):
+        return True
     finished = [w for w in sorted(weeks) if results.over(year, w)]
     if (bool(finished) and timeline.due(year, finished)) or _lines_due() is not None:
         return True
@@ -528,6 +531,8 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     fetched = getattr(season, "results_fetched", None) or []
     _log(f"loaded {len(season.players)} players, week {season.current_week}; "
          f"ESPN results for week(s) {fetched or 'none due'}")
+    if _recheck(season, dry_run=dry_run):
+        season = load_season(settings, AliasTable.load(), online=False)
     _predictions(season)
     _refresh_lines(season)
     _injuries()
@@ -590,6 +595,33 @@ def _new_notes(warnings, now: float | None = None) -> list[str]:
     except Exception:  # noqa: BLE001
         pass
     return out
+
+
+def _recheck(season, *, dry_run: bool = False) -> bool:
+    """Finals asked about again after the whistle (feeds/recheck.py). A corrected
+    score is kept, logged and emailed to you once. True when one changed."""
+    try:
+        from .feeds import recheck
+        year = results.season_year(season)
+        weeks = set(results.calendar_weeks(year))
+        weeks |= {w - 1 for w in weeks if w > 1}
+        made = []
+        for week in sorted(weeks):
+            made += recheck.run(year, week)
+        for c in made:
+            _log(c.text())
+        if made and not dry_run:
+            from .site import cardmail
+            try:
+                cardmail.send_note(f"{len(made)} final score{'s' if len(made) != 1 else ''} corrected",
+                                   "\n".join(c.text() for c in made)
+                                   + "\n\nThe dashboard now grades with the corrected score.")
+            except Exception as exc:  # noqa: BLE001
+                _log(f"score correction note not sent: {exc}")
+        return bool(made)
+    except Exception as exc:  # noqa: BLE001 - never the cause of a failed run
+        _log(f"final-score re-check: {exc!r}")
+        return False
 
 
 def _autopsy_brief(season, *, dry_run: bool = False, now: float | None = None, send=None) -> int | None:

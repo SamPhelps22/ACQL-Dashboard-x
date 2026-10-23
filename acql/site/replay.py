@@ -275,7 +275,13 @@ def build(season: Season, number: int) -> Replay | None:
     official = [c.official for c in cards]
     off = [c.name for c, v, want in zip(cards, frames[-1][8], official) if v != want]
     if len(off) > MAX_MISMATCH:
-        return None
+        # a week the commissioner has ruled on is told, ending on the ruled scores (pool/rulings.py)
+        from ..pool import rulings
+        ruled = rulings.get(results.season_year(season), number)
+        if ruled is None:
+            return None
+        if ruled["ruling"] == "recount":
+            return Replay(number, games, cards, frames, off)
     if off:
         last = frames[-1]
         frames.append([last[0] + 1, last[1], "o", last[3], last[4], 0, "", "The pool's own scores", official])

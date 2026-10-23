@@ -852,6 +852,20 @@ class LoserNow:
     status: str                # "hit", "missed", "on" (losing by 15+ now), "close", "alive", "to play"
 
 
+def loser_watch(st, side: int) -> str:
+    """A Big Loser pick against the 15-point line (#15): how far it has to go and
+    the chance it ends there. "down 11 · needs 4 more · 31% to finish 15+"."""
+    chance = st.blowout_home if side == HOME else st.blowout_away
+    if st.state == "final" or chance is None:
+        return ""
+    if st.state != "in" or st.margin is None:
+        return f"{chance:.0%} to lose by {BLOWOUT}+"
+    lost_by = -st.margin if side == HOME else st.margin
+    need = BLOWOUT - lost_by
+    where = f"needs {need} more" if need > 0 else f"{BLOWOUT}+ now, must hold"
+    return f"{where} · {chance:.0%} to finish {BLOWOUT}+"
+
+
 def losers_now(bd: Board) -> list[LoserNow]:
     """Every Big Loser someone holds, as it stands - hits and live ones first."""
     holders: dict[tuple[int, int], list[Card]] = {}

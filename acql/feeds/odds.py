@@ -105,6 +105,26 @@ def remaining() -> int | None:
     return int(value) if isinstance(value, (int, float)) else None
 
 
+def budget_forecast(now: float | None = None, log: list | None = None) -> tuple[int, float, int] | None:
+    """(projected requests left at month's end, the month's end, requests used a day)
+    at this month's pace (#42) - None until the month has two readings a day or more apart.
+    The allowance is taken to start again on the 1st."""
+    import calendar
+    import datetime as _dt
+    now = time.time() if now is None else now
+    log = _read().get("left_log") if log is None else log
+    today = _dt.datetime.fromtimestamp(now)
+    start = _dt.datetime(today.year, today.month, 1).timestamp()
+    end = _dt.datetime(today.year, today.month, calendar.monthrange(today.year, today.month)[1], 23, 59).timestamp()
+    month = [(float(t), int(n)) for t, n in (log or []) if start <= float(t) <= now]
+    if len(month) < 2 or month[-1][0] - month[0][0] < 86400:
+        return None
+    used = max(0, month[0][1] - month[-1][1])
+    per_day = used / ((month[-1][0] - month[0][0]) / 86400)
+    projected = month[-1][1] - per_day * max(0.0, (end - now) / 86400)
+    return int(round(projected)), end, int(round(per_day))
+
+
 # ---- fetching ---------------------------------------------------------------
 @dataclass(frozen=True)
 class Quote:
@@ -327,6 +347,8 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
         ]
     if remaining_requests is not None:
         store["remaining"] = remaining_requests
+        # each reading of the allowance, for the month's pace (budget_forecast)
+        store["left_log"] = (store.get("left_log") or [])[-199:] + [[now, int(remaining_requests)]]
     store["checked"] = now
     _write(store)
     return result

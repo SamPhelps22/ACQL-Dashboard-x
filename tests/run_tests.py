@@ -3195,6 +3195,80 @@ class TestDeadlineView(_ScratchStore):
         self.assertEqual(v.caveats(), ["No card of yours is on record for this week."])
 
 
+class TestFinalRecheck(_ScratchStore):
+    """Finals are asked about again at 15 minutes and 12 hours; a changed score replaces the kept one (#17)."""
+
+    def test_corrections_are_kept_once_each(self):
+        from acql.feeds import recheck, results
+        S = results.Score
+        kick = 1_000_000.0
+        results.save(2026, 6, [S("min", "chi", 17, 24, "post", True, kick), S("phi", "dal", 20, 20, "post", True, kick)])
+        now = kick + 4 * 3600                      # first seen final here
+        self.assertEqual(recheck.run(2026, 6, now=now, fetch=lambda y, w: []), [])   # tracked, nothing owed yet
+        self.assertFalse(recheck.due(2026, [6], now=now + 60))
+        self.assertTrue(recheck.due(2026, [6], now=now + 16 * 60))
+        corrected = [S("min", "chi", 17, 27, "post", True, kick, detail="Final"), S("phi", "dal", 20, 20, "post", True, kick)]
+        made = recheck.run(2026, 6, now=now + 16 * 60, fetch=lambda y, w: corrected)
+        self.assertEqual([(c.game, c.before, c.after) for c in made], [("MIN @ CHI", (17, 24), (17, 27))])
+        kept = {s.home: (s.away_points, s.home_points) for s in results.load(2026, 6)}
+        self.assertEqual(kept["chi"], (17, 27))
+        self.assertEqual(recheck.run(2026, 6, now=now + 20 * 60, fetch=lambda y, w: corrected), [])   # not owed again
+        self.assertTrue(recheck.due(2026, [6], now=now + 12 * 3600 + 1))
+        self.assertEqual(recheck.run(2026, 6, now=now + 12 * 3600 + 1, fetch=lambda y, w: corrected), [])
+        self.assertFalse(recheck.due(2026, [6], now=now + 99 * 3600))          # both looks done
+        self.assertEqual(len(recheck.corrections(2026, [6])), 1)
+
+
+class TestLoserWatch(unittest.TestCase):
+    """A Big Loser pick against the 15-point line while it is played (#15)."""
+
+    def test_words(self):
+        from types import SimpleNamespace as NS
+        from acql.pool import gameday as GD
+        live = NS(state="in", margin=-11, blowout_home=0.31, blowout_away=0.0)       # home down 11
+        self.assertEqual(GD.loser_watch(live, GD.HOME), f"needs 4 more · 31% to finish {GD.BLOWOUT}+")
+        past = NS(state="in", margin=17, blowout_home=0.0, blowout_away=0.82)        # away down 17
+        self.assertEqual(GD.loser_watch(past, GD.AWAY), f"{GD.BLOWOUT}+ now, must hold · 82% to finish {GD.BLOWOUT}+")
+        self.assertEqual(GD.loser_watch(NS(state="pre", margin=None, blowout_home=0.12, blowout_away=0.0), GD.HOME),
+                         f"12% to lose by {GD.BLOWOUT}+")
+        self.assertEqual(GD.loser_watch(NS(state="final", margin=-20, blowout_home=1.0, blowout_away=0.0), GD.HOME), "")
+
+
+class TestBudgetForecast(unittest.TestCase):
+    """The month's pace projected to its end (#42)."""
+
+    def test_pace(self):
+        import datetime as dt
+        from acql.feeds import odds
+        day = 86400
+        start = dt.datetime(2026, 10, 1, 12).timestamp()
+        log = [[start, 500], [start + 10 * day, 440], [start + 20 * day, 380]]
+        now = start + 20 * day
+        projected, end, per_day = odds.budget_forecast(now, log)
+        self.assertEqual(per_day, 6)
+        self.assertEqual(dt.datetime.fromtimestamp(end).day, 31)
+        self.assertTrue(310 <= projected <= 320)
+        self.assertIsNone(odds.budget_forecast(now, [[now - 60, 400], [now, 397]]))       # under a day of readings
+        self.assertIsNone(odds.budget_forecast(now, [[start - 40 * day, 500], [now, 380]]))   # last month's reading
+
+
+class TestRulings(_ScratchStore):
+    """One ruling per week that doesn't add up, written down once (#57)."""
+
+    def test_put_get_clear(self):
+        from acql.pool import rulings
+        self.assertIsNone(rulings.get(2026, 3))
+        self.assertEqual(rulings.words(None), "Not ruled yet")
+        rulings.put(2026, 3, "official", "commissioner's hand count", now=1_800_000_000)
+        found = rulings.get(2026, 3)
+        self.assertEqual(found["ruling"], "official")
+        self.assertIn("Official totals stand (ruled 2027-01-15) - commissioner's hand count", rulings.words(found))
+        rulings.put(2026, 3, "")
+        self.assertIsNone(rulings.get(2026, 3))
+        with self.assertRaises(ValueError):
+            rulings.put(2026, 3, "maybe")
+
+
 class TestClinchedAndOut(unittest.TestCase):
     """Clinched and out are exact: from what is banked and what each card can still reach."""
 

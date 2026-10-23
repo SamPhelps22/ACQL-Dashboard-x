@@ -162,6 +162,20 @@ class DataPage(Page):
         self.layout_.addWidget(self.results_card)
         self.results_table: QWidget | None = None
 
+        # ---- weeks whose official totals aren't the recount, and the rulings (#57) ----
+        self.rulings_card = Card("Weeks that don't add up")
+        self.rulings_note = QLabel(
+            "A coach's official total that isn't what their picks score under the pool's rules. Only the "
+            "commissioner can say which is right; write the ruling down here once and it stops coming back. "
+            "A ruled week is told in the site's replay. Nothing here changes a score.")
+        self.rulings_note.setObjectName("StatDetail")
+        self.rulings_note.setWordWrap(True)
+        self.rulings_card.add(self.rulings_note)
+        self.rulings_box = QVBoxLayout()
+        self.rulings_card.body().addLayout(self.rulings_box)
+        self.rulings_card.hide()
+        self.layout_.addWidget(self.rulings_card)
+
         # ---- editor (only while a workbook is still loaded) ----
         self.editor_card = Card("The workbook")
         self.editor_note = QLabel(
@@ -386,6 +400,7 @@ class DataPage(Page):
         self._refresh_files(s)
         self._refresh_weekly(s)
         self._refresh_conflicts(s)
+        self._refresh_rulings(s)
         self.editor_card.setVisible(getattr(s, "workbook_path", None) is not None)
         try:
             from ...repository import workbook_note
@@ -620,6 +635,42 @@ class DataPage(Page):
 
     def _clear_old_sheets(self) -> None:
         picks.forget_weeks(picks.other_season_weeks())
+        self.refresh_requested.emit()
+
+    def _refresh_rulings(self, s) -> None:
+        from PySide6.QtWidgets import QComboBox
+        from ...feeds import results
+        from ...pool import reconcile, rulings
+        self.clear_layout(self.rulings_box)
+        try:
+            found = [r for r in reconcile.season_report(s) if r.coaches]
+        except Exception:  # noqa: BLE001
+            found = []
+        self.rulings_card.setVisible(bool(found))
+        year = results.season_year(s)
+        for report in found:
+            ruled = rulings.get(year, report.week)
+            row = QHBoxLayout()
+            off = ", ".join(f"{c.name} {c.off_by:+d}" + (f" ({c.unknown} unreadable)" if c.unknown else "")
+                            for c in report.coaches[:6])
+            more = f" and {len(report.coaches) - 6} more" if len(report.coaches) > 6 else ""
+            words = QLabel(f"<b>Week {report.week}</b> · {len(report.coaches)} coach(es) off: {off}{more}<br>"
+                           f"<span style='opacity:.75'>{rulings.words(ruled)}</span>")
+            words.setWordWrap(True)
+            row.addWidget(words, 1)
+            pick = QComboBox()
+            pick.addItem("Not ruled", "")
+            for key, label in rulings.CHOICES.items():
+                pick.addItem(label, key)
+            pick.setCurrentIndex(max(pick.findData(ruled["ruling"] if ruled else ""), 0))
+            pick.currentIndexChanged.connect(
+                lambda _i, w=report.week, box=pick: self._rule(year, w, box.currentData()))
+            row.addWidget(pick)
+            self.rulings_box.addLayout(row)
+
+    def _rule(self, year: int, week: int, ruling: str) -> None:
+        from ...pool import rulings
+        rulings.put(year, week, ruling or "")
         self.refresh_requested.emit()
 
     def _refresh_conflicts(self, s) -> None:

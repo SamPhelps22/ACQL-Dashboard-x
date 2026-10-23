@@ -210,9 +210,19 @@ def _lines(season: Season, week: int, to_lock: float, now: float) -> list[Check]
         out.append(Check(SOURCES, "Odds requests", NOTE, "Requests left this month: not known until the next fetch"))
     else:
         low = left <= headless.ODDS_RESERVE
-        out.append(Check(SOURCES, "Odds requests", WARN if low else OK, f"{left} requests left this month",
+        ahead = odds.budget_forecast()
+        pace, short = "", False
+        if ahead is not None:
+            projected, end, per_day = ahead
+            day = time.strftime("%b %d", time.localtime(end)).replace(" 0", " ")
+            short = projected < headless.ODDS_RESERVE
+            pace = (f" · at this pace (about {per_day} a day), {max(projected, 0)} left on {day}"
+                    + (" - below the reserve" if short else ""))
+        out.append(Check(SOURCES, "Odds requests", WARN if low or short else OK,
+                         f"{left} requests left this month{pace}",
                          f"A fetch costs 3. The scheduled job stops at {headless.ODDS_RESERVE} left, keeping "
-                         "those for fetching by hand." + (" It has stopped." if low else "")))
+                         "those for fetching by hand." + (" It has stopped." if low else "")
+                         + (" At this pace it will stop before the month ends." if short and not low else "")))
     return out
 
 
@@ -376,6 +386,19 @@ def _standing(now: float) -> Check | None:
     return Check(AUTOMATION, "Standing issues", NOTE,
                  f"{len(found)} note{'s' if many else ''} the nightly run keep{'' if many else 's'} repeating",
                  "<br>".join(lines), found[0][0], fix)
+
+
+def _corrections(year: int, now: float) -> Check | None:
+    """Final scores ESPN changed after the game, in the last week (feeds/recheck.py)."""
+    from .feeds import recheck, results
+    weeks = range(1, 23)
+    found = [c for c in recheck.corrections(year, weeks) if now - c.at < 7 * DAY]
+    if not found:
+        return None
+    return Check(SOURCES, "Score corrections", WARN,
+                 f"{len(found)} final score{'s' if len(found) != 1 else ''} changed after the game",
+                 "<br>".join(c.text() for c in found) + "<br>Graded with the corrected score; the commissioner's "
+                 "sheet may still have the old one.", found[-1].at)
 
 
 def _updates() -> Check | None:
@@ -674,6 +697,7 @@ def build(season: Season, now: float | None = None, tasks: dict[str, dict] | Non
     add(_efficiency, year, ahead)
     add(_pool_files, season)
     add(_turned_away, now)
+    add(_corrections, year, now)
     add(_consistency, season, ahead)
     add(_inputs, season, ahead, to_lock)
     if playing != ahead and season.weeks.get(playing) is not None:

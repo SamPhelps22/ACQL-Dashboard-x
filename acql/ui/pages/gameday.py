@@ -1316,6 +1316,9 @@ class GameDayPage(Page):
                 row = QHBoxLayout()
                 row.setSpacing(10)
                 row.addWidget(Pill(label, tone))
+                watch = GD.loser_watch(st, item.side)
+                if watch:
+                    how += f" · {watch}"
                 text = QLabel(f"<b>{team}</b> {how} · held by {item.held}"
                               + (" - including you" if item.yours else ""))
                 text.setTextFormat(Qt.TextFormat.RichText)
