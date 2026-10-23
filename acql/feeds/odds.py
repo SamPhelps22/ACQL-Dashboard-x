@@ -41,7 +41,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 API_URL = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
 SIGNUP_PAGE = "https://the-odds-api.com/"
@@ -137,6 +137,7 @@ class Quote:
     books: int
     home_win: float | None = None    # the moneylines' chance the home side wins outright
     total: float | None = None       # the over/under
+    source: str = ""                  # set when the backup (OddsPapi) gave it
 
     @property
     def key(self) -> str:
@@ -259,6 +260,37 @@ def fetch(key: str, *, opener=None) -> tuple[list[Quote], int | None]:
     return parse(events), left_n
 
 
+def fetch_any(key: str, *, opener=None, backup_opener=None, skip_main: str = "") -> tuple[list[Quote], int | None]:
+    """`fetch`, with OddsPapi (oddspapi.py) as the backup.
+
+    When The Odds API can't answer - or `skip_main` gives a reason not to ask it,
+    such as the month's reserve - the lines come from OddsPapi instead, once a
+    side-by-side check has shown the two agree. Those quotes carry `source`, and
+    the requests-left figure returned is None so the main feed's count is untouched.
+    When the main feed answers and the backup has a key but no check yet, the
+    check runs then (one OddsPapi request).
+    """
+    from . import oddspapi
+    reason = skip_main
+    if not reason:
+        try:
+            quotes, left = fetch(key, opener=opener)
+        except OddsError as exc:
+            reason = str(exc)
+        else:
+            if oddspapi.api_key() and not oddspapi.confirmed():
+                try:
+                    oddspapi.confirm(quotes, opener=backup_opener)
+                except OddsError:
+                    pass
+            return quotes, left
+    if not oddspapi.ready():
+        raise OddsError(reason)
+    quotes, _ = oddspapi.fetch(oddspapi.api_key(), opener=backup_opener)
+    note = f"from OddsPapi (Pinnacle) - {reason.rstrip('.')}"
+    return [replace(q, source=note) for q in quotes], None
+
+
 # ---- which games belong to a week -------------------------------------------
 def week_pairs(season, week: int) -> list[tuple[str, str]]:
     """(away code, home code) for the week: the workbook's slate, else the schedule."""
@@ -282,6 +314,7 @@ class Update:
     missing: list[str] = field(default_factory=list)      # games with no line yet
     moved: list[tuple[str, float, float]] = field(default_factory=list)   # (game, before, now)
     remaining: int | None = None
+    source: str = ""
 
     def summary(self) -> str:
         if not self.matched:
@@ -292,7 +325,7 @@ class Update:
             text += f"; {len(self.moved)} moved since the last update"
         if self.missing:
             text += f"; {len(self.missing)} not posted yet"
-        return text + "."
+        return text + (f" ({self.source})" if self.source else "") + "."
 
 
 def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
@@ -321,7 +354,8 @@ def update(week: int, quotes: list[Quote], pairs: list[tuple[str, str]],
     store = _read()
     weeks = store.setdefault("weeks", {})
     entry = weeks.setdefault(str(week), {"opening": {}, "latest": {}, "history": []})
-    result = Update(week=week, at=now, remaining=remaining_requests)
+    result = Update(week=week, at=now, remaining=remaining_requests,
+                    source=next((q.source for q in best.values() if q.source), ""))
     lines = {}
     for key, q in best.items():
         before = entry["latest"].get(key)

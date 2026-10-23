@@ -19,7 +19,7 @@ from dataclasses import dataclass
 KIND = "source-health"
 DAYS = 30
 #: Names as Readiness shows them.
-NAMES = {"espn-scores": "ESPN scores", "timeline": "ESPN play-by-play", "odds": "The Odds API",
+NAMES = {"espn-scores": "ESPN scores", "timeline": "ESPN play-by-play", "odds": "The Odds API", "oddspapi": "OddsPapi (backup lines)",
          "injuries": "Injury report", "predictions": "Predictions file", "pfm": "PFM ratings",
          "weather": "Weather", "github": "GitHub (website)", "email": "Email"}
 

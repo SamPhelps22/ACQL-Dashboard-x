@@ -88,7 +88,7 @@ class _Fetcher(QThread):
                 injuries.refresh()
             except Exception:  # noqa: BLE001 - the lines matter more than the report
                 pass
-            self.done.emit(odds.fetch(self.key))
+            self.done.emit(odds.fetch_any(self.key))
         except odds.OddsError as exc:
             self.done.emit(str(exc))
         except Exception as exc:  # noqa: BLE001 - shown to the person, never swallowed
@@ -121,6 +121,23 @@ class OddsDialog(QDialog):
             "saved - leave blank to keep it" if odds.api_key() else "your API key"
         )
         form.addRow("API key", self.key)
+        from ...feeds import oddspapi
+        backup = QLabel(
+            "<b>Backup (optional):</b> an <a href='" + oddspapi.SIGNUP_PAGE + "'>OddsPapi</a> key. "
+            "Pinnacle's lines are used when The Odds API can't answer or is down to its reserve - "
+            "but only after one update has checked the two agree. " + (
+                "Checked and on." if oddspapi.ready() else
+                oddspapi.describe(oddspapi.last_check()) if oddspapi.last_check() else
+                "Not checked yet: the next update does it." if oddspapi.api_key() else "")
+        )
+        backup.setWordWrap(True)
+        backup.setOpenExternalLinks(True)
+        backup.setTextFormat(Qt.TextFormat.RichText)
+        self.backup_key = QLineEdit("")
+        self.backup_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.backup_key.setPlaceholderText("saved - leave blank to keep it" if oddspapi.api_key() else "OddsPapi key")
+        form.addRow(backup)
+        form.addRow("OddsPapi key", self.backup_key)
         layout.addLayout(form)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -132,6 +149,9 @@ class OddsDialog(QDialog):
     def save(self) -> None:
         if self.key.text().strip():
             odds.set_api_key(self.key.text())
+        if self.backup_key.text().strip():
+            from ...feeds import oddspapi
+            oddspapi.set_api_key(self.backup_key.text())
 
 
 class BriefingPage(Page):
@@ -1431,8 +1451,9 @@ class BriefingPage(Page):
     def _update_lines(self) -> None:
         if self._fetcher is not None or self._locked(self._week_shown):
             return
+        from ...feeds import oddspapi
         key = odds.api_key()
-        if not key:
+        if not key and not oddspapi.ready():
             if not self._odds_settings():
                 return
             key = odds.api_key()

@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 #: The sources, by the names the index uses.
-SOURCES = ("espn-scores", "odds", "injuries", "predictions", "pfm", "weather", "timeline")
+SOURCES = ("espn-scores", "odds", "oddspapi", "injuries", "predictions", "pfm", "weather", "timeline")
 INDEX = "index.jsonl"
 
 _OVERRIDE: Path | None = None

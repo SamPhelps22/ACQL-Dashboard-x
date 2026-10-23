@@ -4724,6 +4724,161 @@ class PickDeadlineTests(unittest.TestCase):
         self.assertEqual(mainsite.eastern(date(2026, 11, 12), 18, 30), 1794526200)
         self.assertIsNone(mainsite.due(2026, opener=lambda url, timeout: io.BytesIO(b"<p>nothing here</p>")))
 
+class TestOddsPapiBackup(_ScratchStore):
+    """The second odds source: used only when the main feed can't answer, and only after a check agreed."""
+
+    KICKOFF = "2030-01-06T18:00:00Z"
+    # (participant1, participant2, participant1's margin, its decimal moneyline, participant2's)
+    GAMES = [("Green Bay Packers", "Chicago Bears", 6.5, 1.40, 3.10),       # GB favoured
+             ("Kansas City Chiefs", "Denver Broncos", 3.5, 1.60, 2.45),
+             ("Dallas Cowboys", "Philadelphia Eagles", -2.5, 2.30, 1.65),   # PHI (listed second) favoured
+             ("Buffalo Bills", "Miami Dolphins", 9.5, 1.20, 5.00),
+             ("Detroit Lions", "Minnesota Vikings", 1.5, 1.80, 2.05)]
+    # the week's schedule, (away, home): Green Bay is away at Chicago, the others listed first are at home
+    PAIRS = [("gb", "chi"), ("den", "kc"), ("phi", "dal"), ("mia", "buf"), ("min", "det")]
+    AGREED = {("gb", "chi"): -6.5, ("den", "kc"): 3.5, ("phi", "dal"): -2.5, ("mia", "buf"): 9.0, ("min", "det"): 1.5}
+
+    def setUp(self):
+        super().setUp()
+        import json
+        import os
+        from unittest import mock
+        from acql.feeds import oddspapi
+        self.json = json
+        self.patches = [mock.patch.dict(os.environ, {"ACQL_ODDSPAPI_KEY": "made-up", "ACQL_ODDS_API_KEY": "made-up"}),
+                        mock.patch.object(oddspapi, "_pause", lambda s: None)]
+        for p in self.patches:
+            p.start()
+        self.calls = []
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        super().tearDown()
+
+    def _papi(self, flip=False):
+        """OddsPapi's replies. `flip` writes each handicap the other way round."""
+        names = {}
+        for g in self.GAMES:
+            n = len(names)
+            names[str(n + 1)], names[str(n + 2)] = g[0], g[1]
+        ids = {v: k for k, v in names.items()}
+        markets = [
+            {"marketId": 501, "marketName": "Moneyline (incl. Overtime)", "marketType": "moneyline", "sportId": 9,
+             "playerProp": False, "handicap": 0, "period": "fulltime", "outcomes": [{"outcomeId": 501}, {"outcomeId": 502}]},
+            {"marketId": 511, "marketName": "1st Half Moneyline", "marketType": "moneyline", "sportId": 9,
+             "playerProp": False, "handicap": 0, "period": "1st half", "outcomes": [{"outcomeId": 511}, {"outcomeId": 512}]},
+        ]
+        fixtures, mid = [], 600
+        for p1, p2, margin, a, b in self.GAMES:
+            def side(oid, price):
+                return {str(oid): {"players": {"0": {"price": price}}}}
+            book = {"501": {"outcomes": {**side(501, a), **side(502, b)}},
+                    "511": {"outcomes": {**side(511, 9.0), **side(512, 1.05)}}}
+            for m, prices in ((margin, (1.91, 1.91)), (margin + 1, (2.40, 1.60))):   # the main line and an alternative
+                mid += 2
+                written = m if flip else -m
+                markets.append({"marketId": mid, "marketName": f"Handicap {written}", "marketType": "spreads",
+                                "sportId": 9, "playerProp": False, "handicap": written, "period": "fulltime",
+                                "outcomes": [{"outcomeId": mid * 10}, {"outcomeId": mid * 10 + 1}]})
+                book[str(mid)] = {"outcomes": {**side(mid * 10, prices[0]), **side(mid * 10 + 1, prices[1])}}
+            fixtures.append({"participant1Id": int(ids[p1]), "participant2Id": int(ids[p2]), "startTime": self.KICKOFF,
+                             "bookmakerOdds": {"pinnacle": {"markets": book}}})
+        return {"sports": [{"sportId": 10, "sportName": "Soccer"}, {"sportId": 9, "sportName": "American Football"}],
+                "tournaments": [{"tournamentId": 77, "tournamentName": "NCAAF"},
+                                {"tournamentId": 88, "tournamentName": "NFL"}],
+                "participants": names, "markets": markets, "odds-by-tournaments": fixtures,
+                "account": {"request_limit": 250, "request_count": 12}}
+
+    def _opener(self, replies, fail=None):
+        import io
+        import urllib.error
+
+        class Reply(io.BytesIO):
+            headers = {"x-requests-remaining": "300"}
+
+        def open_url(request):
+            url = request.full_url
+            self.calls.append(url)
+            path = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+            if fail:
+                raise urllib.error.HTTPError(url, fail, "no", {}, io.BytesIO(b"down for a bit"))
+            return Reply(self.json.dumps(replies[path]).encode())
+        return open_url
+
+    def _main_feed(self, margins):
+        """The Odds API's reply for {(away, home): home margin}."""
+        full = {"gb": "Green Bay Packers", "chi": "Chicago Bears", "kc": "Kansas City Chiefs", "den": "Denver Broncos",
+                "dal": "Dallas Cowboys", "phi": "Philadelphia Eagles", "buf": "Buffalo Bills", "mia": "Miami Dolphins",
+                "det": "Detroit Lions", "min": "Minnesota Vikings"}
+        return {"odds": [{"home_team": full[h], "away_team": full[a], "commence_time": self.KICKOFF,
+                          "bookmakers": [{"markets": [{"key": "spreads", "outcomes": [
+                              {"name": full[h], "point": -m}, {"name": full[a], "point": m}]}]}]}
+                         for (a, h), m in margins.items()]}
+
+    def test_lines_read_right_whichever_way_the_handicap_is_written(self):
+        from acql import store
+        from acql.feeds import odds, oddspapi
+        for flip in (False, True):
+            store.delete(oddspapi.KIND)
+            store.delete("odds")
+            quotes, left = oddspapi.fetch("made-up", opener=self._opener(self._papi(flip=flip)))
+            self.assertEqual(left, 238)
+            done = odds.update(18, quotes, self.PAIRS, now=0)
+            kept = odds.stored(18).latest
+            self.assertEqual(done.matched, 5)
+            self.assertEqual(kept["gb@chi"], -6.5)       # Green Bay by 6.5, away at Chicago
+            self.assertEqual(kept["den@kc"], 3.5)
+            self.assertEqual(kept["phi@dal"], -2.5)      # the team listed second the favourite
+            self.assertGreater(odds.stored(18).win["den@kc"], 0.55)
+            self.assertNotIn("chi@gb", kept)              # the wrong way round never lands
+
+    def test_discovery_is_kept_and_half_time_markets_are_left_out(self):
+        from acql.feeds import oddspapi
+        oddspapi.fetch("made-up", opener=self._opener(self._papi()))
+        first = len(self.calls)
+        oddspapi.fetch("made-up", opener=self._opener(self._papi()))
+        self.assertEqual(len(self.calls) - first, 2)     # the odds, and the free account check
+        ids = oddspapi._read()["ids"]
+        self.assertEqual((ids["sport"], ids["tournament"]), (9, 88))
+        self.assertEqual(list(ids["markets"]["ml"]), ["501"])
+        self.assertEqual(ids["teams"]["1"], "gb")
+
+    def test_the_backup_is_off_until_a_check_agrees_then_steps_in(self):
+        from acql.feeds import odds, oddspapi
+        papi = self._papi()
+        down = self._opener({}, fail=500)
+        with self.assertRaises(odds.OddsError):           # no check yet: a failure is still a failure
+            odds.fetch_any("made-up", opener=down, backup_opener=self._opener(papi))
+        self.assertFalse(oddspapi.confirmed())
+        # the main feed answers, and the backup is checked against it
+        quotes, left = odds.fetch_any("made-up", opener=self._opener(self._main_feed(self.AGREED)),
+                                      backup_opener=self._opener(papi))
+        self.assertEqual(left, 300)
+        self.assertTrue(oddspapi.ready(), oddspapi.last_check())
+        # now the main feed is down: Pinnacle's lines step in, and the main feed's count is untouched
+        quotes, left = odds.fetch_any("made-up", opener=down, backup_opener=self._opener(papi))
+        self.assertIsNone(left)
+        done = odds.update(18, quotes, self.PAIRS, now=0)
+        self.assertEqual(done.matched, 5)
+        self.assertIn("OddsPapi", done.summary())
+        # the reserve sends the daily run straight to it, without asking the main feed
+        before = len(self.calls)
+        odds.fetch_any("made-up", opener=down, backup_opener=self._opener(papi), skip_main="reserve")
+        self.assertFalse(any("the-odds-api" in c for c in self.calls[before:]))
+
+    def test_a_check_that_disagrees_keeps_it_off(self):
+        from acql.feeds import odds, oddspapi
+        off = dict(self.AGREED)
+        off[("den", "kc")] = -3.5                         # one game the wrong way round
+        odds.fetch_any("made-up", opener=self._opener(self._main_feed(off)), backup_opener=self._opener(self._papi()))
+        self.assertFalse(oddspapi.ready())
+        self.assertEqual(len(oddspapi.last_check()["apart"]), 1)
+        self.assertIn("stays off", oddspapi.describe(oddspapi.last_check()))
+        with self.assertRaises(odds.OddsError):
+            odds.fetch_any("made-up", opener=self._opener({}, fail=500), backup_opener=self._opener(self._papi()))
+
+
 def main() -> int:
     if STATS_PATH is None and WORKBOOK_PATH is None:
         print("No spreadsheets found in data/ - only the pure-logic tests will run.\n")

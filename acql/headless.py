@@ -220,16 +220,22 @@ def _download_predictions(season, week: int) -> None:
 def _fetch_lines(season, week: int) -> None:
     """The latest betting lines, the way Update lines on This Week fetches them."""
     from .pool import briefing, cards
-    from .feeds import odds
-    key = odds.api_key()
-    if not key:
+    from .feeds import odds, oddspapi
+    key, backup = odds.api_key(), oddspapi.ready()
+    if not key and not backup:
         return
+    skip = "" if key else "no Odds API key"
     left = odds.remaining()
     if left is not None and left <= ODDS_RESERVE:
-        _log(f"betting lines not fetched: {left} Odds API requests left this month, kept for by hand")
-        return
+        if not backup:
+            _log(f"betting lines not fetched: {left} Odds API requests left this month, kept for by hand")
+            return
+        skip = f"{left} Odds API requests left this month, kept for by hand"
     cards.remember_before_update(week, briefing.build(season, week))
-    quotes, left = odds.fetch(key)
+    checked = oddspapi.last_check()
+    quotes, left = odds.fetch_any(key, skip_main=skip)
+    if oddspapi.last_check() != checked and oddspapi.last_check():
+        _log(oddspapi.describe(oddspapi.last_check()))
     update = odds.update(week, quotes, odds.week_pairs(season, week), left)
     _log(update.summary() + (f" {left} requests left this month." if left is not None else ""))
 
