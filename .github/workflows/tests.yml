@@ -95,7 +95,13 @@ jobs:
         run: python tests/test_calibration.py
 
       - name: Game day live tests
-        run: python tests/test_gameday_live.py
+        shell: bash
+        run: |
+          # On failure, repeat the end of the output as an annotation, which shows without signing in.
+          python tests/test_gameday_live.py > gameday.log 2>&1 && exit 0
+          cat gameday.log
+          python -c "t=open('gameday.log').read()[-3000:]; print('::error title=Game day live tests::' + t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
+          exit 1
 
       - name: The app's own checks
         run: python -m acql.checks
