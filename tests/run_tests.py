@@ -3480,6 +3480,34 @@ class TestTwins(unittest.TestCase):
         self.assertTrue(0.5 < t.line_win < 0.7)
 
 
+class TestShortGrids(unittest.TestCase):
+    """A workbook week's grid short of a coach's official count is filled from the sheet, never past it."""
+
+    def test_fill(self):
+        from unittest import mock
+        from pathlib import Path as _P
+        from acql.models import Game, PlayerWeek, Season, Week
+        from acql.pool import picks
+        g1 = Game(1, "Buffalo", "Los Angeles Chargers", winner="Buffalo", home_points=24, away_points=16,
+                  line=8.0, line_favourite="Buffalo")
+        g2 = Game(2, "Chicago", "Philadelphia", winner="Chicago", home_points=27, away_points=7)
+        g3 = Game(3, "Denver", "Los Angeles Rams", winner="Denver", home_points=30, away_points=26)
+        week = Week(3, [g1, g2, g3])
+        week.source = _P("workbook.xlsx")
+        kit = PlayerWeek(player="Kit", week=3, correct_picks={3: "Denver"}, regular_wins=2)   # official: 2 right
+        ann = PlayerWeek(player="Ann", week=3, correct_picks={3: "Denver"}, regular_wins=1)
+        week.lines = {"kit": kit, "ann": ann}
+        season = Season(title="ACQL 2026", weeks={3: week})
+        gp = lambda away, home, picks_: picks.GamePicks(away, home, "", picks_)
+        sheet = picks.WeekPicks(3, [gp("Los Angeles Chargers", "Buffalo", {"Kit": "Buffalo", "Ann": "Buffalo"}),
+                                    gp("Philadelphia", "Chicago", {"Kit": "Chicago", "Ann": "Chicago"}),
+                                    gp("Los Angeles Rams", "Denver", {"Kit": "Denver", "Ann": "Denver"})])
+        with mock.patch.object(picks, "load", return_value=sheet):
+            self.assertEqual(picks.fill_short_grids(season), 1)
+        self.assertEqual(sorted(kit.correct_picks), [1, 3])     # one filled: the official count is 2
+        self.assertEqual(sorted(ann.correct_picks), [3])        # already at the official count
+
+
 class TestClinchedAndOut(unittest.TestCase):
     """Clinched and out are exact: from what is banked and what each card can still reach."""
 

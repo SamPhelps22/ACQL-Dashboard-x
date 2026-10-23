@@ -140,6 +140,11 @@ def load_season(settings: Settings, aliases: AliasTable | None = None, *,
     standings.regrade(season)
     season.conflicts = _reconcile(season, authoritative)
     _fill_week_lines(season)
+    try:
+        from .pool import picks as _picks
+        _picks.fill_short_grids(season)      # the grid agrees with the official counts (picks.py)
+    except Exception as exc:  # noqa: BLE001 - a note, never a failed load
+        season.warnings.append(f"Couldn't check the weeks' pick grids against the official counts: {exc}")
     _fill_player_weeks(season)
     # Bring the standings past the newest stats.xls, so it needn't be uploaded.
     stats_week = (latest_stats or {}).get("week") or 0

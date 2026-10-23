@@ -794,6 +794,46 @@ def _apply_results(week: Week, card: WeekPicks, graded: WeekPicks | None, scores
             game.winner, game.result_from = "", ""     # no longer known: say so
 
 
+def fill_short_grids(season: Season) -> int:
+    """Workbook weeks whose grid has fewer right picks for a coach than the coach's
+    official count of them (stats.xls): the gap is filled from the week's own pick
+    sheet, with picks the sheet shows were right, and never past that count. The
+    official totals stand; this only makes the game-by-game record say the same -
+    week 3 of 2026 left a push credited to Buffalo blank for 26 coaches, and every
+    page that reads picks game by game had them a point short. Run after the
+    official weekly counts are in (repository.load). Returns the picks filled."""
+    filled = 0
+    for number, week in season.weeks.items():
+        if getattr(week, "source", None) is None or number in _OTHER_SEASON or not week.lines:
+            continue
+        card = load(number)
+        if card is None or card.graded or not card.coaches or not _same_slate_games(card, week):
+            continue
+        names = {_plain(c): c for c in card.coaches}
+        for line in week.lines.values():
+            coach = names.get(_plain(line.player))
+            short = int(line.regular_wins or 0) - len(line.correct_picks)
+            if coach is None or short <= 0:
+                continue
+            for game in sorted(week.games, key=lambda g: g.index):
+                if short <= 0:
+                    break
+                if game.index in line.correct_picks or not _decided(game):
+                    continue
+                found = card.game_for(game.away, game.home)
+                team = found.picks.get(coach, "") if found is not None else ""
+                if team and team_code(team) == team_code(game.winner):
+                    line.correct_picks[game.index] = team
+                    short -= 1
+                    filled += 1
+    return filled
+
+
+def _same_slate_games(card: WeekPicks, week: Week) -> bool:
+    ours = _pairs(week.games)
+    return bool(ours) and len(_pairs(card.games) & ours) >= SAME_SEASON * len(ours)
+
+
 def _score_text(game: Game) -> str:
     from ..model.predictions import display_team
     return (f"{display_team(game.away)} {game.away_points}, "
