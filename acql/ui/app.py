@@ -59,6 +59,7 @@ from .pages.recipe import RecipePage
 from .pages.computers import ComputersPage
 from .pages.hitsmisses import HitsMissesPage
 from .pages.radar import RadarPage
+from .pages.leverage import LeveragePage
 from .pages.nextweek import NextWeekPage
 from .pages.player import PlayerPage
 from .pages.pools import PoolsPage
@@ -90,7 +91,7 @@ NAV = (
               ((places.POOL, InsightsPage), (places.TEAMS, TeamsPage))),
     # Beside Deadeye Analysis: the card it recommends, then how good it is.
     GroupSpec(places.THIS_WEEK, "calendar", "What to play this week: your picks, every game priced, and where the card could be wrong",
-              ((places.CARD, BriefingPage), (places.EVERY_GAME, NextWeekPage), (places.RADAR, RadarPage))),
+              ((places.CARD, BriefingPage), (places.EVERY_GAME, NextWeekPage), (places.RADAR, RadarPage), (places.LEVERAGE, LeveragePage))),
     # Its own place, so "is it any good, and should I follow it?" is one
     # click from anywhere rather than a tab inside Insights.
     GroupSpec(places.MODEL, "crosshair", f"How good {MODEL_NAME}'s picks are, where they miss, and whether anything would do better",

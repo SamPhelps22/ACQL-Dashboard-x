@@ -25,6 +25,7 @@ THIS_WEEK = "Deadeye Picks"                 # the week's card, and why
 CARD = "My picks"                   # the card to hand in, and where the week's numbers go in
 EVERY_GAME = "All games"            # every game on the slate, priced
 RADAR = "Radar"                     # every game by how it could go
+LEVERAGE = "Leverage"               # what each pick does for the season race
 GAME_DAY = "Game Day"               # the games as they happen
 EVERYONE = "Everyone's picks"       # the whole pool's cards for the week, side by side
 RESULTS = "Results"                 # how the week went

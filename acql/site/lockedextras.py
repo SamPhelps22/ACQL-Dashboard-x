@@ -83,8 +83,44 @@ def lab(season=None) -> str | None:
               "Nothing here changes a pick.</p>")
 
 
+def leverage(season) -> str | None:
+    """The season race: title and top-3 odds, the chase card, who to watch (pool/leverage.py)."""
+    from ..pool import leverage as lev
+    from ..model.predictions import team_code
+
+    def code(team: str) -> str:
+        return (team_code(team) or team).upper()
+    r = lev.report(season)
+    if r is None:
+        return None
+    aim = lev.AIM_NAMES[r.aim]
+    tiles = _tiles([("Title", f"{r.title:.1%}"), ("Top 3", f"{r.top3:.1%}"),
+                    ("Wins", str(r.wins)), ("Place", f"{r.place}{'st' if r.place == 1 else 'nd' if r.place == 2 else 'rd' if r.place == 3 else 'th'}"),
+                    ("Weeks left", str(r.weeks_left))])
+    if r.flips:
+        call = (f"Chase card: take {', '.join(p.other for p in r.flips)}. "
+                f"{(r.gain) * 100:+.1f} pts on {aim}, for {r.card_hits - r.chase_hits:.1f} fewer games expected right.")
+    else:
+        call = f"Chase card: keep the card. No game turned over adds anything to your odds of {aim}."
+    open_games = sorted((p for p in r.picks if not p.decided), key=lambda p: -p.worth(r.aim))
+    lead = next((v.name for v in r.rivals if v.gap > 0), r.rivals[0].name if r.rivals else "")
+    games = [[" @ ".join(code(x) for x in p.label.split(" @ ")), code(p.pick), f"{p.chance:.0%}", f"{p.worth(r.aim) * 100:+.1f}".replace("-0.0", "0.0").replace("+0.0", "0.0"),
+              ("other" if p.split.get(lead) == 1 else "same") if r.field_known else f"{p.split.get(lead, 0):.0%}"]
+             for p in open_games]
+    rivals = [[v.name, v.wins, "level" if not v.gap else f"{v.gap:+d}", f"{v.title:.1%}", f"{v.differ:.1f}"]
+              for v in r.rivals]
+    return (tiles + f"<p class=call>{escape(call)}</p>"
+            + f"<h3>Week {r.week}: the other side, in points of {escape(aim)}</h3>"
+            + _table(["Game", "Take", "Chance", "Flip", escape(lead) or "Leader"], games, {2, 3})
+            + "<h3>Who to watch</h3>"
+            + _table(["Coach", "Wins", "Gap", "Title", "Differ"], rivals, {1, 3, 4})
+            + f"<p class=note>{r.simulations:,} simulated seasons. Flip: how your odds move taking the other side "
+              "with the rest of the card kept. Only games where you and a rival differ can change the gap. "
+              "Nothing here changes a pick.</p>")
+
+
 #: The rooms after the card, in order: (id, tab name, maker).
-ROOMS = (("record", "Record", record), ("signals", "Signals", signals),
+ROOMS = (("record", "Record", record), ("leverage", "Leverage", leverage), ("signals", "Signals", signals),
          ("ranks", "Ranks", ranks), ("lab", "Lab", lab))
 
 

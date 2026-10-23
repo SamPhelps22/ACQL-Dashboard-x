@@ -107,7 +107,11 @@ def warm_this_week(season) -> None:
         if key:
             survivor.advise(season, key, found["week"])
 
-    for step in (card, reasons, pools):
+    def season_race() -> None:
+        from ..pool import leverage
+        leverage.report(season, found["week"])
+
+    for step in (card, reasons, pools, season_race):
         try:
             with WORKING:
                 step()

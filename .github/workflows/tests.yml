@@ -73,6 +73,9 @@ jobs:
       - name: Chaos simulator tests
         run: python tests/test_chaos.py
 
+      - name: Season leverage tests
+        run: python tests/test_leverage.py
+
       - name: Model lab tests
         run: python tests/test_model_lab.py
 
