@@ -470,13 +470,17 @@ class InsightsPage(Page):
             self.fav_note.setText("")
             return
 
-        def tip(r: int, c: int) -> str:
+        columns = [f"W{w}" for w in weeks]
+
+        def tip(band: str, column: str, _value) -> str:
+            # the chart hands over the row and column labels, as every heat map's tooltip gets them
+            r, c = bands.index(band), columns.index(column)
             n = counts[r][c]
             v = values[r][c]
             return (f"Week {weeks[c]}, line {bands[r].lower()}: " +
                     (f"{v:.0f}% of the pool on the favourite ({n} game{'s' if n != 1 else ''})" if v is not None
                      else "no games"))
-        self.fav_chart.plot(bands, [f"W{w}" for w in weeks], values, vmin=0, vmax=100, center=50,
+        self.fav_chart.plot(bands, columns, values, vmin=0, vmax=100, center=50,
                             cell_text=len(weeks) <= 12, cell_format="{:.0f}",
                             key_label="% of the pool on the favourite", tooltip_fn=tip)
         flat = [(v, n) for row, nrow in zip(values, counts) for v, n in zip(row, nrow) if v is not None]

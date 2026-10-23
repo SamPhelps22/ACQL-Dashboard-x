@@ -492,6 +492,40 @@ class TestWriteBack(unittest.TestCase):
 
 
 @needs_workbook
+class TestHeatmapTooltips(unittest.TestCase):
+    """Hovering a heat map cell asks the page for its tooltip with (row label, column label, value)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_hovering_the_favourites_grid_on_insights(self):
+        # It raised TypeError on every mouse move (Oct 23): its tooltip took (row, column) positions.
+        from types import SimpleNamespace
+        from unittest import mock
+        from acql.pool import crowd
+        from acql.ui.pages.insights import InsightsPage
+        from acql.ui.theme import DARK
+
+        page = InsightsPage(DARK)
+        grid = (["Under 3", "3 to 6.5"], [6, 7], [[60.0, None], [75.0, 80.0]], [[5, 0], [4, 2]])
+        with mock.patch.object(crowd, "observations", return_value=[]), \
+                mock.patch.object(crowd, "favourite_grid", return_value=grid):
+            page._update_favourites(None)
+        text, _anchor = page.fav_chart._hover_at(SimpleNamespace(xdata=1.5, ydata=1.5))
+        self.assertIn("Week 7", text)
+        self.assertIn("80% of the pool on the favourite (2 games)", text)
+        text, _anchor = page.fav_chart._hover_at(SimpleNamespace(xdata=1.5, ydata=0.5))
+        self.assertIn("no games", text)
+
+
 class TestEditorState(unittest.TestCase):
     """The editor widget's change tracking, driven headlessly."""
 
