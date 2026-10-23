@@ -78,6 +78,8 @@ class ScoutingDialog(QDialog):
         layout.addWidget(plan)
         if r.steps:
             layout.addWidget(self._waterfall(r, p))
+        if r.twins is not None and r.twins.count:
+            layout.addWidget(self._twins(r))
 
         teams = QHBoxLayout()
         teams.setSpacing(16)
@@ -111,6 +113,27 @@ class ScoutingDialog(QDialog):
         row.addStretch(1)
         row.addWidget(close)
         outer.addLayout(row)
+
+    @staticmethod
+    def _twins(r: scouting.Report) -> Card:
+        """The most alike past games and how they ended (#37)."""
+        t = r.twins
+        card = Card(f"Historical twins · the {t.count} most alike games since 2011")
+        fav = escape(r.twin_favourite or "the favourite")
+        card.add(_text(
+            f"Read for {fav}, the line's favourite. In the {t.count} games most like this one - the line first, "
+            f"then the over/under, the week and whether it was a division game - the favourite "
+            f"<b>won {t.fav_won}</b> ({t.fav_won / t.count:.0%}), <b>covered {t.fav_covered}</b>"
+            + (f" with {t.pushes} push{'es' if t.pushes != 1 else ''}" if t.pushes else "")
+            + f", and <b>won by 15 or more {t.fav_big}</b> times. The line alone says about "
+            f"{t.line_win:.0%} to win and {t.line_cover:.0%} to cover."))
+        sample = ", ".join(f"{escape(g.label)} ({'won' if g.fav_margin > 0 else 'lost' if g.fav_margin < 0 else 'tied'} "
+                           f"by {abs(g.fav_margin):g})" for g in t.games[:6])
+        card.add(_text("Closest: " + sample + ".", muted=True))
+        card.add(_text("Thirty games is a small sample, and most of what they share is the line itself, so expect "
+                       "them to swing a few games either side of it. A picture of the range, not a forecast.",
+                       muted=True))
+        return card
 
     @staticmethod
     def _waterfall(r: scouting.Report, p: Palette) -> Card:

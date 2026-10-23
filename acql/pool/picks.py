@@ -1141,6 +1141,10 @@ def save(week: WeekPicks) -> None:
         elif not week.coaches and _has_picks(held) and _same_slate(held, week):
             pass                # the blank sheet came after the full one
         elif not _keeps_place(held, week):
+            if _has_picks(held) and _same_slate(held, week):
+                # a new copy of the same week's sheet: write down what changed (#43)
+                from . import sheetchanges
+                sheetchanges.note(week.week, _from_entry(week.week, held), week, week.source)
             store.put("picks", str(week.week), entry)
     except store.StoreError as exc:
         from .. import logbook

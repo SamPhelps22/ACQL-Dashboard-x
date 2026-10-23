@@ -172,13 +172,64 @@ def remove_file(settings: WebSettings, name: str, *, message: str = "Update", op
     return True
 
 
+#: Words that must never reach the pool's site: the model and the dashboard stay private.
+PRIVATE_WORDS = ("Deadeye", "Operation Sunday")
+#: Placeholders the build fills in; one left in means the page was built wrong.
+PLACEHOLDERS = ("__POOL_DATA__", "__POOL_ICONS__", "__POOL_LOGO__")
+
+
+def page_problems(page: str, *, parse=None) -> list[str]:
+    """Why a page must not go up, or []. Checked before every upload: a page with
+    a half-finished merge in it once went to every phone in the pool."""
+    import re
+    found = []
+    if re.search(r"^(<{7}|>{7})( |$)|^={7}$", page, re.M):
+        found.append("it has leftover merge-conflict markers in it")
+    left = [p for p in PLACEHOLDERS if p in page]
+    if left:
+        found.append(f"it wasn't fully built ({', '.join(left)} left in it)")
+    private = [w for w in PRIVATE_WORDS if w in page]
+    if private:
+        found.append(f"it mentions {', '.join(private)}, which stays off the pool's site")
+    if not found:
+        found += (parse or _parse)(page)
+    return found
+
+
+def _parse(page: str) -> list[str]:
+    """The page's scripts parsed by a real browser (the release guard's check);
+    [] when there's no browser to ask."""
+    import sys
+    from pathlib import Path
+    folder = str(Path(__file__).resolve().parent.parent.parent / "packaging")
+    try:
+        if folder not in sys.path:
+            sys.path.insert(0, folder)
+        import guard
+        with _quiet():
+            return [f"a script on it doesn't load ({p.split(': ', 1)[-1]})"
+                    for p in guard.script_problems("the page", page.encode("utf-8"))]
+    except Exception:  # noqa: BLE001 - no guard or no browser: the other checks still stand
+        return []
+
+
+def _quiet():
+    import contextlib
+    import io
+    return contextlib.redirect_stdout(io.StringIO())
+
+
 def publish(settings: WebSettings, page: str, *, message: str = "Update the pool page",
-            files: dict[str, bytes] | None = None, opener=None) -> str:
+            files: dict[str, bytes] | None = None, opener=None, check=None) -> str:
     """Upload `page` as index.html (and any `files` beside it), and make sure
     Pages serves it. "__SITE__" in the page becomes the site's own address.
-    Returns the site's link."""
+    Returns the site's link. A page that fails page_problems is never uploaded."""
     if not settings.ready:
         raise WebPublishError("The pool's website isn't set up yet.")
+    problems = (check or page_problems)(page)
+    if problems:
+        raise WebPublishError("The page wasn't published because " + "; ".join(problems)
+                              + ". The site still shows the last good page.")
     repo = f"/repos/{settings.user}/{settings.repo}"
     status, info = _call(settings, "GET", repo, opener=opener)
     if status != 200:

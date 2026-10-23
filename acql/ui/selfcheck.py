@@ -226,6 +226,12 @@ def run(window, folder: Path | None = None, *, say=None) -> Path:
         lines += [f"{'OK ' if c.ok else '!! '}{c.name}: {c.detail}" for c in sums]
     if env["warnings"]:
         lines += ["", "Warnings from loading:"] + [f"  - {w}" for w in env["warnings"]]
+    try:
+        from . import visualdiff
+        against, moved = visualdiff.run(folder, str(env["version"]))
+        lines += visualdiff.lines(against, moved)
+    except Exception as exc:  # noqa: BLE001 - the rest of the self-check stands without it
+        lines += ["", f"What moved since the last release: couldn't be worked out ({exc})"]
     (folder / "report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (folder / "report.json").write_text(
         json.dumps({"environment": env, "pages": [asdict(r) for r in reports],

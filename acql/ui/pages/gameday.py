@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -610,6 +611,28 @@ class GameDayPage(Page):
         self.river_card.hide()
         self.insights_box.addWidget(self.river_card)
 
+        self.lever_card = Card("What the next touchdown is worth to you")
+        self.lever_box = QVBoxLayout()
+        self.lever_box.setSpacing(6)
+        self.lever_card.body().addLayout(self.lever_box)
+        self.lever_card.hide()
+        self.insights_box.addWidget(self.lever_card)
+
+        self.rival_card = Card("You against your rivals")
+        rival_row = QHBoxLayout()
+        self.rival_picker = QComboBox()
+        self.rival_picker.setToolTip("Add a rival: the card keeps the last three you chose")
+        self.rival_picker.activated.connect(self._rival_added)
+        rival_row.addWidget(self.rival_picker, 1)
+        self.rival_clear = QPushButton("Clear")
+        self.rival_clear.clicked.connect(self._rivals_cleared)
+        rival_row.addWidget(self.rival_clear, 0)
+        self.rival_card.body().addLayout(rival_row)
+        self.rival_box = QVBoxLayout()
+        self.rival_box.setSpacing(6)
+        self.rival_card.body().addLayout(self.rival_box)
+        self.insights_box.addWidget(self.rival_card)
+
         self.side_card = Card("The side pools, as they stand")
         self.side_box = QVBoxLayout()
         self.side_box.setSpacing(6)
@@ -883,7 +906,90 @@ class GameDayPage(Page):
                            f"Final · {_plural(len(bd.final), 'game')}")
         self._render_board(bd)
         self._render_side(bd)
+        self._render_levers(bd)
+        self._render_rivals(bd)
         self._render_river(week)
+
+    # ---- what the next score is worth (#14) and your rivals (#16) ----------------
+    RIVALS_KEY = "gameday/rivals"
+
+    def _rivals(self) -> list[str]:
+        found = QSettings().value(self.RIVALS_KEY, [])
+        if isinstance(found, str):
+            found = [found] if found else []
+        return [str(n) for n in (found or [])][:3]
+
+    def _rival_added(self, _index: int = 0) -> None:
+        name = self.rival_picker.currentData()
+        if name:
+            kept = [n for n in self._rivals() if n != name]
+            QSettings().setValue(self.RIVALS_KEY, ([name] + kept)[:3])
+            if self._board is not None:
+                self._render_rivals(self._board)
+
+    def _rivals_cleared(self) -> None:
+        QSettings().setValue(self.RIVALS_KEY, [])
+        if self._board is not None:
+            self._render_rivals(self._board)
+
+    def _render_levers(self, bd: GD.Board) -> None:
+        self.clear_layout(self.lever_box)
+        try:
+            found = GD.levers(bd)[:5]
+        except Exception:  # noqa: BLE001
+            found = []
+        found = [lv for lv in found if lv.size >= 0.005]
+        self.lever_card.setVisible(bool(found))
+        for lv in found:
+            st = lv.state
+            parts = []
+            for side, move in ((GD.HOME, lv.home_td), (GD.AWAY, lv.away_td)):
+                colour = self.palette.good if move > 0 else self.palette.critical
+                parts.append(f"{display_team(st.team(side))} TD: <b style='color:{colour}'>{move * 100:+.0f}</b>")
+            text = QLabel(f"{st.game.label} <span style='opacity:.7'>({st.clock})</span><br>" + " · ".join(parts))
+            text.setTextFormat(Qt.TextFormat.RichText)
+            self.lever_box.addWidget(text)
+        if found:
+            note = QLabel("Points on your chance of winning the week, if that side scores a touchdown next. "
+                          "Rough: Game Day's live chances run a little too sure in lopsided games.")
+            note.setObjectName("Muted")
+            note.setWordWrap(True)
+            self.lever_box.addWidget(note)
+
+    def _render_rivals(self, bd: GD.Board) -> None:
+        self.clear_layout(self.rival_box)
+        chosen = self._rivals()
+        self.rival_picker.blockSignals(True)
+        self.rival_picker.clear()
+        self.rival_picker.addItem("Add a rival…", "")
+        for s in sorted(bd.standings, key=lambda s: s.card.name.casefold()):
+            if not s.card.you and s.card.name not in chosen:
+                self.rival_picker.addItem(s.card.name, s.card.name)
+        self.rival_picker.blockSignals(False)
+        self.rival_card.setVisible(bd.you is not None and bool(bd.standings))
+        self.rival_clear.setVisible(bool(chosen))
+        if bd.you is None:
+            return
+        for r in GD.rivals(bd, chosen):
+            lead = ("level" if r.total_gap == 0 else
+                    f"you lead by {r.total_gap}" if r.total_gap > 0 else f"you trail by {-r.total_gap}")
+            on = ("" if not r.differ else
+                  f" · on the games you differ, {'+' if r.ahead_now > 0 else ''}{r.ahead_now} now")
+            head = QLabel(f"<b>You vs {r.name}</b>: {_plural(len(r.differ), 'game')} differ · {lead}{on}")
+            head.setTextFormat(Qt.TextFormat.RichText)
+            head.setWordWrap(True)
+            self.rival_box.addWidget(head)
+            for st, mine, theirs in r.differ:
+                where = st.clock if st.state != "pre" else (GD.kickoff_text(st.kickoff) or "to play")
+                line = QLabel(f"&nbsp;&nbsp;{display_team(st.team(mine))} (you) v {display_team(st.team(theirs))} "
+                              f"<span style='opacity:.7'>· {where}</span>")
+                line.setTextFormat(Qt.TextFormat.RichText)
+                self.rival_box.addWidget(line)
+        if not chosen:
+            hint = QLabel("Choose up to three coaches to follow: only the games where your cards differ are shown.")
+            hint.setObjectName("Muted")
+            hint.setWordWrap(True)
+            self.rival_box.addWidget(hint)
 
     def _render_river(self, week: int) -> None:
         try:
@@ -941,6 +1047,8 @@ class GameDayPage(Page):
             f"Week {week} has no games set up yet." if week else "No week to show yet.")
         self.side_card.hide()
         self.river_card.hide()
+        self.lever_card.hide()
+        self.rival_card.hide()
 
     # ---- the headline numbers ----------------------------------------------
     def _render_tiles(self, bd: GD.Board) -> None:

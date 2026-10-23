@@ -255,6 +255,15 @@ class DataPage(Page):
         self.layout_.addWidget(self.weekly_card)
         self.weekly_table: QWidget | None = None
 
+        # ---- what changed when a sheet was sent again (pool/sheetchanges.py, #43) ----
+        self.changes_card = Card("Pick sheets sent again: what changed")
+        self.changes_label = QLabel("")
+        self.changes_label.setWordWrap(True)
+        self.changes_label.setTextFormat(Qt.TextFormat.RichText)
+        self.changes_card.add(self.changes_label)
+        self.changes_card.hide()
+        self.layout_.addWidget(self.changes_card)
+
         # ---- conflicts ----
         self.conflicts_card = Card("Disagreements between files")
         self.conflicts_note = QLabel("")
@@ -401,6 +410,7 @@ class DataPage(Page):
         self._refresh_weekly(s)
         self._refresh_conflicts(s)
         self._refresh_rulings(s)
+        self._refresh_sheet_changes(s)
         self.editor_card.setVisible(getattr(s, "workbook_path", None) is not None)
         try:
             from ...repository import workbook_note
@@ -667,6 +677,20 @@ class DataPage(Page):
                 lambda _i, w=report.week, box=pick: self._rule(year, w, box.currentData()))
             row.addWidget(pick)
             self.rulings_box.addLayout(row)
+
+    def _refresh_sheet_changes(self, s) -> None:
+        from html import escape
+        from ...pool import sheetchanges
+        found = sheetchanges.recent(sorted(s.weeks))
+        self.changes_card.setVisible(bool(found))
+        parts = []
+        for week, at, source, changes in found[:6]:
+            when = time.strftime("%a %b %d, %I:%M %p", time.localtime(at)).replace(" 0", " ")
+            shown = changes[:12]
+            more = f"<br>&nbsp;&nbsp;…and {len(changes) - 12} more" if len(changes) > 12 else ""
+            parts.append(f"<b>Week {week}</b> · {when}" + (f" · {escape(Path(source).name)}" if source else "")
+                         + "".join(f"<br>&nbsp;&nbsp;{escape(c)}" for c in shown) + more)
+        self.changes_label.setText("<br><br>".join(parts))
 
     def _rule(self, year: int, week: int, ruling: str) -> None:
         from ...pool import rulings

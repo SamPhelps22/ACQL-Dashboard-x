@@ -86,6 +86,8 @@ class Report:
     plan: str = ""
     made: str = ""                  # how the number was made, step by step (evidence.Case.made)
     steps: tuple = ()               # the margin's arithmetic (waterfall.steps), home side
+    twins: object = None            # the most alike past games and how they ended (twins.Twins)
+    twin_favourite: str = ""        # the side the line favours, which the twins are read for
 
     @property
     def score_text(self) -> str:
@@ -258,6 +260,17 @@ def _cases(season: Season, week: int, me: str | None) -> dict[int, object]:
     return _KEPT[key]
 
 
+def _twins(game, week: int, price, total):
+    """The 30 most alike games since 2011 (twins.py), read for the line's favourite."""
+    if price.base is None:
+        return None
+    try:
+        from . import autopsy, twins
+        return twins.find(abs(price.base), total, week, 0.0, autopsy.same_division(game.home, game.away))
+    except Exception:  # noqa: BLE001 - the report shows without it
+        return None
+
+
 def _steps(game, ctx, price) -> list:
     try:
         from . import waterfall
@@ -307,5 +320,8 @@ def report(season: Season, index: int, week: int | None = None, me: str | None =
         risks=tuple(_risks(shape, case, home, away, game)), weather=sky,
         made=case.made() if case is not None and hasattr(case, "made") else "",
         steps=tuple(_steps(game, ctx, price)),
+        twins=_twins(game, slate.week, price, total),
+        twin_favourite=(display_team(game.home) if (price.base or 0) >= 0 else display_team(game.away))
+        if price.base is not None else "",
     )
     return replace(made, plan=_plan(made))

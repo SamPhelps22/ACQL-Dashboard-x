@@ -3337,6 +3337,149 @@ class TestSeasonGoal(unittest.TestCase):
         self.assertEqual(goal.suggest("title", 1.0, 3).style, briefing.STYLE_STRAIGHT)     # close, late
 
 
+class TestPrePublishCheck(unittest.TestCase):
+    """No page with a merge, a placeholder, a private word or a broken script is uploaded."""
+
+    def test_problems(self):
+        from acql.site import webpublish
+        ok = lambda page: webpublish.page_problems(page, parse=lambda _p: [])
+        self.assertEqual(ok("<html><p>fine</p></html>"), [])
+        marked = "\n".join(["<p>a</p>", "<" * 7 + " HEAD", "x", "=" * 7, "y", ">" * 7 + " main", ""])
+        self.assertIn("merge-conflict", ok(marked)[0])
+        self.assertIn("__POOL_DATA__", ok("<script>__POOL_DATA__</script>")[0])
+        self.assertIn("Deadeye", ok("<p>Deadeye says</p>")[0])
+        self.assertEqual(webpublish.page_problems("<p>x</p>", parse=lambda _p: ["broken"]), ["broken"])
+
+    def test_a_bad_page_is_never_uploaded(self):
+        from acql.site import webpublish
+        settings = webpublish.WebSettings(user="u", repo="r", sealed_token="x")
+        calls = []
+        with self.assertRaises(webpublish.WebPublishError) as caught:
+            webpublish.publish(settings, "<p>Deadeye</p>", opener=lambda *a, **k: calls.append(a),
+                               check=lambda page: webpublish.page_problems(page, parse=lambda _p: []))
+        self.assertIn("still shows the last good page", str(caught.exception))
+        self.assertEqual(calls, [])
+
+
+class TestRivalsAndLevers(unittest.TestCase):
+    """Rival lens: only the games two cards differ on (#16); levers: a touchdown's worth (#14)."""
+
+    def _board(self):
+        from types import SimpleNamespace as NS
+        from acql.pool import gameday as GD
+        def st(i, state, leader, p_home):
+            return NS(index=i, state=state, leader=leader, p_home=p_home, p_away=1 - p_home)
+        states = [st(1, "final", GD.HOME, 1.0), st(2, "in", GD.AWAY, 0.4), st(3, "pre", GD.NOBODY, 0.5),
+                  st(4, "in", GD.HOME, 0.7)]
+        you = NS(card=NS(name="Phelpy", you=True, picks={1: GD.HOME, 2: GD.HOME, 3: GD.AWAY, 4: GD.HOME}),
+                 total_now=5)
+        jules = NS(card=NS(name="Jules", you=False, picks={1: GD.AWAY, 2: GD.AWAY, 3: GD.AWAY, 4: GD.HOME}),
+                   total_now=6)
+        return NS(you=you, standings=[jules, you], states=states, roots=[])
+
+    def test_rivals(self):
+        from acql.pool import gameday as GD
+        found = GD.rivals(self._board(), ["Jules", "Nobody"])
+        self.assertEqual(len(found), 1)
+        r = found[0]
+        self.assertEqual([s.index for s, _m, _t in r.differ], [1, 2])
+        self.assertEqual(r.ahead_now, 0)          # you won game 1, they lead game 2
+        self.assertEqual(r.total_gap, -1)
+
+    def test_no_levers_without_live_stakes(self):
+        from acql.pool import gameday as GD
+        self.assertEqual(GD.levers(self._board()), [])
+
+
+class TestSurvivorPath(unittest.TestCase):
+    """One team a week, each once, surest pairing first (#56)."""
+
+    def test_choose(self):
+        from acql.pool import survivorpath as sp
+        cells = {(7, "buf"): (0.80, "Miami", True), (7, "kc"): (0.78, "Denver", True),
+                 (8, "buf"): (0.85, "Jets", True), (8, "kc"): (0.60, "Raiders", False),
+                 (8, "phi"): (0.70, "Dallas", True)}
+        steps = sp.choose(cells, [7, 8])
+        self.assertEqual([s.week for s in steps], [7, 8])
+        picked = {s.week: s.team for s in steps}
+        from acql.model import predictions
+        self.assertEqual(picked[8], predictions.display_team("buf"))     # the surest cell goes first
+        self.assertEqual(picked[7], predictions.display_team("kc"))      # so week 7 takes the next team
+        self.assertEqual(steps[1].alternate, predictions.display_team("phi"))
+        self.assertAlmostEqual(sp.Path("x", steps).survive_all, 0.85 * 0.78)
+
+
+class TestVisualDiff(unittest.TestCase):
+    """Changed regions boxed, scores per page, baselines kept per version (#4)."""
+
+    def test_compare_and_baselines(self):
+        from PIL import Image, ImageDraw
+        from acql.ui import visualdiff
+        root = Path(tempfile.mkdtemp(prefix="acql-vd-"))
+        old_run, new_run = root / "r1", root / "r2"
+        old_run.mkdir()
+        new_run.mkdir()
+        base = Image.new("RGB", (200, 120), (20, 20, 20))
+        base.save(old_run / "01-Results-Standings.png")
+        changed = base.copy()
+        ImageDraw.Draw(changed).rectangle((50, 40, 90, 70), fill=(240, 200, 60))
+        changed.save(new_run / "03-Results-Standings.png")
+        self.assertEqual(visualdiff.run(old_run, "2.18.2")[0], None)       # first run: nothing to compare
+        against, found = visualdiff.run(new_run, "2.19.0")
+        self.assertEqual(against, "2.18.2")
+        self.assertEqual(found[0].key, "Results-Standings.png")
+        self.assertGreater(found[0].score, 0)
+        self.assertEqual(len(found[0].boxes), 1)
+        self.assertTrue((new_run / "diff-03-Results-Standings.png").exists())
+        self.assertIn("1 of 1 pages changed", "\n".join(visualdiff.lines(against, found)))
+
+
+class TestSheetChanges(_ScratchStore):
+    """A sheet sent again: each changed pick, card and side pool written down (#43)."""
+
+    def test_diff_and_note(self):
+        from acql.pool import picks, sheetchanges
+        g = lambda picks_: picks.GamePicks("Minnesota", "Chicago", "", picks_)
+        old = picks.WeekPicks(5, [g({"Ann": "Chicago", "Bo": "Minnesota"})], suicide={"Ann": "Buffalo"})
+        new = picks.WeekPicks(5, [g({"Ann": "Minnesota", "Bo": "Minnesota", "Cy": "Chicago"})],
+                              suicide={"Ann": "Detroit"})
+        found = sheetchanges.note(5, old, new, "week5.xlsx", now=1000.0)
+        self.assertIn("Cy: card added", found)
+        self.assertIn("Ann: Minnesota @ Chicago changed from Chicago to Minnesota", found)
+        self.assertIn("Ann: suicide pick changed from Buffalo to Detroit", found)
+        self.assertEqual(len(found), 3)
+        self.assertEqual(sheetchanges.note(5, new, new), [])
+        self.assertEqual(sheetchanges.recent([5], now=2000.0)[0][3], found)
+
+
+class TestChanceTrail(_ScratchStore):
+    """Ghost marks: a chance from about a day ago, for the same side (#9)."""
+
+    def test_ghosts(self):
+        from acql.pool import chancetrail as ct
+        day = 86400
+        self.assertTrue(ct.record(7, {1: ("Chicago", 0.55), 2: ("Dallas", 0.60)}, now=1_000_000))
+        self.assertFalse(ct.record(7, {1: ("Chicago", 0.56)}, now=1_000_000 + 60))     # within the hour
+        now = 1_000_000 + day
+        found = ct.ghosts(7, {1: ("Chicago", 0.61), 2: ("Philadelphia", 0.41)}, now=now)
+        self.assertEqual(found, {1: 0.55})        # game 2 changed side: 1 - 0.60 = 0.40, under 3 points
+        self.assertEqual(ct.ghosts(7, {1: ("Chicago", 0.61)}, now=1_000_000 + 3600), {})   # nothing a day old
+
+
+class TestTwins(unittest.TestCase):
+    """The most alike past games and how they ended, beside what the line says (#37)."""
+
+    def test_find(self):
+        from acql.model import twins
+        past = tuple(twins.Past(2015, 5, f"g{i}", 3.0 + (i % 3) * 0.5, 44.0, 0.0, i % 2 == 0, m)
+                     for i, m in enumerate([7, -3, 3, 10, 1, -7, 17, 4, 2, 21] * 4))
+        t = twins.find(3.0, 44.0, 5, 0.0, True, past=past, count=10)
+        self.assertEqual(t.count, 10)
+        self.assertTrue(all(g.fav_spread == 3.0 for g in t.games[:5]))
+        self.assertEqual(t.fav_won, sum(1 for g in t.games if g.fav_margin > 0))
+        self.assertTrue(0.5 < t.line_win < 0.7)
+
+
 class TestClinchedAndOut(unittest.TestCase):
     """Clinched and out are exact: from what is banked and what each card can still reach."""
 

@@ -842,6 +842,85 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
     )
 
 
+# ---- what the next score is worth, and you against your rivals -------------------------------
+@dataclass(frozen=True)
+class Lever:
+    """One live game: what a touchdown by either side does to your chance of winning the week."""
+
+    state: GameNow
+    home_td: float             # change in your chance if the home side scores a touchdown next
+    away_td: float
+
+    @property
+    def size(self) -> float:
+        return max(abs(self.home_td), abs(self.away_td))
+
+
+TOUCHDOWN = 7
+
+
+def credit_chance(st: GameNow, margin: int, side: int) -> float:
+    """The chance `side` is credited at the end, from a given score with the time left."""
+    look = outlook(margin, st.left, st.expected, st.sd, started=True)
+    sides = credited_by(st.game, np.asarray(look.margins))
+    return float(np.asarray(look.chances)[sides == side].sum())
+
+
+def levers(bd: Board) -> list[Lever]:
+    """For each live game you have a stake in (#14): your chance's move on the next
+    touchdown either way, biggest first. Your stake is the game's rooting swing; the
+    move is that swing times the change a touchdown makes to the result's chance."""
+    out = []
+    for root in bd.roots:
+        st = root.state
+        if root.kind != "pick" or st.state != "in" or st.margin is None:
+            continue
+        now = st.chance(root.side)
+        moves = []
+        for scorer in (HOME, AWAY):
+            after = credit_chance(st, st.margin + (TOUCHDOWN if scorer == HOME else -TOUCHDOWN), root.side)
+            moves.append(root.swing * (after - now))
+        out.append(Lever(st, moves[0], moves[1]))
+    return sorted(out, key=lambda lv: -lv.size)
+
+
+@dataclass(frozen=True)
+class Rival:
+    name: str
+    differ: list[tuple[GameNow, int, int]]     # (game, your side, their side) where the cards differ
+    ahead_now: int                             # of those under way or over: you credited minus them
+    total_gap: int                             # your total now minus theirs (Big Losers included)
+
+
+def rivals(bd: Board, names: list[str]) -> list[Rival]:
+    """You against each named coach (#16): only the games where your cards differ."""
+    if bd.you is None:
+        return []
+    mine = bd.you.card
+    by_state = {s.index: s for s in bd.states}
+    out = []
+    for name in names:
+        theirs = next((s for s in bd.standings if s.card.name == name and not s.card.you), None)
+        if theirs is None:
+            continue
+        differ, ahead = [], 0
+        for index, side in sorted(mine.picks.items()):
+            other = theirs.card.picks.get(index)
+            st = by_state.get(index)
+            if st is None or other is None or other == side:
+                continue
+            differ.append((st, side, other))
+            if st.state == "in":
+                leader = st.leader
+            elif st.state == "final":
+                leader = HOME if st.p_home >= 1 else AWAY if st.p_away >= 1 else NOBODY
+            else:
+                leader = NOBODY
+            ahead += 1 if leader == side else -1 if leader == other else 0
+        out.append(Rival(name, differ, ahead, bd.you.total_now - theirs.total_now))
+    return out
+
+
 # ---- the side pools, as they stand -----------------------------------------------------------
 @dataclass(frozen=True)
 class LoserNow:

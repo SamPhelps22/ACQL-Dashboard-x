@@ -54,7 +54,9 @@ def snapshot(season: Season, week: int) -> dict[str, dict]:
     for shape in radar.build(season, week).games:
         report = scouting.report(season, shape.index, week)
         if report is not None:
-            out[str(shape.index)] = asdict(report)
+            kept = asdict(report)
+            kept.pop("twins", None)         # derived from the archive, not something known that week
+            out[str(shape.index)] = kept
     return out
 
 

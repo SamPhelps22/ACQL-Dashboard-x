@@ -524,6 +524,7 @@ class BriefingPage(Page):
             )
             view, _ = make_table(model, stretch_column=3, row_height=28)
             self.suicide_box.addWidget(view)
+        self._render_suicide_path(season, key, week)
         self.suicide_note.setText(
             f"Teams you've already used are left out. \u201cStrong\u201d marks a later week at "
             f"{survivor.STRONG:.0%} or better. Later weeks are estimates from the "
@@ -531,6 +532,32 @@ class BriefingPage(Page):
             f"isn't in yet. The pool's lines apply here too, so a big favourite with a line is close "
             f"to a coin flip. A line with \u201c?\u201d is a guess: the pool hasn't posted it."
         )
+
+    def _render_suicide_path(self, season: Season, key: str, week: int) -> None:
+        """The road ahead: one unused team a week, surest pairing first (pool/survivorpath.py, #56)."""
+        from ...pool import survivorpath
+        try:
+            path = survivorpath.plan(season, key, week)
+        except Exception:  # noqa: BLE001
+            path = None
+        if path is None or not path.steps:
+            return
+        heading = QLabel(f"<b>The road ahead</b> · one team a week, each used once · surviving every week "
+                         f"shown: {path.survive_all:.0%}")
+        heading.setTextFormat(Qt.TextFormat.RichText)
+        self.suicide_box.addWidget(heading)
+        rows = [[f"Week {s.week}", s.team, ("vs " if s.home else "at ") + s.opponent, f"{s.chance:.0%}",
+                 f"{s.alternate} ({s.alternate_chance:.0%})" if s.alternate else self.NO_VALUE]
+                for s in path.steps]
+        model = TableModel(["Week", "Team", "Game", "Chance", "Next best that week"], rows,
+                           palette=self.palette, numeric_columns={3}, bold_columns={1})
+        view, _ = make_table(model, stretch_column=4, row_height=26)
+        self.suicide_box.addWidget(view)
+        note = QLabel("A plan, not a pick: it pairs weeks and teams surest-first, and next week's lines will move "
+                      "it. Later weeks are estimates from the lines seen so far.")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        self.suicide_box.addWidget(note)
 
     @staticmethod
     def _week(season: Season) -> int:
@@ -1048,14 +1075,23 @@ class BriefingPage(Page):
     def _update_table(self, brief: briefing.Brief) -> None:
         rows, tones = [], {}
         turns = self._turns(brief)
+        # where each chance stood about a day ago, when it has moved (pool/chancetrail.py, #9)
+        try:
+            from ...pool import chancetrail
+            now_chances = {c.index: (c.pick, c.chance) for c in brief.choices}
+            ghosts = chancetrail.ghosts(brief.week, now_chances)
+            chancetrail.record(brief.week, now_chances)
+        except Exception:  # noqa: BLE001
+            ghosts = {}
         for r, choice in enumerate(brief.choices):
             gain = choice.leverage
             turn = turns.get(choice.index)
+            was = ghosts.get(choice.index)
             rows.append([
                 choice.index,
                 choice.matchup,
                 choice.pick + ("  \u21ba" if choice.turned else ""),
-                f"{choice.chance:.0%}" + (
+                f"{choice.chance:.0%}" + (f" (was {was:.0%})" if was is not None else "") + (
                     " · against the pool" if choice.turned
                     else " · coin flip" if choice.coin_flip else ""
                 ),
