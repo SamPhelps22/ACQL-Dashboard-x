@@ -988,7 +988,21 @@ def to_json(data: dict) -> str:
                       allow_nan=False).replace("</", "<\\/")
 
 
-TEMPLATE = Path(__file__).with_name("pool_page.html")
+#: The pool page, kept as pieces (#83): one file for the page around the
+#: script, one per section of the script, joined in name order. One 7,000-line
+#: file had a merge conflict committed into it; pieces merge cleanly.
+PARTS = Path(__file__).with_name("pool_page")
+
+
+def template() -> str:
+    """The whole pool page template, its pieces joined in name order."""
+    return "".join(p.read_text(encoding="utf-8") for p in parts())
+
+
+def parts() -> list[Path]:
+    return sorted(p for p in PARTS.iterdir() if p.suffix in (".html", ".js") and p.name[:3].isdigit())
+
+
 SITE = "__SITE__"               # the website's address, filled in on upload
 PREVIEW = "preview.png"         # the link-preview picture, next to the page
 MANIFEST = "manifest.webmanifest"
@@ -1088,7 +1102,7 @@ def site_fingerprint(data: dict) -> str:
     announcement or champions, or a dashboard update that changes the page."""
     from ..version import VERSION
     # the tokens and shared icons count as part of the page: a change to either republishes it
-    template = hashlib.sha256(_with_design(TEMPLATE.read_text(encoding="utf-8")).encode("utf-8")).hexdigest()
+    template = hashlib.sha256(_with_design(template()).encode("utf-8")).hexdigest()
     return siteextras.fingerprint(_as_shown(data), [VERSION, template])
 
 
@@ -1117,7 +1131,7 @@ def _hosted_page(data: dict) -> str:
     import html as _html
     data["hosted"] = "web"
     from . import brand
-    fragment = (_with_design(TEMPLATE.read_text(encoding="utf-8"))
+    fragment = (_with_design(template())
                 .replace("__POOL_LOGO__", brand.data_uri())
                 .replace("__POOL_DATA__", to_json(data)))
     head, body = fragment.split('<div id="app"', 1)

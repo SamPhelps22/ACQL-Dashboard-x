@@ -192,6 +192,69 @@ class ReportCardPage(Page):
         self.long_card.add(self.long_note)
         self.layout_.addWidget(self.long_card)
 
+        # ---- time-travel: a past week as it stood at its deadline (#7)
+        self.past_card = Card("As it stood at the deadline")
+        pick_row = QHBoxLayout()
+        self.past_week = QComboBox()
+        self.past_week.currentIndexChanged.connect(self._render_past)
+        pick_row.addWidget(self.past_week)
+        pick_row.addStretch(1)
+        self.past_card.body().addLayout(pick_row)
+        self.past_lead = QLabel("")
+        self.past_lead.setWordWrap(True)
+        self.past_card.add(self.past_lead)
+        self.past_box = QVBoxLayout()
+        self.past_card.body().addLayout(self.past_box)
+        self.past_note = QLabel("")
+        self.past_note.setObjectName("Muted")
+        self.past_note.setWordWrap(True)
+        self.past_card.add(self.past_note)
+        self.layout_.addWidget(self.past_card)
+
+    def _fill_past_weeks(self) -> None:
+        from ...model import deadline
+        wanted = self.past_week.currentData()
+        found = deadline.weeks(self.season)
+        self.past_week.blockSignals(True)
+        self.past_week.clear()
+        for n in found:
+            self.past_week.addItem(f"Week {n}", n)
+        at = self.past_week.findData(wanted) if wanted is not None else -1
+        self.past_week.setCurrentIndex(at if at >= 0 else (1 if len(found) > 1 else 0))
+        self.past_week.blockSignals(False)
+        self.past_card.setVisible(bool(found))
+        self._render_past()
+
+    def _render_past(self, *_args) -> None:
+        from ...model import deadline
+        week = self.past_week.currentData()
+        self.clear_layout(self.past_box)
+        if week is None or self.season is None:
+            return
+        v = deadline.view(self.season, int(week))
+        self.past_lead.setText(
+            f"Week {week}'s lines were written down {deadline.stamp(v.snapshot_at)}"
+            + (" and sealed at the deadline" if v.frozen else "")
+            + f"; {MODEL_NAME}'s card was recorded {deadline.stamp(v.card_at)}."
+            + (f" Your card was saved {deadline.stamp(v.mine_at)}." if v.mine_at else ""))
+        rows = []
+        for r in v.rows:
+            outcome = ""
+            if r.result:
+                you = "you ✓" if r.yours and r.yours == r.result else "you ✗" if r.yours else ""
+                model = f"{MODEL_NAME} ✓" if r.deadeye == r.result else f"{MODEL_NAME} ✗" if r.deadeye else ""
+                outcome = f"{r.result} · " + " · ".join(x for x in (you, model) if x)
+            rows.append([r.matchup, r.line or "—", r.pool_line or "—", r.deadeye or "—",
+                         f"{r.chance:.0%}" if r.chance is not None else "—", r.yours or "—", outcome or "to play"])
+        if rows:
+            model_ = TableModel(["Game", "Line then", "Pool line", MODEL_NAME, "Chance then", "You",
+                                 "What happened"], rows, palette=self.palette, bold_columns={0})
+            view, _ = make_table(model_, stretch_column=6)
+            self.past_box.addWidget(view)
+        self.past_note.setText(" ".join(v.caveats()) + " Everything left of 'What happened' is as it was "
+                               "written down before the deadline; nothing in it is rebuilt with hindsight"
+                               + (" except where said." if v.caveats() else "."))
+
     def restyle(self) -> None:
         self.weeks_chart.set_palette(self.palette)
         self.running_chart.set_palette(self.palette)
@@ -212,6 +275,7 @@ class ReportCardPage(Page):
         self.me_picker.setCurrentIndex(max(found, 0))
         self.me_picker.blockSignals(False)
         self._render()
+        self._fill_past_weeks()
 
     def _render(self) -> None:
         season = self.season

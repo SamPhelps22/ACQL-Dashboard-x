@@ -56,6 +56,19 @@ def problems(files: dict[str, bytes]) -> list[str]:
 #: Web pages whose inline scripts must at least parse: a script that doesn't
 #: parse leaves the pool's website blank on every phone.
 PAGES = ("acql/ui/pool_page.html",)
+#: The pool page is kept as pieces (acql/ui/pool_page/*, joined in name order);
+#: it is checked as the one page they make.
+PARTS = "acql/ui/pool_page/"
+
+
+def joined_pages(files: dict[str, bytes]) -> dict[str, bytes]:
+    """Each page to parse: the whole files, and the pool page joined from its pieces."""
+    out = {name: files[name] for name in PAGES if name in files}
+    pieces = sorted(n for n in files if n.startswith(PARTS) and n[len(PARTS):][:3].isdigit()
+                    and n.endswith((".html", ".js")))
+    if pieces:
+        out[PARTS.rstrip("/") + ".html (joined)"] = b"".join(files[n] for n in pieces)
+    return out
 #: Inline JavaScript only: a <script type="application/json"> data block is not code.
 _SCRIPT = re.compile(rb"<script(?![^>]*\bsrc=)(?![^>]*\btype=[\"']?(?!text/javascript|module)\w)[^>]*>(.*?)</script>",
                      re.DOTALL | re.IGNORECASE)
@@ -134,9 +147,8 @@ def main() -> int:
     files = tracked_files(args.commit)
     found = problems(files)
     if not found:          # a page full of conflict markers needs no browser to say so
-        for page in PAGES:
-            if page in files:
-                found += script_problems(page, files[page])
+        for page, data in joined_pages(files).items():
+            found += script_problems(page, data)
     for line in found:
         print(f"  {line}")
     print(f"  Guard: {'FAILED, ' + str(len(found)) + ' problem(s)' if found else 'nothing wrong found'}.")

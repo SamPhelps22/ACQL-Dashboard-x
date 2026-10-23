@@ -2361,7 +2361,7 @@ class TestWebsitePages(unittest.TestCase):
 
     def setUp(self):
         from acql.ui import poolpage
-        self.page = Path(poolpage.__file__).with_name("pool_page.html").read_text(encoding="utf-8")
+        self.page = poolpage.template()
 
     def test_every_page_in_the_menu_can_be_drawn(self):
         import re
@@ -3167,6 +3167,34 @@ class TestLiveCheck(unittest.TestCase):
         self.assertEqual((top.calls, top.came), (2, 0.5))
 
 
+class TestDeadlineView(_ScratchStore):
+    """A past week from what was written before its deadline, with gaps said plainly (#7)."""
+
+    def test_a_week_as_it_stood(self):
+        from acql import store
+        from acql.model import deadline, known
+        from acql.models import Game, Season, Week
+        from acql.pool import cards
+        g1 = Game(1, "Chicago", "Minnesota", winner="Chicago", home_points=24, away_points=17)
+        g2 = Game(2, "Dallas", "Philadelphia")
+        season = Season(title="ACQL 2026", weeks={6: Week(6, [g1, g2])})
+        store.put(known.KIND, known._key(2026, 6), {"at": 1000.0, "frozen": True, "games": {
+            "1": {"matchup": "Minnesota @ Chicago", "line": "Chicago -3", "pool_line": ""},
+            "2": {"matchup": "Philadelphia @ Dallas", "line": "Philadelphia -4.5", "pool_line": "Philadelphia by 7"}}})
+        cards._put(6, "model", cards.Snapshot(at=2000.0, take={1: "Chicago", 2: "Dallas"}, chance={1: 0.6, 2: 0.52},
+                                              label={1: "Minnesota @ Chicago", 2: "Philadelphia @ Dallas"}))
+        from unittest import mock
+        from acql.feeds import results
+        with mock.patch.object(results, "season_year", return_value=2026):
+            self.assertEqual(deadline.weeks(season), [6])
+            v = deadline.view(season, 6)
+        self.assertTrue(v.frozen)
+        self.assertEqual([(r.index, r.line, r.deadeye, r.result) for r in v.rows],
+                         [(1, "Chicago -3", "Chicago", "Chicago"), (2, "Philadelphia -4.5", "Dallas", "")])
+        self.assertEqual(v.rows[1].pool_line, "Philadelphia by 7")
+        self.assertEqual(v.caveats(), ["No card of yours is on record for this week."])
+
+
 class TestClinchedAndOut(unittest.TestCase):
     """Clinched and out are exact: from what is banked and what each card can still reach."""
 
@@ -3194,6 +3222,36 @@ class TestClinchedAndOut(unittest.TestCase):
         self.assertEqual(GD.certainty(bd), {})                     # nothing before kickoff
 
 
+class TestWebsitePieces(unittest.TestCase):
+    """The pool page is kept as pieces that join into one page, and its helpers are tested in a browser (#83)."""
+
+    def test_pieces_join_in_order_into_one_page(self):
+        from acql.ui import poolpage
+        names = [p.name for p in poolpage.parts()]
+        self.assertEqual(names[0], "000-page-top.html")
+        self.assertEqual(names[-1], "999-page-end.html")
+        page = poolpage.template()
+        self.assertEqual(page.count('<script id="pool-app">'), 1)
+        self.assertTrue(page.rstrip().endswith("})();\n</script>"))
+        self.assertIn("__POOL_DATA__", page)
+
+    def test_the_page_helpers(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packaging"))
+        import jsrun
+        from acql.ui import poolpage
+        helpers = (poolpage.PARTS / "020-small-helpers.js").read_text(encoding="utf-8")
+        try:
+            got = jsrun.run(helpers, "[money(1234.5), money(-3), dollars(-12.4), dollars(0), plural(1, 'win'), "
+                                     "plural(2, 'win'), count(3, 'game'), count(12, 'game'), cap('abc'), "
+                                     "listNames(['A']), listNames(['A', 'B', 'C']), listNames(['A', 'B', 'C', 'D']), "
+                                     "[1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111].map(ordinal).join(' ')]")
+        except jsrun.NoBrowser:
+            self.skipTest("no Chrome or Edge to run the page's script in")
+        self.assertEqual(got, ["$1,234.50", "−$3.00", "−$12", "$0", "1 win", "2 wins", "three games",
+                               "12 games", "Abc", "A", "A, B & C", "A, B & 2 more",
+                               "1st 2nd 3rd 4th 11th 12th 13th 21st 22nd 101st 111th"])
+
+
 class TestWebsiteCurve(unittest.TestCase):
     """The website prices games on the dashboard's own curve: same chances, both surfaces."""
 
@@ -3217,7 +3275,7 @@ class TestWebsiteCurve(unittest.TestCase):
         from acql import analytics
         from acql.pool import gameday
         from acql.ui import poolpage
-        page = poolpage.TEMPLATE.read_text(encoding="utf-8")
+        page = poolpage.template()
         engine = page[page.index("  var SQRT2"):page.index("  function oldOutlook")]
         phi = page[page.index("  function phi(z) {"):page.index("  // A game level at the end of regulation")]
         ks = [1, 0, 3, 4, 7, 8, 15, -14]
@@ -3824,7 +3882,7 @@ class TestSharedDesign(unittest.TestCase):
         import json
         import re
         from acql.ui import iconset, poolpage, tokens
-        page = poolpage._with_design(poolpage.TEMPLATE.read_text(encoding="utf-8"))
+        page = poolpage._with_design(poolpage.template())
         self.assertIn(tokens.css(), page)
         self.assertNotIn("__POOL_ICONS__", page)
         shared = json.loads(json.loads(re.search(r"var SHARED_ICONS = (\".*?\");\n", page).group(1)))
@@ -3833,7 +3891,7 @@ class TestSharedDesign(unittest.TestCase):
     def test_web_corners_come_off_the_scale(self):
         import re
         from acql.ui import poolpage
-        page = poolpage.TEMPLATE.read_text(encoding="utf-8")
+        page = poolpage.template()
         loose = [v for v in re.findall(r"border-radius: ([^;{}]+);", page)
                  for part in v.split() if re.fullmatch(r"([2-9]|\d\d+)px", part)]
         self.assertEqual(loose, [])
