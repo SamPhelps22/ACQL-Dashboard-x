@@ -319,7 +319,12 @@ class TestCinemaWindow(unittest.TestCase):
         win.leave()
 
     def test_leaderboard_moves_and_counts_once(self):
-        from acql.ui import cinema
+        from unittest import mock
+        from acql.ui import cinema, motion
+        # Animations on, whatever the computer says (GitHub's Windows machines have them off).
+        patcher = mock.patch.object(motion, "reduced", lambda: False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         board = cinema.Leaderboard()
         board.resize(300, 200)
         board.show_rows([("Ann", 1, 5, False), ("Bob", 2, 4, True)], LS.Movement())
