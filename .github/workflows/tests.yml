@@ -70,16 +70,29 @@ jobs:
       - name: The PFM ratings feed and study (shadow only)
         run: python tests/test_pfm.py
 
-      - name: The smaller suites (chaos, model lab, phone alerts, cloud mail, Sunday brief, calibration, game day live)
-        run: |
-          python tests/test_chaos.py
-          python tests/test_model_lab.py
-          python tests/test_research_lab.py
-          python tests/test_pushalerts.py
-          python tests/test_snapshot.py
-          python tests/test_sunday.py
-          python tests/test_calibration.py
-          python tests/test_gameday_live.py
+      - name: Chaos simulator tests
+        run: python tests/test_chaos.py
+
+      - name: Model lab tests
+        run: python tests/test_model_lab.py
+
+      - name: Research lab tests
+        run: python tests/test_research_lab.py
+
+      - name: Phone alerts tests
+        run: python tests/test_pushalerts.py
+
+      - name: Cloud mail snapshot tests
+        run: python tests/test_snapshot.py
+
+      - name: Sunday brief tests
+        run: python tests/test_sunday.py
+
+      - name: Calibration tests
+        run: python tests/test_calibration.py
+
+      - name: Game day live tests
+        run: python tests/test_gameday_live.py
 
       - name: The app's own checks
         run: python -m acql.checks
