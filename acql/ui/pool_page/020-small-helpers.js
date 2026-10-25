@@ -195,7 +195,7 @@
     var f = form(name);
     if (!f) return null;
     return el("span", { class: "form " + f.kind, title: formText(f), role: "img", "aria-label": formText(f),
-      text: f.kind === "hot" ? "🔥" : "🧊" });
+      }, [icon(f.kind === "hot" ? "flame" : "snow")]);
   }
   function leaders() {
     var best = DATA.players.length ? Math.max.apply(null, DATA.players.map(function (p) { return p.wins; })) : 0;

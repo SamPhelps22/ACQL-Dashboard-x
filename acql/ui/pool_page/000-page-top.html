@@ -1816,6 +1816,38 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   .cine-strip { max-height: 50vh; }
 }
 @media print { .slate, .cine { display: none; } }
+/* ---- round three mock-ups ---- */
+.gcard .row .logo:has(img) .tb { display: none; }
+.gcard .row.picked .logo:has(img) .tl { border-radius: 50%; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--gold); }
+.trophy .ic.drawn { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md);
+  color: var(--gold-text); background: var(--gold-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 40%, transparent); }
+.trophy .ic.drawn svg { width: 24px; height: 24px; }
+.form svg { width: 1.05em; height: 1.05em; vertical-align: -0.15em; }
+.form.hot { color: #e8590c; } .form:not(.hot) { color: #3b82c4; }
+@media (max-width: 560px) {
+  .weeks { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; min-width: 0; padding: 2px; }
+  .weeks::-webkit-scrollbar { display: none; }
+  .weeks button { flex: none; }
+}
+@media (min-width: 900px) {
+  .podium .step { gap: 8px; padding: 22px 12px 18px; }
+  .podium .initials { width: 60px; height: 60px; font-size: 23px; }
+  .podium .p1 .initials { width: 76px; height: 76px; font-size: 29px; }
+  .podium .who-link { font-size: 19px; }
+  .podium .wins { font-size: 52px; }
+  .podium .p1 .wins { font-size: 68px; }
+  .podium .sub { font-size: 14px; }
+  .podium .medal { font-size: 14px; }
+}
+.view > .slate { margin-bottom: 0; }
+.view > .slate + .howto { margin-top: -14px; }
+@media (min-width: 760px) {
+  .deadline { grid-template-columns: 1fr auto auto; padding: 14px 20px; }
+  .deadline .dl-label { grid-column: 1; grid-row: 1; } .deadline .dl-when { grid-column: 1; grid-row: 2; }
+  .deadline .dl-count { grid-column: 2; grid-row: 1 / span 2; }
+  .deadline .dl-go { grid-column: 3; grid-row: 1 / span 2; margin-top: 0; align-self: center; }
+}
+.bottombar a { font-size: 11px; letter-spacing: 0.04em; }
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>

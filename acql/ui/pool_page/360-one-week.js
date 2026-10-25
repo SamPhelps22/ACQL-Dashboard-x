@@ -1,6 +1,10 @@
   // ---- one week ----------------------------------------------------------------------
   function weeksView() {
     var w = weekData(state.week) || weekData(DATA.through_week);
+    setTimeout(function () {             // bring the chosen week into view when the row scrolls
+      var b = picker.querySelector('[aria-pressed="true"]');
+      if (b && picker.isConnected && picker.scrollWidth > picker.clientWidth) picker.scrollLeft = b.offsetLeft - picker.clientWidth / 2;
+    }, 0);
     var picker = el("div", { class: "weeks", role: "group", "aria-label": "Choose a week" }, DATA.weeks.map(function (x) {
       return el("button", { type: "button", "aria-pressed": x.week === w.week ? "true" : "false", "aria-label": "Week " + x.week,
         onclick: function () { state.week = x.week; render(); }, text: String(x.week) });

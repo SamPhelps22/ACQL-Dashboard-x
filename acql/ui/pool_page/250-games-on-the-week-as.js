@@ -37,11 +37,12 @@
       el("div", { class: "cols" }, [
         el("div", {}, [
           module("The week so far", "if it ended now", [weekBoard(t, sim, 8), moreLink("Every card", "live"), moreLink("Everyone’s picks", "picks")], { "data-card": "board" }),
-          onNowModule(t),
-          rootingCard(t, sim),
-          swingCard(t, sim)
+          rootingCard(t, sim)
         ]),
-        el("div", {}, [swingsFeed(), weekSuicideCard(t), weekLosersCard(t), limbCard(t)])
+        el("div", {}, [on ? module("On now", plural(on, "game"), [
+            el("p", { class: "note", text: "Every game's score, chances and how the pool picked it are on the Live page." }),
+            moreLink("Follow the games live", "live")], { "data-card": "on-now-link" }) : null,
+          weekSuicideCard(t), weekLosersCard(t)])
       ])
     ];
   }

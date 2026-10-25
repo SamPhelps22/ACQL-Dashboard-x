@@ -73,9 +73,16 @@
     };
     return TROPHIES.map(function (t) { return found[t.id] ? Object.assign({ year: s.year, current: !!s.current }, t, found[t.id]) : null; }).filter(Boolean);
   }
+  // the trophies' emoji, drawn in the site's own line icons
+  var TROPHY_ICONS = { "🏆": "history", "🎯": "target", "🔥": "flame", "🧱": "steady", "🚀": "climb",
+    "💣": "drop", "🛡️": "shield", "🥄": "spoon", "👑": "crown" };
+  function trophyIcon(e) {
+    var n = TROPHY_ICONS[e];
+    return n ? el("span", { class: "ic drawn", "aria-hidden": "true" }, [icon(n)]) : el("span", { class: "ic", "aria-hidden": "true", text: e });
+  }
   function trophyCard(a) {
     return el("div", { class: "trophy" + (a.who.some(isMe) ? " mine" : "") }, [
-      el("span", { class: "ic", "aria-hidden": "true", text: a.icon }),
+      trophyIcon(a.icon),
       el("div", {}, [el("b", { text: a.title }), el("span", { class: "who" }, a.who.slice(0, 4).map(function (n, i) {
         return [i ? ", " : "", player(n) ? who(n) : n];
       }).reduce(function (x, y) { return x.concat(y); }, []).concat(a.who.length > 4 ? [" +" + (a.who.length - 4) + " more"] : [])),
@@ -109,10 +116,10 @@
       return splitNames(champs[y].names).indexOf(p.name) >= 0;
     }).sort().reverse();
     var kids = titles.map(function (y) {
-      return el("div", { class: "trophy title" }, [el("span", { class: "ic", "aria-hidden": "true", text: "👑" }),
+      return el("div", { class: "trophy title" }, [trophyIcon("👑"),
         el("div", {}, [el("b", { text: "Champion " + y }), el("span", { class: "note", text: champs[y].note || "Won the season" })])]);
     }).concat(mine.map(function (a) {
-      return el("div", { class: "trophy" }, [el("span", { class: "ic", "aria-hidden": "true", text: a.icon }),
+      return el("div", { class: "trophy" }, [trophyIcon(a.icon),
         el("div", {}, [el("b", { text: a.title + (a.current ? "" : " " + a.year) }),
           el("span", { class: "note", text: a.text + (a.who.length > 1 ? ", shared" : "") + (a.current ? " · holds it so far" : "") })])]);
     }));

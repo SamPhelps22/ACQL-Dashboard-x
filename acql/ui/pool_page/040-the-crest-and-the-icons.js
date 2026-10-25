@@ -45,6 +45,15 @@
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     close: '<path d="M6 6l12 12M18 6 6 18"/>',
     share: '<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 13v6h14v-6"/>',
+    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.9" fill="currentColor"/>',
+    flame: '<path d="M12 21c-3.9 0-6.5-2.6-6.5-6.1 0-3.4 2.4-5.2 3.6-8.4.4 2 1.6 3.2 2.8 3.6.3-2.6 1.6-5 3.6-6.6-.2 2.8 3 5.4 3 9.6 0 4.3-2.7 7.9-6.5 7.9z"/><path d="M12 21c-1.6 0-2.8-1.2-2.8-2.9 0-1.8 1.4-2.7 2.1-4.2.9 1.4 3.5 2.3 3.5 4.3 0 1.6-1.2 2.8-2.8 2.8z"/>',
+    snow: '<path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/><path d="M9.6 4.6 12 6.6l2.4-2M9.6 19.4l2.4-2 2.4 2"/>',
+    steady: '<path d="M4.5 19.5h15"/><rect x="5.5" y="10" width="3" height="9.5" rx=".6"/><rect x="10.5" y="7.5" width="3" height="12" rx=".6"/><rect x="15.5" y="9" width="3" height="10.5" rx=".6"/>',
+    climb: '<path d="M4 18l5.5-5.5 3.5 3.5L20 9"/><path d="M14.5 9H20v5.5"/>',
+    drop: '<path d="M4 6l5.5 5.5 3.5-3.5L20 15"/><path d="M14.5 15H20V9.5"/>',
+    shield: '<path d="M12 3.5l7 2.6v5.2c0 4.4-3 7.9-7 9.2-4-1.3-7-4.8-7-9.2V6.1z"/><path d="M9 12l2.2 2.2L15.2 10"/>',
+    spoon: '<ellipse cx="15.5" cy="8.2" rx="3.6" ry="4.8" transform="rotate(40 15.5 8.2)"/><path d="M12.6 11.4 4.5 19.5"/>',
+    crown: '<path d="M4 8l3.8 3.4L12 5.5l4.2 5.9L20 8l-1.6 10H5.6z"/><path d="M5.8 20.5h12.4"/>',
     theme: '<circle cx="12" cy="12" r="7.6"/><path d="M12 4.4a7.6 7.6 0 0 1 0 15.2z" fill="{colour}"/>'
   };
   // The drawings the site shares with the dashboard (acql/ui/iconset.py), written in
