@@ -1,5 +1,5 @@
   // ---- Cinema mode -----------------------------------------------------------------------
-  var cine = { open: false, node: null, rows: {}, selected: "", fs: false, back: null };
+  var cine = { open: false, node: null, rows: {}, selected: "", fs: false, back: null, tab: "games" };
   function reducedMotion() { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } }
   function motionMs(name, fallback) {
     var v = NaN;
@@ -78,9 +78,13 @@
       el("div", { class: "cnt" }, [["total", "Games"], ["live", "Live"], ["final", "Final"], ["upcoming", "To play"]].map(function (p) {
         return el("div", { class: "c" + (p[0] === "live" && s.live ? " on" : "") }, [el("b", { class: "num", text: String(s[p[0]]) }), el("span", { text: p[1] })]);
       })),
+      el("div", { class: "cine-tabs", role: "group", "aria-label": "Show" }, [["games", "Games"], ["picks", "Picks"]].map(function (p) {
+        return el("button", { type: "button", "aria-pressed": cine.tab === p[0] ? "true" : "false",
+          onclick: function () { cine.tab = p[0]; cineDraw(); }, text: p[1] });
+      })),
       nextNode(t),
       el("button", { class: "cine-exit", type: "button", onclick: closeCinema, text: "Exit ✕", title: "Back to the site (Esc)" })]);
-    var grid = el("div", { class: "cine-grid" }, order.map(tile));
+    var grid = cine.tab === "picks" ? cinePicks(t) : el("div", { class: "cine-grid" }, order.map(tile));
     var side = el("aside", { class: "cine-side" }, [
       el("h2", { text: "Pool · if it ended now" }), standStrip(t),
       el("p", { class: "cine-note", text: standAt ? "Standings worked out from the scores at " + clockSec(standAt) + ", by the pool’s own rules." : "" }),
@@ -94,11 +98,54 @@
     var keep = strip ? strip.scrollTop : 0;
     node.textContent = "";
     node.appendChild(head);
-    node.appendChild(el("div", { class: "cine-body" }, [grid, side]));
+    node.appendChild(cine.tab === "picks" ? el("div", { class: "cine-body solo" }, [grid]) : el("div", { class: "cine-body" }, [grid, side]));
     var fresh = node.querySelector(".cine-strip");
     if (fresh) fresh.scrollTop = keep;
     playStand();
     if (focusKey_) { var f = node.querySelector('[data-key="' + focusKey_ + '"]'); if (f) f.focus({ preventScroll: true }); }
+  }
+  // The Picks tab: one row per coach - every game, the Big Losers, the suicide pick.
+  function cinePicks(t) {
+    var L = DATA.live, started = t.games.some(function (x) { return x.state !== "pre"; });
+    function mark(team, ok, bad, live_, title) {
+      return el("td", { class: "cp" + (ok ? " ok" : bad ? " no" : "") + (live_ ? " lv" : ""), title: title || teamFull(codeOf(team)) },
+        [team ? badge(team) : el("span", { class: "flat", text: "–" })]);
+    }
+    var head = [el("th", { class: "nm", text: "Coach" }), el("th", { class: "n", text: started ? "Now" : "" })]
+      .concat(t.games.map(function (x) {
+        var g = x.g, lined = g.line != null && g.fav;
+        return el("th", { class: "gk", title: g.a + " at " + g.h + (lined ? ", pool " + g.fav.toUpperCase() + " by " + g.line : "") },
+          [el("span", { text: g.ac.toUpperCase() }), el("span", { text: g.hc.toUpperCase() })]);
+      }))
+      .concat([el("th", { class: "sep", colspan: "3", text: "Big Losers" }), el("th", { class: "sep", text: "Suicide" })]);
+    var rows = t.rows.map(function (r, i) {
+      var c = r.c, p = player(c.name);
+      var cells = [el("td", { class: "nm" + (isMe(c.name) ? " me" : "") }, [el("span", { class: "pl num", text: String(i + 1) }), c.name]),
+        el("td", { class: "n num", text: started ? String(r.now) : "" })];
+      t.games.forEach(function (x, gi) {
+        var pick = c.picks[gi] || "";
+        var decided = x.state !== "pre" && !!x.credit;
+        cells.push(mark(pick, decided && x.credit === pick, decided && x.credit !== pick, x.state === "in"));
+      });
+      for (var k = 0; k < 3; k++) {
+        var team = c.bl[k] || "";
+        if (!team) { cells.push(mark("", false, false, false)); continue; }
+        var s = loserState(tallyGame(t, team), team), x = tallyGame(t, team);
+        var hit = s.by != null && s.by >= 15, miss = !hit && s.by != null && x && x.state === "post";
+        cells.push(mark(team, hit, miss, x && x.state === "in", teamFull(codeOf(team)) + " · " + s.text));
+      }
+      if (!p || !p.suicide.alive) cells.push(el("td", { class: "cp" }, [el("span", { class: "flat", text: p && p.suicide.out ? "out" : "–" })]));
+      else if (!c.sui) cells.push(el("td", { class: "cp" }, [el("span", { class: "flat", text: "none" })]));
+      else {
+        var st = survivalState(tallyGame(t, c.sui), c.sui);
+        cells.push(mark(c.sui, st.now === "through" || st.now === "ahead", st.now === "out" || st.now === "behind",
+          st.now === "ahead" || st.now === "behind" || st.now === "level", teamFull(codeOf(c.sui)) + " · " + st.text));
+      }
+      return el("tr", { class: isMe(c.name) ? "me" : null }, cells);
+    });
+    return el("div", { class: "cine-picks" }, [el("table", {}, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, rows)]),
+      el("p", { class: "cine-note", text: "Green is right and red is wrong as the scores stand; a pulsing edge is a game being played. " +
+        "A Big Loser counts when its team loses by 15 or more." })]);
   }
   // The standings strip. Its rows are kept by coach between draws, so a
   // coach changing place glides there (and never because of a redraw).

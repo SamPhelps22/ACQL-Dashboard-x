@@ -1873,6 +1873,32 @@ html.cine-on, html.cine-on body { overflow: hidden; }
 .tl-bars .t { height: 12px; background: var(--raised); border-radius: var(--r-xs); position: relative; overflow: hidden; }
 .tl-bars .t i { position: absolute; inset: 0 auto 0 0; background: var(--c, var(--gold)); }
 .tl-bars .t i.lost { opacity: .35; }
+
+/* cinema: the picks tab */
+.cine-tabs { display: flex; gap: 4px; }
+.cine-tabs button { font: 700 13px/1 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--onair-muted);
+  background: transparent; border: 1px solid var(--onair-rule); border-radius: var(--r-sm); padding: 9px 14px; cursor: pointer; }
+.cine-tabs button[aria-pressed="true"] { color: var(--onair); background: var(--gold); border-color: var(--gold); }
+.cine-picks { overflow: auto; min-height: 0; }
+.cine-picks table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 14px; }
+.cine-picks th { position: sticky; top: 0; z-index: 1; background: var(--onair); color: var(--onair-muted); font: 600 10.5px/1.2 var(--body);
+  letter-spacing: 0.1em; text-transform: uppercase; padding: 6px 4px; border-bottom: 1px solid var(--onair-rule); }
+.cine-picks th.gk span { display: block; }
+.cine-picks th.sep, .cine-picks td.cp.sep { border-left: 1px solid var(--onair-rule); }
+.cine-picks td { padding: 4px; border-bottom: 1px solid var(--onair-rule); text-align: center; }
+.cine-picks td.nm { text-align: left; white-space: nowrap; color: var(--onair-ink); font-weight: 600; padding-right: 12px; }
+.cine-picks td.nm .pl { display: inline-block; width: 26px; color: var(--onair-muted); }
+.cine-picks tr.me td { background: color-mix(in srgb, var(--gold) 14%, transparent); }
+.cine-picks tr.me td.nm { color: var(--gold); }
+.cine-picks td.n { font: 800 20px/1 var(--display); color: var(--onair-ink); }
+.cine-picks td.cp { border-radius: var(--r-xs); padding: 3px 2px; }
+.cine-picks .logo img + .tb { display: none; }
+.cine-body.solo { grid-template-columns: minmax(0, 1fr); }
+.cine-picks td.cp.ok { box-shadow: inset 0 -3px 0 var(--good, #2fa36b); background: color-mix(in srgb, #2fa36b 18%, transparent); }
+.cine-picks td.cp.no { opacity: 0.45; box-shadow: inset 0 -3px 0 var(--live, #d6453d); }
+.cine-picks td.cp.lv { outline: 1px solid var(--live, #d6453d); outline-offset: -2px; }
+@media (prefers-reduced-motion: no-preference) { .cine-picks td.cp.lv { animation: cpPulse 1.6s ease-in-out infinite; } }
+@keyframes cpPulse { 50% { outline-color: transparent; } }
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>
