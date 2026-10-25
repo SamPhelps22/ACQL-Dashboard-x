@@ -89,6 +89,13 @@ def log_path() -> Path:
 WORKING = threading.RLock()
 
 
+#: True in a window that is a check rather than someone using the app - the
+#: smoke test, the self-check, a hidden window drawing a page to look at it.
+#: Its slow pages are labelled so in the log: a cold first open in a check
+#: is not the dashboard being slow for its user.
+CHECK_RUN = False
+
+
 def write_log(entry: str) -> None:
     """Append one timestamped entry, trimming the oldest when the file grows.
 
@@ -420,7 +427,7 @@ class Page(QWidget):
 
         took = (time.perf_counter() - started) * 1000
         if took > SLOW_REFRESH_MS:
-            write_log(f"slow: {self.title} took {took:.0f} ms to refresh")
+            write_log(f"slow{' (check run)' if CHECK_RUN else ''}: {self.title} took {took:.0f} ms to refresh")
 
     def set_palette(self, palette: Palette) -> None:
         self.palette = palette

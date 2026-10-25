@@ -208,67 +208,70 @@ def _number(value: object) -> float | None:
 def parse(payload: object) -> list[Score]:
     """Every game on a scoreboard page. Anything it can't make sense of is
     left out rather than guessed at."""
-    out: list[Score] = []
+    from . import keep_readable
     events = payload.get("events") if isinstance(payload, dict) else None
-    for event in events or []:
-        if not isinstance(event, dict):
-            continue
-        comps = event.get("competitions") or [{}]
-        comp = comps[0] if isinstance(comps[0], dict) else {}
-        sides = {c.get("homeAway"): c for c in comp.get("competitors") or [] if isinstance(c, dict)}
-        if "home" not in sides or "away" not in sides:
-            continue
-        home = _code((sides["home"].get("team") or {}).get("abbreviation"))
-        away = _code((sides["away"].get("team") or {}).get("abbreviation"))
-        if not home or not away or home == away:
-            continue
-        status = comp.get("status") or event.get("status") or {}
-        kind = status.get("type") or {}
-        state = str(kind.get("state") or "pre")
-        home_points = _points(sides["home"].get("score"))
-        away_points = _points(sides["away"].get("score"))
-        # Postponed or cancelled: the scoreboard calls it over, but nothing
-        # was decided, so it is a game still to be played.
-        called_off = state == "post" and kind.get("completed") is False
-        final = state == "post" and not called_off and home_points is not None and away_points is not None
-        detail = str(kind.get("shortDetail") or kind.get("detail") or "")
-        if called_off:
-            state = "pre"
-            detail = detail or "Postponed"
-        # Who has the ball, where, and what just happened - only while it's on.
-        situation = comp.get("situation") if state == "in" else None
-        situation = situation if isinstance(situation, dict) else {}
-        holder = str(situation.get("possession") or "")
-        possession = next((code for code, side in ((home, sides["home"]), (away, sides["away"]))
-                           if holder and holder in (str(side.get("id") or ""),
-                                                    str((side.get("team") or {}).get("id") or ""))), "")
-        last_play = situation.get("lastPlay") if isinstance(situation.get("lastPlay"), dict) else {}
-        period = _number(status.get("period")) if state == "in" else None
-        clock = _number(status.get("clock")) if state == "in" else None
-        out.append(Score(
-            away=away, home=home,
-            away_points=away_points if state != "pre" else None,
-            home_points=home_points if state != "pre" else None,
-            state=state, final=final,
-            kickoff=_kickoff(comp.get("date") or event.get("date")),
-            detail=detail,
-            home_spread=_home_spread(comp.get("odds"), home, away),
-            called_off=called_off,
-            period=int(period) if period else 0,
-            clock=clock,
-            possession=possession,
-            situation=_text(situation.get("downDistanceText") or situation.get("shortDownDistanceText")),
-            red_zone=bool(situation.get("isRedZone")),
-            last_play=_text(last_play.get("text"))[:160],
-            broadcast=_broadcast(comp),
-            away_record=_record(sides["away"]),
-            home_record=_record(sides["home"]),
-            away_color=_color(sides["away"].get("team")),
-            home_color=_color(sides["home"].get("team")),
-            event=str(event.get("id") or comp.get("id") or ""),
-            **_venue(comp),
-        ))
-    return out
+    return keep_readable(events, _event, "ESPN scoreboard")
+
+
+def _event(event: object) -> Score | None:
+    """One game off the scoreboard; None when it isn't a game between two teams."""
+    if not isinstance(event, dict):
+        return None
+    comps = event.get("competitions") or [{}]
+    comp = comps[0] if isinstance(comps[0], dict) else {}
+    sides = {c.get("homeAway"): c for c in comp.get("competitors") or [] if isinstance(c, dict)}
+    if "home" not in sides or "away" not in sides:
+        return None
+    home = _code((sides["home"].get("team") or {}).get("abbreviation"))
+    away = _code((sides["away"].get("team") or {}).get("abbreviation"))
+    if not home or not away or home == away:
+        return None
+    status = comp.get("status") or event.get("status") or {}
+    kind = status.get("type") or {}
+    state = str(kind.get("state") or "pre")
+    home_points = _points(sides["home"].get("score"))
+    away_points = _points(sides["away"].get("score"))
+    # Postponed or cancelled: the scoreboard calls it over, but nothing
+    # was decided, so it is a game still to be played.
+    called_off = state == "post" and kind.get("completed") is False
+    final = state == "post" and not called_off and home_points is not None and away_points is not None
+    detail = str(kind.get("shortDetail") or kind.get("detail") or "")
+    if called_off:
+        state = "pre"
+        detail = detail or "Postponed"
+    # Who has the ball, where, and what just happened - only while it's on.
+    situation = comp.get("situation") if state == "in" else None
+    situation = situation if isinstance(situation, dict) else {}
+    holder = str(situation.get("possession") or "")
+    possession = next((code for code, side in ((home, sides["home"]), (away, sides["away"]))
+                       if holder and holder in (str(side.get("id") or ""),
+                                                str((side.get("team") or {}).get("id") or ""))), "")
+    last_play = situation.get("lastPlay") if isinstance(situation.get("lastPlay"), dict) else {}
+    period = _number(status.get("period")) if state == "in" else None
+    clock = _number(status.get("clock")) if state == "in" else None
+    return Score(
+        away=away, home=home,
+        away_points=away_points if state != "pre" else None,
+        home_points=home_points if state != "pre" else None,
+        state=state, final=final,
+        kickoff=_kickoff(comp.get("date") or event.get("date")),
+        detail=detail,
+        home_spread=_home_spread(comp.get("odds"), home, away),
+        called_off=called_off,
+        period=int(period) if period else 0,
+        clock=clock,
+        possession=possession,
+        situation=_text(situation.get("downDistanceText") or situation.get("shortDownDistanceText")),
+        red_zone=bool(situation.get("isRedZone")),
+        last_play=_text(last_play.get("text"))[:160],
+        broadcast=_broadcast(comp),
+        away_record=_record(sides["away"]),
+        home_record=_record(sides["home"]),
+        away_color=_color(sides["away"].get("team")),
+        home_color=_color(sides["home"].get("team")),
+        event=str(event.get("id") or comp.get("id") or ""),
+        **_venue(comp),
+    )
 
 
 def _venue(comp: dict) -> dict:
@@ -301,7 +304,14 @@ def fetch(year: int, week: int, opener=None) -> list[Score]:
         raise ResultsError("ESPN's scoreboard can't be reached - is the internet connected?") from exc
     except ValueError as exc:
         raise ResultsError("ESPN's scoreboard sent back something that isn't a scoreboard") from exc
-    return parse(payload)
+    scores = parse(payload)
+    events = payload.get("events") if isinstance(payload, dict) else None
+    if not scores and isinstance(events, list) and any(isinstance(e, dict) for e in events):
+        # games were sent but none could be read: ESPN has changed how it writes
+        # them. Said as a failure, so it never passes for a quiet week.
+        raise ResultsError("ESPN's scoreboard came back in a shape that can't be read - "
+                           "the scores already kept stay as they were")
+    return scores
 
 
 # ---- keeping them ------------------------------------------------------------------

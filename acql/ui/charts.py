@@ -211,6 +211,8 @@ class Chart(FigureCanvasQTAgg):
     _wanted = False
 
     def _draw_idle(self) -> None:
+        if not isValid(self):
+            return      # deleted (its page cleared) while matplotlib's 0 ms draw timer was queued
         if not self._wanted and self.visibleRegion().isEmpty():
             if self.isVisible():
                 self._owe()

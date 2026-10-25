@@ -160,44 +160,70 @@ def parse(events: object) -> list[Quote]:
     is minus its margin (-6.5 = favoured by 6.5). Books are combined by the
     median, so one stale or odd number cannot move the line.
     """
+    from . import keep_readable
+    return keep_readable(events, _quote, "Odds API")
+
+
+def _book_numbers(book: object, home: str, away: str) -> tuple[list, list, list]:
+    """One bookmaker's (home margins, home win chances, totals). A book in a shape
+    nobody expected counts for nothing; the other books still count."""
     from ..model.predictions import team_code
 
-    out = []
-    for event in events if isinstance(events, list) else []:
-        if not isinstance(event, dict):
-            continue
-        home, away = team_code(event.get("home_team")), team_code(event.get("away_team"))
-        if not home or not away:
-            continue
-        margins, wins, totals = [], [], []
-        for book in event.get("bookmakers") or []:
-            for market in (book or {}).get("markets") or []:
-                kind, outcomes = (market or {}).get("key"), (market or {}).get("outcomes") or []
-                if kind == "spreads":
-                    for outcome in outcomes:
-                        point = outcome.get("point")
-                        if team_code(outcome.get("name")) == home and isinstance(point, (int, float)):
-                            margins.append(-float(point))
-                elif kind == "h2h":
-                    # a book's two prices add up to more than 100%: its margin
-                    # comes out before its opinion is counted
-                    implied = {team_code(o.get("name")): _implied(o.get("price")) for o in outcomes}
-                    ours, theirs = implied.get(home), implied.get(away)
-                    if ours and theirs:
-                        wins.append(ours / (ours + theirs))
-                elif kind == "totals":
-                    for outcome in outcomes:
-                        point = outcome.get("point")
-                        if str(outcome.get("name", "")).casefold() == "over" and isinstance(point, (int, float)):
-                            totals.append(float(point))
-        if margins:
-            out.append(Quote(
-                away=away, home=home, kickoff=str(event.get("commence_time", "")),
-                home_margin=round(statistics.median(margins), 2), books=len(margins),
-                home_win=round(statistics.median(wins), 4) if wins else None,
-                total=round(statistics.median(totals), 1) if totals else None,
-            ))
-    return out
+    margins, wins, totals = [], [], []
+    try:
+        for market in (book or {}).get("markets") or []:
+            kind, outcomes = (market or {}).get("key"), (market or {}).get("outcomes") or []
+            if kind == "spreads":
+                for outcome in outcomes:
+                    point = outcome.get("point")
+                    if team_code(outcome.get("name")) == home and _finite(point):
+                        margins.append(-float(point))
+            elif kind == "h2h":
+                # a book's two prices add up to more than 100%: its margin
+                # comes out before its opinion is counted
+                implied = {team_code(o.get("name")): _implied(o.get("price")) for o in outcomes}
+                ours, theirs = implied.get(home), implied.get(away)
+                if ours and theirs:
+                    wins.append(ours / (ours + theirs))
+            elif kind == "totals":
+                for outcome in outcomes:
+                    point = outcome.get("point")
+                    if str(outcome.get("name", "")).casefold() == "over" and _finite(point):
+                        totals.append(float(point))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return [], [], []
+    return margins, wins, totals
+
+
+def _finite(point: object) -> bool:
+    """A real number of points (JSON can carry NaN and Infinity; they are not lines)."""
+    return (isinstance(point, (int, float)) and not isinstance(point, bool)
+            and math.isfinite(point))
+
+
+def _quote(event: object) -> Quote | None:
+    """One game's line from every book that priced it; None when no book did."""
+    from ..model.predictions import team_code
+
+    if not isinstance(event, dict):
+        return None
+    home, away = team_code(event.get("home_team")), team_code(event.get("away_team"))
+    if not home or not away:
+        return None
+    margins, wins, totals = [], [], []
+    for book in event.get("bookmakers") or []:
+        m, w, t = _book_numbers(book, home, away)
+        margins += m
+        wins += w
+        totals += t
+    if not margins:
+        return None
+    return Quote(
+        away=away, home=home, kickoff=str(event.get("commence_time", "")),
+        home_margin=round(statistics.median(margins), 2), books=len(margins),
+        home_win=round(statistics.median(wins), 4) if wins else None,
+        total=round(statistics.median(totals), 1) if totals else None,
+    )
 
 
 def _implied(price: object) -> float | None:

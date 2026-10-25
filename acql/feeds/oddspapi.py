@@ -261,20 +261,25 @@ def _main(markets: dict, wanted: dict) -> tuple[float, float, float] | None:
 def parse(fixtures, ids: dict, book: str = BOOKMAKER) -> list[Quote]:
     """One Quote per game, given both ways round: OddsPapi doesn't say which team is
     home, so `odds.update` keeps whichever matches the week's schedule."""
-    rows = []      # (first team, second, kickoff, first's margin or None, first's chance or None, total)
-    for f in _records(fixtures):
+    from . import keep_readable
+
+    def row(f: dict) -> list | None:
         first, second = ids["teams"].get(str(f.get("participant1Id"))), ids["teams"].get(str(f.get("participant2Id")))
         markets = (((f.get("bookmakerOdds") or {}).get(book) or {}).get("markets")) or {}
         if not first or not second or not markets:
-            continue
+            return None
         ml = _main(markets, ids["markets"]["ml"])
         win = ml[1] / (ml[1] + ml[2]) if ml else None
         spread = _main(markets, ids["markets"]["spread"])
         total = _main(markets, ids["markets"]["total"])
         margin = -spread[0] if spread else None          # a -3.5 handicap: favoured by 3.5
         if margin is None and win is None:
-            continue
-        rows.append([first, second, str(f.get("startTime", "")), margin, win, total[0] if total else None])
+            return None
+        return [first, second, str(f.get("startTime", "")), margin, win, total[0] if total else None]
+
+    # (first team, second, kickoff, first's margin or None, first's chance or None, total);
+    # a fixture written in a shape nobody expected is left out, the rest still count
+    rows = keep_readable(_records(fixtures), row, "OddsPapi")
     # the handicap's sign isn't documented: the favourite on the moneyline must be the favourite here
     clear = [(m, w) for _, _, _, m, w, _ in rows if m and w is not None and abs(w - 0.5) > 0.08]
     if clear and sum((m > 0) != (w > 0.5) for m, w in clear) > len(clear) / 2:

@@ -78,34 +78,42 @@ def parse(data: object, now: float | None = None) -> dict[str, list[dict]]:
     """ESPN's reply as {team code: [injury, ...]} - only the ones worth keeping."""
     from ..model.predictions import team_code
     now = time.time() if now is None else now
-    out: dict[str, list[dict]] = {}
-    for team in (data.get("injuries") if isinstance(data, dict) else None) or []:
+    from . import keep_readable
+
+    def player(item: object) -> dict | None:
+        status = str((item or {}).get("status", "")).casefold()
+        athlete = item.get("athlete") or {}
+        name = str(athlete.get("displayName") or "").strip()
+        if status not in STATUSES or not name:
+            return None
+        what = str((item.get("details") or {}).get("type") or "").strip()
+        if what.casefold().replace("’", "'") in NOT_HURT:
+            return None
+        at = _when(item.get("date"))
+        if status == "injured reserve" and now - at > RESERVE_DAYS * 86400:
+            return None
+        return {
+            "name": name,
+            "position": str((athlete.get("position") or {}).get("abbreviation") or "").upper(),
+            "status": status,
+            "what": what,
+            "at": at,
+        }
+
+    def side(team: object) -> tuple[str, list[dict]] | None:
         code = team_code((team or {}).get("displayName"))
         if not code:
-            continue
-        kept = []
-        for item in team.get("injuries") or []:
-            status = str((item or {}).get("status", "")).casefold()
-            athlete = item.get("athlete") or {}
-            name = str(athlete.get("displayName") or "").strip()
-            if status not in STATUSES or not name:
-                continue
-            what = str((item.get("details") or {}).get("type") or "").strip()
-            if what.casefold().replace("’", "'") in NOT_HURT:
-                continue
-            at = _when(item.get("date"))
-            if status == "injured reserve" and now - at > RESERVE_DAYS * 86400:
-                continue
-            kept.append({
-                "name": name,
-                "position": str((athlete.get("position") or {}).get("abbreviation") or "").upper(),
-                "status": status,
-                "what": what,
-                "at": at,
-            })
+            return None
+        listed = team.get("injuries") or []
+        if not isinstance(listed, list):
+            # unreadable is unknown, never "nobody hurt": the team is left out
+            raise TypeError(f"{code}'s injuries are not a list")
+        kept = keep_readable(listed, player, "ESPN injury report")
         kept.sort(key=lambda i: (i["position"] != "QB", ORDER.index(i["status"]), i["name"]))
-        out[code] = kept
-    return out
+        return code, kept
+
+    teams = data.get("injuries") if isinstance(data, dict) else None
+    return dict(keep_readable(teams or [], side, "ESPN injury report"))
 
 
 def fetch(*, opener=None) -> dict[str, list[dict]]:
@@ -120,9 +128,16 @@ def fetch(*, opener=None) -> dict[str, list[dict]]:
     except (urllib.error.URLError, OSError) as exc:
         raise InjuryError(f"Couldn't reach ESPN's injury report ({getattr(exc, 'reason', exc)}).") from exc
     try:
-        return parse(json.loads(body))
+        data = json.loads(body)
     except ValueError as exc:
         raise InjuryError("ESPN sent back something that wasn't an injury report.") from exc
+    report = parse(data)
+    teams = data.get("injuries") if isinstance(data, dict) else None
+    if not report and isinstance(teams, list) and teams:
+        # teams were sent but none could be read: never "nobody is hurt"
+        raise InjuryError("ESPN's injury report came back in a shape that can't be read - "
+                          "the report already kept stays as it was.")
+    return report
 
 
 # ---- kept ---------------------------------------------------------------------------

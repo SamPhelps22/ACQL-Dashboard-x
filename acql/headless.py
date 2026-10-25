@@ -211,7 +211,10 @@ def _download_predictions(season, week: int) -> None:
             pass
         if target.exists() and target.read_bytes() == body:
             return                                  # nothing new published
-        target.write_bytes(body)
+        # whole or not at all: the dashboard reloads when a file here changes,
+        # and must never read half of one (nor keep it after a crash mid-write)
+        from .config import write_atomic_bytes
+        write_atomic_bytes(target, body)
     got, where, fresh = predictions.refresh_from_disk(
         week, getattr(season, "workbook_path", None), games, locked=False)
     _log(f"week {week} predictions downloaded: {len(got)} games" + ("" if fresh else " (unchanged)"))

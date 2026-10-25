@@ -321,11 +321,14 @@ def _verdict(report: Report) -> None:
         reasons.append(f"Its card is {ahead} {coach}'s over the same {weeks} "
                        f"{'week' if weeks == 1 else 'weeks'}.")
     if calls is not None and calls.calls:
+        from ..pool import journal
         net = calls.net
         reasons.append(
             f"{coach}'s own calls - {calls.calls} {'game' if calls.calls == 1 else 'games'} "
             f"against its card - came in {calls.paid} times: "
             + (f"+{net} wins." if net > 0 else f"{net} wins." if net < 0 else "even.")
+            # how much those games can be read into: flips to reverse, and a sign test
+            + " " + journal.Fragility(calls.paid, calls.cost).words(coach)
         )
     real = pool_weeks_line(report.pool_weeks)
     if real:

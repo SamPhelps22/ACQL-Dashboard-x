@@ -322,7 +322,8 @@ class ReportCardPage(Page):
             f"<b>{_plural(total.games, 'game')} taken against {MODEL_NAME}</b>: you were right and it wrong "
             f"{total.you} time{'' if total.you == 1 else 's'}, it right and you wrong {total.deadeye}"
             + (f", {total.games - total.decided} still to play" if total.games > total.decided else "")
-            + ". Give each one a reason and the reasons are scored below: the ones worth keeping show themselves.")
+            + ". " + (journal.Fragility(total.you, total.deadeye).words() + " " if total.decided else "")
+            + "Give each one a reason and the reasons are scored below: the ones worth keeping show themselves.")
         rows = [[t.tag, t.games, t.decided, t.you, t.deadeye, f"{t.net:+d}"] for t in tallies]
         tones = {(r, 5): ("good" if t.net > 0 else "bad" if t.net < 0 else "muted") for r, t in enumerate(tallies)}
         model = TableModel(["Reason", "Games", "Decided", "You right", f"{MODEL_NAME} right", "Net"], rows,

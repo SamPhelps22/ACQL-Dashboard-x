@@ -111,7 +111,16 @@ def warm_this_week(season) -> None:
         from ..pool import leverage
         leverage.report(season, found["week"])
 
-    for step in (card, reasons, pools, season_race):
+    def turns() -> None:
+        # The "Turns at" column (model/flips.py): a search over many margins per
+        # game, nearly three seconds of the page's first open after a load. Its
+        # answers are kept by the chance arithmetic's own caches (analytics), so
+        # the page asks the same questions and finds them done. Last, so the
+        # other steps can't push them out of those caches first.
+        from ..model import flips
+        flips.week_flips(season, found["week"])
+
+    for step in (card, reasons, pools, season_race, turns):
         try:
             with WORKING:
                 step()
@@ -122,15 +131,38 @@ def warm_this_week(season) -> None:
             return
 
 
-class Warmer(QThread):
-    """The warm-up on its own, for the first load: the window fills first."""
+def warm_model_lab(season) -> None:
+    """The Model Lab's two slowest sums, worked out ahead and handed to the page
+    once (handoff.py): every recipe over the season, and the live rule replayed.
+    About a second and a half of its first open. Nothing is written or fetched."""
+    from ..model import livecheck, modellab
+    from . import handoff
+    from .pages.base import WORKING
 
-    def __init__(self, season) -> None:
+    for name, make in (("model lab", modellab.run), ("live check", livecheck.study)):
+        try:
+            with WORKING:
+                handoff.give(name, season, make(season))
+        except Exception as exc:  # noqa: BLE001 - the page works it out itself, as it always did
+            write_log(f"warm-up: {name} not done ahead of time: {exc!r}")
+            return
+
+
+class Warmer(QThread):
+    """The warm-up on its own, after the window has the season: the window fills
+    first. After the first load it does This Week too; after a reload, whose
+    loader already did This Week before handing over, only the Model Lab - so
+    fresh scores never wait for it."""
+
+    def __init__(self, season, this_week: bool = True) -> None:
         super().__init__()
         self.season = season
+        self.this_week = this_week
 
     def run(self) -> None:
-        warm_this_week(self.season)
+        if self.this_week:
+            warm_this_week(self.season)
+        warm_model_lab(self.season)
 
 
 def _finals(year: int, weeks: list[int]) -> int:

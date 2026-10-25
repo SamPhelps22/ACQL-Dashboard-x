@@ -77,18 +77,19 @@ def _sequence(play: dict, fallback: int) -> tuple[int, int]:
 
 def _plays(payload: dict) -> list[dict]:
     drives = payload.get("drives") if isinstance(payload.get("drives"), dict) else {}
+    from . import items       # a list sent as anything else is no plays, never an error
     out = []
-    for drive in drives.get("previous") or []:
+    for drive in items(drives.get("previous")):
         if isinstance(drive, dict):
-            out.extend(p for p in drive.get("plays") or [] if isinstance(p, dict))
+            out.extend(p for p in items(drive.get("plays")) if isinstance(p, dict))
     current = drives.get("current")
     if isinstance(current, dict):
         seen = {str(p.get("id")) for p in out}
-        out.extend(p for p in current.get("plays") or []
+        out.extend(p for p in items(current.get("plays"))
                    if isinstance(p, dict) and str(p.get("id")) not in seen)
     if not out:
         # no drive chart: the list of scoring plays alone (no wallclock on those)
-        out = [p for p in payload.get("scoringPlays") or [] if isinstance(p, dict)]
+        out = [p for p in items(payload.get("scoringPlays")) if isinstance(p, dict)]
     indexed = sorted(enumerate(out), key=lambda ip: _sequence(ip[1], ip[0]))
     return [p for _, p in indexed]
 

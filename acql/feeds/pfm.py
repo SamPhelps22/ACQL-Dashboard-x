@@ -214,9 +214,10 @@ def parse_changes(page: str) -> list[dict]:
         groups = json.loads(found.group(1)).get("groups", [])
     except ValueError:
         return []
+    from . import items       # a list sent as anything else is no entries, never an error
     out = []
-    for group in groups if isinstance(groups, list) else []:
-        for event in group.get("events", []) if isinstance(group, dict) else []:
+    for group in items(groups):
+        for event in items(group.get("events")) if isinstance(group, dict) else []:
             if not isinstance(event, dict):
                 continue
             out.append({"date": str(event.get("date", "")), "code": team_code(str(event.get("name", ""))),
@@ -226,7 +227,7 @@ def parse_changes(page: str) -> list[dict]:
                         "previous_rank": _float(event.get("previous_rank")),
                         "current_rank": _float(event.get("current_rank")),
                         "change_type": str(event.get("change_type", "")),
-                        "components": [str(c) for c in event.get("components", []) if isinstance(c, str)]})
+                        "components": [str(c) for c in items(event.get("components")) if isinstance(c, str)]})
     return out
 
 

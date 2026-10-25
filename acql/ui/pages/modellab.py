@@ -12,6 +12,7 @@ import time
 from ...model import challengers, closing, contenders, ledger, modellab, pfmcheck
 from ...feeds import nflverse, oddslock, results
 from ...places import LAB as title_
+from .. import handoff
 from ...version import MODEL_NAME, VERSION
 from ...wording import plural as _plural
 from ..modelcharts import FormChart
@@ -320,7 +321,9 @@ class ModelLabPage(Page):
     def refresh(self) -> None:
         season = self.season
         assert season is not None  # guaranteed by Page.refresh_now()
-        lab = modellab.run(season)      # the record is written by the scheduled jobs, never by looking
+        # the record is written by the scheduled jobs, never by looking; the
+        # warm-up may have worked this season's out already (handoff.py, once)
+        lab = handoff.take("model lab", season, lambda: modellab.run(season))
         value = closing.value(season)
         self._update_lab(lab)
         self._update_recipes(lab)
@@ -809,7 +812,8 @@ class ModelLabPage(Page):
         """The live rule replayed on every finished game with a kept timeline (#96)."""
         from ...model import livecheck
         try:
-            found = livecheck.study(self.season)
+            season = self.season
+            found = handoff.take("live check", season, lambda: livecheck.study(season))
         except Exception as exc:  # noqa: BLE001
             self._fill("live", [], [], note=f"Couldn't be worked out: {exc}")
             return

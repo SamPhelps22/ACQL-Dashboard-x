@@ -189,6 +189,9 @@ class MainWindow(QMainWindow):
         self._pending: list[str] | None = None   # changes seen mid-load
         # Window size and last page survive restarts (skipped for smoke tests).
         self._state = QSettings() if remember_state else None
+        if not remember_state:
+            from .pages import base as _base
+            _base.CHECK_RUN = True       # a check's slow pages are labelled as such in the log
 
         self.setWindowTitle(places.BRAND)
         self.resize(1440, 920)
@@ -1229,6 +1232,9 @@ class MainWindow(QMainWindow):
         self.check_updates()
         if first and not season.is_empty:
             QTimer.singleShot(300, self._warm_up)       # once the opening page is drawn
+        elif not season.is_empty:
+            # the loader did This Week's sums; the Model Lab's follow, off the window's thread
+            QTimer.singleShot(300, lambda: self._warm_up(this_week=False))
         if first and self.auto_warm:
             self._catch_up()
             self._phase_open()
@@ -1257,11 +1263,12 @@ class MainWindow(QMainWindow):
         from .. import heal
         threading.Thread(target=heal.catch_up, name="catch-up", daemon=True).start()
 
-    def _warm_up(self) -> None:
-        """This Week's sums, off the window's thread (workers.warm_this_week)."""
+    def _warm_up(self, this_week: bool = True) -> None:
+        """This Week's sums and the Model Lab's, off the window's thread
+        (workers.warm_this_week, workers.warm_model_lab)."""
         if self._closing or not self.auto_warm or self._warmer is not None:
             return
-        warmer = Warmer(self.season)
+        warmer = Warmer(self.season, this_week)
         warmer.finished.connect(lambda w=warmer: self._on_warmed(w))
         self._warmer = warmer
         warmer.start(QThread.Priority.LowPriority)
@@ -1430,6 +1437,8 @@ def main(argv: list[str] | None = None) -> int:
         window.auto_site = False        # checking the app must never publish the website
         window.auto_results = False     # nor go online by itself
         window.auto_warm = False        # nor leave a thread working when it quits
+        from .pages import base as _base
+        _base.CHECK_RUN = True          # and its slow pages are labelled as a check's in the log
     if background and window._tray is not None and not (smoke_test or self_check):
         app.setQuitOnLastWindowClosed(False)    # started with Windows: straight to the tray
     else:

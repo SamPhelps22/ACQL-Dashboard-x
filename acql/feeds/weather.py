@@ -22,6 +22,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
+from . import SHAPE_ERRORS
+
 GEOCODE = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST = "https://api.open-meteo.com/v1/forecast"
 TIMEOUT = 20
@@ -183,7 +185,9 @@ def refresh(year: int, week: int, *, opener=None, now: float | None = None) -> i
         try:
             where = locate(city, opener)
             found = _at(where, s.kickoff, city, opener) if where else None
-        except WeatherError:
+        except (WeatherError, *SHAPE_ERRORS):
+            # one game's forecast missing or in a shape nobody expected: that
+            # game goes without, the week's other games are still forecast
             problems += 1
             continue
         if found is not None:

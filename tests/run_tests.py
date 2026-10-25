@@ -4898,6 +4898,38 @@ class TestOddsPapiBackup(_ScratchStore):
         odds.fetch_any("made-up", opener=down, backup_opener=self._opener(papi), skip_main="reserve")
         self.assertFalse(any("the-odds-api" in c for c in self.calls[before:]))
 
+    def test_an_odd_fixture_leaves_the_rest_of_the_board(self):
+        from acql.feeds import oddspapi
+        replies = self._papi()
+        ids = oddspapi.discover("made-up", self._opener(replies))
+        good = oddspapi.parse(replies["odds-by-tournaments"], ids)
+        odd = [dict(replies["odds-by-tournaments"][0], bookmakerOdds="x"),
+               dict(replies["odds-by-tournaments"][1], bookmakerOdds={"pinnacle": {"markets": {"501": {"outcomes": []}}}})]
+        mixed = oddspapi.parse(odd + replies["odds-by-tournaments"][2:], ids)
+        self.assertEqual(len(good), 10)                 # five games, both ways round
+        self.assertEqual(mixed, good[4:])               # the two odd ones out, the other three as they were
+
+    def test_any_shape_of_fixture_is_survived(self):
+        # every field of two fixtures swapped for junk in turn (TestReadersSurviveAnyShape's method)
+        import copy
+        from acql.feeds import oddspapi
+        replies = self._papi()
+        ids = oddspapi.discover("made-up", self._opener(replies))
+        sample = copy.deepcopy(replies["odds-by-tournaments"][:2])
+        broken = []
+        for path in [p for p in TestReadersSurviveAnyShape._paths(sample) if p]:
+            for junk in TestReadersSurviveAnyShape.JUNK:
+                doc = copy.deepcopy(sample)
+                node = doc
+                for step in path[:-1]:
+                    node = node[step]
+                node[path[-1]] = junk
+                try:
+                    oddspapi.parse(doc, ids)
+                except Exception as exc:  # noqa: BLE001 - what is being tested
+                    broken.append(f"{path} = {junk!r}: {type(exc).__name__}: {exc}")
+        self.assertEqual(broken[:5], [], f"{len(broken)} shapes raised")
+
     def test_a_check_that_disagrees_keeps_it_off(self):
         from acql.feeds import odds, oddspapi
         off = dict(self.AGREED)
@@ -4908,6 +4940,758 @@ class TestOddsPapiBackup(_ScratchStore):
         self.assertIn("stays off", oddspapi.describe(oddspapi.last_check()))
         with self.assertRaises(odds.OddsError):
             odds.fetch_any("made-up", opener=self._opener({}, fail=500), backup_opener=self._opener(self._papi()))
+
+
+class TestFeedsSkipWhatTheyCantRead(_ScratchStore):
+    """One item a source writes in an odd shape is left out on its own: the rest of
+    the answer still counts (sprint 2026-10-25 - it used to fail the whole week)."""
+
+    @staticmethod
+    def _event(away, home, away_pts=None, home_pts=None, state="pre"):
+        def side(where, code, pts):
+            return {"homeAway": where, "team": {"abbreviation": code},
+                    **({"score": str(pts)} if pts is not None else {})}
+        return {"id": f"{away}{home}", "competitions": [{
+            "date": "2026-10-25T17:00Z",
+            "status": {"type": {"state": state, "completed": state == "post", "shortDetail": "Final"}},
+            "competitors": [side("home", home, home_pts), side("away", away, away_pts)]}]}
+
+    def _board(self, odd):
+        return {"events": [self._event("BUF", "MIA", 20, 17, "post"), odd, self._event("DEN", "KC")]}
+
+    ODD_SHAPES = [
+        "not a game", 3, None,
+        {"competitions": 5},
+        {"competitions": {"a": 1}},
+        {"competitions": [{"competitors": "x"}]},
+        {"competitions": [{"competitors": [{"homeAway": "home", "team": "x"},
+                                           {"homeAway": "away", "team": {"abbreviation": "NE"}}]}]},
+        {"competitions": [{"status": "x", "competitors": [
+            {"homeAway": "home", "team": {"abbreviation": "NE"}},
+            {"homeAway": "away", "team": {"abbreviation": "NYJ"}}]}]},
+    ]
+
+    def test_an_odd_game_on_the_scoreboard_leaves_the_others_standing(self):
+        from acql.feeds import results
+        for odd in self.ODD_SHAPES:
+            with self.subTest(odd=odd):
+                got = results.parse(self._board(odd))
+                self.assertEqual([(s.away, s.home) for s in got], [("buf", "mia"), ("den", "kc")])
+                self.assertTrue(got[0].final)
+                self.assertEqual((got[0].away_points, got[0].home_points), (20, 17))
+
+    def test_odd_fields_inside_a_good_game_do_not_lose_it(self):
+        from acql.feeds import results
+        game = self._event("BUF", "MIA", 20, 17, "post")
+        game["competitions"][0]["odds"] = ["x"]
+        game["competitions"][0]["broadcasts"] = [{"names": 7}]
+        got = results.parse({"events": [game]})
+        # odd optional fields: the game itself is either read whole or left out, never an error
+        self.assertLessEqual(len(got), 1)
+        self.assertEqual(results.parse({"events": "nope"}), [])
+        self.assertEqual(results.parse({"events": 3}), [])
+
+    def test_a_refresh_keeps_the_good_games_of_a_week_with_an_odd_one(self):
+        import json as _json
+        from acql.feeds import results
+
+        class Reply:
+            def __init__(self, body): self.body = body
+            def read(self): return self.body
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        body = _json.dumps(self._board({"competitions": 5})).encode()
+        scores = results.fetch(2026, 7, opener=lambda r: Reply(body))
+        results.save(2026, 7, scores)
+        self.assertEqual(len(results.load(2026, 7)), 2)
+
+    def test_an_odd_bookmaker_leaves_the_other_books_counting(self):
+        from acql.feeds import odds
+        good = TestMoneylinesAndTotals.EVENT
+        event = dict(good, bookmakers=list(good["bookmakers"]) + ["x", {"markets": [{"key": "spreads",
+                                                                                    "outcomes": ["x"]}]}])
+        quotes = odds.parse([event, "x", {"home_team": 3}])
+        self.assertEqual(len(quotes), 1)
+        self.assertEqual(quotes[0].home_margin, 3.0)
+        self.assertEqual(quotes[0].books, 1)
+        self.assertEqual(odds.parse({"not": "a list"}), [])
+
+    def test_a_line_that_is_not_a_number_is_not_a_line(self):
+        from acql.feeds import odds
+        event = {"home_team": "Kansas City Chiefs", "away_team": "Denver Broncos", "bookmakers": [
+            {"markets": [{"key": "spreads", "outcomes": [{"name": "Kansas City Chiefs", "point": float("nan")}]}]},
+            {"markets": [{"key": "spreads", "outcomes": [{"name": "Kansas City Chiefs", "point": True}]}]},
+            {"markets": [{"key": "spreads", "outcomes": [{"name": "Kansas City Chiefs", "point": -4.0}]}]}]}
+        quote = odds.parse([event])[0]
+        self.assertEqual((quote.home_margin, quote.books), (4.0, 1))
+
+    def test_an_odd_player_or_team_on_the_injury_report_is_left_out_alone(self):
+        from acql.feeds import injuries
+        report = TestInjuries()._report()
+        report["injuries"][0]["injuries"].insert(0, "x")
+        report["injuries"].insert(0, "x")
+        report["injuries"].append({"displayName": "Miami Dolphins", "injuries": 4})
+        kept = injuries.parse(report, now=TestInjuries.NOW)
+        self.assertEqual([i["name"] for i in kept["bal"]],
+                         ["Lamar Jackson", "A Receiver", "Just Hurt", "A Corner"])
+        self.assertNotIn("mia", kept)
+        self.assertEqual(injuries.parse({"injuries": {"a": 1}}, now=TestInjuries.NOW), {})
+
+    def test_what_was_left_out_is_written_down(self):
+        from acql import logbook
+        from acql.feeds import results
+        seen = []
+        real = logbook.trouble
+        logbook.trouble = lambda where, exc: seen.append(where)
+        try:
+            results.parse(self._board({"competitions": 5}))
+        finally:
+            logbook.trouble = real
+        self.assertEqual(seen, ["ESPN scoreboard: an item in an unexpected shape was left out"])
+
+
+class TestWholeFileWrites(unittest.TestCase):
+    """A file the app writes is there whole or not at all (sprint 2026-10-25)."""
+
+    def setUp(self):
+        self.folder = Path(tempfile.mkdtemp(prefix="acql-whole-"))
+
+    def test_bytes_are_kept_exactly(self):
+        from acql.config import write_atomic_bytes
+        body = b"a,b\r\n1,2\n3,\xc3\xa9\r\n"
+        target = self.folder / "nflpredictions week 8.csv"
+        write_atomic_bytes(target, body)
+        self.assertEqual(target.read_bytes(), body)
+        self.assertEqual([p.name for p in self.folder.iterdir()], [target.name])
+
+    def test_text_comes_out_as_it_always_did(self):
+        from acql.config import write_atomic
+        text = '{\n  "a": "é"\n}'
+        mine, plain = self.folder / "mine.json", self.folder / "plain.json"
+        write_atomic(mine, text)
+        with open(plain, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        self.assertEqual(mine.read_bytes(), plain.read_bytes())
+
+    def test_a_failed_swap_leaves_the_old_file_and_no_scraps(self):
+        import os as _os
+        from acql import config
+        target = self.folder / "settings.json"
+        target.write_bytes(b"old")
+        real = _os.replace
+        def refuse(*a, **k):
+            raise PermissionError("held by another program")
+        _os.replace = refuse
+        try:
+            import time as _time
+            sleep, _time.sleep = _time.sleep, lambda s: None
+            try:
+                with self.assertRaises(PermissionError):
+                    config.write_atomic_bytes(target, b"new")
+            finally:
+                _time.sleep = sleep
+        finally:
+            _os.replace = real
+        self.assertEqual(target.read_bytes(), b"old")
+        self.assertEqual([p.name for p in self.folder.iterdir()], ["settings.json"])
+
+
+class TestPredictionsDownloadLandsWhole(_ScratchStore):
+    """The scheduled job's predictions download: kept byte for byte, in one piece,
+    and only when it passes the intake checks (sprint 2026-10-25)."""
+
+    BODY = b"home,road,line\r\nKansas City,Denver,3\n"
+
+    def _run(self, refused=None, covers=True):
+        import urllib.request as _req
+        from types import SimpleNamespace as NS
+        from acql import headless
+        from acql.model import predictions
+        folder = Path(tempfile.mkdtemp(prefix="acql-preds-"))
+        body = self.BODY
+
+        class Reply:
+            def read(self): return body
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        saved = (_req.urlopen, predictions.ROOT, predictions.refusal, predictions.covers_slate,
+                 predictions.refresh_from_disk)
+        _req.urlopen = lambda request, timeout=None: Reply()
+        predictions.ROOT = folder
+        predictions.refusal = lambda path, games=None: refused
+        predictions.covers_slate = lambda path, games: covers
+        predictions.refresh_from_disk = lambda *a, **k: ([], None, True)
+        try:
+            season = NS(weeks={8: NS(games=[NS(index=1)])}, workbook_path=None)
+            headless._download_predictions(season, 8)
+        finally:
+            (_req.urlopen, predictions.ROOT, predictions.refusal, predictions.covers_slate,
+             predictions.refresh_from_disk) = saved
+        target = folder / "predictions" / "nflpredictions week 8.csv"
+        others = sorted(p.name for p in (folder / "predictions").iterdir()) if (folder / "predictions").exists() else []
+        return target, others
+
+    def test_a_good_file_is_kept_exactly_and_nothing_else_is_left(self):
+        target, others = self._run()
+        self.assertEqual(target.read_bytes(), self.BODY)
+        self.assertEqual(others, [target.name])
+
+    def test_a_refused_file_is_never_kept(self):
+        target, others = self._run(refused="a season archive, not a week")
+        self.assertFalse(target.exists())
+        self.assertEqual(others, [])
+
+    def test_another_weeks_file_is_never_kept(self):
+        target, _ = self._run(covers=False)
+        self.assertFalse(target.exists())
+
+
+class TestUnreadableIsNeverQuietOrFresh(_ScratchStore):
+    """An answer that can't be read is a failure, not an empty week, and old scores
+    never look fresh because the scoreboard was asked again (sprint 2026-10-25)."""
+
+    class Reply:
+        def __init__(self, body): self.body = body
+        def read(self): return self.body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def test_a_scoreboard_with_no_readable_game_is_a_failure(self):
+        import json as _json
+        from acql.feeds import results
+        body = _json.dumps({"events": [{"competitions": 5}, {"competitions": [{"competitors": "x"}]}]}).encode()
+        with self.assertRaises(results.ResultsError):
+            results.fetch(2026, 7, opener=lambda r: self.Reply(body))
+        # an empty week is still just an empty week
+        empty = _json.dumps({"events": []}).encode()
+        self.assertEqual(results.fetch(2026, 7, opener=lambda r: self.Reply(empty)), [])
+
+    def test_an_injury_report_with_no_readable_team_is_a_failure(self):
+        import json as _json
+        from acql.feeds import injuries
+        body = _json.dumps({"injuries": ["x", {"displayName": "Miami Dolphins", "injuries": 4}]})
+        with self.assertRaises(injuries.InjuryError):
+            injuries.fetch(opener=lambda r: self.Reply(body.encode()))
+
+    def test_readiness_dates_scores_from_the_last_answer_with_games(self):
+        from acql import readiness
+        from acql.feeds import results
+        t0 = 1_793_000_000.0
+        game = results.Score(away="buf", home="mia", away_points=7, home_points=3, state="in", kickoff=t0 - 600)
+        results.save(2026, 8, [game], at=t0)
+        results.save(2026, 8, [], at=t0 + 3 * 3600)          # asked again: nothing came back
+        check = readiness._scores(2026, 8, t0 + 3 * 3600 + 30)
+        self.assertEqual(check.state, readiness.WARN)       # a game on, three hours old
+        self.assertIn("3 h ago", check.headline)
+
+
+class TestWeatherOneGameAtATime(_ScratchStore):
+    """One game's forecast in an odd shape costs that game its forecast, not the
+    whole week's (sprint 2026-10-25)."""
+
+    def test_the_other_games_are_still_forecast(self):
+        from acql.feeds import results, weather
+        now = 1_793_000_000.0
+        games = [results.Score(away="buf", home="mia", kickoff=now + 3600, city="Miami Gardens, FL"),
+                 results.Score(away="den", home="kc", kickoff=now + 3600, city="Kansas City, MO")]
+        results.save(2026, 8, games, at=now)
+        saved = weather.locate, weather._at
+        def at(where, kickoff, city, opener=None):
+            if city.startswith("Miami"):
+                raise TypeError("'list' object has no attribute 'get'")
+            return weather.Forecast(temperature=50.0, wind=8.0, gust=12.0, wet=10, city=city)
+        weather.locate, weather._at = (lambda city, opener=None: (1.0, 2.0)), at
+        try:
+            self.assertEqual(weather.refresh(2026, 8, now=now), 1)
+        finally:
+            weather.locate, weather._at = saved
+        self.assertIsNotNone(weather.game(2026, 8, "den", "kc"))
+        self.assertIsNone(weather.game(2026, 8, "buf", "mia"))
+
+
+class TestJournalFragility(unittest.TestCase):
+    """How much a head-to-head record can be read into: games to flip and an exact
+    sign test (sprint 2026-10-25). Nothing here changes a pick."""
+
+    def test_the_numbers(self):
+        from math import comb
+        from acql.pool import journal
+        f = journal.Fragility(you=5, deadeye=12)
+        self.assertEqual((f.decisive, f.lead, f.flips), (17, 7, 4))
+        expected = 2 * sum(comb(17, k) for k in range(6)) / 2 ** 17
+        self.assertAlmostEqual(f.p, expected)
+        self.assertAlmostEqual(f.p, 0.1435, places=3)
+        self.assertEqual(journal.Fragility(12, 5).p, f.p)      # the same either way round
+        self.assertEqual(journal.Fragility(4, 4).p, 1.0)
+        self.assertEqual(journal.Fragility(0, 1).flips, 1)
+
+    def test_the_words_never_overclaim(self):
+        from acql.pool import journal
+        from acql.version import MODEL_NAME
+        close = journal.Fragility(5, 12).words()
+        self.assertIn("4 of the 17 results", close)
+        self.assertIn("put you ahead", close)
+        self.assertIn("1 time in 7", close)
+        self.assertIn("within what luck alone does", close)
+        lopsided = journal.Fragility(9, 1).words()
+        self.assertIn(f"put {MODEL_NAME} ahead", lopsided)
+        self.assertIn("rarely", lopsided)
+        self.assertIn("nothing to read into", journal.Fragility(3, 3).words())
+        self.assertEqual(journal.Fragility(0, 0).words(), "")
+
+
+class TestCheckRunsAreLabelledInTheLog(unittest.TestCase):
+    """A slow page in a check (smoke test, self-check, hidden window) says so in the
+    log, so it is never taken for the dashboard being slow for its user (sprint 2026-10-25)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _slow_line(self, check_run: bool) -> str:
+        import time as _time
+        from acql.models import Season
+        from acql.ui.pages import base
+        from acql.ui.theme import DARK
+
+        class Slow(base.Page):
+            title = "Slow page"
+            needs_data = False
+
+            def build(self):
+                pass
+
+            def refresh(self):
+                _time.sleep(base.SLOW_REFRESH_MS / 1000 + 0.05)
+
+        written, saved = [], (base.write_log, base.CHECK_RUN)
+        base.write_log, base.CHECK_RUN = written.append, check_run
+        try:
+            page = Slow(DARK)
+            page.season = Season()
+            page.refresh_now()
+        finally:
+            base.write_log, base.CHECK_RUN = saved
+        return next(line for line in written if "Slow page" in line)
+
+    def test_a_check_run_says_so(self):
+        self.assertTrue(self._slow_line(True).startswith("slow (check run): Slow page took"))
+
+    def test_the_real_thing_reads_as_it_always_did(self):
+        self.assertTrue(self._slow_line(False).startswith("slow: Slow page took"))
+
+
+class TestReadinessReusesSlowAnswers(unittest.TestCase):
+    """Task Scheduler and git are asked once a minute at most by the Readiness page,
+    not on every redraw (sprint 2026-10-25: 1.3 s on the window's thread each time)."""
+
+    def setUp(self):
+        from acql import readiness
+        self.readiness = readiness
+        self.saved = readiness.SLOW_ANSWER_S
+        readiness._REMEMBERED.clear()
+
+    def tearDown(self):
+        self.readiness.SLOW_ANSWER_S = self.saved
+        self.readiness._REMEMBERED.clear()
+
+    def test_asked_once_inside_the_minute_then_again(self):
+        asked = []
+        make = lambda: asked.append(1) or {"ACQL Daily": {"result": 0}}
+        first = self.readiness._remembered("task states", make)
+        second = self.readiness._remembered("task states", make)
+        self.assertEqual(len(asked), 1)
+        self.assertIs(first, second)
+        self.readiness.SLOW_ANSWER_S = 0.0
+        self.readiness._remembered("task states", make)
+        self.assertEqual(len(asked), 2)
+
+    def test_different_questions_are_kept_apart(self):
+        a = self.readiness._remembered("work at risk C:/one", lambda: "one")
+        b = self.readiness._remembered("work at risk C:/two", lambda: "")
+        self.assertEqual((a, b), ("one", ""))
+
+
+class TestReadersSurviveAnyShape(_ScratchStore):
+    """Every field of each outside-data reader's sample answer, swapped for junk in
+    turn: the reader may leave things out, but never raises (sprint 2026-10-25).
+    Guards against a new reader trusting the shape of what a source sends."""
+
+    JUNK = [None, "", "x", 0, -3, 1.5, True, [], {}, ["a"], {"a": 1}]
+
+    @staticmethod
+    def _paths(node, here=()):
+        yield here
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield from TestReadersSurviveAnyShape._paths(value, here + (key,))
+        elif isinstance(node, list):
+            for i, value in enumerate(node[:3]):
+                yield from TestReadersSurviveAnyShape._paths(value, here + (i,))
+
+    def _survives(self, sample, read):
+        import copy
+        broken = []
+        for path in [p for p in self._paths(sample) if p]:
+            for junk in self.JUNK:
+                doc = copy.deepcopy(sample)
+                node = doc
+                for step in path[:-1]:
+                    node = node[step]
+                node[path[-1]] = junk
+                try:
+                    read(doc)
+                except Exception as exc:  # noqa: BLE001 - what is being tested
+                    broken.append(f"{path} = {junk!r}: {type(exc).__name__}: {exc}")
+        self.assertEqual(broken[:5], [], f"{len(broken)} shapes raised")
+
+    def test_espn_scoreboard(self):
+        from acql.feeds import results
+        board = {"events": [TestFeedsSkipWhatTheyCantRead._event("BUF", "MIA", 20, 17, "post"),
+                            TestFeedsSkipWhatTheyCantRead._event("DEN", "KC")]}
+        board["events"][0]["competitions"][0].update({
+            "odds": [{"details": "BUF -3.5"}], "broadcasts": [{"names": ["CBS"]}],
+            "venue": {"fullName": "Hard Rock", "address": {"city": "Miami Gardens", "state": "FL"}, "indoor": False},
+            "situation": {"possession": "1", "downDistanceText": "2nd & 7", "lastPlay": {"text": "Run"}}})
+        self._survives(board, results.parse)
+
+    def test_odds_api(self):
+        from acql.feeds import odds
+        self._survives([TestMoneylinesAndTotals.EVENT], odds.parse)
+
+    def test_injury_report(self):
+        from acql.feeds import injuries
+        self._survives(TestInjuries()._report(), lambda d: injuries.parse(d, now=TestInjuries.NOW))
+
+    def test_espn_play_by_play(self):
+        from acql.feeds import timeline
+        def play(seq, away, home, text):
+            return {"id": str(seq), "sequenceNumber": str(seq), "awayScore": away, "homeScore": home,
+                    "text": text, "period": {"number": 1}, "clock": {"displayValue": "10:00"},
+                    "wallclock": "2026-10-25T17:10:00Z"}
+        summary = {"drives": {"previous": [{"plays": [play(1, 0, 0, "kick"), play(2, 0, 6, "TD"),
+                                                      play(3, 0, 7, "XP")]}],
+                              "current": {"plays": [play(4, 3, 7, "FG")]}},
+                   "scoringPlays": [play(2, 0, 6, "TD")]}
+        self.assertEqual([(m.away, m.home) for m in timeline.parse(summary)], [(0, 7), (3, 7)])
+        self._survives(summary, timeline.parse)
+        self._survives(summary, timeline.ended)
+
+    def test_pfm_ranking_changes(self):
+        import json as _json
+        from acql.feeds import pfm
+        changes = {"groups": [{"events": [{"date": "2026-10-20", "name": "Buffalo Bills", "abbr": "BUF",
+                                           "previous_score": 80.1, "current_score": 81.0, "previous_rank": 3,
+                                           "current_rank": 2, "change_type": "up",
+                                           "components": ["QB Stability"]}]}]}
+        page = lambda d: pfm.parse_changes("<script>" + _json.dumps(d) + "</script>")
+        self.assertEqual(page(changes)[0]["code"], "buf")
+        self._survives(changes, page)
+
+
+class TestWarmUpHandOff(unittest.TestCase):
+    """Sums worked out ahead of a page's first open are handed over once, only for
+    the same season, and the page works things out itself otherwise (O-3, 2026-10-25)."""
+
+    def setUp(self):
+        from acql.ui import handoff
+        handoff.forget()
+
+    def tearDown(self):
+        from acql.ui import handoff
+        handoff.forget()
+
+    def test_taken_once_and_only_for_the_same_season(self):
+        from acql.models import Season
+        from acql.ui import handoff
+        season, other = Season(), Season()
+        made = []
+        make = lambda: made.append(1) or "fresh"
+        handoff.give("model lab", season, "ahead")
+        self.assertEqual(handoff.take("model lab", season, make), "ahead")
+        self.assertEqual(handoff.take("model lab", season, make), "fresh")      # once only
+        handoff.give("model lab", season, "ahead")
+        self.assertEqual(handoff.take("model lab", other, make), "fresh")       # a newer load: never the old answer
+        self.assertEqual(handoff.take("model lab", season, make), "fresh")      # and it was dropped
+        self.assertEqual(len(made), 3)
+
+    def test_the_model_lab_warm_up_hands_over_both_sums(self):
+        from acql.models import Season
+        from acql.model import livecheck, modellab
+        from acql.ui import handoff, workers
+        season = Season()
+        saved = modellab.run, livecheck.study
+        modellab.run, livecheck.study = (lambda s: ("lab", s)), (lambda s: ("live", s))
+        try:
+            workers.warm_model_lab(season)
+        finally:
+            modellab.run, livecheck.study = saved
+        never = lambda: self.fail("worked out again")
+        self.assertEqual(handoff.take("model lab", season, never), ("lab", season))
+        self.assertEqual(handoff.take("live check", season, never), ("live", season))
+
+    def test_a_warm_up_that_fails_leaves_the_page_to_do_it(self):
+        from acql.models import Season
+        from acql.model import modellab
+        from acql.ui import handoff, workers
+        from acql.ui.pages import base
+        season, logged = Season(), []
+        saved = modellab.run, workers.write_log
+        def broken(s):
+            raise ValueError("no graded weeks")
+        modellab.run, workers.write_log = broken, logged.append
+        try:
+            workers.warm_model_lab(season)
+        finally:
+            modellab.run, workers.write_log = saved
+        self.assertEqual(handoff.take("model lab", season, lambda: "page's own"), "page's own")
+        self.assertTrue(logged and "model lab not done ahead of time" in logged[0])
+
+
+class TestReadinessOffTheWindowThread(unittest.TestCase):
+    """The Readiness page works its checks out on a thread of its own and draws them
+    when they're in; a check run still works them out on the spot (sprint 2026-10-25)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _page(self, build, check_run):
+        from acql import readiness
+        from acql.models import Season
+        from acql.ui.pages import base
+        from acql.ui.pages.readiness import ReadinessPage
+        from acql.ui.theme import DARK
+        self.saved = readiness.build, base.CHECK_RUN
+        readiness.build, base.CHECK_RUN = build, check_run
+        page = ReadinessPage(DARK)
+        page.season = Season()
+        page.needs_data = False
+        return page
+
+    def tearDown(self):
+        from acql import readiness
+        from acql.ui.pages import base
+        readiness.build, base.CHECK_RUN = self.saved
+
+    def _found(self, name="Scores"):
+        import time as _time
+        from acql import readiness
+        return readiness.Readiness([readiness.Check(readiness.SOURCES, name, readiness.OK, "Read just now")],
+                                   8, None, _time.time())
+
+    def _settle(self, page, seconds=3.0):
+        import time as _time
+        end = _time.time() + seconds
+        while _time.time() < end and (page._job is not None or page._poll.isActive()):
+            self.app.processEvents()
+            _time.sleep(0.02)
+
+    def test_the_window_is_not_held_while_it_checks(self):
+        import time as _time
+        def slow(season):
+            _time.sleep(0.6)
+            return self._found()
+        page = self._page(slow, False)
+        started = _time.perf_counter()
+        page.refresh_now()
+        self.assertLess(_time.perf_counter() - started, 0.3)          # returned before the checks were done
+        self._settle(page)
+        self.assertIsNotNone(page._found)
+        self.assertEqual(page._found.checks[0].name, "Scores")
+        self.assertTrue(page.again.isEnabled())
+
+    def test_asked_again_mid_check_it_looks_once_more(self):
+        import time as _time
+        calls = []
+        def slow(season):
+            calls.append(1)
+            _time.sleep(0.3)
+            return self._found(f"Check {len(calls)}")
+        page = self._page(slow, False)
+        page.refresh_now()
+        page.refresh_now()                       # mid-check
+        self._settle(page, 5.0)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(page._found.checks[0].name, "Check 2")
+
+    def test_a_check_run_works_it_out_on_the_spot(self):
+        page = self._page(lambda season: self._found("Spot"), True)
+        page.refresh_now()
+        self.assertIsNone(page._job)
+        self.assertEqual(page._found.checks[0].name, "Spot")
+
+    def test_a_failure_is_shown_not_swallowed(self):
+        from acql.ui.pages import base
+        def broken(season):
+            raise RuntimeError("store unreadable")
+        page = self._page(broken, False)
+        saved = base.write_log
+        base.write_log = lambda entry: None
+        try:
+            page.refresh_now()
+            self._settle(page)
+        finally:
+            base.write_log = saved
+        self.assertIsNone(page._found)
+        self.assertIn("store unreadable", page._page_failure)
+
+
+class TestChartDeletedBeforeItsDraw(unittest.TestCase):
+    """A chart deleted (its page cleared) while matplotlib's 0 ms draw was queued
+    used to raise "Internal C++ object already deleted" (sprint 2026-10-25)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_the_queued_draw_finds_nothing_to_do(self):
+        import shiboken6
+        from PySide6.QtWidgets import QWidget
+        from acql.ui.charts import BarChart
+        from acql.ui.theme import DARK
+        host = QWidget()
+        chart = BarChart(DARK, parent=host)
+        host.show()
+        self.app.processEvents()
+        chart.draw_idle()
+        shiboken6.delete(chart)
+        chart._draw_idle()               # what the queued timer calls: no error now
+        self.app.processEvents()
+        host.deleteLater()
+
+
+class TestReportCardSaysHowMuchTheCallsMean(unittest.TestCase):
+    """The report card's own-calls line carries the same fragility sentence as the
+    journal, for any coach (sprint 2026-10-25, O-4). Nothing about the verdict changes."""
+
+    def test_the_calls_line_says_how_fragile_it_is(self):
+        from acql.model import reportcard
+        from acql.pool import cards
+        from acql.version import MODEL_NAME
+        report = reportcard.Report(coach="Jules", calls=cards.CallRecord(calls=17, paid=5))
+        reportcard._verdict(report)
+        line = next(r for r in report.reasons if "own calls" in r)
+        self.assertIn("came in 5 times: -7 wins.", line)
+        self.assertIn(f"4 of the 17 results that split Jules and {MODEL_NAME} going the other way would put "
+                      "Jules ahead", line)
+        self.assertIn("within what luck alone does", line)
+
+    def test_the_verdict_itself_is_untouched(self):
+        from acql.model import reportcard
+        from acql.pool import cards
+        with_calls = reportcard.Report(coach="Jules", calls=cards.CallRecord(calls=17, paid=5))
+        without = reportcard.Report(coach="Jules")
+        reportcard._verdict(with_calls)
+        reportcard._verdict(without)
+        self.assertEqual((with_calls.headline, with_calls.tone), (without.headline, without.tone))
+
+
+class TestUnreadableItemsShowOnReadiness(_ScratchStore):
+    """What a source sent in a shape that couldn't be read is said on Readiness for
+    two days, not only in the log (sprint 2026-10-25, O-5)."""
+
+    def test_a_skipped_game_is_noted_and_shown(self):
+        from acql import readiness
+        from acql.feeds import results
+        board = {"events": [TestFeedsSkipWhatTheyCantRead._event("BUF", "MIA", 20, 17, "post"), {"competitions": 5}]}
+        self.assertEqual(len(results.parse(board)), 1)
+        import time as _time
+        check = readiness._skipped(_time.time() + 3600)
+        self.assertEqual(check.state, readiness.NOTE)
+        self.assertEqual(check.name, "Unreadable items")
+        self.assertIn("1 item from 1 source", check.headline)
+        self.assertIn("ESPN scoreboard: 1 left out 60 min ago", check.detail)
+
+    def test_parts_of_one_answer_add_up_and_old_notes_fade(self):
+        from acql import readiness
+        from acql.feeds import note_skipped
+        note_skipped("ESPN injury report", 1, TypeError("x"), now=1000.0)
+        note_skipped("ESPN injury report", 2, None, now=1010.0)        # the same report, its players
+        check = readiness._skipped(1100.0)
+        self.assertIn("3 items", check.headline)
+        self.assertIsNone(readiness._skipped(1010.0 + 3 * readiness.DAY))
+
+    def test_nothing_skipped_says_nothing(self):
+        from acql import readiness
+        from acql.feeds import results
+        results.parse({"events": [TestFeedsSkipWhatTheyCantRead._event("DEN", "KC")]})
+        self.assertIsNone(readiness._skipped(1_793_000_000.0))
+
+
+class TestNoSubprocessOnTheWindowThread(_ScratchStore):
+    """Opening Readiness in everyday use asks Task Scheduler and git from its own
+    thread, never the window's (sprint 2026-10-25: they held the window 1.3 s)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as exc:  # pragma: no cover - Qt absent
+            raise unittest.SkipTest(f"PySide6 unavailable: {exc}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_readiness_asks_from_its_own_thread(self):
+        import subprocess
+        import threading
+        import time as _time
+        from acql import readiness
+        from acql.models import Season
+        from acql.ui.pages import base
+        from acql.ui.pages.readiness import ReadinessPage
+        from acql.ui.theme import DARK
+
+        on_window = []
+        real_run = subprocess.run
+
+        def run(args, *a, **k):
+            on_window.append(threading.current_thread() is threading.main_thread())
+            return subprocess.CompletedProcess(args, 1, "", "")
+
+        saved = base.CHECK_RUN
+        subprocess.run, base.CHECK_RUN = run, False
+        readiness._REMEMBERED.clear()
+        try:
+            page = ReadinessPage(DARK)
+            page.season = Season()
+            page.needs_data = False
+            page.refresh_now()
+            end = _time.time() + 20
+            while _time.time() < end and (page._job is not None or page._poll.isActive()):
+                self.app.processEvents()
+                _time.sleep(0.02)
+        finally:
+            subprocess.run, base.CHECK_RUN = real_run, saved
+            readiness._REMEMBERED.clear()
+        self.assertTrue(on_window, "Readiness asked nothing - the check is not testing anything")
+        self.assertNotIn(True, on_window)
+        self.assertIsNotNone(page._found)
 
 
 def main() -> int:

@@ -46,6 +46,22 @@ TASK_FINE = {0, 267009, 267011}
 #: A line may be this much older than the cadence it is fetched on before it is called stale.
 SLACK = 1.5
 DAY = 86400.0
+#: Task Scheduler and git take over a second between them to answer, and the
+#: Readiness page asks on the window's thread each time it is drawn. Neither
+#: answer changes from one minute to the next, so each is reused this long.
+SLOW_ANSWER_S = 60.0
+_REMEMBERED: dict[str, tuple[float, object]] = {}
+
+
+def _remembered(key: str, make):
+    """`make()`, or its answer from under SLOW_ANSWER_S ago."""
+    moment = time.monotonic()
+    hit = _REMEMBERED.get(key)
+    if hit is not None and moment - hit[0] < SLOW_ANSWER_S:
+        return hit[1]
+    value = make()
+    _REMEMBERED[key] = (moment, value)
+    return value
 
 
 def ago(seconds: float | None) -> str:
@@ -141,7 +157,9 @@ def freshness(age: float | None, limit: float, *, matters: bool = True) -> str:
 def _scores(year: int, week: int, now: float) -> Check:
     from .feeds import results
     scores = results.load(year, week)
-    at = results.checked_at(year, week)
+    # the last answer with games in it - an empty or unreadable answer was
+    # asked for but brought nothing, so it never makes old scores look fresh
+    at = results.fetched_at(year, week)
     age = None if at is None else now - at
     live = sum(1 for s in scores if s.state == "in")
     final = sum(1 for s in scores if s.final)
@@ -460,13 +478,30 @@ def _source_history(now: float) -> Check | None:
     return Check(AUTOMATION, "Source history", worst, headline, "<br>".join(lines))
 
 
+def _skipped(now: float) -> Check | None:
+    """Items a source sent in a shape that couldn't be read, lately (feeds.keep_readable).
+    The rest of each answer was used; this says what wasn't."""
+    from .feeds import skipped_lately
+    found = skipped_lately(2 * DAY, now)
+    if not found:
+        return None
+    parts = [f"{where}: {v.get('count', 0)} left out {ago(now - float(v.get('at', 0)))}"
+             + (f" ({v['why']})" if v.get("why") else "") for where, v in found[:4]]
+    total = sum(int(v.get("count", 0)) for _, v in found)
+    return Check(SOURCES, "Unreadable items", NOTE,
+                 f"{total} item{'' if total == 1 else 's'} from {len(found)} source"
+                 f"{'' if len(found) == 1 else 's'} couldn't be read in the last two days",
+                 "; ".join(parts) + ". Everything else in those answers was used. The raw data keeps what came.",
+                 max(float(v.get("at", 0)) for _, v in found))
+
+
 def _updates() -> Check | None:
     """Would an automatic update overwrite work here (updater.work_at_risk)? Only said for a git checkout."""
     from . import store, updater
     root = store.project_root()
     if not (root / ".git").exists():
         return None
-    risk = updater.work_at_risk(root)
+    risk = _remembered(f"work at risk {root}", lambda: updater.work_at_risk(root))
     if not risk:
         return Check(AUTOMATION, "Updates", OK, "Everything here is on GitHub - an update can install safely")
     return Check(AUTOMATION, "Updates", NOTE, "Held back: this folder has work that isn't on GitHub",
@@ -769,10 +804,11 @@ def build(season: Season, now: float | None = None, tasks: dict[str, dict] | Non
     add(_known, year, ahead, to_lock, now)
     add(_autopsy, season, year)
     if tasks is not False:
-        add(_tasks, task_states() if tasks is True else tasks, now)
+        add(_tasks, _remembered("task states", task_states) if tasks is True else tasks, now)
     add(_last_run, now)
     add(_standing, now)
     add(_source_history, now)
+    add(_skipped, now)
     add(_training, now)
     add(_backups, now)
     add(_updates)

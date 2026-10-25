@@ -139,6 +139,62 @@ def _name(game, team: str) -> str:
     return found.title() if found.isupper() or found.islower() else found
 
 
+@dataclass(frozen=True)
+class Fragility:
+    """How much a head-to-head record can be read into (sprint 2026-10-25).
+
+    Only the games one side got right and the other wrong decide it. `flips` is
+    how many of those would have to have gone the other way for the side behind
+    to be ahead; `p` is the exact two-sided sign test - how often a fair coin,
+    settling the same number of games, comes out at least this lopsided.
+    """
+
+    you: int
+    deadeye: int
+
+    @property
+    def decisive(self) -> int:
+        return self.you + self.deadeye
+
+    @property
+    def lead(self) -> int:
+        return abs(self.you - self.deadeye)
+
+    @property
+    def flips(self) -> int:
+        return self.lead // 2 + 1 if self.lead else 0
+
+    @property
+    def p(self) -> float:
+        from math import comb
+        n, low = self.decisive, min(self.you, self.deadeye)
+        if not n or not self.lead:
+            return 1.0
+        tail = sum(comb(n, k) for k in range(low + 1)) / 2 ** n
+        return min(1.0, 2 * tail)
+
+    def words(self, you: str = "you") -> str:
+        """One plain sentence, "" when nothing has been decided yet."""
+        n = self.decisive
+        if not n:
+            return ""
+        both = f"{you} and {MODEL_NAME}"
+        if not self.lead:
+            return f"Level on the {_count(n, 'game')} that split {both} - nothing to read into yet."
+        behind = MODEL_NAME if self.you > self.deadeye else you
+        p = self.p
+        odds = f"about 1 time in {round(1 / p)}" if p < 0.5 else f"{p:.0%} of the time"
+        verdict = ("luck alone rarely does that" if p <= 0.05
+                   else "so it is still within what luck alone does")
+        return (f"{self.flips} of the {_count(n, 'result')} that split {both} going the other way would put "
+                f"{behind} ahead; a coin settling {n} games comes out at least this one-sided {odds} - "
+                f"{verdict}.")
+
+
+def _count(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
 def tallies(found: list[Override]) -> list[Tally]:
     """Per reason, then all together: how the overrides came out."""
     groups: dict[str, list[Override]] = {}

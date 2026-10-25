@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton
 
 from ... import readiness
 from ...places import READINESS as title_
 from ...version import MODEL_NAME
 from ..widgets import Card, IconButton, StatTile, section, tile_grid
-from .base import Page
+from . import base as _base
+from .base import WORKING, Page
 
 #: The mark beside each line, by its state: a tick, a dot, a warning sign, a cross.
 MARKS = {readiness.OK: "✓", readiness.NOTE: "·", readiness.WARN: "⚠", readiness.BAD: "✕"}
@@ -33,6 +35,16 @@ class ReadinessPage(Page):
     icon = "\N{WHITE HEAVY CHECK MARK}"
 
     def build(self) -> None:
+        # The checks are worked out on a thread of their own (Task Scheduler and
+        # git alone take over a second): the page keeps what it last showed
+        # meanwhile, and draws the new answer when it is in.
+        self._found: readiness.Readiness | None = None
+        self._job: threading.Thread | None = None
+        self._box: dict = {}
+        self._again = False
+        self._poll = QTimer(self)
+        self._poll.setInterval(100)
+        self._poll.timeout.connect(self._collect)
         head = QHBoxLayout()
         head.addWidget(section(self.title, self.subtitle), 1)
         self.again = IconButton("Check again", "refresh")
@@ -69,12 +81,61 @@ class ReadinessPage(Page):
         self.layout_.addWidget(self.note)
 
     def restyle(self) -> None:
-        self.refresh_now()
+        if self._found is not None:
+            self._draw(self._found)         # new colours, same answer: nothing to work out again
+        else:
+            self.refresh_now()
 
     def refresh(self) -> None:
         season = self.season
         assert season is not None  # guaranteed by Page.refresh_now()
-        found = readiness.build(season)
+        if _base.CHECK_RUN:
+            # a check (smoke test, self-check) photographs the page whole: worked out here, as before
+            self._found = readiness.build(season)
+            self._draw(self._found)
+            return
+        if self._job is not None and self._job.is_alive():
+            self._again = True              # asked again mid-check: once more when it's in
+            return
+        self._start(season)
+
+    def _start(self, season) -> None:
+        box: dict = {"season": season}
+
+        def work() -> None:
+            try:
+                with WORKING:               # shares the pricing's caches with the pages
+                    box["found"] = readiness.build(season)
+            except Exception as exc:  # noqa: BLE001 - shown on the page when collected
+                box["error"] = exc
+
+        self._box, self._again = box, False
+        self._job = threading.Thread(target=work, name="readiness", daemon=True)
+        self._job.start()
+        self.again.setEnabled(False)
+        if self._found is None:
+            self.tile_state.update_values("Checking\u2026", "reading what is kept - nothing is fetched")
+        self._poll.start()
+
+    def _collect(self) -> None:
+        """Draw the answer once the thread has it (every 100 ms while it works)."""
+        if self._job is None or self._job.is_alive():
+            return
+        self._poll.stop()
+        self._job = None
+        self.again.setEnabled(True)
+        box = self._box
+        if self._again or box.get("season") is not self.season:
+            if self.season is not None:
+                self._start(self.season)    # the data changed meanwhile: look at the new
+            return
+        if "error" in box:
+            self._page_failed(box["error"])
+            return
+        self._found = box["found"]
+        self._draw(self._found)
+
+    def _draw(self, found: readiness.Readiness) -> None:
         self._update_tiles(found)
         p = self.palette
         colours = {readiness.OK: p.good, readiness.NOTE: p.ink_muted, readiness.WARN: p.warning,

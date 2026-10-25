@@ -55,12 +55,22 @@ def write_atomic(path: Path, text: str) -> None:
     rename over the old one, so a crash or a full disk mid-write leaves the
     previous file readable (a half-written aliases.json would load as empty).
     Raises OSError like write_text; the temp file never stays behind."""
+    _write_whole(Path(path), text)
+
+
+def write_atomic_bytes(path: Path, data: bytes) -> None:
+    """`write_atomic` for bytes kept exactly as they are (a downloaded file),
+    with no line endings changed on the way."""
+    _write_whole(Path(path), bytes(data))
+
+
+def _write_whole(path: Path, body) -> None:
     import time
-    path = Path(path)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        binary = isinstance(body, bytes)
+        with (open(tmp, "wb") if binary else open(tmp, "w", encoding="utf-8")) as fh:
+            fh.write(body)
             fh.flush()
             os.fsync(fh.fileno())
         for attempt in range(3):          # OneDrive can hold the file a moment
