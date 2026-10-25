@@ -9,6 +9,8 @@
     standings: { label: "Standings", tab: "Table", icon: "standings", about: "The season’s table and the title race" },
     charts: { label: "Charts", icon: "charts", about: "The season race, title odds, scores" },
     h2h: { label: "Head-to-head", icon: "h2h", about: "Any two coaches, pick by pick" },
+    factions: { label: "Factions", icon: "h2h", about: "Who picks with whom, and who goes it alone" },
+    teams: { label: "Teams", icon: "standings", about: "How the pool has backed each team, and how it went" },
     history: { label: "History", icon: "history", about: "Champions and records" },
     awards: { label: "Awards", icon: "history", about: "The season’s trophies, and who holds them" },
     pools: { label: "Side pools", icon: "pools", about: "The suicide pool and the Big Losers" },
@@ -18,20 +20,20 @@
   var ALIASES = { week: "weeks", table: "standings" };
   function available(view) {
     if (view === "live" || view === "picks") return hasLive();
-    if (view === "h2h") return DATA.weeks.some(function (w) { return w.picks; });
+    if (view === "h2h" || view === "factions" || view === "teams") return DATA.weeks.some(function (w) { return w.picks; });
     if (view === "money") return !!DATA.money;
     return !!VIEWS[view];
   }
   // every page, in the order the search lists them
   function pageList() {
-    return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "awards", "history", "pools", "money"].filter(available);
+    return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "factions", "teams", "awards", "history", "pools", "money"].filter(available);
   }
   // The few sections the bars show, and the pages each one holds. Me is its
   // own button beside them.
   var SECTIONS = [
     { id: "home", label: "Home", icon: "home", views: ["home"] },
     { id: "week", label: "This week", icon: "weeks", views: ["live", "picks", "weeks"] },
-    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "charts", "h2h", "awards", "history"] },
+    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "charts", "h2h", "factions", "teams", "awards", "history"] },
     { id: "pools", label: "Pools & money", short: "Pools", icon: "pools", views: ["pools", "money"] }
   ];
   // The sections as the bars draw them: the pages each has now, where it

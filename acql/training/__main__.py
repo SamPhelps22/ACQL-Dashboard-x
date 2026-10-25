@@ -293,6 +293,46 @@ def prereg(args) -> int:
     return 0
 
 
+def bench(args) -> int:
+    """The hypothesis bench (bench.py): proposals, your yes or no, and their scores."""
+    from . import bench as b
+    try:
+        if args.action == "propose":
+            plan = b.propose()
+            print(f"Proposed {plan['id']}: {plan['rule']} ({plan['applies']}). {plan['why']}")
+            print(f"Nothing runs until: python -m acql.training bench approve {plan['id']}")
+        elif args.action == "approve":
+            from ..feeds import results
+            year = results.season_year()
+            first = args.week or _next_week(year)
+            plan = b.approve(args.id, first, year)
+            print(f"Registered {plan['id']} [{plan['fingerprint']}] from week {plan['first_week']}.")
+        elif args.action == "reject":
+            b.reject(args.id)
+            print(f"Rejected {args.id}.")
+        elif args.action == "score":
+            for found in b.score():
+                rng = "" if found["low"] is None else f" (range {found['low']:+.4f} to {found['high']:+.4f})"
+                print(f"{found['id']} [{found['fingerprint']}]: {found['games']} games, "
+                      f"edge {found['edge']:+.4f}{rng} - {found['call']}")
+        else:
+            for plan in b.load():
+                print(f"{plan['id']:32} {plan['status']:10} {plan['applies']:20} {plan['rule']}")
+    except b.BenchError as exc:
+        print(exc)
+        return 1
+    return 0
+
+
+def _next_week(year: int) -> int:
+    """The first week whose cards aren't due yet, plus one: a bench test never sees a week already open."""
+    from ..feeds import results
+    weeks = results.calendar_weeks(year)
+    now = time.time()
+    upcoming = [w for w in weeks if results.week_starts(year, w) > now]
+    return (min(upcoming) if upcoming else (max(weeks) if weeks else 1)) + 1
+
+
 def _weekly_prereg() -> None:
     """The weekly job's pre-registered tests. Never stops the rest of the job."""
     try:
@@ -461,6 +501,10 @@ def main(argv: list[str] | None = None) -> int:
     pf = commands.add_parser("pfm", help="Pro Football Mania's ratings: a snapshot, then measured (shadow only)")
     pf.add_argument("--no-pull", action="store_true", help="measure on the snapshots already kept; do not go online")
     commands.add_parser("prereg", help="the tests written down before their games, scored (shadow only)")
+    bn = commands.add_parser("bench", help="tests proposed by Claude, registered on your yes (shadow only)")
+    bn.add_argument("action", nargs="?", choices=("list", "propose", "approve", "reject", "score"), default="list")
+    bn.add_argument("id", nargs="?", default="")
+    bn.add_argument("--week", type=int, default=0, help="approve: the first week it is judged on")
     rc = commands.add_parser("record", help="Deadeye's saved deadline cards, scored on both lab questions (reads only)")
     rc.add_argument("--year", type=int, default=2026)
     lb = commands.add_parser("lab", help="the strategy lab (shadow only), or its locked weekly forecasts")
@@ -479,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
     todo = {"run": run, "report": again, "audit": audit, "snapshot": snapshot, "check": check, "weekly": weekly,
             "fetch": fetch, "patterns": patterns, "margin": margin, "decay": decay,
             "features": featurevalue, "calibration": calibration, "pfm": pfm,
-            "prereg": prereg, "lab": lab, "record": record}.get(args.command)
+            "prereg": prereg, "bench": bench, "lab": lab, "record": record}.get(args.command)
     if todo is None:
         parser.print_help()
         return 0

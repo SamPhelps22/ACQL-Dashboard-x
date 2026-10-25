@@ -76,6 +76,9 @@ jobs:
       - name: Season leverage tests
         run: python tests/test_leverage.py
 
+      - name: Upgrade-book tests
+        run: python tests/test_upgrades.py
+
       - name: Model lab tests
         run: python tests/test_model_lab.py
 

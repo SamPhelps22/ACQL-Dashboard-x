@@ -9,12 +9,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 from ... import analytics
-from ...pool import crowd, patterns, picks
+from ...pool import crowd, crowdcard, patterns, picks
 from ...model import luck, predictions
 from ...wording import plural as _plural
 
 from ..charts import BarChart, DivergingBarChart, HeatmapChart, LineChart, ScatterChart
-from ..widgets import Card, StatTile, section, tile_grid
+from PySide6.QtWidgets import QVBoxLayout
+
+from ..widgets import Card, StatTile, TableModel, make_table, section, tile_grid
 from .base import Page
 
 H2H_PLAYERS = 12
@@ -105,6 +107,16 @@ class InsightsPage(Page):
         self.habits_card.add(self.habits_note)
         self.layout_.addWidget(self.habits_card)
 
+        # The crowd guess graded on each week from only the weeks before it (crowdcard.py).
+        self.guess_card = Card("The crowd forecast, graded")
+        self.guess_box = QVBoxLayout()
+        self.guess_card.body().addLayout(self.guess_box)
+        self.guess_note = QLabel("")
+        self.guess_note.setObjectName("Muted")
+        self.guess_note.setWordWrap(True)
+        self.guess_card.add(self.guess_note)
+        self.layout_.addWidget(self.guess_card)
+
         # Wins against what the picks deserved: who is good, who is lucky.
         self.luck_card = Card(LUCK_TITLE)
         self.luck_chart = DivergingBarChart(self.palette, height=4.4)
@@ -185,6 +197,7 @@ class InsightsPage(Page):
         self._update_crowd_chart(season)
         self._update_favourites(season)
         self._update_habits(season)
+        self._update_crowd_card(season)
         self._update_luck(season)
         report = patterns.report(season)
         self._update_chaos(report)
@@ -381,6 +394,35 @@ class InsightsPage(Page):
             "the sheets push it, so it firms up as the season goes."
         )
         self.habits_note.setText(note)
+
+    def _update_crowd_card(self, season) -> None:
+        self.clear_layout(self.guess_box)
+        card = crowdcard.grade(season)
+        if not card.games:
+            self.guess_note.setText("Shows up once a week's pick sheet and betting lines are both loaded.")
+            return
+        rows, tones = [], {}
+        for i, week in enumerate(card.weeks()):
+            ours, usual = card.mean_miss(week), card.mean_usual(week)
+            kept = sum(1 for g in card.games if g.week == week and g.kept)
+            rows.append([f"Week {week}", f"{ours:.1%}", f"{usual:.1%}", ("0.0%" if abs(ours - usual) < 0.0005 else f"{ours - usual:+.1%}"),
+                         "kept before the sheet" if kept else "rebuilt"])
+            tones[(i, 3)] = "good" if ours < usual - 0.005 else "bad" if ours > usual + 0.005 else "muted"
+        ours, usual = card.mean_miss(), card.mean_usual()
+        rows.append(["Season", f"{ours:.1%}", f"{usual:.1%}", ("0.0%" if abs(ours - usual) < 0.0005 else f"{ours - usual:+.1%}"), f"{len(card.games)} games"])
+        model = TableModel(["Week", "Learned habits missed by", "Usual curve missed by", "Difference", "Guess"],
+                           rows, palette=self.palette, numeric_columns={1, 2, 3}, tones=tones, bold_columns={0})
+        view, _ = make_table(model, stretch_column=0, row_height=26)
+        self.guess_box.addWidget(view)
+        worst = "; ".join(f"week {g.week} {g.favourite} over {g.underdog}: expected {g.predicted:.0%}, "
+                          f"really {g.actual:.0%}" for g in card.worst(3))
+        verdict = ("better than" if ours < usual - 0.005 else "worse than" if ours > usual + 0.005
+                   else "no better than")
+        self.guess_note.setText(
+            f"Each week guessed only from the sheets before it, as it would have been on the Thursday: the "
+            f"learned habits missed the pool's real split by {ours:.1%} a game, {verdict} a typical pool's "
+            f"habits ({usual:.1%}). Every pool decision leans on this guess until the sheet is in. "
+            f"Biggest misses: {worst}.")
 
     # ---- the pool's own habits ------------------------------------------
     def _update_commish(self, season) -> None:

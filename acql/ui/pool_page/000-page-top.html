@@ -1848,6 +1848,31 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   .deadline .dl-go { grid-column: 3; grid-row: 1 / span 2; margin-top: 0; align-self: center; }
 }
 .bottombar a { font-size: 11px; letter-spacing: 0.04em; }
+
+/* factions and team lens (upgrade book #9, #40) */
+.fx { border-collapse: separate; border-spacing: 2px; }
+.fx th.g { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; font-weight: 600; color: var(--muted); padding: 4px 0; white-space: nowrap; }
+.fx td.nm { white-space: nowrap; font-size: 13px; padding-right: 8px; text-align: right; }
+.fx td.nm.me { color: var(--gold-text); font-weight: 700; }
+.fx td.c { padding: 0; }
+.fx .sq { display: block; width: 18px; height: 18px; border-radius: var(--r-xs); background: var(--c, var(--rule)); }
+.fx .sq.lost { opacity: .3; }
+.fx .sq.none { background: transparent; outline: 1px dashed var(--rule); }
+.fx tr.gap td { height: 8px; }
+.fx td.grp { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-top: 6px; }
+.fx .pct { display: block; width: 26px; height: 18px; border-radius: var(--r-xs); font-size: 10px; line-height: 18px; text-align: center; color: var(--ink);
+  background: color-mix(in srgb, var(--gold) var(--a, 0%), var(--surface)); }
+.tl-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.tl-pick button { border: 1px solid var(--rule); background: var(--surface); border-radius: var(--r-sm); padding: 4px; cursor: pointer; }
+.tl-pick button[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-soft); }
+.tl-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.tl-stats div { border: 1px solid var(--rule); border-radius: var(--r-sm); padding: 10px; }
+.tl-stats b { display: block; font-size: 26px; font-family: "Rajdhani", sans-serif; }
+.tl-bars { display: grid; gap: 4px; }
+.tl-bars .r { display: grid; grid-template-columns: 76px 1fr 64px; white-space: nowrap; gap: 8px; align-items: center; font-size: 13px; }
+.tl-bars .t { height: 12px; background: var(--raised); border-radius: var(--r-xs); position: relative; overflow: hidden; }
+.tl-bars .t i { position: absolute; inset: 0 auto 0 0; background: var(--c, var(--gold)); }
+.tl-bars .t i.lost { opacity: .35; }
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>

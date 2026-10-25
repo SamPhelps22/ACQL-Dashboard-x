@@ -26,6 +26,7 @@ CARD = "My picks"                   # the card to hand in, and where the week's 
 EVERY_GAME = "All games"            # every game on the slate, priced
 RADAR = "Radar"                     # every game by how it could go
 LEVERAGE = "Leverage"               # what each pick does for the season race
+SCREENER = "Screener"               # every game in one grid, and what moved each
 GAME_DAY = "Game Day"               # the games as they happen
 EVERYONE = "Everyone's picks"       # the whole pool's cards for the week, side by side
 RESULTS = "Results"                 # how the week went

@@ -35,6 +35,8 @@
       case "me": return meView();
       case "weeks": return weeksView();
       case "h2h": return h2hView();
+      case "factions": return factionsView();
+      case "teams": return teamsView();
       case "charts": return chartsView();
       case "history": return historyView();
       case "awards": return awardsView();

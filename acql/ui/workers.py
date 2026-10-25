@@ -95,6 +95,11 @@ def warm_this_week(season) -> None:
         found["me"] = owner.key(season) or QSettings().value(ME_KEY, "") or None
         if week:
             found["brief"] = briefing.build(season, week, style)
+            try:          # the crowd guess as it stands before the sheet (crowdcard.py)
+                from ..pool import crowdcard
+                crowdcard.remember(season, week)
+            except Exception:  # noqa: BLE001 - only a record for grading later
+                pass
 
     def reasons() -> None:
         evidence.build(season, found["brief"], found["me"])
@@ -187,6 +192,12 @@ class ResultsCheck(QThread):
         try:
             before = _finals(self.year, self.graded)
             got, _problems = results.refresh(self.year, self.weeks, every=self.every, force=self.force)
+            try:                 # ESPN's own live win chance for games under way (feeds/winprob.py)
+                from ..feeds import winprob
+                for week in got:
+                    winprob.refresh(results.load(self.year, week))
+            except Exception as exc:  # noqa: BLE001 - the board goes on with its own estimate
+                write_log(f"live win chance check failed: {exc!r}")
             self.found.emit(bool(got) and _finals(self.year, self.graded) > before)
         except Exception as exc:  # noqa: BLE001 - a missed look is no matter
             write_log(f"results check failed: {exc!r}")

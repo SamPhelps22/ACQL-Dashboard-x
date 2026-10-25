@@ -238,15 +238,22 @@ class CinemaTile(QFrame):
         self.model = ElidedLabel()
         self.model.setObjectName("CinemaModel")
         box.addWidget(self.model)
+        self.stake = ElidedLabel()
+        self.stake.setObjectName("CinemaMeta")
+        self.stake.hide()
+        box.addWidget(self.stake)
         self._drawn: tuple | None = None
 
-    def show_game(self, st, mine: int, market: str, cs: LS.CardState, kick_text: str) -> None:
-        drawn = (st.state, st.home_points, st.away_points, st.clock, st.possession, mine, market, cs, kick_text)
+    def show_game(self, st, mine: int, market: str, cs: LS.CardState, kick_text: str, stake: str = "") -> None:
+        drawn = (st.state, st.home_points, st.away_points, st.clock, st.possession, mine, market, cs, kick_text,
+                 stake, st.red_zone, st.espn)
         if drawn == self._drawn:
             return                       # nothing new: nothing redrawn
         self._drawn = drawn
         if cs.status == "live":
             state = f"● LIVE · {st.clock}" if st.clock else "● LIVE"
+            if st.red_zone:
+                state += " · RED ZONE"
         elif cs.status == "final":
             state = (st.clock or "Final").upper()
         elif cs.status == "postponed":
@@ -274,7 +281,10 @@ class CinemaTile(QFrame):
             self.model.setText("")
         else:
             fav = GD.HOME if st.p_home >= st.p_away else GD.AWAY
-            self.model.setText(f"{MODEL_NAME.upper()}  {display_team(st.team(fav))} {st.chance(fav):.0%} to be credited")
+            self.model.setText(f"{MODEL_NAME.upper()}  {display_team(st.team(fav))} {st.chance(fav):.0%} to be credited"
+                               + ("  · ESPN live" if st.espn is not None else ""))
+        self.stake.setText(stake)
+        self.stake.setVisible(bool(stake))
         set_prop(self, "status", cs.status)
         set_prop(self, "selected", "true" if cs.selected else "")
         set_prop(self, "warn", cs.warn)
@@ -420,6 +430,10 @@ class CinemaWindow(QWidget):
         self.standings_from: float | None = None
         self._you = None
         self._order: list[int] = []
+        #: The stakes quad (Q): only the four live games that matter most to you.
+        self.quad = False
+        self._stakes: list[tuple[int, float]] = []
+        self._quad_was: set[int] = set()
         self.setObjectName("Cinema")
         self.setWindowTitle(f"{places.BRAND} – Cinema mode")
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
@@ -498,6 +512,11 @@ class CinemaWindow(QWidget):
         clock.addWidget(self.countdown, 0, Qt.AlignmentFlag.AlignRight)
         clock.addWidget(self.next_detail, 0, Qt.AlignmentFlag.AlignRight)
         row.addLayout(clock)
+        self.quad_label = QLabel("Q · stakes quad")
+        self.quad_label.setObjectName("CinemaCaption")
+        self.quad_label.setToolTip("Q shows only the four live games that matter most to your week, re-ranked "
+                                   "on every score; Q again shows every game")
+        row.addWidget(self.quad_label, 0, Qt.AlignmentFlag.AlignVCenter)
         self.exit_btn = QPushButton("  Exit  (Esc)")
         self.exit_btn.setObjectName("CinemaExit")
         self.exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -577,6 +596,9 @@ class CinemaWindow(QWidget):
         if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_F11):
             self.leave()
             return
+        if event.key() == Qt.Key.Key_Q:
+            self.toggle_quad()
+            return
         super().keyPressEvent(event)
 
     def showEvent(self, event) -> None:  # noqa: N802
@@ -617,6 +639,10 @@ class CinemaWindow(QWidget):
                 bd = None
         you = bd.you.card if bd is not None and bd.you is not None else None
         self._you = you
+        try:
+            self._stakes = GD.stakes_order(bd) if bd is not None else []
+        except Exception:  # noqa: BLE001 - the quad falls back to the live games in order
+            self._stakes = []
         self._show_tiles(states, you)
         self._show_board(bd)
         self._show_recent()
@@ -649,6 +675,9 @@ class CinemaWindow(QWidget):
         self.empty.hide()
         market = self._market()
         ordered = _broadcast_order(states)
+        stakes = dict(self._stakes)
+        if self.quad:
+            ordered = self._quad_states(ordered)
         known = {st.index for st in ordered}
         for index in list(self.tiles):
             if index not in known:
@@ -662,8 +691,17 @@ class CinemaWindow(QWidget):
             mine = you.picks.get(st.index, GD.NOBODY) if you is not None else GD.NOBODY
             cs = LS.card_state(st.state, selected=st.index == self.selected, feed=feed.fresh)
             kick = LS.kickoff_et(st.kickoff) if st.kickoff else ""
-            tile.show_game(st, mine, market.get(st.index, ""), cs, kick.upper())
+            size = stakes.get(st.index)
+            stake = (f"YOUR STAKE  ±{size * 100:.0f} pts on the next touchdown" if size else
+                     "No stake for you in this one" if self.quad and size is not None else "")
+            tile.show_game(st, mine, market.get(st.index, ""), cs, kick.upper(), stake)
         self._order = [st.index for st in ordered]
+        if self.quad:
+            now_in = set(self._order)
+            for index in now_in - self._quad_was:
+                if self._quad_was and index in self.tiles and not motion.reduced():
+                    pulse(self.tiles[index])      # a game that has just come into the quad
+            self._quad_was = now_in
         self._place_tiles()
 
     def _market(self) -> dict[int, str]:
@@ -682,7 +720,24 @@ class CinemaWindow(QWidget):
             out[st.index] = f"Market {display_team(fav)} −{abs(home_margin):g}"
         return out
 
+    def _quad_states(self, ordered: list) -> list:
+        """The stakes quad: the live games ranked by your stake (gameday.stakes_order);
+        with nothing live, the next kickoffs."""
+        by_index = {st.index: st for st in ordered}
+        chosen = [by_index[i] for i, _ in self._stakes if i in by_index]
+        if not chosen:
+            chosen = [st for st in ordered if st.state == "pre"][:GD.QUAD]
+        return chosen
+
+    def toggle_quad(self) -> None:
+        self.quad = not self.quad
+        self._quad_was = set()
+        self.quad_label.setText("STAKES QUAD · Q for every game" if self.quad else "Q · stakes quad")
+        self._show_tiles(list(self.feed.states), self._you)
+
     def _columns_for(self, width: int) -> int:
+        if self.quad:
+            return 2
         room = width - SIDE_WIDTH - 76          # the margins and the gap beside the side column
         return next(n for edge, n in COLUMNS if room >= edge)
 

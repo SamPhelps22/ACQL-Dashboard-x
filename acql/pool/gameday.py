@@ -192,6 +192,31 @@ def outlook(now_margin: int, left: float, expected: float, sd: float, *, started
     return Outlook(tuple(d for d, _ in kept), tuple(p / total for _, p in kept))
 
 
+def home_win(look: Outlook) -> float:
+    """The home side's chance of winning the game outright (a tie counts half)."""
+    return look.at_least(1) + 0.5 * float(sum(p for d, p in zip(look.margins, look.chances) if d == 0))
+
+
+def expected_for(now_margin: int, left: float, sd: float, p_home: float) -> float | None:
+    """The pre-game home expectation that would make `outlook` give the home side
+    this chance of winning outright from here - how ESPN's live win chance is
+    carried into the pool's own rules (lined games, Big Losers). None when the
+    clock has run out or the chance can't be matched."""
+    if not 0.0 < p_home < 1.0 or left * REGULATION < 1.0:
+        return None
+    low, high = -60.0, 60.0
+    if not home_win(outlook(now_margin, left, low, sd, started=True)) <= p_home \
+            <= home_win(outlook(now_margin, left, high, sd, started=True)):
+        return None
+    for _ in range(40):
+        mid = (low + high) / 2
+        if home_win(outlook(now_margin, left, mid, sd, started=True)) < p_home:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
+
+
 def credited_by(game: Game, margins: np.ndarray) -> np.ndarray:
     """HOME / AWAY / NOBODY for each final home margin, by the pool's rule."""
     margins = np.asarray(margins)
@@ -233,6 +258,9 @@ class GameNow:
     leader: int                    # HOME / AWAY / NOBODY if it ended now (NOBODY before kickoff)
     blowout_home: float            # chance the home side loses by 15 or more
     blowout_away: float
+    #: ESPN's live chance of the (pick sheet's) home side winning outright, when
+    #: one was read in the last few minutes and the chances above follow it.
+    espn: float | None = None
 
     @property
     def index(self) -> int:
@@ -347,6 +375,7 @@ def games_now(season: Season, week: int, *, kept: list[results.Score] | None = N
         sd = float(getattr(price, "sd", None) or analytics.SPREAD_SD)
         left = 0.0 if state == "final" else time_left(score) if state == "in" else 1.0
         margin = (hp - ap) if hp is not None and ap is not None else None
+        espn = None
 
         if state == "final":
             if margin is not None:
@@ -367,7 +396,19 @@ def games_now(season: Season, week: int, *, kept: list[results.Score] | None = N
                 bh = float(team_code(game.home) in listed)
                 ba = float(team_code(game.away) in listed)
         else:
-            look = outlook(margin or 0, left, expected, sd, started=state == "in")
+            if state == "in" and margin is not None and score is not None and getattr(score, "event", ""):
+                try:
+                    from ..feeds import winprob
+                    said = winprob.latest(score.event)
+                except Exception:  # noqa: BLE001 - the board stands on its own estimate
+                    said = None
+                if said is not None:
+                    said = 1.0 - said if flipped else said
+                    carried = expected_for(margin, left, sd, said)
+                    if carried is not None:
+                        espn = said
+            look = outlook(margin or 0, left, carried if espn is not None else expected, sd,
+                           started=state == "in")
             margins = np.asarray(look.margins)
             weights = np.asarray(look.chances)
             sides = credited_by(game, margins)
@@ -412,7 +453,7 @@ def games_now(season: Season, week: int, *, kept: list[results.Score] | None = N
             home_color=home_color, away_color=away_color,
             expected=expected, sd=sd, outlook=look,
             p_home=p_home, p_away=p_away, leader=leader,
-            blowout_home=bh, blowout_away=ba,
+            blowout_home=bh, blowout_away=ba, espn=espn,
         ))
     return out
 
@@ -882,6 +923,31 @@ def levers(bd: Board) -> list[Lever]:
             moves.append(root.swing * (after - now))
         out.append(Lever(st, moves[0], moves[1]))
     return sorted(out, key=lambda lv: -lv.size)
+
+
+#: Games the stakes quad shows (idea #19 of the upgrade book).
+QUAD = 4
+
+
+def stakes_order(bd: Board, n: int = QUAD) -> list[tuple[int, float]]:
+    """The live games that matter most to you right now, biggest stake first:
+    (game index, what a touchdown either way does to your chance of winning the
+    week). Filled up with the other live games (stake 0) when fewer than `n`
+    have one, in kickoff order. A game in the red zone counts half as much again,
+    because the next score is about to happen."""
+    sized = []
+    for lever in levers(bd):
+        weight = 1.5 if lever.state.red_zone else 1.0
+        sized.append((lever.state.index, lever.size * weight))
+    sized.sort(key=lambda pair: -pair[1])
+    chosen = sized[:n]
+    taken = {i for i, _ in chosen}
+    rest = sorted((st for st in bd.live if st.index not in taken), key=lambda st: (st.kickoff or 0, st.index))
+    for st in rest:
+        if len(chosen) >= n:
+            break
+        chosen.append((st.index, 0.0))
+    return chosen
 
 
 @dataclass(frozen=True)
