@@ -202,6 +202,15 @@ class Weeks:
             # The real field: every coach's own card, the same in every week.
             sides, losers = field_cards
             self.known = (np.asarray(sides, dtype=np.int8), np.asarray(losers, dtype=np.int8))
+            # Every other coach's score in every simulated week. It does not
+            # depend on the card being valued, so it is worked out once here
+            # rather than on each of the search's many value() calls.
+            sides, held = self.known
+            others = (sides[None, :, :] == self.results[:, None, :]).sum(axis=2)
+            if held.size:
+                others = others + (held[None, :, :] * self.hits[:, None, :]).sum(axis=2)
+            self._others = others
+            self._best = others.max(axis=1)
 
     def score(self, bits: np.ndarray, losers: tuple[int, ...]) -> np.ndarray:
         mine = (bits[None, :] == self.results).sum(axis=1)
@@ -215,11 +224,7 @@ class Weeks:
         if self.known is None:
             return (float(self.money_table[self.rows, mine].mean()),
                     float(self.first_table[self.rows, mine].mean()))
-        sides, held = self.known
-        others = (sides[None, :, :] == self.results[:, None, :]).sum(axis=2)
-        if held.size:
-            others = others + (held[None, :, :] * self.hits[:, None, :]).sum(axis=2)
-        best = others.max(axis=1)
+        others, best = self._others, self._best
         ties = (others == mine[:, None]).sum(axis=1)
         pot = np.clip(mine[:, None] - others, 0, None).sum(axis=1)
         collect = np.where(mine > best, pot, np.where(mine == best, pot / (ties + 1), 0.0))

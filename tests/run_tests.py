@@ -26,6 +26,12 @@ sys.path.insert(0, str(ROOT))
 from acql import rawarchive as _rawarchive  # noqa: E402
 _rawarchive.use(Path(tempfile.mkdtemp(prefix="acql-raw-test-")))
 
+# Tests write their log lines to a scratch file, never the real data/acql-log.txt
+# (fake "brief sent" and "catch-up" lines there made the log useless for diagnosis).
+from acql.ui.pages import base as _pagebase  # noqa: E402
+_TEST_LOG = Path(tempfile.mkdtemp(prefix="acql-log-test-")) / _pagebase.LOG_NAME
+_pagebase.log_path = lambda: _TEST_LOG
+
 from acql.pool import awards
 from acql.config import Settings
 from acql.models import Player, Season
@@ -2600,6 +2606,21 @@ class TestWorkedOutOnce(_ScratchStore):
         money2, first2 = moneyplan.field_tables(padded, 34)
         self.assertTrue(np.array_equal(first, first2[:, :-1]))
         self.assertTrue(np.allclose(money, money2[:, :-1], atol=1e-9))   # one more column of rounding, no more
+
+    def test_the_real_fields_scores_worked_out_once_match_working_them_out_afresh(self):
+        import numpy as np
+        from acql.pool import moneyplan
+        rng = np.random.default_rng(5)
+        games = tuple(moneyplan.Game(f"g{j}", f"P{j}", f"O{j}", 0.5 + 0.4 * rng.random(), 0.7,
+                                     ((f"O{j}", 0.2, 0.3),) if j % 2 else ())
+                      for j in range(12))
+        sides = tuple(tuple(int(v) for v in rng.random(12) < 0.2) for _ in range(34))
+        held = tuple(tuple(int(v) for v in rng.permutation([1, 1, 1, 0, 0, 0])) for _ in range(34))
+        weeks = moneyplan.Weeks(games, 500, 3, 34, (sides, held))
+        s, h = (np.asarray(sides, np.int8), np.asarray(held, np.int8))
+        afresh = (s[None] == weeks.results[:, None]).sum(axis=2) + (h[None] * weeks.hits[:, None]).sum(axis=2)
+        self.assertTrue(np.array_equal(weeks._others, afresh))
+        self.assertTrue(np.array_equal(weeks._best, afresh.max(axis=1)))
 
 
 class TestChartsDrawOnce(unittest.TestCase):

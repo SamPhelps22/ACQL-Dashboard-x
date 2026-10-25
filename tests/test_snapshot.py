@@ -11,6 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from acql import store  # noqa: E402
 from acql.site import snapshot  # noqa: E402
+from acql.ui.pages import base as _pagebase  # noqa: E402
+
+# Log lines go to a scratch file, never the real data/acql-log.txt.
+_TEST_LOG = Path(tempfile.mkdtemp(prefix="acql-log-test-")) / _pagebase.LOG_NAME
+_pagebase.log_path = lambda: _TEST_LOG
 
 
 class Lock(unittest.TestCase):
