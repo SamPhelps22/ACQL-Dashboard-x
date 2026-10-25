@@ -23,13 +23,16 @@
     var h = hex.replace("#", "");
     var r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
     function f(c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) > 0.36;
+    // 0.2 is where dark and white letters read equally well; above it, dark wins
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) > 0.2;
   }
   // The team's logo, from ESPN's image server (the same place the live scores
   // come from). Any logo that fails to load removes itself, leaving the badge.
   var LOGO_CODES = { was: "wsh" };
   function logoUrl(code) {
-    return "https://a.espncdn.com/i/teamlogos/nfl/500/" + (LOGO_CODES[code] || code) + ".png";
+    // ESPN's resizer: a 120px copy is plenty for a badge (the 500px original is ~15x the bytes);
+    // if it ever fails, the image removes itself and the colour badge stands alone
+    return "https://a.espncdn.com/combiner/i?img=/i/teamlogos/nfl/500/" + (LOGO_CODES[code] || code) + ".png&h=120&w=120";
   }
   function badge(team, big) {
     var code = codeOf(team);

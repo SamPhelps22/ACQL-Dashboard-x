@@ -154,6 +154,11 @@
     charts = [];
     app.textContent = "";
     app.className = "page";
+    app.appendChild(el("a", { class: "skiplink", href: "#main", text: "Skip to content", onclick: function (e) {
+      e.preventDefault();                       // the address is the site's own place; don't touch it
+      var m = document.getElementById("main");
+      if (m) { m.setAttribute("tabindex", "-1"); m.focus(); }
+    } }));
     app.appendChild(topbar());
     var box = document.getElementById("owner");
     keep.forEach(function (n) { box.appendChild(n); });

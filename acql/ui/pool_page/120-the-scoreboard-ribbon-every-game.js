@@ -19,7 +19,7 @@
   function scoreBug(x) {
     var g = x.g;
     var st = x.state === "in" ? (liveDetail(x) || "Live") : x.state === "post" ? "Final"
-      : x.sc && x.sc.off ? liveDetail(x) : x.kick ? kickText(x.kick) : live.fetched ? "Time to come" : "Loading…";
+      : x.sc && x.sc.off ? liveDetail(x) : x.kick ? kickText(x.kick) : live.fetched ? "Time to come" : live.error ? "No scores yet" : "Loading…";
     var sc = x.sc || {}, on = x.state === "in";
     var me = DATA.live.coaches.filter(function (c) { return isMe(c.name); })[0];
     var pick = me ? me.picks[DATA.live.games.indexOf(g)] || "" : "";

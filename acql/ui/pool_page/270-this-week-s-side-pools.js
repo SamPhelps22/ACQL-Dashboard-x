@@ -132,7 +132,7 @@
     return module("Week " + L.week + " suicide pool", plural(Object.keys(on).length, "team") + " picked", [
       el("p", { class: "race-sum", text: bits.join(" · ") + "." }),
       rows.length ? pickRows(rows, "sui", 10) : null,
-      none.length ? el("p", { class: "note", text: "No suicide pick on the sheet: " + listNames(none.slice().sort(), 6) + "." }) : null,
+      none.length ? el("p", { class: "note", text: sentence("No suicide pick on the sheet: " + listNames(none.slice().sort(), 6)) }) : null,
       el("p", { class: "note", text: "Your team has to win its game. If the game has a pool line, the favourite must win by at least the line, and the underdog survives by keeping it closer." })
     ], { "data-card": "suicide" });
   }
@@ -286,7 +286,7 @@
       if (x.state === "in") return x.g.ac.toUpperCase() + " " + x.as + ", " + x.g.hc.toUpperCase() + " " + x.hs + " · " + liveDetail(x);
       return x.g.ac.toUpperCase() + " @ " + x.g.hc.toUpperCase() + (x.kick ? " · " + kickText(x.kick) : "");
     }
-    var title = !fixed ? "Rooting guide for " + whom : you ? "What to root for" : "What " + whom + " needs";
+    var title = !fixed ? "Rooting guide" : you ? "What to root for" : "What " + whom + " needs";
     return module(title, fixed ? pct(mine) + " to win the week" : picker, [
       fixed ? null : el("p", { class: "race-sum" }, [el("b", { text: pct(mine) }), " to win the week."]),
       mine <= 0 && t.games.some(function (x) { return x.state !== "post"; })

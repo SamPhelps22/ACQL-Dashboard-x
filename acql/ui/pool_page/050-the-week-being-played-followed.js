@@ -360,7 +360,7 @@
   }
   // The headline's kickoff: the time, then the countdown once it's close.
   function kickNode(at) {
-    return el("span", { class: "kicktime" }, [kickLong(at), " ",
+    return el("span", { class: "kicktime" }, [kickLong(at),
       el("span", { class: "until", "data-until": String(at), text: untilText(at) })]);
   }
   // Keep "in 40 min" true without redrawing the page.

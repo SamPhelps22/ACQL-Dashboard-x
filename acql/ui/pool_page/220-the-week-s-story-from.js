@@ -22,7 +22,7 @@
     var second = secondBest(w);
     var runners = second == null ? [] : w.scores.filter(function (s) { return s.total === second; }).map(function (s) { return s.name; });
     if (w.winners.length === 1 && second != null) {
-      bits.push(w.top + " of " + w.games + " was enough, " + (w.top - second === 1 ? "one game ahead of " : numberWord(w.top - second) + " games ahead of ") + listNames(runners, 2) + ".");
+      bits.push(sentence(w.top + " of " + w.games + " was enough, " + (w.top - second === 1 ? "one game ahead of " : numberWord(w.top - second) + " games ahead of ") + listNames(runners, 2)));
     } else if (w.winners.length > 1) {
       bits.push("All on " + w.top + " of " + w.games + ".");
     }
@@ -108,7 +108,7 @@
   // stands, each part only from what the page knows.
   function welcome(parts) {
     var out = hasMe() ? [el("span", { class: "hello", text: "Welcome back, " + state.me })] : [];
-    parts.filter(Boolean).forEach(function (p) { out.push(el("span", { text: (out.length ? "· " : "") + p })); });
+    parts.filter(Boolean).forEach(function (p) { out.push(el("span", { class: out.length ? "sep" : null, text: p })); });
     return out;
   }
   function seasonOver() { var R = DATA.race; return !!R && R.season_weeks && DATA.through_week >= R.season_weeks; }

@@ -16,6 +16,7 @@
       c.node.textContent = "";
       var out = c.draw(w);
       if (out) c.node.appendChild(out);
+      c.node.style.minHeight = "";   // the drawing has its own height now
     });
   }
   var resizeTimer = null;
@@ -64,6 +65,7 @@
     var every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((width - padL - padR) / 42))));
     xs.forEach(function (wk, i) {
       if (i % every && i !== n - 1) return;
+      if (i !== n - 1 && n - 1 - i < every * 0.6) return;   // too close to the last week's label
       svg.appendChild(svgEl("text", { x: X(i), y: H - 8, "text-anchor": "middle", text: (i === 0 && !narrow ? "Wk " : "") + wk }));
     });
     function path(values) {
@@ -134,6 +136,7 @@
       return best;
     }
     var hit = svgEl("rect", { class: "hit", x: 0, y: 0, width: width, height: H, tabindex: "0",
+      "aria-label": (svg.getAttribute("aria-label") || "Chart") + ", week by week",
       onpointermove: function (e) { show(nearest(e)); }, onpointerdown: function (e) { show(nearest(e)); },
       onpointerleave: hide, onblur: hide, onfocus: function () { show(current >= 0 ? current : n - 1); },
       onkeydown: function (e) {

@@ -51,12 +51,14 @@
     }
     var flip = el("button", { class: "flipbtn", type: "button", "aria-expanded": turned ? "true" : "false",
       "aria-label": (turned ? "Back to the score: " : "More on ") + g.a + " at " + g.h, onclick: turn },
-      [el("span", { text: turned ? "Back" : "More" }), el("span", { class: "glyph", "aria-hidden": "true", text: "\u21bb" })]);
+      turned ? [el("span", { class: "glyph", "aria-hidden": "true", text: "\u2039" }), el("span", { text: "Back" })]
+        : [el("span", { text: "Details" }), el("span", { class: "glyph", "aria-hidden": "true", text: "\u203a" })]);
     var front = [top,
       row(g.ac, g.a, x.state === "pre" ? null : x.as, x.hs),
       row(g.hc, g.h, x.state === "pre" ? null : x.hs, x.as),
       el("div", { class: "gline" }, [el("span", { class: "line", text: lined ? "Pool line: " + teamName(x, g.fav) + " by " + g.line : "Straight up" }),
         stand.text ? el("span", { class: "stand " + stand.tone, text: stand.text }) : null]),
+      on ? chanceBar(x, me ? me.picks[gi] : "") : null,
       el("div", { class: "gfoot" }, [pickChip(), flip])];
     // the viewer's pick, or with no viewer the side most of the pool took
     function pickChip() {
@@ -73,7 +75,7 @@
       spot ? fieldStrip(x, spot) : null,
       on && sc.down ? el("span", { class: "down", text: sc.down }) : null,
       on && sc.play ? el("p", { class: "play", text: sc.play }) : null,
-      over ? null : chanceBar(x, me ? me.picks[gi] : ""),
+      over || on ? null : chanceBar(x, me ? me.picks[gi] : ""),
       el("dl", { class: "facts" }, factRows()),
       el("span", { class: "meta" }, [(count[g.ac] || 0) + " on " + g.ac.toUpperCase() + " · " + (count[g.hc] || 0) + " on " + g.hc.toUpperCase(),
         mine.length ? el("span", { class: "you", text: " · " + mine.join(" · ") }) : null]),
@@ -168,7 +170,7 @@
     var on = t.games.filter(function (x) { return x.state === "in"; });
     if (!on.length) return null;
     return module("On now", plural(on.length, "game"), [el("div", { class: "games" }, on.map(gameCard)),
-      el("p", { class: "note", text: "The bar under a game shows each side’s chance of getting the point." })],
+      el("p", { class: "note", text: "The bar under each game is each side’s chance of getting the point as it stands, your pick in gold." })],
       { "data-card": "on-now" });
   }
   function finalBanner(t, withLink) {

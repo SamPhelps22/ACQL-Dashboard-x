@@ -59,6 +59,8 @@
   function numberWord(n) { return n >= 0 && n <= 10 ? WORDS[n] : String(n); }
   function count(n, word, many) { return (n >= 0 && n <= 10 ? WORDS[n] : String(n)) + " " + (n === 1 ? word : (many || word + "s")); }
   function cap(text) { return text ? text.charAt(0).toUpperCase() + text.slice(1) : text; }
+  // a full stop, unless the text already ends a sentence ("MayeDay! MayeDay!")
+  function sentence(text) { return /[.!?]$/.test(text) ? text : text + "."; }
   function listNames(names, max) {
     max = max || 3;
     if (!names.length) return "";

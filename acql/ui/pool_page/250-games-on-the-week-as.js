@@ -27,7 +27,8 @@
         : listNames(leaders, 3) + (leaders.length > 1 ? " lead" : " leads") + " the week with " + top }),
       mine ? el("p", { class: "deck", text: (!behind ? (leaders.length > 1 ? "You share the lead" : "You lead the week") : "You’re " + behind + " behind the lead") +
           (mine.left ? ", with " + plural(mine.left, "pick") + " still to play." : ".") })
-        : el("p", { class: "deck", text: hasMe() ? "No card from " + state.me + " on this week’s sheet." : "Pick your name to follow your own card." }),
+        : hasMe() ? el("p", { class: "deck", text: "No card from " + state.me + " on this week’s sheet." })
+        : el("p", { class: "deck" }, [el("a", { class: "deck-link", href: "#me", onclick: navTo("me"), text: "Pick your name" }), " to follow your own card."]),
       next ? el("p", { class: "deck" }, ["Next kickoff ", kickNode(next.at), ": " + next.g.a + " at " + next.g.h + "."]) : null,
       el("button", { class: "btn onair", type: "button", text: "Every card, live", onclick: function () { go("live"); } })
     ], stats, "onair-live");

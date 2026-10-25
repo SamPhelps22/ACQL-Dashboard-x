@@ -134,7 +134,7 @@
         { text: "Try again", go: function () { historyError = ""; historyData = null; loadHistory(); render({ quiet: true }); } }, "bad") : null,
       el("div", { class: "cols" }, [
         el("div", {}, [module("Champions", null, [el("div", { class: "timeline" }, rows),
-          Object.keys(champs).length ? null : el("p", { class: "note", text: "Past champions show here once they’re added in the dashboard (Results › ⚙). Each season the dashboard publishes is kept too." })],
+          Object.keys(champs).length ? null : el("p", { class: "note", text: "Past champions will show here. Every season from now on is kept, with its champion and records." })],
           { "data-card": "champions" })]),
         el("div", {}, [module("Records", past.length ? "across " + plural(past.length + 1, "season") : "this season so far",
           recs.length ? [el("div", { class: "records" }, recs.map(function (r) {
