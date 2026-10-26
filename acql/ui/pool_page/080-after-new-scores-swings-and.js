@@ -2,10 +2,13 @@
   var swings = [];          // what changed while this page was open, newest first
   var lastSeen = null;      // each game's credited side at the previous look
   var scoreMoved = {};      // games whose score really changed at the last look, until when to mark them
+  var halves = {};          // games already announced at halftime
+  var stateTurned = {};     // games that started, reached halftime or finished at the last look, until when to mark them
+  function turnedNow(g) { return stateTurned[gameKey(g.hc, g.ac)] > Date.now(); }
   function seen(t) {
     var now = {};
     t.games.forEach(function (x) {
-      now[gameKey(x.g.hc, x.g.ac)] = { credit: x.credit, state: x.state, hs: x.hs, as: x.as };
+      now[gameKey(x.g.hc, x.g.ac)] = { credit: x.credit, state: x.state, hs: x.hs, as: x.as, detail: liveDetail(x) };
     });
     return now;
   }
@@ -25,6 +28,13 @@
         if (!before) return;
         // a real change between two good looks this visit; never on the first (or a cached) one
         if (live.good > 1 && before.hs != null && x.hs != null && (before.hs !== x.hs || before.as !== x.as)) scoreMoved[key] = Date.now() + 4000;
+        // halftime, said once a game, and its card marked for a moment (Cinema mode)
+        if (x.state === "in" && /half/i.test(liveDetail(x)) && !/half/i.test(before.detail || "") && !halves[key]) {
+          halves[key] = 1;
+          stateTurned[key] = Date.now() + 4000;
+          found.push({ title: "Halftime: " + x.g.a + " " + x.as + ", " + x.g.h + " " + x.hs, text: "", tone: "half", quiet: true });
+        }
+        if (before.state !== x.state) stateTurned[key] = Date.now() + 4000;
         var pickers = function (team) {
           return DATA.live.coaches.filter(function (c) { return c.picks[DATA.live.games.indexOf(x.g)] === team; });
         };
@@ -54,7 +64,7 @@
           }
         });
       });
-      found.forEach(function (f) { f.at = new Date(); swings.unshift(f); toast(f); });
+      found.forEach(function (f) { f.at = new Date(); swings.unshift(f); if (!f.quiet) toast(f); });
       swings = swings.slice(0, 30);
     }
     lastSeen = now;

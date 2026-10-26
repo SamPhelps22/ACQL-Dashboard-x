@@ -108,6 +108,9 @@ jobs:
       - name: Game day live tests
         run: python tests/test_gameday_live.py
 
+      - name: RedZone and Cinema mode tests
+        run: python tests/test_live_modes.py
+
       - name: The app's own checks
         run: python -m acql.checks
 

@@ -312,6 +312,80 @@
     bestCache = { key: key, best: best };
     return best;
   }
+  // The worst place each coach can still finish the week (the dashboard's
+  // gameday.worst_places): bestPlaces turned round - every result still to
+  // come going against them; ways no worse for the coach than another are dropped.
+  var worstCache = { key: "", best: null };
+  function worstPlaces(t) {
+    var L = DATA.live, games = t.games, coaches = L.coaches, n = coaches.length;
+    var key = L.week + "|" + games.map(function (x) { return x.state + (x.hs || 0) + ":" + (x.as || 0); }).join(",");
+    if (worstCache.key === key) return worstCache.best;
+    function lineCredit(g, margin) {      // as simulate's creditOf
+      if (g.line != null && g.fav) {
+        var need = Math.ceil(g.line - 1e-9), favMargin = g.fav === g.hc ? margin : -margin;
+        return (favMargin >= need) === (g.fav === g.hc) ? "h" : "a";
+      }
+      return margin > 0 ? "h" : margin < 0 ? "a" : "";
+    }
+    // per game, per way it can end, each coach's points from it
+    var gains = games.map(function (x, gi) {
+      var ways = [], seen = {};
+      if (x.state === "post") {
+        var fm = (x.hs || 0) - (x.as || 0);
+        ways.push([x.credit === x.g.hc ? "h" : x.credit === x.g.ac ? "a" : "", fm <= -15, fm >= 15]);
+      } else {
+        for (var m = -REACH; m <= REACH; m++) {
+          var w = [lineCredit(x.g, m), m <= -15, m >= 15], k = w.join();
+          if (!seen[k]) { seen[k] = 1; ways.push(w); }
+        }
+      }
+      return ways.map(function (w) {
+        var credit = w[0] === "h" ? x.g.hc : w[0] === "a" ? x.g.ac : "";
+        return coaches.map(function (co) {
+          var v = credit && co.picks[gi] === credit ? 1 : 0;
+          if (w[1] && co.bl.indexOf(x.g.hc) >= 0) v++;
+          if (w[2] && co.bl.indexOf(x.g.ac) >= 0) v++;
+          return v;
+        });
+      });
+    });
+    var best = {};
+    coaches.forEach(function (co, c) {
+      var lead = [new Array(n - 1).fill(0)];          // each rival's points over this coach
+      gains.forEach(function (ways) {
+        var gaps = [], seen = {};
+        ways.forEach(function (gain) {
+          var gap = [];
+          for (var r = 0; r < n; r++) if (r !== c) gap.push(gain[r] - gain[c]);
+          var k = gap.join();
+          if (!seen[k]) { seen[k] = 1; gaps.push(gap); }
+        });
+        if (gaps.length > 1) {                        // drop a way another way is worse than outright
+          gaps = gaps.filter(function (a, i) {
+            return !gaps.some(function (b, j) { return j !== i && b.every(function (v, r) { return v >= a[r]; }); });
+          });
+        }
+        var next = [], seen2 = {};
+        lead.forEach(function (l) {
+          gaps.forEach(function (gap) {
+            var s = l.map(function (v, r) { return v + gap[r]; }), k = s.join();
+            if (!seen2[k]) { seen2[k] = 1; next.push(s); }
+          });
+        });
+        if (next.length > BEST_KEEP) {                // most ahead, then largest leads
+          var score = function (s) { var a = 0, b = 0; s.forEach(function (v) { if (v > 0) a++; b += v; }); return a * 1e6 + b; };
+          next.sort(function (a, b) { return score(b) - score(a); });
+          next.length = BEST_KEEP;
+        }
+        lead = next;
+      });
+      var most = 0;
+      lead.forEach(function (l) { var a = 0; l.forEach(function (v) { if (v > 0) a++; }); if (a > most) most = a; });
+      best[co.name] = 1 + most;
+    });
+    worstCache = { key: key, best: best };
+    return best;
+  }
   // What a coach needs (#86): the results that went the same way in nearly every
   // simulated week they won. Read off the same simulation as Win %, so it costs nothing more.
   var NEED_SHARE = 0.95;

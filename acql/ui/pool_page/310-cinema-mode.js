@@ -1,5 +1,28 @@
   // ---- Cinema mode -----------------------------------------------------------------------
-  var cine = { open: false, node: null, rows: {}, selected: "", fs: false, back: null, tab: "games" };
+  var cine = { open: false, node: null, rows: {}, selected: "", fs: false, back: null, tab: "games",
+    filter: "all", dense: 0, table: "week", sort: "place" };
+  try { cine.dense = Math.max(-1, Math.min(1, Number(localStorage.getItem("acql-cine-dense")) || 0)); } catch (e) { cine.dense = 0; }
+  // What the scores on screen are: live, delayed, stale, cached or unavailable - never "streamed".
+  function dataLabel(fr) {
+    if (fr.level === "waiting" || fr.level === "error") return "Unavailable";
+    if (fr.level === "failed") return "Cached";
+    if (fr.level === "stale") return "Stale";
+    return fr.age != null && fr.age > 90000 ? "Delayed" : "Live";
+  }
+  function inFilter(x, me) {
+    var gi = DATA.live.games.indexOf(x.g), off = x.sc && x.sc.off;
+    if (cine.filter === "live") return x.state === "in";
+    if (cine.filter === "upcoming") return x.state === "pre" || !!off;
+    if (cine.filter === "final") return x.state === "post" && !off;
+    if (cine.filter === "mine") return !!(me && me.picks[gi]);
+    return true;
+  }
+  // How the pool split on one game: cards on each side.
+  function poolSplit(g) {
+    var gi = DATA.live.games.indexOf(g), h = 0, a = 0;
+    DATA.live.coaches.forEach(function (c) { if (c.picks[gi] === g.hc) h++; else if (c.picks[gi] === g.ac) a++; });
+    return { h: h, a: a };
+  }
   function reducedMotion() { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } }
   function motionMs(name, fallback) {
     var v = NaN;
@@ -57,19 +80,20 @@
         : cs.status === "postponed" ? "POSTPONED" : x.kick ? kickFull(x.kick) : "Kickoff time to come";
       var m = live.spreads[key], market = "";
       if (m) { var mf = m.pts > 0 ? m.home : m.pts < 0 ? (m.home === g.hc ? g.ac : g.hc) : ""; market = mf ? "Market " + mf.toUpperCase() + " −" + Math.abs(m.pts) : "Market even"; }
-      var stand = standing(x);
+      var stand = standing(x), sp = poolSplit(g);
       function side(team, name, pts) {
         return el("div", { class: "row" + (pick === team ? " pick" : "") + (x.credit === team ? " credit" : "") }, [badge(team, true),
           el("b", { class: "nm", text: name }), el("span", { class: "sc num" + (pts != null && x.state !== "pre" && moved(g) ? " score-new" : ""),
             text: x.state === "pre" || pts == null ? "" : String(pts) })]);
       }
-      return el("button", { type: "button", class: "ctile", "data-status": cs.status, "data-warn": cs.warn,
+      return el("button", { type: "button", class: "ctile" + (turnedNow(g) ? " turned" : ""), "data-status": cs.status, "data-warn": cs.warn,
         "aria-pressed": cine.selected === key ? "true" : "false", "data-key": key,
         "aria-label": g.a + " at " + g.h + ", " + st.replace("●", "").trim() + (cine.selected === key ? ", selected" : ""),
         onclick: function () { cine.selected = cine.selected === key ? "" : key; cineDraw(); } }, [
         el("span", { class: "st" }, [el("span", { text: st }), warnTag(cs), sc.tv && cs.status !== "final" ? el("span", { class: "tv", text: sc.tv }) : null]),
         side(g.ac, g.a, x.as), side(g.hc, g.h, x.hs),
-        el("span", { class: "ln", text: [g.line != null && g.fav ? "Pool " + g.fav.toUpperCase() + " by " + g.line : "Pool: straight up", market, stand.text].filter(Boolean).join(" · ") })]);
+        el("span", { class: "ln", text: [g.line != null && g.fav ? "Pool " + g.fav.toUpperCase() + " by " + g.line : "Pool: straight up", market,
+          sp.h || sp.a ? "Picked " + g.ac.toUpperCase() + " " + sp.a + " · " + g.hc.toUpperCase() + " " + sp.h : "", stand.text].filter(Boolean).join(" · ") })]);
     }
     // keep the open card focused across a redraw
     var focusKey_ = document.activeElement && document.activeElement.getAttribute ? document.activeElement.getAttribute("data-key") : null;
@@ -84,16 +108,28 @@
       })),
       nextNode(t),
       el("button", { class: "cine-exit", type: "button", onclick: closeCinema, text: "Exit ✕", title: "Back to the site (Esc)" })]);
-    var grid = cine.tab === "picks" ? cinePicks(t) : el("div", { class: "cine-grid" }, order.map(tile));
+    var shown = order.filter(function (x) { return inFilter(x, me); });
+    var grid = cine.tab === "picks" ? cinePicks(t) : el("div", { class: "cine-main" }, [cineBar(), cineDetail(t, me),
+      shown.length ? el("div", { class: "cine-grid", "data-dense": String(cine.dense) }, shown.map(tile))
+        : el("p", { class: "cine-empty", text: ({ live: "No game is on right now.", upcoming: "Every game has kicked off.",
+          final: "No game has finished yet.", mine: hasMe() ? "No picks of yours on this week’s sheet." : "Choose your name on Me to see your picks here." })[cine.filter] || "No games." })]);
     var side = el("aside", { class: "cine-side" }, [
-      el("h2", { text: "Pool · if it ended now" }), standStrip(t),
-      el("p", { class: "cine-note", text: standAt ? "Standings worked out from the scores at " + clockSec(standAt) + ", by the pool’s own rules." : "" }),
+      el("div", { class: "cine-tablebar" }, [el("h2", { text: cine.table === "season" ? "Season · official standings" : "Pool · if it ended now" }),
+        el("div", { class: "cine-chips" }, [["week", "Week"], ["season", "Season"]].map(function (p) {
+          return el("button", { type: "button", class: "cchip", "aria-pressed": cine.table === p[0] ? "true" : "false",
+            onclick: function () { cine.table = p[0]; cineDraw(); }, text: p[1] });
+        }).concat(cine.table === "week" ? [el("button", { type: "button", class: "cchip", title: "Order by place now, best place still possible, or name",
+          onclick: function () { cine.sort = { place: "best", best: "name", name: "place" }[cine.sort]; cineDraw(); }, text: "Sort: " + cine.sort })] : []))]),
+      cine.table === "season" ? seasonStrip() : standStrip(t),
+      el("p", { class: "cine-note", text: cine.table === "season" ? "Season wins from the pool’s official standings; this week’s points so far beside them."
+        : (standAt ? "Standings worked out from the scores at " + clockSec(standAt) + ", by the pool’s own rules." : "") + youRange(t) }),
       el("h2", { text: "Just happened" }),
       swings.length ? el("ol", { class: "cine-feed" }, swings.slice(0, 7).map(function (f) {
-        return el("li", { class: f.tone || null }, [el("time", { text: clock(f.at) }), el("span", { text: f.title })]);
+        return el("li", { class: (f.tone || "") + (/^Final/.test(f.title) ? " fin" : "") || null }, [el("time", { text: clock(f.at) }), el("span", { text: f.title })]);
       })) : el("p", { class: "cine-note", text: "Nothing yet - changes while this page is open show here." }),
       el("h2", { text: "System" }),
-      el("p", { class: "cine-health " + fr.level }, [fr.head, fr.detail ? el("small", { text: fr.detail }) : null])]);
+      el("p", { class: "cine-health " + fr.level }, [el("b", { class: "dl", text: dataLabel(fr) }), fr.head, fr.detail ? el("small", { text: fr.detail }) : null,
+        el("small", { text: "Scores are refreshed by polling ESPN’s scoreboard, not a live stream." })])]);
     var strip = cine.node.querySelector(".cine-strip");
     var keep = strip ? strip.scrollTop : 0;
     node.textContent = "";
@@ -154,20 +190,97 @@
     var first = {};
     Object.keys(cine.rows).forEach(function (k) { if (cine.rows[k].isConnected) first[k] = cine.rows[k].getBoundingClientRect().top; });
     cine.first = first;
-    t.rows.forEach(function (r) {
+    var ranges = rangesOf(t), rows = t.rows.slice();
+    if (cine.sort === "best" && ranges) rows.sort(function (a, b) { return (ranges.best[a.c.name] || 99) - (ranges.best[b.c.name] || 99) || b.now - a.now; });
+    else if (cine.sort === "name") rows.sort(function (a, b) { return a.c.name.localeCompare(b.c.name); });
+    rows.forEach(function (r) {
       var name = r.c.name, place = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length;
       var row = cine.rows[name];
       if (!row) {
-        row = el("li", { class: "sr" }, [el("span", { class: "p num" }), el("span", { class: "n" }), el("b", { class: "v num" })]);
+        row = el("li", { class: "sr" }, [el("span", { class: "p num" }), el("span", { class: "n" }), el("b", { class: "v num" }), el("span", { class: "r num" })]);
         cine.rows[name] = row;
       }
       row.className = "sr" + (isMe(name) ? " me" : "");
       row.children[0].textContent = String(place);
       row.children[1].textContent = name + (isMe(name) ? "  · you" : "");
       if (!row.counting) row.children[2].textContent = String(r.now);
+      var lo = ranges && ranges.best[name], hi = ranges && ranges.worst[name];
+      row.children[3].textContent = lo ? (lo === hi ? String(lo) : lo + "–" + hi) : "";
+      row.title = lo ? name + ": " + ordinal(place) + " now · can still finish anywhere from " + ordinal(lo) + " to " + ordinal(hi) : "";
       box.appendChild(row);
     });
     return box;
+  }
+  // Best and worst places still possible, while the week is open.
+  function rangesOf(t) {
+    var started = t.games.some(function (x) { return x.state !== "pre"; });
+    if (!started || weekOver(t)) return null;
+    try { return { best: bestPlaces(t), worst: worstPlaces(t) }; } catch (e) { return null; }
+  }
+  function youRange(t) {
+    var r = rangesOf(t), me = t.rows.filter(function (x) { return isMe(x.c.name); })[0];
+    if (!r || !me) return "";
+    var place = 1 + t.rows.filter(function (o) { return o.now > me.now; }).length;
+    return " You: " + ordinal(place) + " now, best " + ordinal(r.best[me.c.name]) + ", worst " + ordinal(r.worst[me.c.name]) + ".";
+  }
+  // The season so far, by the official standings; this week's points beside them until they count.
+  function seasonStrip() {
+    var t = liveTally(), now = {};
+    t.rows.forEach(function (r) { now[r.c.name] = r.now; });
+    var wk = String(DATA.live.week);
+    return el("ol", { class: "cine-strip" }, DATA.players.slice().sort(function (a, b) { return a.place - b.place || a.name.localeCompare(b.name); })
+      .map(function (p) {
+        var counted = p.weekly && p.weekly[wk] != null, extra = !counted && now[p.name] != null ? "+" + now[p.name] : "";
+        return el("li", { class: "sr" + (isMe(p.name) ? " me" : ""), title: extra ? now[p.name] + " so far this week, not yet in the official totals" : "" },
+          [el("span", { class: "p num", text: String(p.place) }), el("span", { class: "n", text: p.name + (isMe(p.name) ? "  · you" : "") }),
+            el("b", { class: "v num", text: String(p.wins) }), el("span", { class: "r num", text: extra })]);
+      }));
+  }
+  // Filters and density over the grid.
+  function cineBar() {
+    var chips = [["all", "All"], ["live", "Live"], ["upcoming", "Upcoming"], ["final", "Final"], ["mine", "My picks"]].map(function (p) {
+      return el("button", { type: "button", class: "cchip", "aria-pressed": cine.filter === p[0] ? "true" : "false",
+        onclick: function () { cine.filter = p[0]; cineDraw(); }, text: p[1] });
+    });
+    function dense(way) {
+      return function () {
+        cine.dense = Math.max(-1, Math.min(1, cine.dense + way));
+        try { localStorage.setItem("acql-cine-dense", String(cine.dense)); } catch (e) { /* this visit only */ }
+        cineDraw();
+      };
+    }
+    return el("div", { class: "cine-bar", role: "group", "aria-label": "Show games" }, chips.concat([
+      el("span", { class: "dn", text: "Density" }),
+      el("button", { type: "button", class: "cchip", "aria-label": "Fewer, larger cards", disabled: cine.dense <= -1 ? "disabled" : null, onclick: dense(-1), text: "−" }),
+      el("button", { type: "button", class: "cchip", "aria-label": "More, smaller cards", disabled: cine.dense >= 1 ? "disabled" : null, onclick: dense(1), text: "+" })]));
+  }
+  // The chosen game opened out: drive, last play, records, the pool on it, your pick.
+  function cineDetail(t, me) {
+    var x = t.games.filter(function (y) { return gameKey(y.g.hc, y.g.ac) === cine.selected; })[0];
+    if (!x) return null;
+    var g = x.g, sc = x.sc || {}, gi = DATA.live.games.indexOf(g), sp = poolSplit(g), bits = [];
+    if (x.state === "in") {
+      if (sc.down) bits.push((sc.poss ? sc.poss.toUpperCase() + " ball · " : "") + sc.down + (sc.spot ? " · " + sc.spot : "") + (sc.rz ? " · Red zone" : ""));
+      if (sc.play) bits.push("Last play: " + sc.play);
+    }
+    var rec = sc.rec || {};
+    if (rec[g.ac] || rec[g.hc]) bits.push("Records: " + [rec[g.ac] ? g.a + " " + rec[g.ac] : "", rec[g.hc] ? g.h + " " + rec[g.hc] : ""].filter(Boolean).join(" · "));
+    bits.push((g.line != null && g.fav ? "Pool line: " + teamName(x, g.fav) + " by " + g.line : "Pool line: straight up") + (sc.tv ? " · on " + sc.tv : ""));
+    bits.push("The pool: " + sp.a + " on " + g.a + ", " + sp.h + " on " + g.h);
+    var pick = me ? me.picks[gi] || "" : "";
+    if (pick) {
+      var how = x.state === "pre" ? "to come" : !x.credit ? (x.state === "post" ? "push" : "level")
+        : x.credit === pick ? (x.state === "post" ? "right" : "winning") : (x.state === "post" ? "wrong" : "losing");
+      bits.push("Your pick: " + teamName(x, pick) + " (" + how + ")");
+    }
+    var key = gameKey(g.hc, g.ac), score = x.state === "pre" ? g.a + " at " + g.h : g.a + " " + x.as + ", " + g.h + " " + x.hs;
+    return el("div", { class: "cine-detail" }, [
+      el("div", { class: "dt" }, [el("b", { text: score + " · " + (liveDetail(x) || (x.kick ? kickFull(x.kick) : "Kickoff to come")) }),
+        el("p", {}, bits.map(function (b) { return el("span", { text: b }); }))]),
+      el("div", { class: "dbtn" }, [
+        el("button", { type: "button", class: "cine-exit", text: "Game card", title: "Close Cinema and open this game’s card on Live",
+          onclick: function () { closeCinema(); jumpToGame(key)({ preventDefault: function () {} }); } }),
+        el("button", { type: "button", class: "cine-exit", text: "Close", onclick: function () { cine.selected = ""; cineDraw(); } })])]);
   }
   function playStand() {
     var move = standMove;

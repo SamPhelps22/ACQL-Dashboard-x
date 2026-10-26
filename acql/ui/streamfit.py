@@ -106,3 +106,16 @@ def fit(hwnd: int, left: int, top: int, width: int, height: int) -> bool:
         user.SetWindowPos(hwnd, after, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # NOSIZE|NOMOVE|NOACTIVATE
     user.SetForegroundWindow(hwnd)
     return bool(ok)
+
+
+def window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Where a window is now (left, top, right, bottom, physical pixels), or
+    None once it has closed or is minimised."""
+    if sys.platform != "win32":
+        return None
+    user = ctypes.windll.user32
+    if not user.IsWindow(hwnd) or user.IsIconic(hwnd):
+        return None
+    r = _Rect()
+    user.GetWindowRect(hwnd, ctypes.byref(r))
+    return r.left, r.top, r.right, r.bottom

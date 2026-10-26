@@ -18,7 +18,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import (QEasingCurve, QObject, QPoint, QPropertyAnimation, Qt, QTimer, QVariantAnimation,
+from PySide6.QtCore import (QSettings, QEasingCurve, QObject, QPoint, QPropertyAnimation, Qt, QTimer, QVariantAnimation,
                             Signal)
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
@@ -28,6 +28,7 @@ from .. import places
 from ..feeds import results
 from ..model.predictions import display_team
 from ..pool import gameday as GD
+from ..pool import liveplus as LP
 from ..pool import livestate as LS
 from ..version import MODEL_NAME
 from . import icons, motion, teamlogos
@@ -46,15 +47,55 @@ ROW_HEIGHT = 30
 RECENT_KEPT, RECENT_SHOWN = 30, 7
 
 
+# ---- preferences both live screens share (sound, alerts, spoilers, spotlight) -------------
+PREFS = {
+    "mute": ("redzone/mute", False),          # the chimes (kept under RedZone's first key)
+    "spoilers": ("live/spoilers", False),     # spoiler-free: no scores, results or standings
+    "alerts": ("live/alerts", "mine"),        # scoring banners: "mine", "all" or "off"
+    "auto": ("live/auto", True),              # RedZone's spotlight switches games by itself
+    "keepfit": ("live/keepfit", True),        # RedZone keeps the stream window in the gap
+    "autohide": ("live/autohide", True),      # RedZone hides its controls until the mouse comes
+    "density": ("cinema/density", 0),         # Cinema: -1 fewer, larger cards; +1 more, smaller
+}
+
+
+def pref(name: str):
+    key, default = PREFS[name]
+    value = QSettings().value(key, default)
+    if isinstance(default, bool):
+        return str(value).lower() in ("true", "1")
+    if isinstance(default, int):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    return str(value)
+
+
+def set_pref(name: str, value) -> None:
+    key, default = PREFS[name]
+    QSettings().setValue(key, ("true" if value else "false") if isinstance(default, bool) else value)
+
+
+def priority_weights() -> dict:
+    """The spotlight's priorities, each one switchable (live/prio/<reason>)."""
+    out = {}
+    for reason in ("red_zone", "scored", "turnover", "close_late", "mine"):
+        if str(QSettings().value(f"live/prio/{reason}", "true")).lower() not in ("true", "1"):
+            out[reason] = 0
+    return out
+
+
 # ---- what changed: one decision, played by every screen ----------------------------------
 @dataclass(frozen=True)
 class Changes:
     week: int
     scores: frozenset = frozenset()                       # game indices whose score really changed
     states: dict = field(default_factory=dict)            # game index -> (state before, state now)
+    halftime: frozenset = frozenset()                     # game indices that have just reached halftime
 
     def __bool__(self) -> bool:
-        return bool(self.scores or self.states)
+        return bool(self.scores or self.states or self.halftime)
 
 
 class LiveFeed(QObject):
@@ -74,6 +115,13 @@ class LiveFeed(QObject):
         self._scores = LS.ScoreWatch()
         self._game_states = LS.StateWatch()
         self.standings = LS.StandingsWatch()
+        self.halves: set[int] = set()            # games already announced at halftime
+        self.scored_at: dict[int, float] = {}    # game index -> when its score last really changed
+        self.pool = LP.PoolWatch()               # standings changes, each said once
+        #: The game RedZone mode features - shared, so Cinema can hand a game over and back.
+        self.spotlight = LP.Spotlight()
+        #: The game last chosen on either screen.
+        self.selected: int | None = None
 
     @property
     def live(self) -> bool:
@@ -86,6 +134,8 @@ class LiveFeed(QObject):
         if week != self.week:                    # a new week: a new baseline, nothing "changed"
             self._scores, self._game_states, self.standings = LS.ScoreWatch(), LS.StateWatch(), LS.StandingsWatch()
             self.recent.clear()
+            self.halves, self.scored_at, self.pool = set(), {}, LP.PoolWatch()
+            self.spotlight, self.selected = LP.Spotlight(), None
         self.week = week
         self.year = results.season_year(season, now) if week else 0
         self.kept = results.load(self.year, week) if week else []
@@ -110,9 +160,23 @@ class LiveFeed(QObject):
                 self.recent.appendleft((at, f"Final · {_score_line(st)}", "final"))
         for index in sorted(moved):
             st = by_index[index]
+            self.scored_at[index] = at
             if index not in turned or turned[index][1] != "final":
                 self.recent.appendleft((at, f"{st.clock or 'Score'} · {_score_line(st)}", "score"))
-        return Changes(week, moved, turned)
+        half = set()
+        for st in self.states:
+            if st.state == "in" and "half" in (st.clock or "").lower() and st.index not in self.halves:
+                self.halves.add(st.index)
+                half.add(st.index)
+                self.recent.appendleft((at, f"Halftime · {_score_line(st)}", "half"))
+        return Changes(week, moved, turned, frozenset(half))
+
+    def note_pool(self, rows, you_key: str = "") -> None:
+        """Standings as one screen just worked them out: genuine changes go into
+        'just happened' once, however many screens report the same table.
+        `rows`: (key, name, place, points) in the board's order."""
+        for kind, text in self.pool.events(rows, you_key):
+            self.recent.appendleft((time.time(), text, kind))
 
 
 def _matchup(st) -> str:
@@ -189,6 +253,7 @@ class CinemaTile(QFrame):
     separate properties, each drawn its own way."""
 
     chosen = Signal(int)
+    opened = Signal(int)
 
     def __init__(self, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -307,6 +372,10 @@ class CinemaTile(QFrame):
             self.chosen.emit(self.index)
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        self.opened.emit(self.index)
+        super().mouseDoubleClickEvent(event)
+
     def keyPressEvent(self, event) -> None:  # noqa: N802
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
             self.chosen.emit(self.index)
@@ -332,8 +401,12 @@ class _Row(QFrame):
         self.points.setObjectName("CinemaPoints")
         self.points.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.points.setMinimumWidth(34)
+        self.extra = QLabel()
+        self.extra.setObjectName("CinemaRange")
+        self.extra.hide()
         row.addWidget(self.place)
         row.addWidget(self.name, 1)
+        row.addWidget(self.extra)
         row.addWidget(self.points)
         self.anim: QPropertyAnimation | None = None
         self.counter: QVariantAnimation | None = None
@@ -350,8 +423,10 @@ class Leaderboard(QWidget):
         self.order: list[str] = []
         self.gold = "#e8b84e"
 
-    def show_rows(self, rows: list[tuple[str, int, int, bool]], movement: LS.Movement) -> None:
-        """`rows`: (name, place, points now, you) in the board's order."""
+    def show_rows(self, rows: list[tuple[str, int, int, bool]], movement: LS.Movement,
+                  extras: dict | None = None) -> None:
+        """`rows`: (name, place, points now, you) in the board's order. `extras`:
+        name -> (short text, tooltip) shown beside the points, e.g. the best-worst range."""
         reduced = motion.reduced()
         keep = {name for name, *_ in rows}
         for name in list(self.rows):
@@ -369,6 +444,10 @@ class Leaderboard(QWidget):
                 self.rows[name] = row
             row.place.setText(str(place))
             row.name.setText(name)
+            extra = (extras or {}).get(name)
+            row.extra.setText(extra[0] if extra else "")
+            row.extra.setVisible(bool(extra))
+            row.setToolTip(extra[1] if extra else "")
             set_prop(row, "you", "true" if you else "")
             target = QPoint(0, i * ROW_HEIGHT)
             if not fresh and name in movement.moved and not reduced and row.pos() != target:
@@ -434,6 +513,13 @@ class CinemaWindow(QWidget):
         self.quad = False
         self._stakes: list[tuple[int, float]] = []
         self._quad_was: set[int] = set()
+        #: Which games the grid shows (liveplus.FILTERS) and how dense it is.
+        self.filter = "all"
+        self.density = max(-1, min(1, pref("density")))
+        #: The leaderboard: this week or the season, and its order.
+        self.table = "week"
+        self.sort = "place"
+        self._bd = None
         self.setObjectName("Cinema")
         self.setWindowTitle(f"{places.BRAND} – Cinema mode")
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
@@ -460,7 +546,12 @@ class CinemaWindow(QWidget):
         self.empty.setWordWrap(True)
         self.empty.hide()
         self.slate_area.setWidget(lane)
-        body.addWidget(self.slate_area, 1)
+        lane_box = QVBoxLayout()
+        lane_box.setSpacing(10)
+        lane_box.addWidget(self._build_filters())
+        lane_box.addWidget(self._build_detail())
+        lane_box.addWidget(self.slate_area, 1)
+        body.addLayout(lane_box, 1)
         body.addWidget(self._build_side())
         outer.addLayout(body, 1)
 
@@ -522,8 +613,76 @@ class CinemaWindow(QWidget):
         self.exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.exit_btn.setToolTip("Back to the dashboard (Esc or F11)")
         self.exit_btn.clicked.connect(self.leave)
+        self.redzone_btn = QPushButton("REDZONE")
+        self.redzone_btn.setObjectName("CinemaExit")
+        self.redzone_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.redzone_btn.setToolTip("Switch to RedZone mode, featuring the chosen game (F10)")
+        self.redzone_btn.clicked.connect(self.to_redzone)
+        row.addWidget(self.redzone_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(self.exit_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         return head
+
+    def _build_filters(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("CinemaFilters")
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self.filter_btns: dict[str, QPushButton] = {}
+        for key in LP.FILTERS:
+            btn = QPushButton({"mine": "MY PICKS"}.get(key, key.upper()))
+            btn.setObjectName("CinemaChip")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda *_, k=key: self.set_filter(k))
+            row.addWidget(btn)
+            self.filter_btns[key] = btn
+        row.addStretch(1)
+        cap = QLabel("DENSITY")
+        cap.setObjectName("CinemaCaption")
+        row.addWidget(cap)
+        for text, way, tip in (("−", -1, "Fewer, larger cards"), ("+", 1, "More, smaller cards")):
+            btn = QPushButton(text)
+            btn.setObjectName("CinemaChip")
+            btn.setToolTip(tip)
+            btn.setFixedWidth(34)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda *_, w=way: self.set_density(self.density + w))
+            row.addWidget(btn)
+        self.filter_btns["all"].setChecked(True)
+        return bar
+
+    def _build_detail(self) -> QWidget:
+        """The chosen game, opened out: drive, last play, records, chances,
+        how the pool split on it, and the ways on to Game Day or RedZone."""
+        box = QFrame()
+        box.setObjectName("CinemaDetail")
+        row = QHBoxLayout(box)
+        row.setContentsMargins(16, 10, 12, 10)
+        row.setSpacing(16)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        self.detail_title = QLabel()
+        self.detail_title.setObjectName("CinemaDetailTitle")
+        self.detail_body = QLabel()
+        self.detail_body.setObjectName("CinemaMeta")
+        self.detail_body.setWordWrap(True)
+        text.addWidget(self.detail_title)
+        text.addWidget(self.detail_body)
+        row.addLayout(text, 1)
+        for label, slot, tip in (("GAME VIEW", self.open_selected, "Open this game on the Game Day page"),
+                                 ("FEATURE IN REDZONE", self.feature_selected, "RedZone mode, with this game in the spotlight"),
+                                 ("CLOSE", lambda: self._choose(self.selected) if self.selected is not None else None,
+                                  "Close the details")):
+            btn = QPushButton(label)
+            btn.setObjectName("CinemaExit")
+            btn.setToolTip(tip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda *_, s=slot: s())
+            row.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        box.hide()
+        self.detail = box
+        return box
 
     def _build_side(self) -> QWidget:
         side = QFrame()
@@ -537,7 +696,28 @@ class CinemaWindow(QWidget):
             label = QLabel(text)
             label.setObjectName("CinemaHeading")
             return label
-        box.addWidget(heading("POOL · IF IT ENDED NOW"))
+        self.board_heading = heading("POOL · IF IT ENDED NOW")
+        box.addWidget(self.board_heading)
+        modes = QHBoxLayout()
+        modes.setSpacing(4)
+        self.table_btns: dict[str, QPushButton] = {}
+        for key, words in (("week", "WEEK"), ("season", "SEASON")):
+            btn = QPushButton(words)
+            btn.setObjectName("CinemaChip")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda *_, k=key: self.set_table(k))
+            modes.addWidget(btn)
+            self.table_btns[key] = btn
+        modes.addStretch(1)
+        self.sort_btn = QPushButton("SORT: PLACE")
+        self.sort_btn.setObjectName("CinemaChip")
+        self.sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sort_btn.setToolTip("Order the week's table by place now, best place still possible, or name")
+        self.sort_btn.clicked.connect(self.cycle_sort)
+        modes.addWidget(self.sort_btn)
+        self.table_btns["week"].setChecked(True)
+        box.addLayout(modes)
         self.board_scroll = QScrollArea()
         self.board_scroll.setObjectName("CinemaScroll")
         self.board_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -599,6 +779,9 @@ class CinemaWindow(QWidget):
         if event.key() == Qt.Key.Key_Q:
             self.toggle_quad()
             return
+        if event.key() == Qt.Key.Key_F10:
+            self.to_redzone()
+            return
         super().keyPressEvent(event)
 
     def showEvent(self, event) -> None:  # noqa: N802
@@ -643,14 +826,21 @@ class CinemaWindow(QWidget):
             self._stakes = GD.stakes_order(bd) if bd is not None else []
         except Exception:  # noqa: BLE001 - the quad falls back to the live games in order
             self._stakes = []
+        self._bd = bd
+        if bd is not None and bd.standings:
+            feed.note_pool([(s.card.key, s.card.name, s.place, s.total_now) for s in bd.standings
+                            if s.place is not None], bd.you.card.key if bd.you is not None else "")
+        if self.selected is None and feed.selected is not None:
+            self.selected = feed.selected           # the game chosen in RedZone mode stays chosen
         self._show_tiles(states, you)
         self._show_board(bd)
+        self._show_detail()
         self._show_recent()
         self._show_health()
         self._tick_clock()
         if changes:
             gold = self.palette_.brand or self.palette_.accent
-            for index in changes.states:
+            for index in set(changes.states) | set(changes.halftime):
                 tile = self.tiles.get(index)
                 if tile is not None:
                     pulse(tile)
@@ -675,6 +865,15 @@ class CinemaWindow(QWidget):
         self.empty.hide()
         market = self._market()
         ordered = _broadcast_order(states)
+        picks = you.picks if you is not None else {}
+        ordered = [st for st in ordered if st.index in {s.index for s in LP.filter_states(states, self.filter, picks)}]
+        splits = {}
+        if self._bd is not None and self._bd.standings:
+            for st in states:
+                home, away = GD.split(self._bd, st)
+                if home or away:
+                    code = lambda n: (teamlogos.code_in(n) or display_team(n)[:3]).upper()  # noqa: E731
+                    splits[st.index] = f"Pool {code(st.game.away)} {away} · {code(st.game.home)} {home}"
         stakes = dict(self._stakes)
         if self.quad:
             ordered = self._quad_states(ordered)
@@ -682,11 +881,24 @@ class CinemaWindow(QWidget):
         for index in list(self.tiles):
             if index not in known:
                 self.tiles.pop(index).deleteLater()
+        if not ordered:
+            self.empty.setText({"live": "No game is on right now.", "upcoming": "Every game has kicked off.",
+                                "final": "No game has finished yet.", "mine": "No picks of yours on this week's sheet."}
+                               .get(self.filter, "No games.") + "\nPick another filter above.")
+            if self.grid.indexOf(self.empty) < 0:
+                self.grid.addWidget(self.empty, 0, 0)
+            self._columns, self._order = 0, []
+            self.empty.show()
+            return
+        self.empty.hide()
+        if self.grid.indexOf(self.empty) >= 0:
+            self.grid.removeWidget(self.empty)
         for st in ordered:
             tile = self.tiles.get(st.index)
             if tile is None:
                 tile = CinemaTile(st.index)
                 tile.chosen.connect(self._choose)
+                tile.opened.connect(self._open_game)
                 self.tiles[st.index] = tile
             mine = you.picks.get(st.index, GD.NOBODY) if you is not None else GD.NOBODY
             cs = LS.card_state(st.state, selected=st.index == self.selected, feed=feed.fresh)
@@ -694,7 +906,8 @@ class CinemaWindow(QWidget):
             size = stakes.get(st.index)
             stake = (f"YOUR STAKE  ±{size * 100:.0f} pts on the next touchdown" if size else
                      "No stake for you in this one" if self.quad and size is not None else "")
-            tile.show_game(st, mine, market.get(st.index, ""), cs, kick.upper(), stake)
+            line = " · ".join(x for x in (market.get(st.index, ""), splits.get(st.index, "")) if x)
+            tile.show_game(st, mine, line, cs, kick.upper(), stake)
         self._order = [st.index for st in ordered]
         if self.quad:
             now_in = set(self._order)
@@ -739,7 +952,7 @@ class CinemaWindow(QWidget):
         if self.quad:
             return 2
         room = width - SIDE_WIDTH - 76          # the margins and the gap beside the side column
-        return next(n for edge, n in COLUMNS if room >= edge)
+        return max(1, min(5, next(n for edge, n in COLUMNS if room >= edge) + self.density))
 
     def _place_tiles(self) -> None:
         columns = self._columns_for(self.width() or 1600)
@@ -763,22 +976,43 @@ class CinemaWindow(QWidget):
         """A card chosen (click, Enter or Space): gold round it; chosen again, off.
         Only the two cards whose look changed are redrawn."""
         self.selected = None if self.selected == index else index
+        self.feed.selected = self.selected
         self._show_tiles(list(self.feed.states), self._you)
+        self._show_detail()
 
     def _show_board(self, bd) -> None:
+        if self.table == "season":
+            self._show_season(bd)
+            return
+        self.board_heading.setText("POOL · IF IT ENDED NOW")
         if bd is None or not bd.standings:
             self.board.show_rows([], LS.Movement())
             self.board_note.setText("Standings appear once the week's pick sheet is in."
                                     if self.feed.week else "")
             return
-        rows = [(s.card.name, s.place, s.total_now, s.card.you)
-                for s in bd.standings if s.place is not None and s.card.name]
-        movement = self.feed.standings.accept([(n, p, pts) for n, p, pts, _ in rows])
+        live = [s for s in bd.standings if s.place is not None and s.card.name]
+        if self.sort == "best":
+            live.sort(key=lambda s: (s.best or 999, s.place, s.card.name.lower()))
+        elif self.sort == "name":
+            live.sort(key=lambda s: s.card.name.lower())
+        rows = [(s.card.name, s.place, s.total_now, s.card.you) for s in live]
+        extras = {}
+        for s in live:
+            if s.best is not None and s.worst is not None:
+                text = str(s.best) if s.best == s.worst else f"{s.best}–{s.worst}"
+                extras[s.card.name] = (text, f"{s.card.name}: {LP.GD_ordinal(s.place)} now · can still finish "
+                                             f"anywhere from {LP.GD_ordinal(s.best)} to {LP.GD_ordinal(s.worst)}")
+        movement = self.feed.standings.accept([(n, p, pts) for n, p, pts, _ in sorted(rows, key=lambda r: r[1])])
         if movement or self.standings_at is None:
             self.standings_at = time.time()
         self.standings_from = self.feed.fresh.last_success if self.feed.fresh is not None else None
-        self.board.show_rows(rows, movement)
+        self.board.show_rows(rows, movement, extras)
         note = f"Worked out by the pool's rules at {LS.clock_et(self.standings_at, seconds=True)}"
+        me = bd.you
+        if me is not None and me.place is not None:
+            note = (f"You: {LP.GD_ordinal(me.place)} now"
+                    + (f", best {LP.GD_ordinal(me.best)}" if me.best else "")
+                    + (f", worst {LP.GD_ordinal(me.worst)}" if me.worst else "") + ". " + note)
         if self.standings_from:
             note += f", from scores at {LS.clock_et(self.standings_from, seconds=True)}"
         self.board_note.setText(note + ".")
@@ -788,7 +1022,7 @@ class CinemaWindow(QWidget):
         if not items:
             self.recent.setText("Nothing yet this session - scores that change while the dashboard is open show here.")
             return
-        self.recent.setText("\n".join(f"{LS.clock_et(at)}   {text}" for at, text, _kind in items))
+        self.recent.setText(recent_html(items, self.palette_))
 
     def _show_health(self) -> None:
         fresh = self.feed.fresh
@@ -796,9 +1030,11 @@ class CinemaWindow(QWidget):
             self.health.setText("Score feed: no week being played.")
             set_prop(self.health, "level", "")
             return
-        lines = [f"Scores (ESPN): {fresh.headline()}"]
+        label, words = LP.data_label(fresh)
+        lines = [f"{label} · Scores (ESPN): {fresh.headline()}", words]
         if fresh.detail():
             lines.append(fresh.detail())
+        lines.append("Refreshed by polling (every 30 s with a game on), not a live stream.")
         self.health.setText("\n".join(lines))
         set_prop(self.health, "level", fresh.level)
 
@@ -840,6 +1076,134 @@ class CinemaWindow(QWidget):
             self._show_health()
             if turned:                   # fresh -> stale on the clock alone: the cards say so too
                 self._show_tiles(list(states), self._you)
+
+
+    # ---- controls ----------------------------------------------------------------------
+    def set_filter(self, which: str) -> None:
+        self.filter = which if which in LP.FILTERS else "all"
+        for key, btn in self.filter_btns.items():
+            btn.setChecked(key == self.filter)
+        self._columns = 0
+        self._show_tiles(list(self.feed.states), self._you)
+
+    def set_density(self, value: int) -> None:
+        self.density = max(-1, min(1, value))
+        set_pref("density", self.density)
+        self._place_tiles()
+
+    def set_table(self, which: str) -> None:
+        self.table = which
+        for key, btn in self.table_btns.items():
+            btn.setChecked(key == which)
+        self.sort_btn.setEnabled(which == "week")
+        self._show_board(self._bd)
+
+    def cycle_sort(self) -> None:
+        order = ("place", "best", "name")
+        self.sort = order[(order.index(self.sort) + 1) % len(order)]
+        self.sort_btn.setText(f"SORT: {self.sort.upper()}")
+        self._show_board(self._bd)
+
+    def _show_season(self, bd) -> None:
+        """The season so far, by the pool's official standings; this week's points
+        so far shown beside them, never folded in until the week is official."""
+        from .ribbon import viewer
+        season = self.window_.season
+        self.board_heading.setText("SEASON · OFFICIAL STANDINGS")
+        found = getattr(season, "players", None) if season is not None else None
+        found = list(found.values()) if isinstance(found, dict) else list(found or [])
+        players = [p for p in found if getattr(p, "pos", None) is not None]
+        players.sort(key=lambda p: (p.pos, p.display.lower()))
+        you_key = viewer(season) if season is not None else ""
+        week_now = {s.card.key: s.total_now for s in bd.standings} if bd is not None and bd.standings else {}
+        rows, extras = [], {}
+        for p in players:
+            rows.append((p.display, p.pos, p.wins, p.key == you_key))
+            if p.key in week_now and self.feed.week not in p.weekly_wins:
+                extras[p.display] = (f"+{week_now[p.key]}", f"{week_now[p.key]} so far in week {self.feed.week}, "
+                                                          "not yet in the official totals")
+        self.board.show_rows(rows, LS.Movement(), extras)
+        self.board_note.setText("Season wins from the pool's official standings." if rows else
+                                "No official standings loaded yet.")
+
+    def _show_detail(self) -> None:
+        st = next((s for s in self.feed.states if s.index == self.selected), None)
+        if st is None:
+            self.detail.hide()
+            return
+        bits = []
+        if st.state == "in":
+            dr = LP.drive(st, teamlogos.code_in)
+            if dr is not None:
+                where = f", {dr.to_goal} yards to go to the end zone" if dr.to_goal is not None else ""
+                bits.append(f"{dr.down_text}{where}" + (" · RED ZONE" if st.red_zone else ""))
+            if st.last_play:
+                bits.append(f"Last play: {st.last_play}")
+        records = " · ".join(x for x in (f"{display_team(st.game.away)} {st.away_record}" if st.away_record else "",
+                                         f"{display_team(st.game.home)} {st.home_record}" if st.home_record else "") if x)
+        if records:
+            bits.append("Records: " + records)
+        bits.append(f"Pool line {st.line_text()}" + (f" · on {st.broadcast}" if st.broadcast else ""))
+        if st.state != "final":
+            fav = GD.HOME if st.p_home >= st.p_away else GD.AWAY
+            bits.append(f"{MODEL_NAME}: {display_team(st.team(fav))} {st.chance(fav):.0%} to be credited"
+                        + (f" · ESPN live {st.espn:.0%} home win" if st.espn is not None else ""))
+        if self._bd is not None and self._bd.standings:
+            home, away = GD.split(self._bd, st)
+            bits.append(f"The pool: {away} on {display_team(st.game.away)}, {home} on {display_team(st.game.home)}")
+        if self._you is not None and self._you.picks.get(st.index, GD.NOBODY) != GD.NOBODY:
+            side = self._you.picks[st.index]
+            bits.append(f"Your pick: {display_team(st.team(side))} ({LP.pick_status(st, side)})")
+        stake = dict(self._stakes).get(st.index)
+        if stake:
+            bits.append(f"Your stake: ±{stake * 100:.0f} pts on the next touchdown")
+        self.detail_title.setText(f"{_score_line(st).upper()} · {(st.clock or LS.card_state(st.state).label).upper()}")
+        self.detail_body.setText("\n".join(bits))
+        self.detail.show()
+
+    def _open_game(self, index: int) -> None:
+        self.selected = index
+        self.open_selected()
+
+    def open_selected(self) -> None:
+        """The chosen game on the Game Day page, Cinema closed back to the window."""
+        if self.selected is None or not self.feed.week:
+            return
+        week, index = self.feed.week, self.selected
+        self.leave()
+        opener = getattr(self.window_, "open_game", None)
+        if opener is not None:
+            opener(week, index)
+
+    def feature_selected(self) -> None:
+        if self.selected is not None:
+            self.feed.spotlight.choose_by_hand(self.selected)
+        self.to_redzone()
+
+    def to_redzone(self) -> None:
+        """Over to RedZone mode, the chosen game handed across."""
+        self.feed.selected = self.selected
+        if self.selected is not None and self.feed.spotlight.current != self.selected:
+            self.feed.spotlight.choose_by_hand(self.selected)
+        opener = getattr(self.window_, "_open_redzone", None) or getattr(self.window_, "toggle_redzone", None)
+        self.leave()
+        if opener is not None:
+            opener()
+
+
+def recent_html(items, p) -> str:
+    """'Just happened', each kind in its own colour: finals and the pool's real
+    changes stand out from the run of scores."""
+    import html
+    gold = p.brand or p.accent
+    colours = {"final": gold, "you": gold, "pool": p.accent, "half": p.ink_muted, "state": p.ink_secondary,
+               "score": p.ink}
+    lines = []
+    for at, text, kind in items:
+        weight = "700" if kind in ("final", "you", "pool") else "400"
+        lines.append(f"<span style='color:{p.ink_muted}'>{LS.clock_et(at)}</span>&nbsp;&nbsp;"
+                     f"<span style='color:{colours.get(kind, p.ink)};font-weight:{weight}'>{html.escape(text)}</span>")
+    return "<br>".join(lines)
 
 
 def _broadcast_order(states: list) -> list:
@@ -915,4 +1279,13 @@ def stylesheet(p) -> str:
     #CinemaHealth[level="error"] {{ border-left-color: {red}; color: {red}; }}
     #CinemaHealth[level="waiting"] {{ border-left-color: {p.ink_muted}; }}
     #CinemaEmpty {{ color: {p.ink_secondary}; font-size: 18px; padding: 60px; }}
+    QPushButton#CinemaChip {{ background: transparent; color: {p.ink_secondary}; border: 1px solid {line};
+                              border-radius: {r['sm']}px; padding: 5px 12px; font-size: 11px; font-weight: 700;
+                              letter-spacing: 1.5px; }}
+    QPushButton#CinemaChip:hover {{ border-color: {mix(gold, line, 0.6)}; color: {p.ink}; }}
+    QPushButton#CinemaChip:checked {{ border-color: {gold}; color: {gold}; background: {mix(gold, plane, 0.10)}; }}
+    QPushButton#CinemaChip:disabled {{ color: {p.ink_muted}; border-color: {line}; }}
+    #CinemaDetail {{ background: {panel}; border: 1px solid {gold}; border-radius: {r['md']}px; }}
+    #CinemaDetailTitle {{ color: {gold}; font-size: 15px; font-weight: 800; letter-spacing: 1.5px; }}
+    #CinemaRange {{ font-family: {MONO_STACK}; color: {p.ink_muted}; font-size: 11px; }}
     """

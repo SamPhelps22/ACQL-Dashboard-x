@@ -571,6 +571,9 @@ class Standing:
     #: The best place this card can still finish the week in, every result
     #: still to come going its way (best_places). None without a field.
     best: int | None = None
+    #: The worst place it can still finish in, every result still to come going
+    #: against it (worst_places). None without a field.
+    worst: int | None = None
 
     @property
     def total_now(self) -> int:
@@ -777,6 +780,49 @@ def best_places(states: list[GameNow], every: list[Card]) -> dict[str, int]:
     return out
 
 
+def worst_places(states: list[GameNow], every: list[Card]) -> dict[str, int]:
+    """Card key -> the worst place it can still finish the week in: best_places
+    turned round. Every way the games still to come can finish is tried, and the
+    place is one plus the most cards in the field that can end up ahead of it.
+    A way no worse for the card against every rival than another is dropped."""
+    field = [c for c, card in enumerate(every) if card.in_field]
+    if not states or not field:
+        return {}
+    index = {st.index: g for g, st in enumerate(states)}
+    gains = []
+    for g, st in enumerate(states):
+        ways = _ways(st)
+        gain = np.zeros((len(ways), len(every)), dtype=int)
+        for w, (side, home_routed, away_routed) in enumerate(ways):
+            for c, card in enumerate(every):
+                pick = card.picks.get(st.index, NOBODY)
+                hit = int(bool(pick) and pick == side)
+                for game_index, held in card.losers:
+                    if index.get(game_index) == g:
+                        hit += home_routed if held == HOME else away_routed
+                gain[w, c] = hit
+        gains.append(gain)
+    out: dict[str, int] = {}
+    for c, card in enumerate(every):
+        rivals = [r for r in field if r != c]
+        if not rivals:
+            out[card.key] = 1
+            continue
+        lead = np.zeros((1, len(rivals)), dtype=int)
+        for gain in gains:
+            gap = np.unique(gain[:, rivals] - gain[:, [c]], axis=0)
+            if len(gap) > 1:                                # drop ways another way is worse than outright
+                keep = [i for i in range(len(gap))
+                        if not any(j != i and (gap[j] >= gap[i]).all() for j in range(len(gap)))]
+                gap = gap[keep]
+            lead = np.unique((lead[:, None, :] + gap[None, :, :]).reshape(-1, len(rivals)), axis=0)
+            if len(lead) > BEST_KEEP:                       # most ahead, then largest leads
+                order = np.lexsort((-lead.sum(axis=1), -(lead > 0).sum(axis=1)))
+                lead = lead[order[:BEST_KEEP]]
+        out[card.key] = 1 + int((lead > 0).sum(axis=1).max())
+    return out
+
+
 def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
           kept: list[results.Score] | None = None) -> Board:
     """The whole week as it stands, played out `sims` times from here."""
@@ -881,6 +927,7 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
             return banked, banked_l, now, now_l, most
 
         best_of = best_places(states, every)
+        worst_of = worst_places(states, every)
         now_totals = {}
         rows = []
         for c, card in enumerate(every):
@@ -912,6 +959,7 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
                 money=float(net[:, c].mean()) if net is not None else None,
                 money_now=float(money_now) if money_now is not None else None,
                 best=best_of.get(card.key),
+                worst=worst_of.get(card.key),
             )
             if card.ghost:
                 ghost_standing = standing
