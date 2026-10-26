@@ -111,6 +111,9 @@ jobs:
       - name: RedZone and Cinema mode tests
         run: python tests/test_live_modes.py
 
+      - name: League modes tests (Broadcast, Time Machine, Numbers Room)
+        run: python tests/test_league_modes.py
+
       - name: The app's own checks
         run: python -m acql.checks
 

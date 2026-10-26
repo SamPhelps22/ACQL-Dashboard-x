@@ -59,13 +59,16 @@ PAGES = ("acql/ui/pool_page.html",)
 #: The pool page is kept as pieces (acql/ui/pool_page/*, joined in name order);
 #: it is checked as the one page they make.
 PARTS = "acql/ui/pool_page/"
+MODE_PARTS = "acql/ui/pool_modes/"
 
 
 def joined_pages(files: dict[str, bytes]) -> dict[str, bytes]:
     """Each page to parse: the whole files, and the pool page joined from its pieces."""
     out = {name: files[name] for name in PAGES if name in files}
-    pieces = sorted(n for n in files if n.startswith(PARTS) and n[len(PARTS):][:3].isdigit()
-                    and n.endswith((".html", ".js")))
+    # the league modes' pieces (pool_modes/*.js) join in among them by name, as poolpage does
+    pieces = sorted((n for n in files if (n.startswith(PARTS) and n[len(PARTS):][:3].isdigit() and n.endswith((".html", ".js")))
+                     or (n.startswith(MODE_PARTS) and n[len(MODE_PARTS):][:3].isdigit() and n.endswith(".js"))),
+                    key=lambda n: n.rsplit("/", 1)[-1])
     if pieces:
         out[PARTS.rstrip("/") + ".html (joined)"] = b"".join(files[n] for n in pieces)
     return out

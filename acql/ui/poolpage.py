@@ -1004,13 +1004,38 @@ def to_json(data: dict) -> str:
 PARTS = Path(__file__).with_name("pool_page")
 
 
+#: The three league modes - League Broadcast, League Time Machine and the
+#: Numbers Room - are kept apart in pool_modes/ and joined in only when this is
+#: on. Off, the page (and so the site's fingerprint) is exactly what it was
+#: without them. Turned on 2026-10-26 at Sam's word: they go up at the next
+#: publish. A preview build (python -m acql.site.modespreview) always has them.
+MODES = True
+MODES_DIR = Path(__file__).with_name("pool_modes")
+MODES_CSS = "modes.css"
+
+
+def _modes_on() -> bool:
+    """On, and their files are there: a copy of the code without the modes'
+    folder (a commit that left it out) still builds the site, just without them."""
+    return MODES and (MODES_DIR / MODES_CSS).is_file()
+
+
 def template() -> str:
     """The whole pool page template, its pieces joined in name order."""
-    return "".join(p.read_text(encoding="utf-8") for p in parts())
+    page = "".join(p.read_text(encoding="utf-8") for p in parts())
+    if _modes_on():
+        # the modes' own styles go at the end of the page's one style block
+        css = (MODES_DIR / MODES_CSS).read_text(encoding="utf-8")
+        head, tail = page.split("</style>", 1)
+        page = head + "/* ---- league modes ---- */\n" + css + "</style>" + tail
+    return page
 
 
 def parts() -> list[Path]:
-    return sorted(p for p in PARTS.iterdir() if p.suffix in (".html", ".js") and p.name[:3].isdigit())
+    found = [p for p in PARTS.iterdir() if p.suffix in (".html", ".js") and p.name[:3].isdigit()]
+    if _modes_on():
+        found += [p for p in MODES_DIR.iterdir() if p.suffix == ".js" and p.name[:3].isdigit()]
+    return sorted(found, key=lambda p: p.name)
 
 
 SITE = "__SITE__"               # the website's address, filled in on upload
