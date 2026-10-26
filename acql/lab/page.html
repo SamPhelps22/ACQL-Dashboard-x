@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operation Sunday Lab</title>
+<style>
+:root {
+  --bg: #07080a; --panel: #111317; --panel2: #171a20; --rule: #262a32; --ink: #f2f3f5; --muted: #8b919c;
+  --gold: #d4a93c; --blue: #2f8cff; --good: #2fa36b; --bad: #d6453d; --warn: #e0a02a;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace; --body: "Segoe UI", system-ui, sans-serif;
+  --r: 4px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--body); }
+a { color: var(--blue); }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; background: var(--bg); z-index: 5; flex-wrap: wrap; }
+.brand { font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); font-size: 13px; }
+.brand small { color: var(--muted); letter-spacing: .1em; margin-left: 8px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav a { color: var(--muted); text-decoration: none; font: 600 11px/1 var(--body); letter-spacing: .12em;
+  text-transform: uppercase; padding: 8px 10px; border: 1px solid transparent; border-radius: var(--r); }
+nav a.on { color: var(--ink); border-color: var(--blue); }
+main { padding: 16px; max-width: 1280px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 15px; margin: 18px 0 8px; }
+.lbl { font: 600 10.5px/1.2 var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.sub { color: var(--muted); margin: 0 0 14px; max-width: 80ch; }
+.box { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r); padding: 12px; margin-bottom: 12px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.tile { background: var(--panel2); border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; }
+.tile b { display: block; font: 700 22px/1.1 var(--mono); margin-top: 4px; }
+.num, td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+label.f { display: flex; flex-direction: column; gap: 4px; }
+select, input, textarea, button { font: inherit; color: var(--ink); background: var(--panel2); border: 1px solid var(--rule);
+  border-radius: var(--r); padding: 6px 8px; }
+button { cursor: pointer; } button.on, button.primary { border-color: var(--blue); color: #fff; background: #12305a; }
+button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font: 600 10.5px/1.2 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+th.s { cursor: pointer; } td.n, th.n { text-align: right; }
+tr.sel td { background: #12305a55; } tr.click { cursor: pointer; } tr.click:hover td { background: #ffffff08; }
+.note { color: var(--muted); font-size: 12.5px; } .warn { border-left: 3px solid var(--warn); padding-left: 10px; }
+.tag { display: inline-block; font: 600 10px/1 var(--body); letter-spacing: .1em; text-transform: uppercase;
+  padding: 3px 6px; border-radius: var(--r); border: 1px solid var(--rule); color: var(--muted); }
+.tag.good { color: var(--good); border-color: var(--good); } .tag.bad { color: var(--bad); border-color: var(--bad); }
+.tag.warn { color: var(--warn); border-color: var(--warn); } .tag.blue { color: var(--blue); border-color: var(--blue); }
+.chip { display: inline-flex; gap: 6px; align-items: center; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+.err { color: var(--bad); }
+.skel { height: 120px; border-radius: var(--r); background: linear-gradient(90deg, var(--panel) 0%, var(--panel2) 50%, var(--panel) 100%);
+  background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) { .skel { animation: sk 1.4s linear infinite; } }
+@keyframes sk { to { background-position: -200% 0; } }
+svg text { fill: var(--muted); font: 11px var(--mono); }
+.tip { position: fixed; pointer-events: none; background: #000d; border: 1px solid var(--rule); padding: 6px 8px;
+  border-radius: var(--r); font: 12px/1.4 var(--mono); z-index: 9; display: none; max-width: 280px; }
+/* live */
+.status { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--good); } .dot.stale { background: var(--warn); } .dot.down { background: var(--bad); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r); padding: 10px 12px;
+  transition: border-color .5s ease, background-color .5s ease, opacity .5s ease; position: relative; }
+.card[data-phase="live"] { border-color: var(--bad); }
+.card[data-phase="halftime"] { border-color: var(--warn); }
+.card[data-phase="final"] { opacity: .82; }
+.card[data-phase="called-off"] { opacity: .5; }
+.card { padding-top: 34px; } .card .ph { position: absolute; top: 9px; right: 12px; }
+.card .t { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 0; }
+.card .t b { font: 700 22px/1.1 var(--mono); display: inline-block; min-width: 2ch; text-align: right; border-radius: var(--r); padding: 0 4px; }
+.card .t.lead b { color: var(--gold); }
+.card .d { color: var(--muted); font-size: 12px; margin-top: 4px; min-height: 1.4em; }
+.card .sel { outline: 2px solid var(--blue); }
+@media (prefers-reduced-motion: no-preference) {
+  .flash { animation: flash 1.6s ease-out; }
+  .card.pop { animation: pop .6s ease-out; }
+  .card[data-phase="live"] .ph::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--bad); margin-right: 5px; animation: blink 1.6s ease-in-out infinite; vertical-align: middle; }
+}
+@media (prefers-reduced-motion: reduce) { .flash { outline: 2px solid var(--gold); } }
+@keyframes flash { 0% { background: var(--gold); color: #000; } 100% { background: transparent; } }
+@keyframes pop { 0% { box-shadow: 0 0 0 0 #2f8cff99; } 100% { box-shadow: 0 0 0 12px #2f8cff00; } }
+@keyframes blink { 50% { opacity: .2; } }
+.feed { max-height: 200px; overflow: auto; font: 12px/1.6 var(--mono); color: var(--muted); }
+.teamgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.teamgrid a { display: flex; justify-content: space-between; padding: 6px 8px; text-decoration: none; color: var(--ink);
+  border-bottom: 1px solid var(--rule); }
+.teamgrid a:hover { background: #ffffff08; }
+.answer { white-space: pre-wrap; line-height: 1.55; }
+.presets button { margin: 0 6px 6px 0; font-size: 12.5px; }
+@media (max-width: 600px) { main { padding: 12px; } header { padding: 10px 12px; } .tile b { font-size: 18px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Operation Sunday <small>Lab · private, this computer only</small></div>
+  <nav id="nav"></nav>
+</header>
+<main id="main"><div class="skel"></div></main>
+<div class="tip" id="tip"></div>
+<script>
+"use strict";
+var PAGES = [["live", "Live"], ["teams", "Teams"], ["strength", "Strength"], ["calibration", "Calibration"],
+  ["confidence", "Confidence"], ["markets", "Markets"], ["stats", "Stats"], ["postmortems", "Postmortems"],
+  ["assistant", "Assistant"]];
+var COLORS = ["#2f8cff", "#d4a93c", "#2fa36b", "#d6453d", "#b07cff", "#4fd1c5"];
+var cache = {};
+
+// ---- small helpers ---------------------------------------------------------------
+function el(tag, attrs, kids) {
+  var n = document.createElement(tag);
+  for (var k in attrs || {}) {
+    var v = attrs[k];
+    if (v == null || v === false) continue;
+    if (k === "text") n.textContent = v;
+    else if (k === "html") n.innerHTML = v;
+    else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+  return n;
+}
+function S(tag, attrs, kids) {
+  var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (var k in attrs || {}) if (attrs[k] != null) {
+    if (k === "text") n.textContent = attrs[k];
+    else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), attrs[k]);
+    else n.setAttribute(k, attrs[k]);
+  }
+  (kids || []).forEach(function (c) { if (c) n.appendChild(c); });
+  return n;
+}
+function pct(x, d) { return x == null ? "–" : (100 * x).toFixed(d == null ? 1 : d) + "%"; }
+function fx(x, d) { return x == null ? "–" : Number(x).toFixed(d == null ? 2 : d); }
+function signed(x, d) { return x == null ? "–" : (x > 0 ? "+" : "") + Number(x).toFixed(d == null ? 1 : d); }
+function up(t) { return String(t || "").toUpperCase(); }
+function ago(sec) {
+  if (sec == null) return "never";
+  var s = Math.max(0, Math.round(Date.now() / 1000 - sec));
+  return s < 60 ? s + " s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : Math.round(s / 3600) + " h ago";
+}
+function when(iso) {
+  if (!iso) return "–";
+  var d = typeof iso === "number" ? new Date(iso * 1000) : new Date(iso);
+  return isNaN(d) ? String(iso) : d.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function api(path) {
+  if (cache[path]) return cache[path];
+  cache[path] = fetch(path).then(function (r) {
+    return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; });
+  });
+  cache[path].catch(function () { delete cache[path]; });
+  return cache[path];
+}
+function post(path, body) {
+  return fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Lab": "1" }, body: JSON.stringify(body) })
+    .then(function (r) { return r.json(); });
+}
+function tip(e, text) {
+  var t = document.getElementById("tip");
+  if (!text) { t.style.display = "none"; return; }
+  t.textContent = text; t.style.display = "block";
+  t.style.left = Math.min(window.innerWidth - 290, e.clientX + 12) + "px"; t.style.top = (e.clientY + 12) + "px";
+}
+function loading(main) { main.innerHTML = ""; main.appendChild(el("div", { class: "skel" })); }
+function failed(main, err) {
+  main.innerHTML = "";
+  main.appendChild(el("div", { class: "box err", text: "Couldn't load this page: " + (err && err.message || err) }));
+}
+function sel(label, options, value, onchange) {
+  var s = el("select", { onchange: function () { onchange(s.value); } }, options.map(function (o) {
+    var v = Array.isArray(o) ? o[0] : o, t = Array.isArray(o) ? o[1] : o;
+    return el("option", { value: v, selected: String(v) === String(value) ? "selected" : null, text: t });
+  }));
+  return el("label", { class: "f" }, [el("span", { class: "lbl", text: label }), s]);
+}
+function table(heads, rows, opts) {
+  opts = opts || {};
+  var state = { key: opts.sort == null ? null : opts.sort, dir: opts.dir || -1 };
+  var wrap = el("div", { class: "scroll" });
+  function draw() {
+    var data = rows.slice();
+    if (state.key != null) data.sort(function (a, b) {
+      var x = a.cells[state.key], y = b.cells[state.key];
+      x = x && x.v !== undefined ? x.v : x; y = y && y.v !== undefined ? y.v : y;
+      if (x == null) return 1; if (y == null) return -1;
+      return (x > y ? 1 : x < y ? -1 : 0) * state.dir;
+    });
+    wrap.innerHTML = "";
+    wrap.appendChild(el("table", {}, [
+      el("thead", {}, [el("tr", {}, heads.map(function (h, i) {
+        var num = h[1] === "n";
+        return el("th", { class: (num ? "n " : "") + "s", scope: "col", "aria-sort": state.key === i ? (state.dir > 0 ? "ascending" : "descending") : null,
+          onclick: function () { state.dir = state.key === i ? -state.dir : -1; state.key = i; draw(); },
+          text: h[0] + (state.key === i ? (state.dir > 0 ? " ▲" : " ▼") : "") });
+      }))]),
+      el("tbody", {}, data.length ? data.map(function (r) {
+        return el("tr", { class: (r.onclick ? "click " : "") + (r.cls || ""), onclick: r.onclick },
+          r.cells.map(function (c, i) {
+            var show = c && c.t !== undefined ? c.t : c;
+            var td = el("td", { class: heads[i][1] === "n" ? "n" : null });
+            if (show instanceof Node) td.appendChild(show); else td.textContent = show == null ? "–" : show;
+            return td;
+          }));
+      }) : [el("tr", {}, [el("td", { colspan: heads.length, class: "empty", text: opts.empty || "Nothing matches." })])])
+    ]));
+  }
+  draw();
+  return wrap;
+}
+function tag(text, kind) { return el("span", { class: "tag " + (kind || ""), text: text }); }
+function status(s) {
+  return s === "eligible" ? tag("locked pregame", "good") : s === "postgame" ? tag("recorded after kickoff", "bad")
+    : tag(s || "unknown", "warn");
+}
+
+// ---- charts ------------------------------------------------------------------------
+function lineChart(series, opts) {
+  // series: [{name, color, points: [{x, y, tip}]}]
+  var W = 760, H = opts.height || 260, P = { l: 44, r: 12, t: 12, b: 28 };
+  var xs = [], ys = [];
+  series.forEach(function (s) { s.points.forEach(function (p) { if (p.y != null) { xs.push(p.x); ys.push(p.y); } }); });
+  if (!ys.length) return el("div", { class: "empty", text: opts.empty || "No points to draw." });
+  var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+  var y0 = Math.min.apply(null, ys.concat(opts.yzero ? [0] : [])), y1 = Math.max.apply(null, ys.concat(opts.yzero ? [0] : []));
+  if (y0 === y1) { y0 -= 1; y1 += 1; }
+  var pad = (y1 - y0) * 0.08; y0 -= pad; y1 += pad;
+  var X = function (x) { return P.l + (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0)) * (W - P.l - P.r); };
+  var Y = function (y) { return H - P.b - (y - y0) / (y1 - y0) * (H - P.t - P.b); };
+  var svg = S("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": opts.label || "chart" });
+  for (var i = 0; i <= 4; i++) {
+    var v = y0 + (y1 - y0) * i / 4;
+    svg.appendChild(S("line", { x1: P.l, x2: W - P.r, y1: Y(v), y2: Y(v), stroke: "#262a32" }));
+    svg.appendChild(S("text", { x: P.l - 6, y: Y(v) + 4, "text-anchor": "end", text: v.toFixed(1) }));
+  }
+  if (opts.yzero && y0 < 0 && y1 > 0) svg.appendChild(S("line", { x1: P.l, x2: W - P.r, y1: Y(0), y2: Y(0), stroke: "#8b919c", "stroke-dasharray": "3 3" }));
+  for (var x = x0; x <= x1; x++) svg.appendChild(S("text", { x: X(x), y: H - 8, "text-anchor": "middle", text: (opts.xprefix || "") + x }));
+  series.forEach(function (s) {
+    var d = "", pen = false;
+    s.points.forEach(function (p) {
+      if (p.y == null) { pen = false; return; }
+      d += (pen ? "L" : "M") + X(p.x).toFixed(1) + " " + Y(p.y).toFixed(1); pen = true;
+    });
+    svg.appendChild(S("path", { d: d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-dasharray": s.dash }));
+    s.points.forEach(function (p) {
+      if (p.y == null) return;
+      svg.appendChild(S("circle", { cx: X(p.x), cy: Y(p.y), r: p.r || 3.5, fill: p.fill || s.color, stroke: "#07080a", "stroke-width": 1,
+        onmousemove: function (e) { tip(e, p.tip); }, onmouseleave: function (e) { tip(e, null); } }));
+    });
+  });
+  return svg;
+}
+function legend(series) {
+  return el("div", { class: "row note" }, series.map(function (s) {
+    return el("span", { class: "chip" }, [el("span", { class: "sw", style: "background:" + s.color }), s.name]);
+  }));
+}
+
+// ---- router ------------------------------------------------------------------------
+function route() {
+  var hash = location.hash.replace(/^#/, "") || "live";
+  var parts = hash.split("/"), page = parts[0];
+  if (!PAGES.some(function (p) { return p[0] === page; })) page = "live";
+  var nav = document.getElementById("nav"); nav.innerHTML = "";
+  PAGES.forEach(function (p) { nav.appendChild(el("a", { href: "#" + p[0], class: p[0] === page ? "on" : null, "aria-current": p[0] === page ? "page" : null, text: p[1] })); });
+  var main = document.getElementById("main");
+  if (page !== "live") LIVE.detach();
+  (VIEWS[page] || VIEWS.live)(main, parts.slice(1));
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", route);
+
+// ---- 1 + 8: live cards, one shared stream -------------------------------------------
+var LIVE = {
+  snap: null, rows: {}, es: null, failures: 0, timer: null, main: null, feed: [], selected: null, conn: "connecting",
+  attach: function (main) {
+    this.main = main; var me = this;
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "Live scoreboard" }));
+    main.appendChild(el("p", { class: "sub", text: "One reader on this computer asks ESPN's scoreboard (every 30 s while a game is on, " +
+      "longer otherwise) and sends this page only what changed. ESPN has no streaming feed, so this is polling - " +
+      "scores can be up to a poll behind the broadcast. Live scores never touch the locked Thursday forecasts." }));
+    this.bar = el("div", { class: "status box" }); main.appendChild(this.bar);
+    this.grid = el("div", { class: "cards", "aria-live": "polite" }); main.appendChild(this.grid);
+    main.appendChild(el("h2", { text: "What changed" }));
+    this.feedBox = el("div", { class: "feed box" }); main.appendChild(this.feedBox);
+    this.rows = {};
+    api("/api/live").then(function (s) { delete cache["/api/live"]; me.snap = s; me.lastVersion = s.version; me.drawAll(); me.connect(); })
+      .catch(function (e) { me.bar.textContent = "Live scores unavailable: " + e.message; });
+    this.tick = setInterval(function () { me.drawBar(); }, 1000);
+  },
+  detach: function () {
+    if (this.es) { this.es.close(); this.es = null; }
+    clearTimeout(this.timer); clearInterval(this.tick); this.main = null;
+  },
+  connect: function () {
+    var me = this;
+    if (!window.EventSource || this.failures > 3) return this.pollFallback();
+    this.es = new EventSource("/events?since=" + this.snap.version);
+    this.es.onopen = function () { me.conn = "streaming"; me.failures = 0; me.drawBar(); };
+    this.es.onmessage = function (m) { me.apply(JSON.parse(m.data)); };
+    this.es.onerror = function () {
+      me.conn = "reconnecting"; me.failures++; me.drawBar();
+      if (me.failures > 3) { me.es.close(); me.es = null; me.pollFallback(); }
+    };
+  },
+  pollFallback: function () {
+    // the stream won't hold: ask for the whole snapshot, backing off 5 s -> 2 min
+    var me = this, wait = Math.min(120, 5 * Math.pow(2, Math.max(0, this.failures - 4)));
+    this.conn = "polling the Lab server";
+    this.timer = setTimeout(function () {
+      if (!me.main) return;
+      fetch("/api/live").then(function (r) { return r.json(); }).then(function (s) {
+        me.failures = 4; me.mergeSnapshot(s);
+      }).catch(function () { me.failures++; me.conn = "disconnected from the Lab server"; me.drawBar(); })
+        .then(function () { me.pollFallback(); });
+    }, wait * 1000);
+  },
+  mergeSnapshot: function (s) {
+    var me = this, old = this.snap;
+    this.snap = s;
+    s.games.forEach(function (g) {
+      var key = g.away + "@" + g.home, before = old && old.games.filter(function (x) { return x.away + "@" + x.home === key; })[0];
+      if (!before || JSON.stringify(before) !== JSON.stringify(g)) {
+        var kind = !before ? "new" : (before.away_points !== g.away_points || before.home_points !== g.home_points) ? "score"
+          : before.phase !== g.phase ? "phase" : "clock";
+        me.apply({ kind: kind, game: key, row: g, before: before, version: s.version, at: s.now }, true);
+      }
+    });
+    this.drawBar();
+  },
+  apply: function (e, fromSnap) {
+    if (!this.main || !this.snap) return;
+    if (!fromSnap) {
+      if (e.version <= (this.lastVersion || 0)) return;   // duplicate after a reconnect
+      this.lastVersion = e.version;
+    }
+    if (e.kind === "error") { this.snap.error = e.text; this.snap.failures = (this.snap.failures || 0) + 1; this.drawBar(); return; }
+    if (e.kind === "heartbeat") { this.snap.ok_at = e.ok_at; this.snap.error = ""; this.snap.failures = 0; this.drawBar(); return; }
+    if (!e.row) return;
+    var list = this.snap.games, i = list.findIndex(function (g) { return g.away + "@" + g.home === e.game; });
+    if (i >= 0) list[i] = e.row; else list.push(e.row);
+    this.drawCard(e.row, e);
+    if (e.kind === "score" || e.kind === "phase") {
+      var b = e.before || {};
+      this.feed.unshift(new Date().toLocaleTimeString() + "  " + up(e.row.away) + " " + e.row.away_points + " - " +
+        e.row.home_points + " " + up(e.row.home) + "  " + (e.kind === "score" ? "score (was " + b.away_points + "-" + b.home_points + ")" : b.phase + " → " + e.row.phase));
+      this.feed = this.feed.slice(0, 50);
+      this.feedBox.textContent = this.feed.join("\n");
+    }
+  },
+  drawAll: function () {
+    var me = this;
+    this.grid.innerHTML = ""; this.rows = {};
+    var order = { live: 0, halftime: 0, upcoming: 1, final: 2, "called-off": 3 };
+    this.snap.games.slice().sort(function (a, b) { return (order[a.phase] - order[b.phase]) || ((a.kickoff || 0) - (b.kickoff || 0)); })
+      .forEach(function (g) { me.drawCard(g, null); });
+    if (!this.snap.games.length) this.grid.appendChild(el("div", { class: "empty", text: "No games stored for week " + this.snap.week + " yet." }));
+    this.feedBox.textContent = "Nothing yet - changes appear here as they happen.";
+    this.drawBar();
+  },
+  drawCard: function (g, e) {
+    var key = g.away + "@" + g.home, card = this.rows[key], me = this;
+    var phaseText = { upcoming: "Upcoming", live: "Live", halftime: "Halftime", final: "Final", "called-off": "Called off" }[g.phase];
+    if (!card) {
+      card = el("article", { class: "card", tabindex: "0", "aria-label": up(g.away) + " at " + up(g.home),
+        onclick: function () { me.selected = key; Object.keys(me.rows).forEach(function (k) { me.rows[k].el.classList.toggle("sel", k === key); }); } });
+      var ph = el("span", { class: "ph tag" });
+      var ta = el("div", { class: "t" }, [el("span", { text: up(g.away) }), el("b", { class: "num" })]);
+      var th = el("div", { class: "t" }, [el("span", { text: "@ " + up(g.home) }), el("b", { class: "num" })]);
+      var d = el("div", { class: "d" });
+      card.appendChild(ph); card.appendChild(ta); card.appendChild(th); card.appendChild(d);
+      this.grid.appendChild(card);
+      card = this.rows[key] = { el: card, ph: ph, ta: ta, th: th, d: d, a: ta.querySelector("b"), h: th.querySelector("b"), last: {} };
+    }
+    var last = card.last, started = g.phase !== "upcoming";
+    // only what changed is touched, so unchanged cards never re-animate
+    if (last.phase !== g.phase) {
+      card.el.dataset.phase = g.phase; card.ph.textContent = phaseText;
+      card.ph.className = "ph tag " + (g.phase === "live" ? "bad" : g.phase === "halftime" ? "warn" : g.phase === "final" ? "" : "blue");
+      if (e && last.phase) { card.el.classList.remove("pop"); void card.el.offsetWidth; card.el.classList.add("pop"); }
+    }
+    [["a", "away_points"], ["h", "home_points"]].forEach(function (p) {
+      var v = started && g[p[1]] != null ? String(g[p[1]]) : "";
+      if (card[p[0]].textContent !== v) {
+        card[p[0]].textContent = v;
+        if (e && e.kind === "score" && last[p[1]] != null) { card[p[0]].classList.remove("flash"); void card[p[0]].offsetWidth; card[p[0]].classList.add("flash"); }
+      }
+    });
+    var lead = started && g.away_points != null && g.home_points != null && g.away_points !== g.home_points;
+    card.ta.classList.toggle("lead", lead && g.away_points > g.home_points);
+    card.th.classList.toggle("lead", lead && g.home_points > g.away_points);
+    var detail = g.phase === "upcoming" ? when(g.kickoff) : [g.detail, g.situation].filter(Boolean).join(" · ");
+    if (card.d.textContent !== detail) card.d.textContent = detail;
+    card.last = { phase: g.phase, away_points: g.away_points, home_points: g.home_points };
+  },
+  drawBar: function () {
+    if (!this.bar || !this.snap) return;
+    var s = this.snap, stale = s.ok_at == null || (Date.now() / 1000 - s.ok_at) > Math.max(3 * (s.next_in || 30), 90);
+    var down = this.conn.indexOf("disconnected") === 0 || (s.failures || 0) > 0;
+    this.bar.innerHTML = "";
+    this.bar.appendChild(el("span", { class: "dot " + (down ? "down" : stale ? "stale" : "ok") }));
+    this.bar.appendChild(el("span", { class: "lbl", text: "Week " + s.week }));
+    this.bar.appendChild(el("span", { text: "ESPN last answered " + ago(s.ok_at) + (s.source === "stored" ? " (scores kept by the app)" : "") }));
+    this.bar.appendChild(el("span", { class: "note", text: "· page link: " + this.conn }));
+    if (s.error) this.bar.appendChild(el("span", { class: "err", text: "· last try failed: " + s.error + " - showing the last good scores" }));
+    else if (stale) this.bar.appendChild(el("span", { class: "tag warn", text: "stale" }));
+  }
+};
+
+// ---- views -------------------------------------------------------------------------
+var VIEWS = {};
+VIEWS.live = function (main) { LIVE.attach(main); };
+
+// 2: team pages
+VIEWS.teams = function (main, rest) {
+  loading(main);
+  Promise.all([api("/api/teams"), api("/api/strength")]).then(function (r) {
+    var T = r[0], ST = r[1];
+    if (rest[0]) return teamPage(main, T, ST, rest[0]);
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "Teams" }));
+    main.appendChild(el("p", { class: "sub", text: "Every team's page is built from the same data: stored scores and lines, Deadeye's recorded forecasts, the two rating systems and the nflverse team file." }));
+    var byDiv = {};
+    T.teams.forEach(function (t) { (byDiv[t.division] = byDiv[t.division] || []).push(t); });
+    var grid = el("div", { class: "teamgrid" });
+    Object.keys(byDiv).sort().forEach(function (d) {
+      grid.appendChild(el("div", { class: "box" }, [el("div", { class: "lbl", text: d })].concat(byDiv[d].map(function (t) {
+        var own = (ST.own[t.code] || []).filter(function (x) { return x != null; }).slice(-1)[0];
+        return el("a", { href: "#teams/" + t.code }, [el("span", { text: t.name }),
+          el("span", { class: "num note", text: t.record + "  " + signed(own) })]);
+      }))));
+    });
+    main.appendChild(grid);
+  }).catch(function (e) { failed(main, e); });
+};
+function teamPage(main, T, ST, code) {
+  var t = T.teams.filter(function (x) { return x.code === code; })[0];
+  if (!t) return failed(main, "no team " + code);
+  var rec = T.records[code] || {}, filt = "all";
+  main.innerHTML = "";
+  main.appendChild(el("a", { href: "#teams", class: "note", text: "← all teams" }));
+  main.appendChild(el("h1", { text: t.name + " (" + up(code) + ")" }));
+  main.appendChild(el("p", { class: "sub", text: t.division + " · record " + t.record }));
+  var next = t.games.filter(function (g) { return !g.final && !g.called_off; }).sort(function (a, b) { return (a.kickoff || 0) - (b.kickoff || 0); })[0];
+  var own = ST.own[code] || [], mk = ST.market[code] || [];
+  var tiles = el("div", { class: "tiles" }, [
+    el("div", { class: "tile" }, [el("span", { class: "lbl", text: "Record" }), el("b", { text: t.record })]),
+    el("div", { class: "tile" }, [el("span", { class: "lbl", text: "Own rating now" }), el("b", { text: signed(own.filter(function (x) { return x != null; }).slice(-1)[0]) })]),
+    el("div", { class: "tile" }, [el("span", { class: "lbl", text: "Market rating now" }), el("b", { text: signed(mk.filter(function (x) { return x != null; }).slice(-1)[0]) })]),
+    el("div", { class: "tile" }, [el("span", { class: "lbl", text: "Deadeye on its games" }),
+      el("b", { text: rec.decided ? rec.right + " of " + rec.decided : "–" }),
+      el("span", { class: "note", text: rec.decided ? "eligible forecasts, Brier " + fx(rec.brier, 3) : "no eligible forecast decided" })])
+  ]);
+  main.appendChild(tiles);
+  if (next) {
+    var dp = next.deadeye;
+    main.appendChild(el("div", { class: "box" }, [el("div", { class: "lbl", text: "Next game" }),
+      el("p", {}, [(next.at_home ? "vs " : "at ") + up(next.opponent) + " · week " + next.week + " · " + when(next.kickoff) +
+        " · line " + (next.line_for == null ? "not stored" : signed(next.line_for) + " (" + (next.line_for > 0 ? "favoured" : "underdog") + ")") +
+        " · Deadeye " + (dp && dp.p != null ? pct(dp.p) + " " : "no forecast recorded yet "), dp ? status(dp.status) : null,
+        " ", el("a", { href: "#markets/" + code, text: "every sportsbook's price" })])]));
+  }
+  var series = [{ name: "Own rating (results only)", color: COLORS[0], points: ST.weeks.map(function (w, i) { return { x: w, y: own[i], tip: "Week " + w + " own " + signed(own[i]) }; }) },
+    { name: "Market rating (lines)", color: COLORS[1], dash: "5 4", points: ST.weeks.map(function (w, i) { return { x: w, y: mk[i], tip: "Week " + w + " market " + signed(mk[i]) }; }) }];
+  main.appendChild(el("h2", { text: "Strength through the season" }));
+  main.appendChild(el("div", { class: "box" }, [legend(series), lineChart(series, { yzero: true, xprefix: "W", label: "rating by week" }),
+    el("p", { class: "note", text: "Points better than an average team, entering each week. " }, [el("a", { href: "#strength/" + code, text: "Compare with other teams" })])]));
+  var hold = el("div");
+  function games() {
+    var rows = t.games.filter(function (g) {
+      if (filt === "home") return g.at_home; if (filt === "away") return !g.at_home;
+      if (filt === "recent") return g.final; return true;
+    });
+    if (filt === "recent") rows = rows.slice(-4);
+    hold.innerHTML = "";
+    hold.appendChild(table([["Wk", "n"], ["Opponent"], ["Result"], ["Score"], ["Line", "n"], ["Deadeye", "n"], ["Forecast status"]],
+      rows.map(function (g) {
+        var dp = g.deadeye;
+        return { cells: [g.week, (g.at_home ? "vs " : "at ") + up(g.opponent),
+          g.result ? tag(g.result, g.result === "W" ? "good" : g.result === "L" ? "bad" : "") : (g.called_off ? "called off" : g.state === "in" ? "live" : when(g.kickoff)),
+          g.points_for != null ? g.points_for + "-" + g.points_against : "–",
+          { t: signed(g.line_for), v: g.line_for }, { t: dp && dp.p != null ? pct(dp.p) : "–", v: dp && dp.p },
+          dp ? status(dp.status) : "–"] };
+      }), { sort: null }));
+  }
+  main.appendChild(el("h2", { text: "Games" }));
+  main.appendChild(el("div", { class: "row", style: "margin-bottom:8px" }, [["all", "All"], ["recent", "Last 4 played"], ["home", "Home"], ["away", "Away"]].map(function (f) {
+    var b = el("button", { class: f[0] === filt ? "on" : null, text: f[1], onclick: function () {
+      filt = f[0]; [].forEach.call(b.parentNode.children, function (x) { x.classList.remove("on"); }); b.classList.add("on"); games(); } });
+    return b;
+  })));
+  main.appendChild(hold); games();
+  main.appendChild(el("p", { class: "note", text: "Line is from this team's side (+ favoured), the last stored before kickoff. Deadeye is the recorded chance this team wins; 'recorded after kickoff' forecasts are shown for the record and never scored. Injury and quarterback status are not shown here: no reliable pregame source is stored for 2026." }));
+  api("/api/stats").then(function (st) {
+    var mine = st.rows.filter(function (r) { return r.team === code; });
+    if (!mine.length) return;
+    var sum = function (k) { return mine.reduce(function (a, r) { return a + (r[k] || 0); }, 0); };
+    main.appendChild(el("h2", { text: "Offence and defence (nflverse, through week " + st.through_week + ")" }));
+    main.appendChild(el("div", { class: "tiles" }, [
+      ["Yards a play", fx(sum("yards") / sum("plays"))], ["Allowed a play", fx(sum("opp_yards") / sum("opp_plays"))],
+      ["EPA a play", fx(sum("epa") / sum("plays"), 3)], ["EPA allowed a play", fx(sum("opp_epa") / sum("opp_plays"), 3)],
+      ["Turnovers a game", fx(sum("turnovers") / mine.length)], ["Takeaways a game", fx(sum("takeaways") / mine.length)]
+    ].map(function (x) { return el("div", { class: "tile" }, [el("span", { class: "lbl", text: x[0] }), el("b", { text: x[1] })]); })));
+    main.appendChild(el("p", { class: "note" }, [mine.length + " games. ", el("a", { href: "#stats/" + code, text: "Open in the stats explorer" })]));
+  });
+}
+
+// 3: strength over time
+VIEWS.strength = function (main, rest) {
+  loading(main);
+  Promise.all([api("/api/strength"), api("/api/teams")]).then(function (r) {
+    var ST = r[0], T = r[1];
+    var picked = rest[0] ? rest[0].split(",") : ["kc", "buf"], kind = "own", from = ST.weeks[0], to = ST.weeks[ST.weeks.length - 1];
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "Team strength over time" }));
+    main.appendChild(el("p", { class: "sub", text: "Two rating systems the app already runs, entering each week. Pick up to six teams." }));
+    var ctl = el("div", { class: "row box" }), chartBox = el("div", { class: "box" }), detail = el("div");
+    main.appendChild(ctl); main.appendChild(chartBox); main.appendChild(detail);
+    var chips = el("div", { class: "row" });
+    function draw() {
+      ctl.innerHTML = "";
+      ctl.appendChild(sel("Rating", [["own", "Deadeye's own (results only)"], ["market", "Market (from lines)"], ["for", "Points scored (last 4)"], ["against", "Points allowed (last 4)"]], kind, function (v) { kind = v; draw(); }));
+      ctl.appendChild(sel("From week", ST.weeks, from, function (v) { from = +v; draw(); }));
+      ctl.appendChild(sel("To week", ST.weeks, to, function (v) { to = +v; draw(); }));
+      ctl.appendChild(sel("Add team", [["", "—"]].concat(T.teams.map(function (t) { return [t.code, t.name]; })), "", function (v) {
+        if (v && picked.indexOf(v) < 0 && picked.length < 6) { picked.push(v); draw(); } }));
+      chips.innerHTML = "";
+      picked.forEach(function (c, i) {
+        chips.appendChild(el("button", { title: "Remove", onclick: function () { picked.splice(i, 1); draw(); } },
+          [el("span", { class: "sw", style: "background:" + COLORS[i] }), " " + up(c) + " ×"]));
+      });
+      ctl.appendChild(chips);
+      var series = picked.map(function (c, i) {
+        return { name: up(c), color: COLORS[i], points: ST.weeks.map(function (w, k) {
+          if (w < from || w > to) return { x: w, y: null };
+          var f = (ST.form[c] || [])[k] || {}, y = kind === "own" ? ST.own[c][k] : kind === "market" ? ST.market[c][k] : kind === "for" ? f.rolling_for : f.rolling_against;
+          var res = f.result == null ? "no game that week" : (f.result > 0 ? "won " : f.result < 0 ? "lost " : "tied ") + f["for"] + "-" + f.against;
+          return { x: w, y: y, fill: f.result == null ? "#555" : f.result > 0 ? "#2fa36b" : "#d6453d",
+            tip: up(c) + " · week " + w + "\n" + (kind === "own" || kind === "market" ? "rating " + signed(y, 2) : "avg " + fx(y, 1)) +
+              "\nsource: " + ({ own: "teamstrength (results)", market: "survivor.ratings (lines)", "for": "stored finals", against: "stored finals" })[kind] + "\nthat week: " + res };
+        }).filter(function (p) { return p.x >= from && p.x <= to; }) };
+      });
+      chartBox.innerHTML = "";
+      chartBox.appendChild(legend(series));
+      chartBox.appendChild(lineChart(series, { yzero: kind === "own" || kind === "market", xprefix: "W", label: "team strength" }));
+      chartBox.appendChild(el("p", { class: "note", text: "Dot colour: the team's result that week (green won, red lost, grey no game). Hover a dot for the week, value, source and result." }));
+      detail.innerHTML = "";
+      detail.appendChild(el("div", { class: "box" }, [el("div", { class: "lbl", text: "Method and limits" })].concat(
+        ["own", "market", "form", "limits", "version"].map(function (k) { return el("p", { class: "note", text: k + ": " + ST.method[k] }); }))));
+    }
+    draw();
+  }).catch(function (e) { failed(main, e); });
+};
+
+// 4: calibration
+VIEWS.calibration = function (main) {
+  var q = { model: "deadeye", team: "", version: "", horizon: "", width: "0.1" };
+  loading(main);
+  Promise.all([api("/api/models"), api("/api/teams")]).then(function (r) {
+    var models = r[0], teams = r[1].teams;
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "Calibration" }));
+    main.appendChild(el("p", { class: "sub", text: "When a model said 70%, did that side win about 70% of the time? Only forecasts the log proves were made before the week's cutoff are used, on finished games. Each is read from the side it favoured." }));
+    var ctl = el("div", { class: "row box" }), out = el("div");
+    main.appendChild(ctl); main.appendChild(out);
+    function load() {
+      var path = "/api/calibration?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
+      out.innerHTML = ""; out.appendChild(el("div", { class: "skel" }));
+      api(path).then(function (c) { draw(c); }).catch(function (e) { failed(out, e); });
+    }
+    function controls(c) {
+      ctl.innerHTML = "";
+      ctl.appendChild(sel("Model", models.map(function (m) { return [m.id, m.name + " (" + m.eligible + " eligible)"]; }), q.model, function (v) { q.model = v; q.version = ""; load(); }));
+      ctl.appendChild(sel("Team", [["", "All teams"]].concat(teams.map(function (t) { return [t.code, t.name]; })), q.team, function (v) { q.team = v; load(); }));
+      ctl.appendChild(sel("Version", [["", "All versions"]].concat((c && c.versions || []).map(function (v) { return [v, v]; })), q.version, function (v) { q.version = v; load(); }));
+      ctl.appendChild(sel("Made", [["", "Any time before cutoff"], ["over 48h", "Over 48h before kickoff"], ["24-48h", "24-48h before"], ["under 24h", "Under 24h before"]], q.horizon, function (v) { q.horizon = v; load(); }));
+      ctl.appendChild(sel("Bins", [["0.1", "10 points"], ["0.05", "5 points"]], q.width, function (v) { q.width = v; load(); }));
+    }
+    function draw(c) {
+      controls(c);
+      out.innerHTML = "";
+      if (c.warning) out.appendChild(el("div", { class: "box warn", text: c.warning + (c.postgame_left_out ? " " + c.postgame_left_out + " forecasts recorded after kickoff were left out." : "") }));
+      out.appendChild(el("div", { class: "tiles" }, [
+        ["Games", c.games], ["Brier score", fx(c.brier, 3) + "", "lower is better; 0.25 = always saying 50%"],
+        ["Log loss", fx(c.log_loss, 3), "lower is better; 0.693 = always 50%"],
+        ["Favoured side won", pct(c.accuracy), "winner accuracy - not calibration"],
+        ["Expected vs actual wins", fx(c.expected_wins, 1) + " / " + c.actual_wins, "sum of chances vs wins"]
+      ].map(function (x) { return el("div", { class: "tile" }, [el("span", { class: "lbl", text: x[0] }), el("b", { text: String(x[1]) }), x[2] ? el("span", { class: "note", text: x[2] }) : null]); })));
+      // reliability diagram
+      var W = 520, H = 360, P = 44, X = function (v) { return P + (v - 0.5) / 0.5 * (W - P - 12); }, Y = function (v) { return H - P - v * (H - P - 12); };
+      var svg = S("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", style: "max-width:560px", role: "img", "aria-label": "reliability diagram" });
+      [0, .25, .5, .75, 1].forEach(function (v) {
+        svg.appendChild(S("line", { x1: P, x2: W - 12, y1: Y(v), y2: Y(v), stroke: "#262a32" }));
+        svg.appendChild(S("text", { x: P - 6, y: Y(v) + 4, "text-anchor": "end", text: Math.round(v * 100) + "%" }));
+      });
+      [.5, .6, .7, .8, .9, 1].forEach(function (v) { svg.appendChild(S("text", { x: X(v), y: H - P + 16, "text-anchor": "middle", text: Math.round(v * 100) + "%" })); });
+      svg.appendChild(S("text", { x: (W + P) / 2, y: H - 6, "text-anchor": "middle", text: "forecast chance (favoured side)" }));
+      svg.appendChild(S("line", { x1: X(.5), y1: Y(.5), x2: X(1), y2: Y(1), stroke: "#8b919c", "stroke-dasharray": "4 4" }));
+      svg.appendChild(S("text", { x: X(.93), y: Y(.97), text: "perfect" }));
+      var maxN = Math.max.apply(null, c.bins.map(function (b) { return b.n; }).concat([1]));
+      c.bins.forEach(function (b) {
+        if (!b.n) return;
+        var x = X(b.predicted), iv = b.interval;
+        svg.appendChild(S("line", { x1: x, x2: x, y1: Y(iv[0]), y2: Y(iv[1]), stroke: "#2f8cff", "stroke-width": 2, opacity: .6 }));
+        svg.appendChild(S("circle", { cx: x, cy: Y(b.observed), r: 4 + 8 * Math.sqrt(b.n / maxN), fill: "#2f8cff", stroke: "#07080a",
+          onmousemove: function (e) { tip(e, pct(b.lo, 0) + "-" + pct(b.hi, 0) + "\npredicted " + pct(b.predicted) + "\nwon " + b.hits + " of " + b.n + " (" + pct(b.observed) + ")\n95% interval " + pct(iv[0], 0) + "-" + pct(iv[1], 0)); },
+          onmouseleave: function (e) { tip(e, null); } }));
+      });
+      out.appendChild(el("div", { class: "box" }, [svg, el("p", { class: "note", text: "Dot size = games in the bin; whisker = 95% Wilson interval for the observed rate. A dot on the dashed line is perfectly calibrated. With few games the whiskers are wide - a dot off the line is usually just luck." })]));
+      out.appendChild(table([["Bin"], ["Games", "n"], ["Won", "n"], ["Predicted", "n"], ["Observed", "n"], ["95% interval", "n"], ["Sample"]],
+        c.bins.map(function (b) {
+          return { cells: [pct(b.lo, 0) + "-" + pct(b.hi, 0), b.n, b.hits, { t: pct(b.predicted), v: b.predicted }, { t: pct(b.observed), v: b.observed },
+            b.interval ? pct(b.interval[0], 0) + "-" + pct(b.interval[1], 0) : "–",
+            b.n === 0 ? "–" : b.n < 10 ? tag("tiny", "bad") : b.n < 40 ? tag("small", "warn") : tag("ok", "good")] };
+        })));
+      out.appendChild(el("p", { class: "note", text: "Calibration asks whether the chances were honest; winner accuracy asks how often the favoured side won. A well-calibrated model still loses many individual picks - a 60% pick should lose four times in ten. Ties have no winner and are left out" + (c.ties_left_out ? " (" + c.ties_left_out + " here)." : ".") }));
+    }
+    controls(null); load();
+  }).catch(function (e) { failed(main, e); });
+};
+
+// 5: confidence distribution
+VIEWS.confidence = function (main) {
+  var q = { model: "deadeye", week: "", team: "" }, picked = null;
+  loading(main);
+  Promise.all([api("/api/models"), api("/api/teams")]).then(function (r) {
+    var models = r[0], teams = r[1].teams;
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "How confident was the model?" }));
+    main.appendChild(el("p", { class: "sub", text: "How a model spread its win chances across the slate, from the side it favoured. This is the model's probability, not the ACQL confidence points. The market column is the moneyline's chance with the book's margin taken out, where one was fetched before the cutoff." }));
+    var ctl = el("div", { class: "row box" }), out = el("div");
+    main.appendChild(ctl); main.appendChild(out);
+    function load() {
+      var path = "/api/distribution?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
+      api(path).then(draw).catch(function (e) { failed(out, e); });
+    }
+    function draw(d) {
+      ctl.innerHTML = "";
+      ctl.appendChild(sel("Model", models.map(function (m) { return [m.id, m.name]; }), q.model, function (v) { q.model = v; picked = null; load(); }));
+      ctl.appendChild(sel("Week", [["", "All weeks"]].concat(d.weeks.map(function (w) { return [w, "Week " + w]; })), q.week, function (v) { q.week = v; picked = null; load(); }));
+      ctl.appendChild(sel("Team", [["", "All teams"]].concat(teams.map(function (t) { return [t.code, t.name]; })), q.team, function (v) { q.team = v; picked = null; load(); }));
+      out.innerHTML = "";
+      if (!d.games) { out.appendChild(el("div", { class: "empty", text: "No eligible forecasts match." })); return; }
+      var W = 760, H = 240, P = 40, n = d.bins.length, bw = (W - P - 10) / n, maxN = Math.max.apply(null, d.bins.map(function (b) { return b.n; }).concat([1]));
+      var svg = S("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "probability histogram" });
+      d.bins.forEach(function (b, i) {
+        var h = (H - P - 16) * b.n / maxN, x = P + i * bw;
+        svg.appendChild(S("rect", { x: x + 2, y: H - P - h, width: bw - 4, height: Math.max(h, b.n ? 2 : 0), fill: picked === i ? "#d4a93c" : "#2f8cff", rx: 2,
+          style: "cursor:pointer", tabindex: 0,
+          onclick: function () { picked = i; draw(d); },
+          onmousemove: function (e) { tip(e, pct(b.lo, 0) + "-" + pct(b.hi, 0) + ": " + b.n + " games (" + pct(b.share, 0) + ")\ndecided " + b.decided + ", favoured side won " + b.won); },
+          onmouseleave: function (e) { tip(e, null); } }));
+        if (b.n) svg.appendChild(S("text", { x: x + bw / 2, y: H - P - h - 4, "text-anchor": "middle", text: b.n }));
+        svg.appendChild(S("text", { x: x + bw / 2, y: H - P + 14, "text-anchor": "middle", text: Math.round(b.lo * 100) }));
+      });
+      svg.appendChild(S("text", { x: W / 2, y: H - 6, "text-anchor": "middle", text: "chance given to the favoured side (%)" }));
+      out.appendChild(el("div", { class: "box" }, [svg, el("p", { class: "note", text: d.games + " eligible forecasts. Click a bar to list its games." })]));
+      var b = picked == null ? null : d.bins[picked];
+      if (b) {
+        out.appendChild(el("h2", { text: pct(b.lo, 0) + "-" + pct(b.hi, 0) + " · " + b.n + " games · favoured side won " + b.won + " of " + b.decided + " decided" }));
+        if (b.decided && b.decided < 30) out.appendChild(el("p", { class: "note warn", text: "Sample of " + b.decided + ": far too few to judge this range on its own." }));
+        out.appendChild(table([["Wk", "n"], ["Favoured"], ["Against"], ["Model", "n"], ["Market", "n"], ["Gap", "n"], ["Result"]],
+          b.games.map(function (g) {
+            return { cells: [g.week, up(g.favoured) + (g.favoured === g.home ? " (home)" : ""), up(g.against), { t: pct(g.p), v: g.p },
+              { t: pct(g.market), v: g.market }, { t: g.market == null ? "–" : signed(100 * (g.p - g.market)), v: g.market == null ? null : g.p - g.market },
+              g.won == null ? "not played" : g.won ? tag("won", "good") : tag("lost", "bad")] };
+          }), { sort: 3 }));
+      }
+    }
+    load();
+  }).catch(function (e) { failed(main, e); });
+};
+
+// 6: sportsbooks
+VIEWS.markets = function (main, rest) {
+  var q = { at: "", team: rest[0] || "", market: "all", book: "" }, open = {};
+  function load() {
+    loading(main);
+    api("/api/books" + (q.at ? "?at=" + q.at : "")).then(draw).catch(function (e) { failed(main, e); });
+  }
+  function draw(B) {
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "Sportsbook prices" }));
+    if (!B.available) { main.appendChild(el("div", { class: "box warn", text: B.reason })); return; }
+    main.appendChild(el("p", { class: "sub", text: "Each row is one bookmaker's own price, as The Odds API returned it in an answer the app already fetched and archived - nothing is fetched here. Consensus and best price are worked out from those rows." }));
+    var ctl = el("div", { class: "row box" });
+    ctl.appendChild(sel("Snapshot", B.snapshots.slice().reverse().map(function (s) { return [s.at, when(s.at)]; }), q.at || B.fetched, function (v) { q.at = v; load(); }));
+    ctl.appendChild(sel("Game", [["", "All games"]].concat(B.games.map(function (g) { return [g.home, up(g.away) + " @ " + up(g.home)]; })), q.team, function (v) { q.team = v; draw(B); }));
+    ctl.appendChild(sel("Market", [["all", "All markets"], ["ml", "Moneyline"], ["spread", "Spread"], ["total", "Total"]], q.market, function (v) { q.market = v; draw(B); }));
+    ctl.appendChild(sel("Book", [["", "All books"]].concat(B.books_seen.map(function (b) { return [b, b]; })), q.book, function (v) { q.book = v; draw(B); }));
+    main.appendChild(ctl);
+    var age = B.age_minutes, fresh = age < 60 ? tag("fresh", "good") : age < 24 * 60 ? tag("hours old", "warn") : tag("stale", "bad");
+    main.appendChild(el("div", { class: "box" }, [el("span", { class: "lbl", text: "Fetched " }), " " + when(B.fetched) + " (" + (age < 120 ? age + " min" : Math.round(age / 60) + " h") + " ago) ", fresh,
+      el("p", { class: "note", text: B.coverage + " " + B.method })]));
+    B.games.filter(function (g) { return !q.team || g.home === q.team || g.away === q.team; }).forEach(function (g) {
+      var key = g.away + "@" + g.home, isOpen = open[key] || !!q.team;
+      var head = el("div", { class: "row", style: "justify-content:space-between;cursor:pointer", onclick: function () { open[key] = !isOpen; draw(B); } }, [
+        el("b", { text: up(g.away) + " @ " + up(g.home) + " · " + when(g.kickoff) }),
+        el("span", { class: "num note", text: "consensus " + up(g.home) + " " + signed(g.consensus.spread_home) + " · total " + fx(g.consensus.total, 1) + " · " + up(g.home) + " no-margin " + pct(g.consensus.nv_home) + " · " + g.books + " books" +
+          (g.spread_range && g.spread_range[0] !== g.spread_range[1] ? " · spreads " + g.spread_range[0] + " to " + g.spread_range[1] : " · books agree on the spread") + (isOpen ? " ▲" : " ▼") })]);
+      var box = el("div", { class: "box" }, [head]);
+      if (isOpen) {
+        var cols = [["Book"]], cells = [];
+        var showMl = q.market === "all" || q.market === "ml", showSp = q.market === "all" || q.market === "spread", showTo = q.market === "all" || q.market === "total";
+        if (showSp) cols.push([up(g.home) + " spread", "n"], ["Price", "n"], [up(g.away) + " price", "n"]);
+        if (showMl) cols.push([up(g.home) + " ML", "n"], [up(g.away) + " ML", "n"], ["No-margin " + up(g.home), "n"], ["Hold", "n"]);
+        if (showTo) cols.push(["Total", "n"], ["Over", "n"], ["Under", "n"]);
+        cols.push(["Updated"]);
+        var bestMark = function (v, best) { return best && v === best[0] ? el("b", { style: "color:var(--gold)", text: (v > 0 ? "+" : "") + v }) : v == null ? "–" : (v > 0 ? "+" : "") + v; };
+        g.lines.filter(function (l) { return !q.book || l.book === q.book; }).forEach(function (l) {
+          var c = [l.book];
+          if (showSp) c.push({ t: signed(l.spread_home), v: l.spread_home }, { t: bestMark(l.spread_home_price, g.best.spread_home_price), v: l.spread_home_price }, { t: bestMark(l.spread_away_price, g.best.spread_away_price), v: l.spread_away_price });
+          if (showMl) c.push({ t: bestMark(l.ml_home, g.best.ml_home), v: l.ml_home }, { t: bestMark(l.ml_away, g.best.ml_away), v: l.ml_away }, { t: pct(l.nv_home), v: l.nv_home }, { t: pct(l.hold), v: l.hold });
+          if (showTo) c.push({ t: fx(l.total, 1), v: l.total }, { t: bestMark(l.over_price, g.best.over), v: l.over_price }, { t: bestMark(l.under_price, g.best.under), v: l.under_price });
+          c.push(when(l.updated));
+          cells.push({ cells: c });
+        });
+        var cons = [tag("consensus (derived)", "blue")];
+        if (showSp) cons.push(signed(g.consensus.spread_home), "", "");
+        var am = function (v) { return v == null ? "–" : (v > 0 ? "+" : "") + Math.round(v); };
+        if (showMl) cons.push(am(g.consensus.ml_home), am(g.consensus.ml_away), pct(g.consensus.nv_home), "");
+        if (showTo) cons.push(fx(g.consensus.total, 1), "", "");
+        cons.push("median of books");
+        cells.push({ cells: cons, cls: "sel" });
+        box.appendChild(table(cols, cells));
+        box.appendChild(el("p", { class: "note", text: "Gold = best available price on that side. Spread is from " + up(g.home) + "'s side as the book writes it (-4.5 = giving 4.5)." }));
+      }
+      main.appendChild(box);
+    });
+  }
+  load();
+};
+
+// 7: stats explorer
+VIEWS.stats = function (main, rest) {
+  var q = { season: "", window: "all", where: "all", search: "", metric: "ypp", a: rest[0] || "kc", b: rest[1] || "buf" };
+  var METRICS = { points_for: "Points a game", points_against: "Points allowed", ypp: "Yards a play", def_ypp: "Yards a play allowed",
+    epa_play: "EPA a play", def_epa_play: "EPA a play allowed", turnovers: "Turnovers a game", takeaways: "Takeaways a game",
+    pass_ypd: "Net pass yards a dropback", rush_ypc: "Rush yards a carry", sack_rate: "Sack rate" };
+  function agg(rows) {
+    var s = function (k) { return rows.reduce(function (a, r) { return a + (r[k] || 0); }, 0); }, n = rows.length;
+    if (!n) return null;
+    var pf = rows.filter(function (r) { return r.points_for != null; });
+    return { games: n, points_for: pf.length ? pf.reduce(function (a, r) { return a + r.points_for; }, 0) / pf.length : null,
+      points_against: pf.length ? pf.reduce(function (a, r) { return a + r.points_against; }, 0) / pf.length : null,
+      ypp: s("yards") / s("plays"), def_ypp: s("opp_plays") ? s("opp_yards") / s("opp_plays") : null,
+      epa_play: s("epa") / s("plays"), def_epa_play: s("opp_plays") ? s("opp_epa") / s("opp_plays") : null,
+      turnovers: s("turnovers") / n, takeaways: s("takeaways") / n, pass_ypd: s("pass_yards") / s("dropbacks"),
+      rush_ypc: s("rush_yards") / s("carries"), sack_rate: s("sacks") / s("dropbacks") };
+  }
+  function load() {
+    loading(main);
+    api("/api/stats" + (q.season ? "?season=" + q.season : "")).then(draw).catch(function (e) { failed(main, e); });
+  }
+  function draw(st) {
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "Statistics explorer" }));
+    main.appendChild(el("p", { class: "sub", text: "Team statistics from the nflverse weekly team file (through week " + st.through_week + ", file from " + st.file_date + "). Descriptive only: a team that leads a column has not been shown to win more because of it." }));
+    if (!st.rows.length) { main.appendChild(el("div", { class: "box warn", text: "No nflverse team file for this season on this computer." })); return; }
+    var ctl = el("div", { class: "row box" });
+    ctl.appendChild(sel("Season", st.seasons.slice().reverse(), q.season || st.season, function (v) { q.season = v; load(); }));
+    ctl.appendChild(sel("Games", [["all", "Whole season"], ["3", "Last 3"], ["6", "Last 6"]], q.window, function (v) { q.window = v; draw(st); }));
+    ctl.appendChild(sel("Where", [["all", "Home and away"], ["home", "Home"], ["away", "Away"]], q.where, function (v) { q.where = v; draw(st); }));
+    var search = el("input", { type: "search", placeholder: "Find a team", value: q.search, oninput: function () { q.search = search.value; drawTable(); } });
+    ctl.appendChild(el("label", { class: "f" }, [el("span", { class: "lbl", text: "Search" }), search]));
+    main.appendChild(ctl);
+    function pick(team) {
+      var rows = st.rows.filter(function (r) { return r.team === team && (q.where === "all" || (q.where === "home") === r.home); });
+      if (q.window !== "all") rows = rows.slice(-Number(q.window));
+      return rows;
+    }
+    var tableBox = el("div"); main.appendChild(tableBox);
+    var teamsIn = Array.from(new Set(st.rows.map(function (r) { return r.team; }))).sort();
+    function drawTable() {
+      var keys = Object.keys(METRICS);
+      var rows = teamsIn.filter(function (t) { return !q.search || t.indexOf(q.search.toLowerCase()) >= 0; }).map(function (t) {
+        var a = agg(pick(t));
+        return { onclick: function () { q.a = t; draw(st); }, cells: [up(t), a ? a.games : 0].concat(keys.map(function (k) {
+          var v = a && a[k]; return { t: v == null ? "–" : k.indexOf("epa") >= 0 || k === "sack_rate" ? fx(v, 3) : fx(v, 2), v: v };
+        })) };
+      });
+      tableBox.innerHTML = "";
+      tableBox.appendChild(table([["Team"], ["G", "n"]].concat(keys.map(function (k) { return [METRICS[k], "n"]; })), rows, { sort: 4 }));
+    }
+    drawTable();
+    main.appendChild(el("h2", { text: "Compare two teams, week by week" }));
+    var cmp = el("div", { class: "row box" });
+    cmp.appendChild(sel("Team A", teamsIn.map(function (t) { return [t, up(t)]; }), q.a, function (v) { q.a = v; draw(st); }));
+    cmp.appendChild(sel("Team B", teamsIn.map(function (t) { return [t, up(t)]; }), q.b, function (v) { q.b = v; draw(st); }));
+    cmp.appendChild(sel("Metric", Object.keys(METRICS).map(function (k) { return [k, METRICS[k]]; }), q.metric, function (v) { q.metric = v; draw(st); }));
+    main.appendChild(cmp);
+    var series = [q.a, q.b].map(function (t, i) {
+      return { name: up(t), color: COLORS[i], points: pick(t).map(function (r) {
+        var v = agg([r])[q.metric];
+        return { x: r.week, y: v, tip: up(t) + " week " + r.week + (r.home ? " vs " : " at ") + up(r.opp) + "\n" + METRICS[q.metric] + ": " + fx(v, 3) + "\nscore " + r.points_for + "-" + r.points_against };
+      }) };
+    });
+    main.appendChild(el("div", { class: "box" }, [legend(series), lineChart(series, { xprefix: "W", label: "metric by week" })]));
+    var A = agg(pick(q.a)), Bb = agg(pick(q.b));
+    if (A && Bb) main.appendChild(table([["Metric"], [up(q.a), "n"], [up(q.b), "n"], ["Difference", "n"]], Object.keys(METRICS).map(function (k) {
+      return { cells: [METRICS[k], fx(A[k], 3), fx(Bb[k], 3), { t: A[k] == null || Bb[k] == null ? "–" : signed(A[k] - Bb[k], 3), v: A[k] - Bb[k] }] };
+    }), { sort: null }));
+    main.appendChild(el("p", { class: "note", text: "Samples: " + (A ? A.games : 0) + " and " + (Bb ? Bb.games : 0) + " games, against different schedules - neither is adjusted for opponent strength." }));
+    main.appendChild(el("div", { class: "box" }, [el("div", { class: "lbl", text: "Definitions" })].concat(
+      Object.keys(st.definitions).map(function (k) { return el("p", { class: "note", text: (METRICS[k] || k) + ": " + st.definitions[k] }); }),
+      [el("div", { class: "lbl", text: "Not available" })], st.missing.map(function (m) { return el("p", { class: "note", text: m }); }),
+      [el("p", { class: "note", text: "Source: " + st.source })])));
+  }
+  load();
+};
+
+// 9: postmortems
+VIEWS.postmortems = function (main, rest) {
+  var q = { week: "", result: "all", side: "all", big: false, highmiss: false, disagree: false, quality: false, eligible: true }, open = rest[0] || null;
+  loading(main);
+  api("/api/postmortems").then(function (P) {
+    function draw() {
+      main.innerHTML = "";
+      main.appendChild(el("h1", { text: "Prediction postmortems" }));
+      main.appendChild(el("p", { class: "sub", text: "Every Deadeye forecast on a finished game, as it was recorded - never rewritten. Only forecasts locked before the cutoff count as evidence; ones recorded after kickoff are listed and marked." }));
+      var S_ = P.summary;
+      main.appendChild(el("div", { class: "box" }, [el("div", { class: "lbl", text: "Research summary · " + S_.games + " eligible decided games" })].concat(
+        (S_.findings || []).map(function (f) { return el("p", {}, [tag(f.kind, f.kind === "established" ? "good" : "warn"), " " + f.text]); }),
+        [el("p", { class: "note", text: S_.note || "" })], P.missing.map(function (m) { return el("p", { class: "note", text: "Missing: " + m }); }))));
+      var ctl = el("div", { class: "row box" });
+      var weeks = Array.from(new Set(P.games.map(function (g) { return g.week; }))).sort(function (a, b) { return a - b; });
+      ctl.appendChild(sel("Week", [["", "All"]].concat(weeks.map(function (w) { return [w, "Week " + w]; })), q.week, function (v) { q.week = v; draw(); }));
+      ctl.appendChild(sel("Result", [["all", "Right and wrong"], ["right", "Right"], ["wrong", "Wrong"]], q.result, function (v) { q.result = v; draw(); }));
+      ctl.appendChild(sel("Favoured side", [["all", "Home or away"], ["home", "Home favoured"], ["away", "Away favoured"]], q.side, function (v) { q.side = v; draw(); }));
+      [["eligible", "Locked forecasts only"], ["big", "Large errors (Brier ≥ .36)"], ["highmiss", "High-confidence misses (65%+)"], ["disagree", "Disagreed with market (5+ pts)"], ["quality", "Data-quality flags"]].forEach(function (f) {
+        var b = el("button", { class: q[f[0]] ? "on" : null, "aria-pressed": q[f[0]] ? "true" : "false", text: f[1], onclick: function () { q[f[0]] = !q[f[0]]; draw(); } });
+        ctl.appendChild(b);
+      });
+      main.appendChild(ctl);
+      var rows = P.games.filter(function (g) {
+        if (q.eligible && g.status !== "eligible") return false;
+        if (q.week && g.week !== +q.week) return false;
+        if (q.result === "right" && g.right !== true) return false;
+        if (q.result === "wrong" && g.right !== false) return false;
+        if (q.side !== "all" && (g.favoured === g.home) !== (q.side === "home")) return false;
+        if (q.big && !(g.brier >= 0.36)) return false;
+        if (q.highmiss && !(g.p >= 0.65 && g.right === false)) return false;
+        if (q.disagree && !(g.disagreement != null && Math.abs(g.disagreement) >= 0.05)) return false;
+        if (q.quality && !g.flags.length) return false;
+        return true;
+      });
+      main.appendChild(table([["Wk", "n"], ["Game"], ["Favoured"], ["Locked", "n"], ["Market", "n"], ["Final"], ["Result"], ["Brier", "n"], ["Status"]],
+        rows.map(function (g) {
+          return { cls: open === g.game ? "sel" : null, onclick: function () { open = g.game; draw(); }, cells: [g.week, up(g.away) + " @ " + up(g.home), up(g.favoured),
+            { t: pct(g.p), v: g.p }, { t: pct(g.market_p), v: g.market_p }, g.away_score + "-" + g.home_score,
+            g.right == null ? "tie" : g.right ? tag("right", "good") : tag("wrong", "bad"), { t: fx(g.brier, 3), v: g.brier }, status(g.status)] };
+        }), { sort: 7, empty: "No forecast matches these filters." }));
+      var g = P.games.filter(function (x) { return x.game === open; })[0];
+      if (g) main.appendChild(detail(g));
+    }
+    function detail(g) {
+      var lines = g.line_moves.map(function (m) { return when(m.at) + "  " + up(g.home) + " " + signed(m.line) + (m.after_forecast ? "  (after the forecast)" : ""); });
+      var qb = function (side) { var x = g.qb[side]; return !x ? "not in the nflverse file" : x.starter + (x.changed ? " - changed from " + x.previous : x.previous ? " (same as before)" : ""); };
+      return el("div", { class: "box" }, [
+        el("h2", { text: up(g.away) + " @ " + up(g.home) + " · week " + g.week }),
+        el("div", { class: "tiles" }, [
+          ["Locked chance", pct(g.p) + " " + up(g.favoured)], ["Market (moneyline)", pct(g.market_p)], ["Final", g.away_score + "-" + g.home_score],
+          ["Margin forecast", signed(g.margin_forecast) + " home"], ["Margin error", signed(g.margin_error)], ["Surprise", fx(g.surprise, 2) + " nats"]
+        ].map(function (x) { return el("div", { class: "tile" }, [el("span", { class: "lbl", text: x[0] }), el("b", { style: "font-size:16px", text: x[1] })]); })),
+        el("p", {}, ["Forecast made ", el("b", { text: when(g.made) }), " (" + (g.hours_before == null ? "?" : g.hours_before + " h") + " before kickoff), Deadeye " + g.version + " ", status(g.status)]),
+        el("p", { class: "note", text: "Source record: " + g.source + (g.note ? " · " + g.note : "") }),
+        g.flags.length ? el("p", { class: "warn", text: g.flags.join(" ") }) : null,
+        el("div", { class: "lbl", text: "Stored betting lines that week (pregame only)" }),
+        el("pre", { class: "feed", text: lines.length ? lines.join("\n") : "No stored line history for this game." }),
+        el("div", { class: "lbl", text: "Starting quarterbacks (known at kickoff, not at the lock)" }),
+        el("p", { class: "note", text: up(g.home) + ": " + qb("home") + " · " + up(g.away) + ": " + qb("away") }),
+        el("p", { class: "note", text: "Injuries and weather: not recorded with the forecast (see Missing above)." }),
+        el("p", { class: "note", text: g.right === false ? "A " + pct(g.p, 0) + " favourite loses about " + pct(1 - g.p, 0) + " of the time; one miss says little about the model. Only a pattern across many locked forecasts would." : "" })
+      ]);
+    }
+    draw();
+  }).catch(function (e) { failed(main, e); });
+};
+
+// 10: assistant
+VIEWS.assistant = function (main) {
+  var PRESETS = ["Why did Deadeye disagree with the market on its biggest disagreement this season?",
+    "Which teams have been most difficult for Deadeye to predict this season?",
+    "Show the biggest prediction errors over the last six weeks.",
+    "Is Deadeye overconfident in its 60-70% probability range?",
+    "Which of our prediction misses appear associated with quarterback changes?",
+    "What changed between the original Thursday forecast and the closing market?",
+    "Which model experiments have improved out-of-sample log loss?",
+    "What new research experiment should we investigate next?"];
+  loading(main);
+  api("/api/assistant").then(function (A) {
+    main.innerHTML = "";
+    main.appendChild(el("h1", { text: "Research assistant" }));
+    main.appendChild(el("p", { class: "sub", text: "Claude (" + A.model + ") answers from the Lab's own data through a fixed set of read-only tools: " + A.tools.join(", ") + ". It cannot read files, run commands, change a model or touch a forecast. Each answer lists the tool calls behind it." }));
+    if (!A.available) main.appendChild(el("div", { class: "box warn", text: "Not available: " + A.reason }));
+    var box = el("div", { class: "box" });
+    var ta = el("textarea", { rows: 3, style: "width:100%", placeholder: "Ask about Deadeye's forecasts, teams, markets or experiments", "aria-label": "Question" });
+    var go = el("button", { class: "primary", text: "Ask", disabled: A.available ? null : "disabled" });
+    var out = el("div");
+    box.appendChild(el("div", { class: "presets" }, PRESETS.map(function (p) { return el("button", { text: p, onclick: function () { ta.value = p; } }); })));
+    box.appendChild(ta); box.appendChild(el("div", { class: "row", style: "margin-top:8px" }, [go, el("span", { class: "note", text: "Each question costs a few cents of API credit." })]));
+    main.appendChild(box); main.appendChild(out);
+    go.addEventListener("click", function () {
+      if (!ta.value.trim()) return;
+      go.disabled = true; out.innerHTML = ""; out.appendChild(el("div", { class: "skel" }));
+      post("/api/ask", { question: ta.value }).then(function (r) {
+        out.innerHTML = "";
+        if (r.error) out.appendChild(el("div", { class: "box err", text: r.error }));
+        if (r.answer) out.appendChild(el("div", { class: "box answer", text: r.answer }));
+        if (r.calls && r.calls.length) out.appendChild(el("div", { class: "box" }, [el("div", { class: "lbl", text: "Evidence: tool calls made" })].concat(r.calls.map(function (c) {
+          return el("p", { class: "note num", text: c.tool + " " + JSON.stringify(c.input) + (c.error ? "  (error)" : "") + "  · " + c.chars + " chars returned" });
+        }))));
+      }).catch(function (e) { out.innerHTML = ""; out.appendChild(el("div", { class: "box err", text: String(e) })); })
+        .then(function () { go.disabled = false; });
+    });
+    // the same tools, no AI
+    main.appendChild(el("h2", { text: "Data answers (no AI, always available)" }));
+    var dbox = el("div", { class: "box presets" }), dout = el("div");
+    [["Biggest errors (locked forecasts)", function () {
+      return post("/api/tool", { name: "postmortems", args: { sort: "brier", limit: 10 } }).then(function (r) {
+        return table([["Wk", "n"], ["Game"], ["Favoured"], ["Locked", "n"], ["Brier", "n"], ["Result"]], r.result.games.map(function (g) {
+          return { cells: [g.week, up(g.away) + " @ " + up(g.home), up(g.favoured), pct(g.p), { t: fx(g.brier, 3), v: g.brier }, g.right ? "right" : "wrong"] };
+        }), { sort: 4 });
+      });
+    }], ["Calibration of the 60-70% range", function () {
+      return post("/api/tool", { name: "calibration", args: {} }).then(function (r) {
+        var b = r.result.bins.filter(function (x) { return x.lo === 0.6; })[0];
+        return el("p", { text: b.n ? "Deadeye gave 60-70% (average " + pct(b.predicted) + ") in " + b.n + " locked forecasts; the favoured side won " + b.hits + " (" + pct(b.observed) + ", 95% interval " + pct(b.interval[0], 0) + "-" + pct(b.interval[1], 0) + "). Too few games to call it over- or under-confident." : "No locked forecast in that range yet." });
+      });
+    }], ["Hardest teams to predict", function () {
+      return post("/api/tool", { name: "postmortems", args: { limit: 500 } }).then(function (r) {
+        var by = {};
+        r.result.games.forEach(function (g) { [g.home, g.away].forEach(function (t) { (by[t] = by[t] || []).push(g.brier); }); });
+        return table([["Team"], ["Games", "n"], ["Mean Brier", "n"]], Object.keys(by).map(function (t) {
+          var v = by[t]; return { cells: [up(t), v.length, { t: fx(v.reduce(function (a, b) { return a + b; }, 0) / v.length, 3), v: v.reduce(function (a, b) { return a + b; }, 0) / v.length }] };
+        }), { sort: 2 });
+      });
+    }], ["Model scorecard", function () {
+      return post("/api/tool", { name: "experiments", args: {} }).then(function (r) {
+        return el("div", {}, [table([["Model"], ["Games", "n"], ["Hit rate", "n"], ["Avg miss", "n"], ["Beat line", "n"], ["Lost to line", "n"]], r.result.scorecard.map(function (m) {
+          return { cells: [m.model_name, m.games, { t: pct(m.hit_rate), v: m.hit_rate }, { t: fx(m.avg_miss, 1), v: m.avg_miss }, m.beat_line, m.lost_to_line] };
+        }), { sort: 1 }), el("p", { class: "note", text: r.result.note })]);
+      });
+    }]].forEach(function (b) {
+      dbox.appendChild(el("button", { text: b[0], onclick: function () {
+        dout.innerHTML = ""; dout.appendChild(el("div", { class: "skel" }));
+        b[1]().then(function (n) { dout.innerHTML = ""; dout.appendChild(el("div", { class: "box" }, [n])); })
+          .catch(function (e) { dout.innerHTML = ""; dout.appendChild(el("div", { class: "box err", text: String(e) })); });
+      } }));
+    });
+    main.appendChild(dbox); main.appendChild(dout);
+  }).catch(function (e) { failed(main, e); });
+};
+
+route();
+</script>
+</body>
+</html>

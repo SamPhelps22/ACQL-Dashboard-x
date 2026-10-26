@@ -213,6 +213,7 @@ class MainWindow(QMainWindow):
         self.ribbon.game_chosen.connect(self.open_game)
         self.ribbon.cinema_wanted.connect(self.toggle_cinema)
         self.ribbon.redzone_wanted.connect(self.toggle_redzone)
+        self.ribbon.lab_wanted.connect(self.open_lab)
         # the week being played, read once per look for the ribbon and Cinema
         # mode alike; what changed between two good looks is decided there, once
         self.live_feed = LiveFeed(self)
@@ -810,6 +811,18 @@ class MainWindow(QMainWindow):
         # while it is up, the scoreboard is asked every 30 seconds, as for Game Day
         self.check_results(live=True)
 
+    def open_lab(self) -> None:
+        """The Lab (acql/lab) in the browser: started inside the dashboard the first time,
+        or the one already running on this computer."""
+        from ..lab import server as lab_server
+        try:
+            url = lab_server.start_background()
+        except Exception as exc:  # noqa: BLE001 - said, never a crash
+            write_log(f"lab failed to start: {exc!r}")
+            self.statusBar().showMessage(f"The Lab couldn't start: {exc}", 8000)
+            return
+        QDesktopServices.openUrl(QUrl(url))
+
     def toggle_redzone(self) -> None:
         """RedZone mode (redzone.py): a frame of scores and standings round a stream playing underneath."""
         if self.redzone is not None and self.redzone.isVisible():
@@ -839,6 +852,7 @@ class MainWindow(QMainWindow):
             Command("Open data folder", "", self.open_data_folder),
             Command("Check for results now", "", self.check_results_now),
             Command("Cinema mode (the week full screen)", "F11", self.toggle_cinema),
+            Command("Lab (calibration, postmortems, markets, assistant)", "", self.open_lab),
             Command("RedZone mode (scores and standings round your stream)", "F10", self.toggle_redzone),
             Command("Publish the pool page", "", self.export_pool_page),
             Command("Pool page website settings\u2026", "", self.pool_page_settings),
