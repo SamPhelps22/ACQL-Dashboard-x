@@ -212,10 +212,12 @@ class MainWindow(QMainWindow):
         self.ribbon = ScoreboardRibbon(self.palette_)
         self.ribbon.game_chosen.connect(self.open_game)
         self.ribbon.cinema_wanted.connect(self.toggle_cinema)
+        self.ribbon.redzone_wanted.connect(self.toggle_redzone)
         # the week being played, read once per look for the ribbon and Cinema
         # mode alike; what changed between two good looks is decided there, once
         self.live_feed = LiveFeed(self)
         self.cinema: CinemaWindow | None = None
+        self.redzone = None
         column.addWidget(self.ribbon)
         # "since you were last here": what the scheduled runs did while closed (digest.py)
         self.digest_row = QWidget()
@@ -711,6 +713,7 @@ class MainWindow(QMainWindow):
         add("Toggle theme", "Ctrl+T", self.toggle_theme)
         add("Settings", "Ctrl+K", self.open_palette)
         add("Cinema mode", "F11", self.toggle_cinema)
+        add("RedZone mode", "F10", self.toggle_redzone)
         add("Quit", QKeySequence.StandardKey.Quit, self.close)
         add("Glance / Analyst", "Ctrl+D", self.toggle_density)
         for i in range(len(NAV)):
@@ -785,6 +788,12 @@ class MainWindow(QMainWindow):
                 cinema.refresh(changes)
             except Exception as exc:  # noqa: BLE001
                 write_log(f"cinema mode redraw failed: {exc!r}")
+        redzone = self.redzone
+        if redzone is not None and redzone.isVisible():
+            try:
+                redzone.refresh(changes)
+            except Exception as exc:  # noqa: BLE001
+                write_log(f"redzone mode redraw failed: {exc!r}")
 
     # ---- Cinema mode: the week full screen (cinema.py) -------------------------
     def cinema_showing(self) -> bool:
@@ -799,6 +808,17 @@ class MainWindow(QMainWindow):
             self.cinema.closed.connect(self._cinema_closed)
         self.cinema.enter()
         # while it is up, the scoreboard is asked every 30 seconds, as for Game Day
+        self.check_results(live=True)
+
+    def toggle_redzone(self) -> None:
+        """RedZone mode (redzone.py): a frame of scores and standings round a stream playing underneath."""
+        if self.redzone is not None and self.redzone.isVisible():
+            self.redzone.close()
+            return
+        if self.redzone is None:
+            from .redzone import RedZoneWindow
+            self.redzone = RedZoneWindow(self, self.live_feed, self.palette_)
+        self.redzone.enter()
         self.check_results(live=True)
 
     def _cinema_closed(self) -> None:
@@ -819,6 +839,7 @@ class MainWindow(QMainWindow):
             Command("Open data folder", "", self.open_data_folder),
             Command("Check for results now", "", self.check_results_now),
             Command("Cinema mode (the week full screen)", "F11", self.toggle_cinema),
+            Command("RedZone mode (scores and standings round your stream)", "F10", self.toggle_redzone),
             Command("Publish the pool page", "", self.export_pool_page),
             Command("Pool page website settings\u2026", "", self.pool_page_settings),
             Command("What the website says (announcement, champions)\u2026", "", self.pool_page_extras),
@@ -861,6 +882,8 @@ class MainWindow(QMainWindow):
         cinema = getattr(self, "cinema", None)
         if cinema is not None:
             cinema.restyle(self.palette_)
+        if getattr(self, "redzone", None) is not None:
+            self.redzone.restyle(self.palette_)
 
     def _draw_icons(self) -> None:
         """The sidebar's icons and the mark, in the palette's colours: quiet
@@ -1369,6 +1392,8 @@ class MainWindow(QMainWindow):
         self._closing = True
         if self.cinema is not None:
             self.cinema.close()
+        if self.redzone is not None:
+            self.redzone.close()
         if self._tray is not None:
             self._tray.hide()
         self.watcher.set_enabled(False)

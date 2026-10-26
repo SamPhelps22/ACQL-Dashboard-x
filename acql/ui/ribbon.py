@@ -136,6 +136,7 @@ class ScoreboardRibbon(QFrame):
 
     game_chosen = Signal(int, int)     # week, game index
     cinema_wanted = Signal()
+    redzone_wanted = Signal()
 
     def __init__(self, palette, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -212,6 +213,14 @@ class ScoreboardRibbon(QFrame):
         self.cinema_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cinema_btn.clicked.connect(lambda *_: self.cinema_wanted.emit())
         row.addWidget(self.cinema_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.redzone_btn = QToolButton()
+        self.redzone_btn.setObjectName("RibbonCinema")
+        self.redzone_btn.setText("REDZONE")
+        self.redzone_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.redzone_btn.setToolTip("RedZone mode: scores on top, standings at the side, your stream in the middle (F10)")
+        self.redzone_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.redzone_btn.clicked.connect(lambda *_: self.redzone_wanted.emit())
+        row.addWidget(self.redzone_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         self.fresh: LS.Freshness | None = None
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
@@ -233,6 +242,7 @@ class ScoreboardRibbon(QFrame):
         self.palette_ = palette
         self.mark.setPixmap(icons.pixmap("football", palette.brand or palette.accent, 18))
         self.cinema_btn.setIcon(icons.icon("screen", palette.ink_secondary, palette.accent, 16))
+        self.redzone_btn.setIcon(icons.icon("football", palette.ink_secondary, palette.accent, 16))
         for button in (self.back, self.ahead):
             button.setIcon(icons.icon(button.property("icon_name"), palette.ink_secondary, palette.accent, 16))
 
