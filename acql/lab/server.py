@@ -24,10 +24,26 @@ CACHE_S = 60
 MAX_BODY = 16_000
 
 
+OPEN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>RedZone</title>
+<style>body{margin:0;background:#07080a;color:#f2f3f5;font:16px/1.5 "Segoe UI",system-ui,sans-serif;
+display:grid;place-items:center;min-height:100vh;text-align:center}b{color:#d4a93c;letter-spacing:.14em}
+p{color:#8b919c;max-width:36ch}</style></head><body><div><b>REDZONE</b><p id="m">Asking the dashboard...</p></div>
+<script>
+fetch("/api/open", {method: "POST", headers: {"Content-Type": "application/json", "X-Lab": "1"},
+  body: JSON.stringify({what: "redzone"})}).then(function (r) { return r.json(); }).then(function (j) {
+  document.getElementById("m").textContent = j.ok ? "RedZone is open on your dashboard. You can close this tab."
+    : (j.error || "The dashboard didn't answer.");
+}).catch(function () { document.getElementById("m").textContent = "The dashboard didn't answer."; });
+</script></body></html>"""
+
+
 class Lab:
     """What the routes share: one read-only database link, one live hub, a small cache."""
 
-    def __init__(self, *, hub: live.LiveHub | None = None, conn=None, client=None):
+    def __init__(self, *, hub: live.LiveHub | None = None, conn=None, client=None, actions=None):
+        #: what the Lab may ask the dashboard to do, by name (only when started from the dashboard)
+        self.actions: dict = dict(actions or {})
         self.conn = conn or data.connect()
         self.db_lock = threading.Lock()
         self.hub = hub
@@ -114,6 +130,8 @@ def handler_for(lab: Lab, port: int):
             if not self._host_ok():
                 return self._json(403, {"error": "This server only answers this computer."})
             url = urlparse(self.path)
+            if url.path == "/redzone":
+                return self._send(200, OPEN_PAGE.encode("utf-8"), "text/html; charset=utf-8")
             if url.path in ("/", "/index.html"):
                 return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             if url.path == "/events":
@@ -145,6 +163,13 @@ def handler_for(lab: Lab, port: int):
                     return self._json(400, {"error": "Unknown tool."})
                 with lab.db_lock:
                     return self._json(200, {"result": assistant.run_tool(name, body.get("args") or {}, lab.conn)})
+            if path == "/api/open":
+                act = lab.actions.get(str(body.get("what", "")))
+                if not act:
+                    return self._json(200, {"ok": False, "error": "Open the dashboard first: RedZone opens there, "
+                                                                     "and this Lab wasn't started by it."})
+                act()
+                return self._json(200, {"ok": True})
             if path == "/api/ask":
                 with lab.db_lock:
                     out = assistant.ask(body.get("question", ""), lab.conn, client=lab.client,
@@ -179,7 +204,7 @@ def handler_for(lab: Lab, port: int):
     return Handler
 
 
-_RUNNING: dict[int, ThreadingHTTPServer] = {}
+_RUNNING: dict[int, Lab] = {}
 
 
 def _answering(port: int) -> bool:
@@ -191,20 +216,24 @@ def _answering(port: int) -> bool:
         return False
 
 
-def start_background(port: int = 8765) -> str:
+def start_background(port: int = 8765, *, actions=None) -> str:
     """The Lab's address, starting it on a background thread if nothing answers there yet
     (the dashboard's LAB button). Raises OSError when the port is taken by something else."""
     url = f"http://127.0.0.1:{port}/"
-    if port in _RUNNING or _answering(port):
+    if port in _RUNNING:
+        _RUNNING[port].actions.update(actions or {})
+        return url
+    if _answering(port):
         return url
     from ..feeds import results
     year = results.season_year()
     hub = live.LiveHub(year, live.current_week(year))
     hub.start()
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler_for(Lab(hub=hub), port))
+    lab = Lab(hub=hub, actions=actions)
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler_for(lab, port))
     httpd.daemon_threads = True
     threading.Thread(target=httpd.serve_forever, name="lab-server", daemon=True).start()
-    _RUNNING[port] = httpd
+    _RUNNING[port] = lab
     return url
 
 

@@ -50,7 +50,14 @@
       nextNode(t),
       el("span", { class: "fresh " + fr.level, title: fr.detail || fr.head, "data-fresh": "1", text: freshWord(fr) }),
       el("button", { class: "cinebtn", type: "button", onclick: openCinema, "aria-label": "Cinema mode: the week full screen" }, [
-        el("span", { class: "glyph", "aria-hidden": "true", text: "⛶" }), "Cinema"])
+        el("span", { class: "glyph", "aria-hidden": "true", text: "⛶" }), "Cinema"]),
+      // only on a browser where Phelpy is the chosen coach: the Lab runs on that one computer
+      state.me === "Phelpy" ? el("a", { class: "cinebtn labbtn", href: "http://127.0.0.1:8765/", target: "_blank",
+        rel: "noopener noreferrer", title: "Open the Lab (runs on your own computer)" }, [
+        el("span", { class: "glyph", "aria-hidden": "true", text: "▤" }), "Lab"]) : null,
+      state.me === "Phelpy" ? el("a", { class: "cinebtn labbtn", href: "http://127.0.0.1:8765/redzone", target: "_blank",
+        rel: "noopener noreferrer", title: "Open RedZone on your dashboard" }, [
+        el("span", { class: "glyph", "aria-hidden": "true", text: "◉" }), "RedZone"]) : null
     ]);
   }
   function freshWord(fr) {

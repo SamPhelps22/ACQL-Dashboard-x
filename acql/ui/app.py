@@ -7,7 +7,7 @@ import sys
 import traceback
 from datetime import datetime
 
-from PySide6.QtCore import QPoint, QSettings, QSize, Qt, QThread, QTimer, QUrl
+from PySide6.QtCore import QObject, QPoint, QSettings, QSize, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -167,6 +167,12 @@ def failure_summary(trace: str) -> str:
 
 from .workers import Loader, ResultsCheck, TimelineFetch, Warmer  # noqa: E402 - here so tests can stand them in
 from .palette import Command, CommandPalette  # noqa: E402
+
+
+class _LabBridge(QObject):
+    """Carries the Lab's requests onto the window's thread."""
+
+    redzone = Signal()
 
 
 class MainWindow(QMainWindow):
@@ -811,12 +817,33 @@ class MainWindow(QMainWindow):
         # while it is up, the scoreboard is asked every 30 seconds, as for Game Day
         self.check_results(live=True)
 
+    def _lab_actions(self) -> dict:
+        """What the Lab's pages may ask of this window. The Lab answers on its own
+        threads, so each goes through a signal and lands here on the window's."""
+        if getattr(self, "_lab_bridge", None) is None:
+            self._lab_bridge = _LabBridge(self)
+            self._lab_bridge.redzone.connect(self._open_redzone)
+        return {"redzone": self._lab_bridge.redzone.emit}
+
+    def _open_redzone(self) -> None:
+        if self.redzone is None or not self.redzone.isVisible():
+            self.toggle_redzone()
+
+    def _start_lab_quietly(self) -> None:
+        """The Lab running from the start, so the website's LAB and REDZONE buttons
+        (shown only to Phelpy) have something to reach."""
+        from ..lab import server as lab_server
+        try:
+            lab_server.start_background(actions=self._lab_actions())
+        except Exception as exc:  # noqa: BLE001 - the Lab is extra; the dashboard stands without it
+            write_log(f"lab failed to start: {exc!r}")
+
     def open_lab(self) -> None:
         """The Lab (acql/lab) in the browser: started inside the dashboard the first time,
         or the one already running on this computer."""
         from ..lab import server as lab_server
         try:
-            url = lab_server.start_background()
+            url = lab_server.start_background(actions=self._lab_actions())
         except Exception as exc:  # noqa: BLE001 - said, never a crash
             write_log(f"lab failed to start: {exc!r}")
             self.statusBar().showMessage(f"The Lab couldn't start: {exc}", 8000)
@@ -1274,6 +1301,7 @@ class MainWindow(QMainWindow):
             # the loader did This Week's sums; the Model Lab's follow, off the window's thread
             QTimer.singleShot(300, lambda: self._warm_up(this_week=False))
         if first and self.auto_warm:
+            QTimer.singleShot(5000, self._start_lab_quietly)
             self._catch_up()
             self._phase_open()
             extras.start_tray(self)

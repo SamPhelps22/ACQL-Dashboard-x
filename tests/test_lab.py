@@ -331,7 +331,9 @@ class TestAssistant(unittest.TestCase):
 class TestServerGuards(unittest.TestCase):
     def setUp(self):
         self.conn, _p, self.tmp = scratch_log(ROWS)
-        lab = server.Lab(conn=self.conn, client=FakeClient([]))
+        self.opened = []
+        lab = server.Lab(conn=self.conn, client=FakeClient([]), actions={"redzone": lambda: self.opened.append(1)})
+        self.lab = lab
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), None)
         port = self.httpd.server_address[1]
         self.httpd.RequestHandlerClass = server.handler_for(lab, port)
@@ -362,6 +364,16 @@ class TestServerGuards(unittest.TestCase):
         code, body = self.get("/api/tool", method="POST", body=b'{"name":"list_models"}', headers={"X-Lab": "1"})
         self.assertEqual(code, 200)
         self.assertEqual(self.get("/api/tool", method="POST", body=b'{"name":"os.system"}', headers={"X-Lab": "1"})[0], 400)
+
+
+    def test_redzone_is_asked_of_the_dashboard(self):
+        code, body = self.get("/api/open", method="POST", body=b'{"what":"redzone"}', headers={"X-Lab": "1"})
+        self.assertEqual((code, body["ok"], self.opened), (200, True, [1]))
+        self.assertEqual(self.get("/api/open", method="POST", body=b'{"what":"redzone"}')[0], 403)
+        self.lab.actions.clear()
+        code, body = self.get("/api/open", method="POST", body=b'{"what":"redzone"}', headers={"X-Lab": "1"})
+        self.assertFalse(body["ok"])
+        self.assertIn("dashboard first", body["error"])
 
 
 if __name__ == "__main__":
