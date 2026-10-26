@@ -26,7 +26,12 @@
       el("h1", { text: leaders.length > 3 ? cap(count(leaders.length, "coach", "coaches")) + " share the lead on " + top
         : listNames(leaders, 3) + (leaders.length > 1 ? " lead" : " leads") + " the week with " + top }),
       mine ? el("p", { class: "deck", text: (!behind ? (leaders.length > 1 ? "You share the lead" : "You lead the week") : "You’re " + behind + " behind the lead") +
-          (mine.left ? ", with " + plural(mine.left, "pick") + " still to play." : ".") })
+          (mine.left ? ", with " + plural(mine.left, "pick") + " still to play." : ".") +
+          (function () {                    // the best you can still finish, when it isn't where you are
+            var b = bestPlaces(t)[mine.c.name];
+            return !b ? "" : b < place ? " Best possible finish: " + ordinal(b) + "."
+              : place > 1 ? " Nothing still to play can lift you above " + ordinal(place) + "." : "";
+          })() })
         : hasMe() ? el("p", { class: "deck", text: "No card from " + state.me + " on this week’s sheet." })
         : el("p", { class: "deck" }, [el("a", { class: "deck-link", href: "#me", onclick: navTo("me"), text: "Pick your name" }), " to follow your own card."]),
       next ? el("p", { class: "deck" }, ["Next kickoff ", kickNode(next.at), ": " + next.g.a + " at " + next.g.h + "."]) : null,

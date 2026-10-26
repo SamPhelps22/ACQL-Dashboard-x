@@ -340,5 +340,52 @@ class TestCinemaWindow(unittest.TestCase):
         self.assertEqual(board.rows["Bob"].pos().y(), 0)
 
 
+class TestBestPlace(unittest.TestCase):
+    """gameday.best_places: the best place a card can still finish the week."""
+
+    @staticmethod
+    def _state(i, state="pre", leader=0, line=None, fav=None, routed=(0.0, 0.0)):
+        from types import SimpleNamespace as NS
+        home, away = f"H{i}", f"A{i}"
+        game = NS(index=i, home=home, away=away, line=line,
+                  line_favourite={"home": home, "away": away}.get(fav))
+        return NS(index=i, game=game, state=state, leader=leader,
+                  blowout_home=routed[0], blowout_away=routed[1])
+
+    def test_against_every_way_the_week_can_go(self):
+        import itertools
+        import random
+        from acql.pool import gameday as GD
+        rng = random.Random(11)
+        for _ in range(150):
+            states = [self._state(i, rng.choice(["pre", "in", "final", "off"]), rng.choice([1, -1]),
+                                  *rng.choice([(None, None), (3, "home"), (7.5, "away"), (16.5, "home")]))
+                      for i in range(rng.randint(1, 4))]
+            cards = [GD.Card(key=str(c), name=str(c),
+                             picks={i: s for i in range(len(states)) if (s := rng.choice([1, -1, 0]))},
+                             losers=[(i, rng.choice([1, -1])) for i in range(len(states)) if rng.random() < .3],
+                             in_field=c > 0 or rng.random() < .5)
+                     for c in range(rng.randint(2, 5))]
+            got = GD.best_places(states, cards)
+            field = [c for c, k in enumerate(cards) if k.in_field]
+            for c, card in enumerate(cards):
+                places = []
+                for combo in itertools.product(*(GD._ways(st) for st in states)):
+                    tot = [sum((bool(k.picks.get(g)) and k.picks.get(g) == side)
+                               + sum((hr if held == 1 else ar) for gi, held in k.losers if gi == g)
+                               for g, (side, hr, ar) in enumerate(combo)) for k in cards]
+                    places.append(1 + sum(1 for r in field if r != c and tot[r] > tot[c]))
+                self.assertEqual(got[card.key], min(places))
+
+    def test_a_card_that_disagrees_can_still_catch_up(self):
+        from acql.pool import gameday as GD
+        states = [self._state(0, "final", leader=1), self._state(1), self._state(2)]
+        ann = GD.Card("ann", "Ann", picks={0: 1, 1: 1, 2: 1})      # 1 banked, can reach 3
+        bob = GD.Card("bob", "Bob", picks={0: -1, 1: -1, 2: -1})   # 0 banked, can reach 2
+        cat = GD.Card("cat", "Cat", picks={0: -1, 1: 1, 2: 1})     # agrees with Ann on what is left
+        best = GD.best_places(states, [ann, bob, cat])
+        self.assertEqual(best, {"ann": 1, "bob": 1, "cat": 2})     # Cat can only ever trail Ann
+
+
 if __name__ == "__main__":
     unittest.main()

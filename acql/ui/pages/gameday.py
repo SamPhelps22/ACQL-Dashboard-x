@@ -58,7 +58,8 @@ CHIP_ROWS = 2
 TARGET_LIT_MS = 2400
 ROOTS_SHOWN = 5
 LOSERS_SHOWN = 8
-BOARD_HEADERS = ["#", "Coach", "Now", "Games", "Big L.", "Banked", "Can reach", "To win", "If it ended now"]
+BOARD_HEADERS = ["#", "Coach", "Now", "Games", "Big L.", "Banked", "Can reach", "Best", "To win",
+                 "If it ended now"]
 
 
 def _money(value: float | None) -> str:
@@ -1114,6 +1115,8 @@ class GameDayPage(Page):
                 second = max((s.total_now for s in bd.standings if s.total_now < top), default=top)
                 detail = (f"of {bd.entrants} · level at the top with {_plural(level, 'other')}" if level
                           else f"of {bd.entrants} · {top - second} clear")
+            if me.best is not None and me.best < me.place:
+                detail += f" · best possible {_ordinal(me.best)}"
             self.tile_place.update_values(("T-" if level else "") + _ordinal(me.place), detail,
                                           "good" if me.place == 1 else "")
         else:
@@ -1382,14 +1385,17 @@ class GameDayPage(Page):
                 st.now_losers or "",
                 st.total_banked,
                 st.most,
+                _ordinal(st.best) if st.best is not None else "–",
                 f"{st.chance:.1%}" if st.chance is not None else "–",
                 _money(st.money_now),
             ])
             sort_place.append(place)
-            if st.chance is not None and st.chance >= 0.10:
+            if st.best == 1:
                 tones[(r, 7)] = "good"
+            if st.chance is not None and st.chance >= 0.10:
+                tones[(r, 8)] = "good"
             if st.money_now is not None:
-                tones[(r, 8)] = "good" if st.money_now > 0 else "muted"
+                tones[(r, 9)] = "good" if st.money_now > 0 else "muted"
             if card.ghost or mark == GD.OUT:
                 tones[(r, 1)] = "muted"
             elif mark:
@@ -1398,11 +1404,12 @@ class GameDayPage(Page):
                 for column in range(len(BOARD_HEADERS)):
                     colors[(r, column)] = highlight
         model = TableModel(
-            BOARD_HEADERS, rows, palette=self.palette, numeric_columns={0, 2, 3, 4, 5, 6, 7, 8},
+            BOARD_HEADERS, rows, palette=self.palette, numeric_columns={0, 2, 3, 4, 5, 6, 7, 8, 9},
             sort_values={
                 0: sort_place,
-                7: [st.chance if st.chance is not None else -1 for st, _ in entries],
-                8: [st.money_now if st.money_now is not None else 0 for st, _ in entries],
+                7: [st.best if st.best is not None else 999 for st, _ in entries],
+                8: [st.chance if st.chance is not None else -1 for st, _ in entries],
+                9: [st.money_now if st.money_now is not None else 0 for st, _ in entries],
             },
             tones=tones, cell_colors=colors, bold_columns={1},
         )
@@ -1410,7 +1417,9 @@ class GameDayPage(Page):
         self.board_box.addWidget(view)
         self.board_note.setText(
             "Now counts finished games and games in progress. Banked counts finished games only. "
-            "Can reach is the most a card can still score. To win is the chance of finishing first, "
+            "Can reach is the most a card can still score. Best is the highest place it can still "
+            "finish, every result still to come going its way - certain, not simulated. "
+            "To win is the chance of finishing first, "
             "with ties shared. If it ended now is the money at today's scores. CLINCHED and OUT are "
             "certain, not simulated: no result still to come can change them. "
             f"{MODEL_NAME} is shown for comparison and takes no place or prize.")

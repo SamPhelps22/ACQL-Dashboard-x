@@ -568,6 +568,9 @@ class Standing:
     chance: float | None   # of finishing first (ties share)
     money: float | None    # what the week is worth on average, by the pool's rule
     money_now: float | None    # what it would pay if it ended now
+    #: The best place this card can still finish the week in, every result
+    #: still to come going its way (best_places). None without a field.
+    best: int | None = None
 
     @property
     def total_now(self) -> int:
@@ -706,6 +709,74 @@ def _routs(draws: np.ndarray, states: list[GameNow], seed: int) -> dict[int, np.
     return blown
 
 
+#: Joint outcomes kept while searching for a card's best place. Far more than
+#: a real week needs once ways no better for the card are dropped; past it the
+#: search keeps the most promising ones, so the place given could only be
+#: more cautious than the truth, never better.
+BEST_KEEP = 50_000
+
+
+def _ways(st: GameNow) -> list[tuple[int, bool, bool]]:
+    """Each way a game can still finish: (side credited, home side routed, away
+    side routed). A game over has one way; one still to finish has every way a
+    final margin could go, as Standing.most counts them."""
+    if st.state == "final":
+        return [(st.leader, st.blowout_home >= 0.5, st.blowout_away >= 0.5)]
+    if st.state == "off":
+        return [(NOBODY, False, False)]
+    margins = np.arange(-REACH, REACH + 1)
+    sides = credited_by(st.game, margins)
+    return list(dict.fromkeys(zip(sides.tolist(), (margins <= -BLOWOUT).tolist(),
+                                  (margins >= BLOWOUT).tolist())))
+
+
+def best_places(states: list[GameNow], every: list[Card]) -> dict[str, int]:
+    """Card key -> the best place it can still finish the week in.
+
+    Exact: for each card, every way the games still to come can finish is
+    tried (by the pool's line, Big Losers included), and the place is one plus
+    the cards in the field still ahead of it in the way that leaves fewest -
+    ties share a place, as on the board. Games over count as they ended. A
+    way of finishing a game that is no better for the card against any rival
+    than another way is dropped first, which leaves only a handful to try."""
+    field = [c for c, card in enumerate(every) if card.in_field]
+    if not states or not field:
+        return {}
+    index = {st.index: g for g, st in enumerate(states)}
+    gains = []                                  # per game: ways x cards
+    for g, st in enumerate(states):
+        ways = _ways(st)
+        gain = np.zeros((len(ways), len(every)), dtype=int)
+        for w, (side, home_routed, away_routed) in enumerate(ways):
+            for c, card in enumerate(every):
+                pick = card.picks.get(st.index, NOBODY)
+                hit = int(bool(pick) and pick == side)
+                for game_index, held in card.losers:
+                    if index.get(game_index) == g:
+                        hit += home_routed if held == HOME else away_routed
+                gain[w, c] = hit
+        gains.append(gain)
+    out: dict[str, int] = {}
+    for c, card in enumerate(every):
+        rivals = [r for r in field if r != c]
+        if not rivals:
+            out[card.key] = 1
+            continue
+        lead = np.zeros((1, len(rivals)), dtype=int)       # each rival's points over this card
+        for gain in gains:
+            gap = np.unique(gain[:, rivals] - gain[:, [c]], axis=0)
+            if len(gap) > 1:                                # drop ways another way beats outright
+                keep = [i for i in range(len(gap))
+                        if not any(j != i and (gap[j] <= gap[i]).all() for j in range(len(gap)))]
+                gap = gap[keep]
+            lead = np.unique((lead[:, None, :] + gap[None, :, :]).reshape(-1, len(rivals)), axis=0)
+            if len(lead) > BEST_KEEP:                       # fewest ahead, then smallest leads
+                order = np.lexsort((lead.sum(axis=1), (lead > 0).sum(axis=1)))
+                lead = lead[order[:BEST_KEEP]]
+        out[card.key] = 1 + int((lead > 0).sum(axis=1).min())
+    return out
+
+
 def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
           kept: list[results.Score] | None = None) -> Board:
     """The whole week as it stands, played out `sims` times from here."""
@@ -809,6 +880,7 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
                     most += 1
             return banked, banked_l, now, now_l, most
 
+        best_of = best_places(states, every)
         now_totals = {}
         rows = []
         for c, card in enumerate(every):
@@ -839,6 +911,7 @@ def board(season: Season, week: int, you: str = "", *, sims: int = SIMS,
                 chance=float(share[:, c].mean()) if share is not None else None,
                 money=float(net[:, c].mean()) if net is not None else None,
                 money_now=float(money_now) if money_now is not None else None,
+                best=best_of.get(card.key),
             )
             if card.ghost:
                 ghost_standing = standing
