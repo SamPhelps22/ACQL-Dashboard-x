@@ -5712,5 +5712,13 @@ if __name__ == "__main__":
     # crashed runs whose every test had passed: a segfault on Linux, exit 1 on Windows.
     sys.stdout.flush()
     sys.stderr.flush()
+    if sys.platform == "win32":
+        # Even os._exit crashed on GitHub's Windows (PySide6 6.12, 2026-10-26): 0xC0000005
+        # in a library's unload hook after Python had finished. TerminateProcess skips them.
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = (ctypes.c_void_p, ctypes.c_uint)
+        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code)
     import os
     os._exit(code)

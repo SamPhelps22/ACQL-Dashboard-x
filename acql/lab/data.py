@@ -721,11 +721,13 @@ def experiments(conn: sqlite3.Connection) -> dict:
         card, err = [], str(exc)
     else:
         err = ""
-    bench = []
+    # The training ground's bench file, read as a file: nothing outside acql/training
+    # may import it (tests/test_training.py, Apart), and importing it makes its folder.
     try:
-        from ..training import bench as bench_mod
-        bench = [h for h in bench_mod.load() if isinstance(h, dict)]
-    except Exception:  # noqa: BLE001
+        found = json.loads((ROOT / "data" / "training" / "bench.json").read_text(encoding="utf-8"))
+        plans = found.get("plans", []) if isinstance(found, dict) else []
+        bench = [h for h in plans if isinstance(h, dict)]
+    except (OSError, ValueError):
         bench = []
     return {"scorecard": [{k: r.get(k) for k in ("model_id", "model_name", "games", "hit_rate", "avg_miss",
                                                     "beat_line", "lost_to_line", "line_edge")} for r in card],
