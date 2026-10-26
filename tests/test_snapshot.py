@@ -72,5 +72,21 @@ class Schedule(unittest.TestCase):
         self.assertEqual(store.get("alerts", "sent:deadline:2026:8"), 5.0)
 
 
+class WhyFailed(unittest.TestCase):
+    """The public log names the kind of failure, never an address or a subject."""
+
+    def test_reasons(self):
+        said = ("sunday brief not sent: Couldn't reach Gmail to send it (SMTPDataError: (550, "
+                "b'rejected for sam@example.com')), after 3 tries.")
+        self.assertEqual(snapshot.why_failed(said), "couldn't send through Gmail (SMTPDataError)")
+        self.assertIn("sign-in", snapshot.why_failed("card email not sent: Gmail turned down the sign-in. ..."))
+        self.assertEqual(snapshot.why_failed("sunday brief failed: KeyError('Week 7 picks')\nTraceback ..."),
+                         "stopped with KeyError before sending")
+        self.assertEqual(snapshot.why_failed(""), "no reason given")
+        for text in (said, "sunday brief failed: KeyError('Week 7 picks')"):
+            self.assertNotIn("@", snapshot.why_failed(text))
+            self.assertNotIn("Week 7", snapshot.why_failed(text))
+
+
 if __name__ == "__main__":
     unittest.main()

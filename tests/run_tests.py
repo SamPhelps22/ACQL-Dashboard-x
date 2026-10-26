@@ -5581,7 +5581,9 @@ class TestChartDeletedBeforeItsDraw(unittest.TestCase):
         shiboken6.delete(chart)
         chart._draw_idle()               # what the queued timer calls: no error now
         self.app.processEvents()
-        host.deleteLater()
+        # Gone now, not deleteLater(): no event loop runs again in this process, so a
+        # deferred delete would leave the host to Python's shutdown (which crashed CI).
+        shiboken6.delete(host)
 
 
 class TestReportCardSaysHowMuchTheCallsMean(unittest.TestCase):
@@ -5704,4 +5706,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    # Leave as soon as the result is printed. Python's own shutdown frees Qt widgets and
+    # their Python objects in no fixed order, and on GitHub (since 2026-10-25) that
+    # crashed runs whose every test had passed: a segfault on Linux, exit 1 on Windows.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    import os
+    os._exit(code)

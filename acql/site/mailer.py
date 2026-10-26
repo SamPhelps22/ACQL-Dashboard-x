@@ -206,7 +206,7 @@ def send(settings: MailSettings, message: EmailMessage, *, smtp_factory=None,
             if sent:
                 return                    # delivered; only closing the connection failed - never send twice
             if attempt == attempts:
-                raise MailError(f"Couldn't reach Gmail to send it ({exc}), after {attempts} "
+                raise MailError(f"Couldn't reach Gmail to send it ({type(exc).__name__}: {exc}), after {attempts} "
                                 "tries. Check the connection and try again.") from exc
             sleep(pause)
 

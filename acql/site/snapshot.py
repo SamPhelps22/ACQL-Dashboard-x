@@ -377,6 +377,21 @@ def due(now: float | None = None) -> list[str]:
             and not store.get("cloudrun", f"{job}:{today}", None)]
 
 
+def why_failed(said: str) -> str:
+    """A reason safe for GitHub's public log, from what a muted job said: the kind
+    of failure and the error's name only - never addresses, subjects or picks."""
+    import re
+    if "turned down the sign-in" in said:
+        return "Gmail turned down the sign-in (check the ACQL_GMAIL_* secrets)"
+    if "Couldn't reach Gmail" in said:
+        name = re.search(r"Couldn't reach Gmail to send it \((\w+)", said)
+        return "couldn't send through Gmail" + (f" ({name.group(1)})" if name else "")
+    name = re.search(r"failed: (\w+)\(", said)
+    if name:
+        return f"stopped with {name.group(1)} before sending"
+    return "no reason given"
+
+
 def cloud_run(*, dry_run: bool = False, now: float | None = None) -> int:
     """Every hour on GitHub: the deadline texts, and the card or brief when due.
     Prints only what was done - the run's log is public."""
@@ -387,9 +402,13 @@ def cloud_run(*, dry_run: bool = False, now: float | None = None) -> int:
         return 0
     import contextlib
 
+    said = io.StringIO()
+
     def quiet(args: list[str]) -> int:
         # the job's own lines (subjects, counts) go to the log file, not GitHub's public page
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        said.seek(0)
+        said.truncate()
+        with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said):
             return headless.main(args)
 
     flag = ["--dry-run"] if dry_run else []
@@ -399,7 +418,8 @@ def cloud_run(*, dry_run: bool = False, now: float | None = None) -> int:
     for job in jobs:
         code = quiet([f"--{job}", *flag])
         print(f"{'card email' if job == 'email' else 'Sunday brief'}: "
-              + ("ok" if code == 0 else "FAILED") + (" (dry run, nothing sent)" if dry_run else ""))
+              + ("ok" if code == 0 else f"FAILED - {why_failed(said.getvalue())}")
+              + (" (dry run, nothing sent)" if dry_run else ""))
         if code == 0 and not dry_run:
             store.put("cloudrun", f"{job}:{time.strftime('%Y-%m-%d', time.localtime(now))}", now)
         worst = worst or code
