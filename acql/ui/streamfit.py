@@ -13,7 +13,8 @@ import sys
 from ctypes import wintypes
 
 #: Title words that mark a window playing the stream, most likely first.
-KEYWORDS = ("redzone", "red zone", "spectrum", "youtube tv", "nfl+", "nfl plus", "sunday ticket", "nfl")
+#: The streaming services come first: a tab merely named "RedZone" is not the stream.
+KEYWORDS = ("spectrum", "youtube tv", "nfl+", "nfl plus", "sunday ticket", "redzone", "red zone", "nfl")
 
 
 class _Rect(ctypes.Structure):
@@ -61,12 +62,22 @@ def open_spectrum() -> bool:
     return True
 
 
-def find_stream(skip: tuple[str, ...] = ("ACQL", "Operation Sunday")) -> tuple[int, str] | None:
+#: Our own windows and the website's "open RedZone" helper tab - never the stream.
+SKIP = ("ACQL", "Operation Sunday", "Opening RedZone")
+
+
+def _helper_tab(title: str) -> bool:
+    """The Lab's /redzone page, as titled before it said so (just "RedZone")."""
+    return title.split(" - ")[0].strip().lower() == "redzone"
+
+
+def find_stream(skip: tuple[str, ...] = SKIP) -> tuple[int, str] | None:
     """The window most likely playing the stream, or None. A bare (app) window
     beats a Chrome window with tabs."""
     if sys.platform != "win32":
         return None
-    windows = [(h, t) for h, t in _titles() if not any(s.lower() in t.lower() for s in skip)]
+    windows = [(h, t) for h, t in _titles()
+               if not any(s.lower() in t.lower() for s in skip) and not _helper_tab(t)]
     windows.sort(key=lambda w: w[1].endswith("Google Chrome"))
     for word in KEYWORDS:
         for hwnd, title in windows:

@@ -25,7 +25,7 @@ MAX_BODY = 16_000
 
 
 OPEN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>RedZone</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Opening RedZone</title>
 <style>body{margin:0;background:#07080a;color:#f2f3f5;font:16px/1.5 "Segoe UI",system-ui,sans-serif;
 display:grid;place-items:center;min-height:100vh;text-align:center}b{color:#d4a93c;letter-spacing:.14em}
 p{color:#8b919c;max-width:36ch}</style></head><body><div><b>REDZONE</b><p id="m">Asking the dashboard...</p></div>
