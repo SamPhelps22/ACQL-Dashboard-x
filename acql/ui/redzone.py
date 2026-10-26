@@ -186,13 +186,27 @@ class RedZoneWindow(QWidget):
         self.picks_head = QLabel("MY PICKS")
         self.picks_head.setObjectName("CinemaHeading")
         left.addWidget(self.picks_head)
-        self.picks_row = QHBoxLayout()
+        # the logos scroll sideways (wheel or drag) when the screen is too narrow for them all
+        holder = QWidget()
+        holder.setObjectName("RedZonePicks")
+        self.picks_row = QHBoxLayout(holder)
+        self.picks_row.setContentsMargins(0, 0, 0, 0)
         self.picks_row.setSpacing(4)
-        left.addLayout(self.picks_row)
+        self.picks_row.addStretch(1)
+        self.picks_scroll = QScrollArea()
+        self.picks_scroll.setObjectName("CinemaScroll")
+        self.picks_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.picks_scroll.setWidgetResizable(True)
+        self.picks_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.picks_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.picks_scroll.setMinimumWidth(160)
+        self.picks_scroll.setFixedHeight(72)
+        self.picks_scroll.setWidget(holder)
+        self.picks_holder = holder
+        left.addWidget(self.picks_scroll)
         left.addStretch(1)
-        row.addLayout(left)
-        row.addStretch(1)
-        row.addWidget(self._build_spot())
+        row.addLayout(left, 4)
+        row.addWidget(self._build_spot(), 2)
         right = QVBoxLayout()
         right.setSpacing(4)
         head = QLabel("JUST HAPPENED")
@@ -202,17 +216,18 @@ class RedZoneWindow(QWidget):
         self.recent.setObjectName("RedZoneRecent")
         self.recent.setTextFormat(Qt.TextFormat.RichText)
         self.recent.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.recent.setMinimumWidth(260)
+        self.recent.setMinimumWidth(150)
         self.recent.setWordWrap(True)
         right.addWidget(self.recent, 1)
-        row.addLayout(right)
+        row.addLayout(right, 2)
         self.band = band
         return band
 
     def _build_spot(self) -> QWidget:
         spot = QFrame()
         spot.setObjectName("RedZoneSpot")
-        spot.setFixedWidth(420)
+        spot.setMinimumWidth(260)
+        spot.setMaximumWidth(440)
         box = QVBoxLayout(spot)
         box.setContentsMargins(10, 6, 10, 6)
         box.setSpacing(3)
@@ -297,8 +312,11 @@ class RedZoneWindow(QWidget):
             meter.setFixedHeight(4)
             box.addWidget(meter)
             self.meters.append(meter)
-            self.picks_row.addWidget(cell)
+            self.picks_row.insertWidget(self.picks_row.count() - 1, cell)
             self.chips.append((logo, word))
+        # as wide as the logos: the strip scrolls rather than squeezes
+        self.picks_row.activate()
+        self.picks_holder.setMinimumWidth(self.picks_holder.sizeHint().width())
         counts = {"correct": 0, "incorrect": 0, "winning": 0, "losing": 0}
         statuses: dict[int, str] = {}
         hot_now: set[int] = set()
@@ -690,7 +708,9 @@ class RedZoneWindow(QWidget):
         from . import extras
         screen = extras.cinema_screen(self.window_.screen())
         if screen is not None:
-            self.setGeometry(screen.geometry() if self.covering() else screen.availableGeometry())
+            area = screen.geometry() if self.covering() else screen.availableGeometry()
+            self.setMaximumSize(area.size())          # never wider or taller than the screen
+            self.setGeometry(area)
         if self.isVisible():
             QTimer.singleShot(200, self.fit_stream)
 
