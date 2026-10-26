@@ -1,0 +1,18 @@
+{
+  "record_version": 1,
+  "record_type": "analytics",
+  "experiment_id": "meta-learner-midweek-holdout-20261023",
+  "recorded_at": "2026-10-26",
+  "agent_id": "analytics-insights",
+  "payload": {
+    "summary": "The candidate's development advantage did not survive the reported holdout. Reject this candidate, and treat the historical result as non-prospective because the holdout had prior exposure and exact Thursday feature timestamps are incomplete.",
+    "findings": [
+      "Validated evidence: reported held-out log-loss edge versus Deadeye was -0.0043 with a 95% interval wholly below zero.",
+      "Descriptive only: candidate development point estimate was +0.0021, but its interval included zero.",
+      "Unknown: exact Thursday cutoff parity and fully timestamped historical features were not established."
+    ],
+    "next_hypotheses": [
+      "Accumulate enough immutable Thursday-locked weeks to compare frozen candidate forecasts with Deadeye and market on identical games before drawing a prospective conclusion."
+    ]
+  }
+}

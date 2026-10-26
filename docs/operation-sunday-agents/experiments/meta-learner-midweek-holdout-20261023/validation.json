@@ -1,0 +1,33 @@
+{
+  "record_version": 1,
+  "record_type": "validation",
+  "experiment_id": "meta-learner-midweek-holdout-20261023",
+  "recorded_at": "2026-10-26",
+  "agent_id": "backtesting-model-validation",
+  "payload": {
+    "research_agent_id": "legacy-strategy-lab",
+    "experiment_record_sha256": "7bbe500bf9d3617ea00349e9b35de5387abc17a4894f50978b887c3ec7d52039",
+    "status": "rejected",
+    "independent": true,
+    "independence_basis": "The repository's strategy lab froze candidates on chronological development seasons and evaluated them against Deadeye and the market on a separate held-out season block; this is a historical protocol review, not a prospective Thursday-lock validation.",
+    "checks": {
+      "same_games": true,
+      "same_deadlines": false,
+      "same_scoring_rules": true,
+      "same_baseline_versions": true,
+      "leakage_passed": true,
+      "adequate_sample": true,
+      "feature_timestamps_verified": false,
+      "preregistration_honored": true,
+      "regression_tests_passed": false
+    },
+    "evidence": [
+      "docs/lab-2026-10-26.md reports a development edge of +0.0021 log loss per game versus Deadeye, with a 95% interval from -0.0009 to +0.0052.",
+      "docs/lab-2026-10-26.md reports held-out performance of -0.0043, with a 95% interval from -0.0077 to -0.0009; the candidate was worse on that report split.",
+      "The same report says 2023-2026 had prior exposure under strategy-lab-1; treat the holdout as informative but not fully pristine.",
+      "tests/test_strategy_lab.py passed 26 tests in this audit, including common-game scoring, cutoff/lock protections, leakage checks, small-sample rejection, and no-edge/no-nomination gates.",
+      "tests/test_model_lab.py passed 38 tests, including late/missing timestamp exclusion and timezone/cutoff checks."
+    ],
+    "decision": "Reject. Development performance does not survive the reported held-out comparison, and this historical midweek study cannot establish exact Thursday cutoff parity or prospective production value."
+  }
+}

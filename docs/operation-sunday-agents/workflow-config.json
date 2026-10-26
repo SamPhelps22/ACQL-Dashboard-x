@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "budgets": {
+    "max_hypotheses_screened_per_invocation": 3,
+    "max_full_experiments_per_invocation": 1,
+    "max_minutes_per_experiment": 30,
+    "max_concurrent_experiments": 1
+  },
+  "network": {
+    "external_data_fetch": false,
+    "paid_api_requests": false
+  },
+  "worktree": {
+    "required_for_candidate_code": true,
+    "candidate_path": "acql/training/candidates/<experiment-id>"
+  },
+  "stopping_conditions": [
+    "A configured time, compute, or iteration budget is reached.",
+    "The data fingerprint, feature availability, or cutoff cannot be verified.",
+    "A leakage, duplicate-information, or baseline-parity check fails.",
+    "The preregistered sample requirement or holdout is not available.",
+    "Independent validation rejects the candidate or reports inconclusive evidence."
+  ],
+  "acceptance_criteria_source": "The experiment's preregistered criteria and the existing repository validation protocol; never invent thresholds after observing results."
+}

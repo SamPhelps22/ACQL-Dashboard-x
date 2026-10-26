@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:acql:operation-sunday:agent-record:v1",
+  "title": "Operation Sunday agent hand-off record",
+  "description": "Versioned experiment, independent validation, and analytics records. Structural checks are implemented in acql.training.agent_record.",
+  "oneOf": [
+    { "$ref": "#/$defs/experiment" },
+    { "$ref": "#/$defs/validation" },
+    { "$ref": "#/$defs/analytics" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["record_version", "record_type", "experiment_id", "recorded_at", "agent_id", "payload"],
+      "properties": {
+        "record_version": { "const": 1 },
+        "record_type": { "type": "string" },
+        "experiment_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,79}$" },
+        "recorded_at": { "type": "string", "format": "date" },
+        "agent_id": { "type": "string", "minLength": 1 },
+        "payload": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "metric": {
+      "type": "object",
+      "required": ["name", "value", "unit", "games", "weeks", "seasons", "notes"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": { "type": ["number", "null"] },
+        "unit": { "type": "string", "minLength": 1 },
+        "ci_low": { "type": ["number", "null"] },
+        "ci_high": { "type": ["number", "null"] },
+        "games": { "type": "integer", "minimum": 0 },
+        "weeks": { "type": ["integer", "null"], "minimum": 0 },
+        "seasons": { "type": "array", "items": { "type": "integer" } },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "experiment": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "properties": {
+            "record_type": { "const": "experiment" },
+            "payload": {
+              "type": "object",
+              "required": ["status", "hypothesis", "objective", "preregistration", "candidate", "dataset", "protocol", "execution", "results", "decision"],
+              "properties": {
+                "status": { "enum": ["proposed", "running", "complete", "blocked"] },
+                "hypothesis": { "type": "string", "minLength": 1 },
+                "objective": { "type": "string", "minLength": 1 },
+                "preregistration": {
+                  "type": "object",
+                  "required": ["registered_at", "protocol", "primary_metric", "success_criteria"],
+                  "properties": {
+                    "registered_at": { "type": "string", "format": "date" },
+                    "protocol": { "type": "string", "minLength": 1 },
+                    "primary_metric": { "type": "string", "minLength": 1 },
+                    "success_criteria": { "type": "string", "minLength": 1 }
+                  },
+                  "additionalProperties": false
+                },
+                "candidate": {
+                  "type": "object",
+                  "required": ["name", "source_commit", "artifact_sha256", "parameters"],
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "source_commit": { "type": "string", "minLength": 1 },
+                    "artifact_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+                    "parameters": { "type": "object" }
+                  },
+                  "additionalProperties": false
+                },
+                "dataset": {
+                  "type": "object",
+                  "required": ["name", "version", "fingerprint", "source_files", "season_range", "feature_timestamps", "feature_availability"],
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "version": { "type": "string", "minLength": 1 },
+                    "fingerprint": { "type": "string", "minLength": 1 },
+                    "source_files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+                    "season_range": { "type": "string", "minLength": 1 },
+                    "feature_timestamps": { "enum": ["verified", "partial", "unavailable"] },
+                    "feature_availability": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "required": ["feature", "timestamp_source", "cutoff_verified", "notes"],
+                        "properties": {
+                          "feature": { "type": "string", "minLength": 1 },
+                          "timestamp_source": { "type": "string", "minLength": 1 },
+                          "cutoff_verified": { "type": "boolean" },
+                          "notes": { "type": "string", "minLength": 1 }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "protocol": {
+                  "type": "object",
+                  "required": ["version", "code_version", "prediction_cutoff", "exact_deadline_data", "scoring_rules_version", "baselines", "same_games", "development_period", "validation_period", "uncertainty_method", "random_seed"],
+                  "properties": {
+                    "version": { "type": "string", "minLength": 1 },
+                    "code_version": { "type": "string", "minLength": 1 },
+                    "prediction_cutoff": { "type": "string", "minLength": 1 },
+                    "exact_deadline_data": { "type": "boolean" },
+                    "scoring_rules_version": { "type": "string", "minLength": 1 },
+                    "baselines": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "required": ["name", "version"],
+                        "properties": {
+                          "name": { "type": "string", "minLength": 1 },
+                          "version": { "type": "string", "minLength": 1 }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "same_games": { "type": "boolean" },
+                    "development_period": { "type": "string", "minLength": 1 },
+                    "validation_period": { "type": "string", "minLength": 1 },
+                    "uncertainty_method": { "type": "string", "minLength": 1 },
+                    "random_seed": { "type": ["integer", "null"] }
+                  },
+                  "additionalProperties": false
+                },
+                "execution": {
+                  "type": "object",
+                  "required": ["commands", "elapsed_seconds", "resource_use", "failures", "tool_usage"],
+                  "properties": {
+                    "commands": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+                    "elapsed_seconds": { "type": ["number", "null"], "minimum": 0 },
+                    "resource_use": { "type": "string", "minLength": 1 },
+                    "failures": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+                    "tool_usage": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+                  },
+                  "additionalProperties": false
+                },
+                "results": {
+                  "type": "object",
+                  "required": ["metrics", "leakage_check", "subgroups", "notes"],
+                  "properties": {
+                    "metrics": { "type": "array", "items": { "$ref": "#/$defs/metric" } },
+                    "leakage_check": { "enum": ["passed", "failed", "not_run"] },
+                    "subgroups": { "type": "array", "items": { "type": "string" } },
+                    "notes": { "type": "array", "items": { "type": "string" } }
+                  },
+                  "additionalProperties": false
+                },
+                "decision": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "validation": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "properties": {
+            "record_type": { "const": "validation" },
+            "payload": {
+              "type": "object",
+              "required": ["research_agent_id", "experiment_record_sha256", "status", "independent", "independence_basis", "checks", "evidence", "decision"],
+              "properties": {
+                "research_agent_id": { "type": "string", "minLength": 1 },
+                "experiment_record_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                "status": { "enum": ["accepted", "rejected", "inconclusive", "blocked"] },
+                "independent": { "type": "boolean" },
+                "independence_basis": { "type": "string", "minLength": 1 },
+                "checks": {
+                  "type": "object",
+                  "required": ["same_games", "same_deadlines", "same_scoring_rules", "same_baseline_versions", "leakage_passed", "adequate_sample", "feature_timestamps_verified", "preregistration_honored", "regression_tests_passed"],
+                  "properties": {
+                    "same_games": { "type": "boolean" },
+                    "same_deadlines": { "type": "boolean" },
+                    "same_scoring_rules": { "type": "boolean" },
+                    "same_baseline_versions": { "type": "boolean" },
+                    "leakage_passed": { "type": "boolean" },
+                    "adequate_sample": { "type": "boolean" },
+                    "feature_timestamps_verified": { "type": "boolean" },
+                    "preregistration_honored": { "type": "boolean" },
+                    "regression_tests_passed": { "type": "boolean" }
+                  },
+                  "additionalProperties": false
+                },
+                "evidence": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+                "decision": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "analytics": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "properties": {
+            "record_type": { "const": "analytics" },
+            "payload": {
+              "type": "object",
+              "required": ["summary", "findings", "next_hypotheses"],
+              "properties": {
+                "summary": { "type": "string", "minLength": 1 },
+                "findings": { "type": "array", "items": { "type": "string" } },
+                "next_hypotheses": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}

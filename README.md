@@ -258,3 +258,11 @@ rules, the awards, and the write-back guards — including that a formula cell i
 refused, that a change set containing an unsafe edit is abandoned whole, that
 big-loser win markers survive editing a neighbouring slot, and that the
 workbook's structure is unchanged by a save.
+
+## Operation Sunday model research
+
+The NFL prediction research and three specialized Claude Code agents are
+documented in [docs/operation-sunday-agents](docs/operation-sunday-agents/README.md).
+The agents reuse the existing walk-forward evaluator and immutable forecast
+locks; they do not modify production forecasts or promote a model. Run the
+agent-record safety tests with `python tests/test_agent_record.py`.

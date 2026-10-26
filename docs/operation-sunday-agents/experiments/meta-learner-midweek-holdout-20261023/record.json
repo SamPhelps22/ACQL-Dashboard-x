@@ -1,0 +1,119 @@
+{
+  "record_version": 1,
+  "record_type": "experiment",
+  "experiment_id": "meta-learner-midweek-holdout-20261023",
+  "recorded_at": "2026-10-23",
+  "agent_id": "legacy-strategy-lab",
+  "payload": {
+    "status": "complete",
+    "hypothesis": "A meta-learner combining market, Deadeye, Elo, and a scoring model will improve ACQL credited-game probability over Deadeye on chronologically held-out seasons.",
+    "objective": "Improve held-out log loss for the chance that the home side is credited under ACQL pool rules; keep pool picks and money separate from probability quality.",
+    "preregistration": {
+      "registered_at": "2026-10-23",
+      "protocol": "strategy-lab-1; archived retrospective holdout, not the current prospective-lock protocol",
+      "primary_metric": "log-loss improvement versus Deadeye; positive means the candidate has lower log loss",
+      "success_criteria": "Beat Deadeye on development and holdout under the preregistered protocol and pass its leak/data gates; no promotion from development-only performance."
+    },
+    "candidate": {
+      "name": "Meta-learner: market, Deadeye, Elo, scoring",
+      "source_commit": "286ed25-dirty (as recorded in the historical report)",
+      "artifact_sha256": null,
+      "parameters": {
+        "family": "meta-learner",
+        "inputs": ["market", "Deadeye", "Elo", "scoring"],
+        "exact_hyperparameters": "not preserved with this legacy report"
+      }
+    },
+    "dataset": {
+      "name": "Prediction Tracker archives joined with nflverse historical game data",
+      "version": "historical local archives; fingerprint e522ace6ec55",
+      "fingerprint": "e522ace6ec55 (historical report fingerprint)",
+      "source_files": [
+        "data/tracker/archive/nfl*.csv",
+        "data/nflverse/games.csv.gz"
+      ],
+      "season_range": "1999-2026; 2018-2022 development and 2023-2026 validation report split",
+      "feature_timestamps": "partial",
+      "feature_availability": [
+        {
+          "feature": "Historical archived model predictions",
+          "timestamp_source": "No publication timestamp retained for every model/game row",
+          "cutoff_verified": false,
+          "notes": "Cannot establish that each model value existed by the Thursday pool deadline."
+        },
+        {
+          "feature": "Historical midweek market line",
+          "timestamp_source": "Archive timing label only",
+          "cutoff_verified": false,
+          "notes": "Midweek is a proxy, not an exact per-game Thursday cutoff snapshot."
+        }
+      ]
+    },
+    "protocol": {
+      "version": "strategy-lab-1",
+      "code_version": "286ed25-dirty",
+      "prediction_cutoff": "Historical midweek line, used as a proxy for the Thursday pool deadline",
+      "exact_deadline_data": false,
+      "scoring_rules_version": "ACQL credited-pick rules in the archived strategy-lab report",
+      "baselines": [
+        {
+          "name": "Deadeye at 25% (in use)",
+          "version": "historical strategy-lab baseline; report code 286ed25-dirty"
+        },
+        {
+          "name": "Market-only line",
+          "version": "historical Prediction Tracker midweek line"
+        }
+      ],
+      "same_games": true,
+      "development_period": "2018-2022",
+      "validation_period": "2023-2026; had prior exposure under the older strategy-lab protocol",
+      "uncertainty_method": "Week-clustered paired 95% interval; multiplicity correction over the prior hypothesis family",
+      "random_seed": null
+    },
+    "execution": {
+      "commands": ["python -m acql.training lab"],
+      "elapsed_seconds": null,
+      "resource_use": "Not recorded in the legacy report.",
+      "failures": [],
+      "tool_usage": [
+        "The archived strategy-lab runner and its walk-forward evaluator produced the reported comparisons.",
+        "A per-tool event log and exact candidate artifact were not preserved."
+      ]
+    },
+    "results": {
+      "metrics": [
+        {
+          "name": "development log-loss improvement versus Deadeye",
+          "value": 0.0021,
+          "unit": "log-loss points per game; positive favors candidate",
+          "ci_low": -0.0009,
+          "ci_high": 0.0052,
+          "games": 1305,
+          "weeks": null,
+          "seasons": [2018, 2019, 2020, 2021, 2022],
+          "notes": "Promising point estimate, but interval includes zero."
+        },
+        {
+          "name": "held-out log-loss improvement versus Deadeye",
+          "value": -0.0043,
+          "unit": "log-loss points per game; positive favors candidate",
+          "ci_low": -0.0077,
+          "ci_high": -0.0009,
+          "games": 863,
+          "weeks": null,
+          "seasons": [2023, 2024, 2025, 2026],
+          "notes": "Candidate is worse; interval is below zero. These seasons were previously viewed under the older protocol."
+        }
+      ],
+      "leakage_check": "passed",
+      "subgroups": [],
+      "notes": [
+        "The report describes development and validation comparisons on common games.",
+        "Historical model-feature timestamps are not available for every feature; midweek is not the exact ACQL Thursday deadline.",
+        "No prospective, hash-chained Thursday lock from this candidate has been scored."
+      ]
+    },
+    "decision": "Reject this candidate as a production improvement. It looked promising in development but was worse on the held-out report; reused test seasons and incomplete feature-time evidence further limit the claim."
+  }
+}
