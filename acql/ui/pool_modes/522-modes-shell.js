@@ -5,11 +5,14 @@
   // the next. Esc, or "Back to the site", returns to the page underneath.
   var LM_MODES = {
     broadcast: { label: "League Broadcast", short: "Broadcast", icon: "live",
-      about: "The week as a TV show: the table revealed, risers and fallers, rivalries and the title race." },
+      about: "The week as a TV show: the table revealed, risers and fallers, rivalries and the title race.",
+      brief: "The week told as a show" },
     timemachine: { label: "League Time Machine", short: "Time Machine", icon: "history",
-      about: "Travel back to any week on record and watch the season unfold again." },
+      about: "Travel back to any week on record and watch the season unfold again.",
+      brief: "Any week's table, replayed" },
     numbers: { label: "The Numbers Room", short: "Numbers Room", icon: "charts",
-      about: "Every coach, week, pick and record - sortable, comparable, downloadable." }
+      about: "Every coach, week, pick and record - sortable, comparable, downloadable.",
+      brief: "Every stat, sortable" }
   };
   var LM_ORDER = ["broadcast", "timemachine", "numbers"];
   var LM = { mode: "", node: null, back: null, fs: false, charts: [], boards: {}, seen: null,
@@ -361,37 +364,56 @@
     return node;
   }
 
-  // ---- the launcher: on the home page and in the menu ----
-  function lmLauncher(compact) {
-    return el("section", { class: "module lm-launch" + (compact ? " compact" : ""), "data-card": "league-modes", "aria-label": "League modes" }, [
-      el("div", { class: "mhead" }, [el("h2", { text: "League modes" }), el("span", { class: "aside", text: "Three ways into the league" })]),
+  // ---- where the modes are found: the Explore section, the menu, and one
+  // slim "go deeper" row at the foot of the home page ----
+  function lmLauncher() {
+    return el("section", { class: "module lm-launch compact", "data-card": "league-modes", "aria-label": "Go deeper" }, [
+      el("div", { class: "mhead" }, [el("h2", { text: "Go deeper" }), el("span", { class: "aside", text: "the season in full" })]),
       el("div", { class: "lm-tiles" }, LM_ORDER.map(function (k) {
         var m = LM_MODES[k];
-        return el("a", { class: "lm-tile " + k, href: "#" + k, onclick: function (e) { e.preventDefault(); lmGo(k); } }, [
+        return el("a", { class: "lm-tile " + k, href: "#" + k, title: m.about, onclick: function (e) { e.preventDefault(); lmGo(k); } }, [
           el("span", { class: "ic" }, [icon(m.icon)]),
-          el("b", { text: m.label }),
-          el("span", { class: "note", text: m.about })
+          el("b", { text: m.short }),
+          el("span", { class: "note", text: m.brief })
         ]);
       }))
     ]);
   }
+  function lmModeLink(k, cls) {
+    return el("a", { class: cls || null, href: "#" + k, "data-mode": k, title: LM_MODES[k].about,
+      onclick: function (e) { e.preventDefault(); state.sheet = false; lmBaseRender(); lmGo(k); } },
+      [icon(LM_MODES[k].icon), el("span", { text: LM_MODES[k].short })]);
+  }
+  var lmBaseCoach = coachView;
+  coachView = function (p) {
+    var v = lmBaseCoach(p), weeks = v.querySelector('[data-card="weeks"]');
+    if (weeks && DATA.weeks && DATA.weeks.length) weeks.appendChild(el("div", { class: "lm-links" }, [
+      el("button", { class: "lm-link", type: "button", text: p.name + "’s season in the Time Machine", onclick: function () { lmGo("timemachine", { a: p.name, tab: "coach" }); } }),
+      el("button", { class: "lm-link", type: "button", text: "Against everyone in the Numbers Room", onclick: function () { lmGo("numbers", { a: p.name, tab: "coaches" }); } })
+    ]));
+    return v;
+  };
   var lmBaseHome = homeView;
   homeView = function () {
     var v = lmBaseHome();
-    if (DATA.weeks && DATA.weeks.length) {
-      var kids = v.children, at = kids.length > 2 ? kids[2] : null;
-      v.insertBefore(lmLauncher(false), at);
-    }
+    if (DATA.weeks && DATA.weeks.length) v.appendChild(lmLauncher());
     return v;
+  };
+  // the modes sit with the other ways into the numbers: in the Explore
+  // section's tabs and its group in the menu
+  var lmBaseSubnav = subnav;
+  subnav = function () {
+    var nav = lmBaseSubnav();
+    if (nav && nav.getAttribute("data-section") === "explore" && DATA.weeks && DATA.weeks.length) {
+      LM_ORDER.forEach(function (k) { nav.appendChild(lmModeLink(k, "mode-tab")); });
+    }
+    return nav;
   };
   var lmBaseSheet = sheet;
   sheet = function () {
     var out = lmBaseSheet();
     if (!out || !DATA.weeks || !DATA.weeks.length) return out;
-    var box = out[1], themes = box && box.querySelector(".themes");
-    if (box) box.insertBefore(el("div", { class: "group" }, [el("b", { text: "League modes" }), el("div", { class: "links" }, LM_ORDER.map(function (k) {
-      return el("a", { href: "#" + k, onclick: function (e) { e.preventDefault(); state.sheet = false; lmBaseRender(); lmGo(k); } },
-        [icon(LM_MODES[k].icon), el("span", { text: LM_MODES[k].short })]);
-    }))]), themes);
+    var box = out[1], links = box && box.querySelector('.group[data-section="explore"] .links');
+    if (links) LM_ORDER.forEach(function (k) { links.appendChild(lmModeLink(k)); });
     return out;
   };

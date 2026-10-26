@@ -69,7 +69,10 @@
   }
 
   // Every Big Loser the pool picked this week, how it stands, and who has it.
-  function weekLosersCard(t) {
+  // The week's Big Losers worked out once: who holds which team, how each
+  // stands, and the summary line. The full card (Live, Side pools) and the
+  // short one on the home page both read this.
+  function weekLosersTally(t) {
     var L = DATA.live, held = {}, cards = 0;
     L.coaches.forEach(function (c) {
       if (c.bl.length) cards++;
@@ -97,16 +100,22 @@
       var x = tallyGame(t, team), s = loserState(x, team);
       return teamName(x, team) + (s.by != null && s.by >= 15 ? " ✓" : s.by != null && x.state === "post" ? " ✗" : "");
     }).join(", ") : "";
-    return module("Week " + L.week + " Big Losers", plural(cards, "card") + ", " + plural(teams.length, "team"), [
-      el("p", { class: "race-sum", text: sum.join(" · ") + "." }),
-      mineText ? el("p", { class: "note" }, [el("b", { text: "Yours: " }), mineText]) : null,
-      pickRows(rows, "bl", 8),
+    return { week: L.week, cards: cards, teams: teams.length, rows: rows, sum: sum, mineText: mineText,
+      top: rows.slice().sort(function (a, b) { return b.who.length - a.who.length || a.name.localeCompare(b.name); })[0] };
+  }
+  function weekLosersCard(t) {
+    var T = weekLosersTally(t);
+    if (!T) return null;
+    return module("Week " + T.week + " Big Losers", plural(T.cards, "card") + ", " + plural(T.teams, "team"), [
+      el("p", { class: "race-sum", text: T.sum.join(" · ") + "." }),
+      T.mineText ? el("p", { class: "note" }, [el("b", { text: "Yours: " }), T.mineText]) : null,
+      pickRows(T.rows, "bl", 8),
       el("p", { class: "note", text: "A team scores a point when it loses by 15 or more. The % is the share of cards with that team. Chances come from the live score and the betting line." })
     ], { "data-card": "losers" });
   }
 
   // The suicide pool this week: who is on which team, and how it stands.
-  function weekSuicideCard(t) {
+  function weekSuicideTally(t) {
     var L = DATA.live, season = {}, on = {}, none = [], alive = 0;
     DATA.players.forEach(function (p) { season[p.name] = p; });
     L.coaches.forEach(function (c) {
@@ -126,15 +135,48 @@
       return { team: team, badge: team, name: teamName(x, team), who: who, share: null, chance: s.chance == null ? 1 : s.chance, status: s.text, tone: s.tone };
     });
     rows.sort(function (a, b) { return b.who.length - a.who.length || a.chance - b.chance || a.name.localeCompare(b.name); });
-    var bits = [plural(alive, "coach", "coaches") + " still in", "about " + expected.toFixed(1) + " expected through this week"];
+    // everyone still in counts, card or not, so this agrees with the rest of the site
+    var carded = {};
+    L.coaches.forEach(function (c) { carded[c.name] = true; });
+    var noCard = aliveNames().filter(function (n) { return !carded[n]; });
+    var bits = [plural(alive + noCard.length, "coach", "coaches") + " still in", "about " + expected.toFixed(1) + " expected through this week"];
     if (behind) bits.push(behind + " behind right now");
     if (out) bits.push(out + " out");
-    return module("Week " + L.week + " suicide pool", plural(Object.keys(on).length, "team") + " picked", [
-      el("p", { class: "race-sum", text: bits.join(" · ") + "." }),
-      rows.length ? pickRows(rows, "sui", 10) : null,
-      none.length ? el("p", { class: "note", text: sentence("No suicide pick on the sheet: " + listNames(none.slice().sort(), 6)) }) : null,
+    if (noCard.length) bits.push(noCard.length + " with no card this week (" + listNames(noCard.slice().sort(), 3) + ")");
+    var mine = L.coaches.filter(function (c) { return isMe(c.name); })[0];
+    var mineRow = mine && mine.sui && season[mine.name] && season[mine.name].suicide.alive ? rows.filter(function (r) { return r.team === mine.sui; })[0] : null;
+    return { week: L.week, alive: alive + noCard.length, teams: Object.keys(on).length, rows: rows, bits: bits, none: none, mine: mineRow };
+  }
+  function weekSuicideCard(t) {
+    var T = weekSuicideTally(t);
+    if (!T) return null;
+    return module("Week " + T.week + " suicide pool", plural(T.teams, "team") + " picked", [
+      el("p", { class: "race-sum", text: T.bits.join(" · ") + "." }),
+      T.rows.length ? pickRows(T.rows, "sui", 10) : null,
+      T.none.length ? el("p", { class: "note", text: sentence("No suicide pick on the sheet: " + listNames(T.none.slice().sort(), 6)) }) : null,
       el("p", { class: "note", text: "Your team has to win its game. If the game has a pool line, the favourite must win by at least the line, and the underdog survives by keeping it closer." })
     ], { "data-card": "suicide" });
+  }
+
+  // The home page's short word on the week's side pools: the same tallies as
+  // the full cards, one line each, and the way to the side pools page.
+  function weekPoolsBrief(t) {
+    var S = weekSuicideTally(t), B = weekLosersTally(t);
+    if (!S && !B) return null;
+    function line(big, title, meta, yours) {
+      return el("div", { class: "r", style: "grid-template-columns: 52px minmax(0,1fr)" }, [el("span", { class: "big", text: big }),
+        el("span", {}, [el("b", { text: title }), el("span", { class: "meta", style: "display:block", text: meta }),
+          yours ? el("span", { class: "meta", style: "display:block" }, [el("b", { text: "Yours: " }), yours]) : null])]);
+    }
+    var top = S && S.rows[0];
+    return module("Side pools", "week " + DATA.live.week, [
+      el("div", { class: "rows" }, [
+        S ? line(String(S.alive), "still in the suicide pool", S.bits.slice(1).join(" · ") +
+          (top ? " · most on " + top.name + " (" + top.who.length + ")" : ""), S.mine ? S.mine.name + " · " + S.mine.status : "") : null,
+        B ? line(String(B.cards), "Big Loser cards", B.sum[0] + (B.top ? " · most backed: " + B.top.name + " (" + B.top.who.length + ")" : ""), B.mineText) : null
+      ]),
+      moreLink("Every side-pool pick", "pools")
+    ], { "data-card": "side" });
   }
 
   // Picks almost nobody made, and how the crowd's own card is doing.

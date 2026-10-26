@@ -2,10 +2,14 @@
   // Dense on purpose: sortable tables, charts that answer one question each,
   // and every worked-out figure explained. All of it reads the shared engine
   // above, over one season and one run of weeks chosen at the top.
+  // The sections, grouped by the question they answer (the third item is the
+  // group a section opens, shown as a small heading in the rail).
   var NR_TABS = [
-    ["home", "Command center"], ["coaches", "Coaches"], ["distribution", "Score spread"], ["consistency", "Consistency"],
-    ["picks", "Team picks"], ["games", "NFL games"], ["h2h", "Head-to-head"], ["ranks", "Rank movement"],
-    ["records", "Record book"], ["pools", "Side pools"], ["studio", "Chart studio"], ["tables", "Data tables"], ["glossary", "Glossary"]
+    ["home", "Command center", "Overview"],
+    ["coaches", "Coaches", "Coaches"], ["consistency", "Consistency"], ["distribution", "Score spread"], ["ranks", "Rank movement"], ["h2h", "Head-to-head"],
+    ["picks", "Team picks", "Picks"], ["games", "NFL games"],
+    ["records", "Record book", "League"], ["pools", "Side pools"],
+    ["studio", "Chart studio", "Tools"], ["tables", "Data tables"], ["glossary", "Glossary"]
   ];
   // What each worked-out figure means - shown in table headings and in the glossary.
   var NR_DEFS = {
@@ -55,9 +59,10 @@
     return el("div", { class: "lm-body nr" }, [
       nrHead(s, C),
       el("div", { class: "nr-wrap" }, [
-        el("nav", { class: "nr-rail", "aria-label": "Numbers Room sections", "data-keep-scroll": "nr-rail" }, NR_TABS.map(function (t) {
-          return el("button", { type: "button", "aria-current": t[0] === tab ? "page" : null, onclick: function () { LM.nr.tab = t[0]; lmDraw({ top: true }); }, text: t[1] });
-        })),
+        el("nav", { class: "nr-rail", "aria-label": "Numbers Room sections", "data-keep-scroll": "nr-rail" }, [].concat.apply([], NR_TABS.map(function (t) {
+          return [t[2] ? el("span", { class: "nr-group", "aria-hidden": "true", text: t[2] }) : null,
+            el("button", { type: "button", "aria-current": t[0] === tab ? "page" : null, onclick: function () { LM.nr.tab = t[0]; lmDraw({ top: true }); }, text: t[1] })];
+        }))),
         el("div", { class: "nr-main" }, [main])
       ])
     ]);
@@ -464,12 +469,8 @@
       var pad = Math.max(2, (hi - lo) * 0.1);
       var wrap = lineChart(width, [{ name: a + " vs " + b, role: "me", label: true, values: vals }], { xs: xs, height: 220, min: Math.floor(lo - pad), max: Math.ceil(hi + pad), zero: true,
         title: "Season total gap", fmt: function (v) { return v > 0 ? "+" + Math.round(v) : String(Math.round(v)); } });
-      return lmClickWeeks(wrap, width, xs, function (k) { LM.tm.cmp = "coaches"; lmGo("timemachine", { week: k, tab: "compare" }); });
+      return lmClickWeeks(wrap, width, xs, function (k) { lmGo("timemachine", { week: k }); });
     }, "Gap between the two");
-    var rankChart = lmChart(220, function (width) {
-      var lines = [a, b].map(function (n, i) { return { name: n, role: i ? "strong" : "me", label: true, values: xs.map(function (k) { var r = C.byWeek[k].by[n]; return r ? r.place : null; }) }; });
-      return lineChart(width, lines, { xs: xs, height: 220, min: 1, max: C.byWeek[st.to].rows.length, invert: true, title: "Places", fmt: function (v) { return ordinal(Math.round(v)); } });
-    }, "Places by week");
     function line(k, x, y, fmt) {
       return el("tr", {}, [el("td", { class: "num", text: fmt(x) }), el("th", { text: k, title: nrDef(k === "Average" ? "avg" : k === "Std dev" ? "sd" : "") }), el("td", { class: "num", text: fmt(y) })]);
     }
@@ -494,26 +495,13 @@
         el("div", { class: "lm-links" }, [s.current && DATA.weeks.some(function (w) { return w.picks; }) ? el("a", { class: "lm-link", href: "#vs=" + encodeURIComponent(a) + "&" + encodeURIComponent(b),
           onclick: function (e) { e.preventDefault(); lmClose(false); setPair(a, b); go("h2h"); }, text: "Pick by pick on the site" }) : null])
       ], lmSrc("calc")),
-      el("div", { class: "cols even" }, [nrCard("Season total gap (" + a + " minus " + b + ")", [gapChart]), nrCard("Places, week by week", [rankChart])]),
-      nrCard("Week by week", [nrTable("h2h-weeks", [
-        { key: "week", label: "Week", num: true, get: function (r) { return r.week; } },
-        { key: "a", label: a, num: true, get: function (r) { return r.a; } },
-        { key: "b", label: b, num: true, get: function (r) { return r.b; } },
-        { key: "d", label: "Difference", num: true, derived: true, get: function (r) { return r.a - r.b; }, fmt: function (r) { return lmSigned(r.a - r.b, 0); } }
-      ], v.weeks, { sort: { col: "week", dir: 1 }, csv: "acql-" + s.year + "-h2h" })])
+      nrCard("Season total gap (" + a + " minus " + b + ")", [el("p", { class: "note", text: "Above the line, " + a + " is ahead on the season. Click a week to open it in the Time Machine. Every week's scores and the games they split are on the site's head-to-head page." }), gapChart])
     ]);
   }
 
   // ---- rank movement ----
   function nrRanks(s, C, st) {
     var a = lmCoach(s), end = C.byWeek[st.to], xs = st.weeks;
-    var on = end.rows.slice(0, 5).map(function (r) { return r.name; });
-    if (on.indexOf(a) < 0) on.push(a);
-    var chart = lmChart(300, function (width) {
-      var lines = on.map(function (n) { return { name: n, role: n === a ? "me" : "strong", label: true, values: xs.map(function (k) { var r = C.byWeek[k].by[n]; return r ? r.place : null; }) }; });
-      var wrap = lineChart(width, lines, { xs: xs, height: 300, min: 1, max: end.rows.length, invert: true, title: "Places by week", fmt: function (v) { return ordinal(Math.round(v)); } });
-      return lmClickWeeks(wrap, width, xs, function (k) { lmGo("timemachine", { week: k }); });
-    }, "Rank progression");
     var weekly = st.cps.filter(function (c) { return c.rows.some(function (r) { return r.move != null; }); }).map(function (c) {
       var mv = c.rows.filter(function (r) { return r.move != null; });
       var up = Math.max.apply(null, mv.map(function (r) { return r.move; })), dn = Math.min.apply(null, mv.map(function (r) { return r.move; }));
@@ -533,7 +521,6 @@
         })));
       }))]);
     return el("div", { class: "nr-stack" }, [
-      nrCard("Places, week by week", [el("p", { class: "note", text: "Season standings after each week: the top five now and " + a + ". Equal totals share a place, so a tie can move several coaches at once. Click a week to open it in the Time Machine." }), chart], lmSrc("calc")),
       el("div", { class: "cols even" }, [
         nrCard("Biggest climb and drop each week", [nrTable("movers", [
           { key: "week", label: "Wk", num: true, get: function (r) { return r.week; } },
@@ -548,6 +535,8 @@
         ], st.rows.filter(function (r) { return r.atTop; }), { sort: { col: "atTop", dir: -1 } }),
         el("p", { class: "note", text: plural(changes.length, "change") + " at the top in these weeks" + (changes.length ? ": " + changes.map(function (e) { return "wk " + e.week + " " + listNames(e.who, 2); }).join(" · ") : "") + "." })], lmSrc("calc"))
       ]),
+      el("div", { class: "lm-links" }, [el("button", { class: "lm-link", type: "button", onclick: function () { lmGo("timemachine", { tab: "race" }); },
+        text: "Places as a chart: the title race in the Time Machine" })]),
       nrCard("The movement matrix", [el("p", { class: "note", text: "Each coach's place after each week, shaded green for a climb and red for a drop that week (stronger: more places). It shows what moved, not which game moved it." }), scroller(matrix)], lmSrc("calc"))
     ]);
   }

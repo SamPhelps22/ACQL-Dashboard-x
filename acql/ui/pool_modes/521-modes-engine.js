@@ -313,28 +313,23 @@
   }
 
   // Two coaches over the same weeks: who scored more, week by week.
+  // The current season's head-to-head is the site's own compare(); an archived
+  // season (no picks kept) is read from its week-by-week totals.
   function lmVs(s, a, b, from, to) {
     var st = lmStats(s, from, to), out = { a: a, b: b, aw: 0, bw: 0, ties: 0, weeks: [], gap: [], shared: null };
     st.cps.forEach(function (c) {
       var ra = c.by[a], rb = c.by[b];
       if (!ra || !rb) return;
       out.gap.push(ra.total - rb.total);
-      if (ra.score == null || rb.score == null) return;
+      if (s.current || ra.score == null || rb.score == null) return;
       out.weeks.push({ week: c.week, a: ra.score, b: rb.score });
       if (ra.score > rb.score) out.aw++; else if (rb.score > ra.score) out.bw++; else out.ties++;
     });
     if (s.current) {
-      var same = 0, both = 0;
-      pickedWeeks().forEach(function (w) {
-        if (w.week < st.from || w.week > st.to) return;
-        (w.results || []).forEach(function (g, j) {
-          var x = sideOf(w, a, j), y = sideOf(w, b, j);
-          if (!x || !y) return;
-          both++;
-          if (x.team === y.team) same++;
-        });
-      });
-      out.shared = { same: same, games: both };
+      var cmp = compare(a, b, st.from, st.to);
+      out.aw = cmp.aWeeks; out.bw = cmp.bWeeks; out.ties = cmp.level;
+      out.weeks = cmp.weeks.filter(function (r) { return r.a != null && r.b != null; }).map(function (r) { return { week: r.week, a: r.a, b: r.b }; });
+      out.shared = { same: cmp.agree, games: cmp.both };
     }
     return out;
   }

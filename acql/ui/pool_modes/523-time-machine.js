@@ -351,8 +351,8 @@
 
   // Two points in time, two coaches, or two seasons at the same week.
   function tmCompare(s, C, n) {
-    var kind = LM.tm.cmp, seasons = lmSeasons();
-    var seg = el("div", { class: "lm-seg", role: "group", "aria-label": "Compare" }, [["weeks", "Two weeks"], ["coaches", "Two coaches"], ["seasons", "Two seasons"]].map(function (o) {
+    var kind = LM.tm.cmp === "seasons" ? "seasons" : "weeks", seasons = lmSeasons();
+    var seg = el("div", { class: "lm-seg", role: "group", "aria-label": "Compare" }, [["weeks", "Two weeks"], ["seasons", "Two seasons"]].map(function (o) {
       return el("button", { type: "button", "aria-pressed": kind === o[0] ? "true" : "false", onclick: function () { LM.tm.cmp = o[0]; lmDraw(); }, text: o[1] });
     }));
     var body;
@@ -372,20 +372,6 @@
               el("td", {}, [lmMove(other === n ? null : (other < n ? x.d : -x.d))]),
               el("td", { class: "num", text: x.a ? String(Math.abs(x.r.total - x.a.total)) : "–" })]);
           }))]))]);
-    } else if (kind === "coaches") {
-      var a = lmCoach(s), b = lmRival(s, a), xs = C.weeks;
-      body = el("div", {}, [el("div", { class: "lm-row-picks" }, [lmPicker(s, a, function (v) { LM.sel.a = v; lmDraw(); }, "Coach"), lmPicker(s, b, function (v) { LM.sel.b = v; lmDraw(); }, "against")]),
-        lmChart(260, function (width) {
-          var lines = [a, b].map(function (name, i) { return { name: name, role: i ? "strong" : "me", label: true, values: xs.map(function (k) { return C.byWeek[k].by[name] ? C.byWeek[k].by[name].total : null; }) }; });
-          var hi = Math.max.apply(null, lines.map(function (l) { return Math.max.apply(null, l.values.map(function (v) { return v || 0; })); }));
-          var wrap = lineChart(width, lines, { xs: xs, height: 260, min: 0, max: niceMax(hi), title: "Season totals", fmt: function (v) { return String(Math.round(v)); } });
-          return lmClickWeeks(wrap, width, xs, function (k) { tmSetWeek(k); });
-        }, "Two coaches' season totals"),
-        (function () {
-          var v = lmVs(s, a, b);
-          return el("p", { class: "note" }, [a + " outscored " + b + " in " + plural(v.aw, "week") + ", " + b + " in " + plural(v.bw, "week") + (v.ties ? ", level in " + v.ties : "") + ".",
-            v.shared && v.shared.games ? " They picked the same side in " + v.shared.same + " of " + v.shared.games + " graded games." : ""]);
-        })()]);
     } else {
       var others = seasons.filter(function (x) { return x.year !== s.year; });
       if (!others.length) body = stateMsg("Only one season on record", "Comparing seasons needs another archived season. Each season is archived at its end; " +
@@ -404,7 +390,8 @@
           }))]);
       }
     }
-    return el("div", { class: "lm-card" }, [el("h3", { text: "Compare" }), seg, body]);
+    return el("div", { class: "lm-card" }, [el("h3", { text: "Compare" }), seg, body,
+      el("div", { class: "lm-links" }, [el("button", { class: "lm-link", type: "button", onclick: function () { lmGo("numbers", { tab: "h2h" }); }, text: "Two coaches: head-to-head in the Numbers Room" })])]);
   }
 
   function tmSources(s, C) {

@@ -26,7 +26,7 @@
       top_,
       el("div", { class: "cols" }, [
         el("div", {}, [module("Final", "week " + L.week + ", from the scores", [weekBoard(t, sim, 10), moreLink("Every card", "live"), moreLink("Everyone’s picks", "picks")], { "data-card": "board" })]),
-        el("div", {}, [weekSuicideCard(t), weekLosersCard(t)])
+        el("div", {}, [weekPoolsBrief(t)])
       ])
     ];
   }

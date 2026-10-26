@@ -119,25 +119,8 @@
             .map(function (k) { return [k].concat(T.odds[k].map(function (v) { return v == null ? "–" : (v < 1 && v > 0 ? "<1" : Math.round(v)) + "%"; })); }))
       ], { "data-card": "title-chart" }));
     }
-    kids.push(module("Every week’s scores", "the pool from lowest to highest, and its average", [
-      chartBox("spread", 260, function (w) { return spreadChart(w, focus); }),
-      legend([["dot", focus || "Choose a coach"], ["rng", "the pool, low to high"], ["", "the average"]]),
-      tableView("spread", ["Week", "Best", "Average", "Lowest"].concat(focus ? [focus] : []), DATA.weeks.slice().sort(function (a, b) { return a.week - b.week; }).map(function (w) {
-        var lo = Math.min.apply(null, w.scores.map(function (s) { return s.total; }));
-        var mine = focus ? w.scores.filter(function (s) { return s.name === focus; })[0] : null;
-        return ["Week " + w.week, w.top, w.average.toFixed(1), lo].concat(focus ? [mine ? mine.total : "–"] : []);
-      }))
-    ], { "data-card": "spread-chart" }));
-    var M = DATA.money_by_week || {};
-    if (Object.keys(M).length) {
-      kids.push(module("Money", "each coach’s money after each week", [
-        chartBox("money", 300, function (w) { return moneyChart(w, focus, false); }),
-        legend([["me", focus || "Choose a coach"], ["", "most and least so far"], ["ctx", "everyone else"]]),
-        el("p", { class: "note", text: "Each week the best card collects a dollar a game from everyone behind it. The weeks add up to the money sheet’s totals." }),
-        tableView("money", ["Coach"].concat(weeks.map(function (n) { return "Wk " + n; })),
-          Object.keys(M).sort(function (a, b) { return M[b][M[b].length - 1] - M[a][M[a].length - 1]; }).map(function (k) { return [k].concat(M[k].map(dollars)); }))
-      ], { "data-card": "money-chart" }));
-    }
+    // A coach's weekly scores against the pool's spread are on their own page
+    // (Week by week); money over the season is on the Money page.
     kids.push(powerMapModule());
     return el("div", { class: "view", "data-view": "charts" }, kids);
   }
@@ -145,9 +128,13 @@
     var M = DATA.money_by_week || {};
     if (!Object.keys(M).length || seasonWeeks().length < 2) return null;
     var focus = highlighted();
+    var weeks = seasonWeeks();
     return module("Over the season", "each coach’s money after each week", [
       chartBox("money-page", 300, function (w) { return moneyChart(w, focus, false); }),
-      legend([["me", focus || "You (pick your name)"], ["", "most and least so far"], ["ctx", "everyone else"]])
+      legend([["me", focus || "You (pick your name)"], ["", "most and least so far"], ["ctx", "everyone else"]]),
+      el("p", { class: "note", text: "Each week the best card collects a dollar a game from everyone behind it. The weeks add up to the money sheet’s totals." }),
+      tableView("money", ["Coach"].concat(weeks.map(function (n) { return "Wk " + n; })),
+        Object.keys(M).sort(function (a, b) { return M[b][M[b].length - 1] - M[a][M[a].length - 1]; }).map(function (k) { return [k].concat(M[k].map(dollars)); }))
     ], { "data-card": "money-chart" });
   }
 

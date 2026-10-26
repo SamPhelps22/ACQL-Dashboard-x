@@ -149,8 +149,10 @@ def _engine() -> str:
     helpers = (poolpage.PARTS / "020-small-helpers.js").read_text(encoding="utf-8")
     lens = (poolpage.PARTS / "425-factions-and-team-lens.js").read_text(encoding="utf-8")
     picks = lens[:lens.index("  // Rows in an order")]           # sideOf and pickedWeeks, nothing else
+    tale = (poolpage.PARTS / "370-head-to-head-the-tale.js").read_text(encoding="utf-8")
+    compare = tale[tale.index("  // Two coaches week by week"):tale.index("  function h2hView")]   # the one head-to-head
     engine = (poolpage.MODES_DIR / "521-modes-engine.js").read_text(encoding="utf-8")
-    return helpers + picks + _fixture() + engine
+    return helpers + picks + compare + _fixture() + engine
 
 
 class TestEngine(unittest.TestCase):

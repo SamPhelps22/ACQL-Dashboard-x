@@ -99,15 +99,18 @@ html.lm-on, html.lm-on body { overflow: hidden; }
 @keyframes lmborn { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .lm-row { transition: none; } .lm-row.born { animation: none; } }
 
-/* ---- the launcher on the home page ---- */
-.lm-launch .lm-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.lm-tile { display: grid; gap: 4px; align-content: start; padding: 14px; border-radius: var(--r-md); text-decoration: none; color: var(--onair-ink);
-  background: linear-gradient(135deg, var(--onair-2), var(--onair)); border: 1px solid var(--onair-rule); border-top: 3px solid var(--gold); min-height: 112px; }
-.lm-tile:hover { border-color: var(--gold); }
-.lm-tile .ic { color: var(--gold); } .lm-tile .ic .ico { width: 22px; height: 22px; }
-.lm-tile b { font: 700 19px/1.1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
-.lm-tile .note { color: var(--onair-muted); font-size: 12.5px; }
-@media (max-width: 640px) { .lm-launch .lm-tiles { grid-template-columns: 1fr; } .lm-tile { min-height: 0; } }
+/* ---- the "go deeper" row at the foot of the home page ---- */
+.lm-launch .lm-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.lm-tile { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--r-md);
+  text-decoration: none; color: var(--ink); background: var(--surface-2, var(--surface)); border: 1px solid var(--rule); }
+.lm-tile:hover, .lm-tile:focus-visible { border-color: var(--gold); }
+.lm-tile .ic { grid-row: span 2; color: var(--gold); } .lm-tile .ic .ico { width: 20px; height: 20px; }
+.lm-tile b { font: 700 15px/1.15 var(--display); letter-spacing: 0.03em; text-transform: uppercase; }
+.lm-tile .note { font-size: 12.5px; }
+@media (max-width: 640px) { .lm-launch .lm-tiles { grid-template-columns: 1fr; } }
+/* the modes in the Explore tabs: they open full screen, so they wear their icon */
+.subnav a.mode-tab { display: inline-flex; align-items: center; gap: 5px; }
+.subnav a.mode-tab .ico { width: 14px; height: 14px; color: var(--gold); }
 
 /* ---- Time Machine ---- */
 .tm-head, .nr-head { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 18px; }
@@ -147,6 +150,8 @@ html.lm-on, html.lm-on body { overflow: hidden; }
 .nr-rail button { text-align: left; padding: 8px 10px; border: 0; border-left: 3px solid transparent; background: transparent; border-radius: 0 var(--r-sm) var(--r-sm) 0; cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--muted); }
 .nr-rail button:hover { color: var(--ink); background: var(--raised); }
 .nr-rail button[aria-current] { color: var(--ink); border-left-color: var(--gold); background: var(--gold-soft); }
+.nr-rail .nr-group { padding: 12px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.nr-rail .nr-group:first-child { padding-top: 0; }
 .nr-main { min-width: 0; }
 .nr-n { align-self: center; }
 .nr-ch { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
@@ -205,6 +210,7 @@ html.lm-on, html.lm-on body { overflow: hidden; }
   .nr-rail { position: sticky; top: 0; z-index: 3; display: flex; overflow-x: auto; scrollbar-width: none; background: var(--ground); border-bottom: 1px solid var(--rule); }
   .nr-rail button { border-left: 0; border-bottom: 3px solid transparent; border-radius: 0; white-space: nowrap; }
   .nr-rail button[aria-current] { border-bottom-color: var(--gold); }
+  .nr-rail .nr-group { display: none; }
   .nr-gloss { grid-template-columns: 1fr; } .nr-gloss dd { margin-bottom: 6px; }
 }
 

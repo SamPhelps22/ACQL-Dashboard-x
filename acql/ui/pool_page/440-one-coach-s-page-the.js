@@ -19,12 +19,15 @@
       if (!worst || me.total < worst.total) worst = { total: me.total, week: w.week };
       var vs = me.total - w.average;
       diff += vs;
+      var most = weekMost(w), got = p.weekly[String(w.week)];
+      var share = most && got != null ? got / most : null;
       var pick = s.picks[String(w.week)] || "";
       var result = !pick ? null : (s.out === w.week ? el("span", { class: "sui-no", text: " ✗ out" }) : el("span", { class: "sui-ok", text: " ✓" }));
       rows.push(el("tr", {}, [
         el("td", { class: "n num", text: String(w.week) }),
         el("td", { class: "n total num" }, [String(me.total), isWin ? el("span", { class: "star", text: " ★", title: "Won the week" }) : null]),
         el("td", { class: "n num " + (vs > 0.05 ? "up" : vs < -0.05 ? "down" : "flat"), text: (vs > 0 ? "+" : vs < 0 ? "−" : "") + Math.abs(vs).toFixed(1) }),
+        el("td", { class: "n num hide-narrow", title: share == null ? null : got + " of " + most, text: share == null ? "–" : Math.round(share * 100) + "%" }),
         el("td", { class: "n num hide-narrow", text: String(me.regular) }),
         el("td", { class: "n num hide-narrow", text: me.big_loser ? String(me.big_loser) : "–" }),
         el("td", { class: "n num", text: (tiedRank ? "T" : "") + ordinal(rank) }),
@@ -69,15 +72,16 @@
       week ? rootingFor(p.name) : null,
       chance,
       el("div", { class: "cols" }, [
-        el("div", {}, [trendModule(p), maxModule(p), profileModule(p), blindSpotsModule(p)]),
+        el("div", {}, [trendModule(p), profileModule(p), blindSpotsModule(p)]),
         el("div", {}, [trophyShelf(p), twinsModule(p), rivalsModule(p), poolsModuleFor(p), moneyModuleFor(p, moneyWon)])
       ]),
       played ? module("Every week", plural(played, "week"), [scroller(el("table", { id: "coach-weeks" }, [el("thead", {}, [el("tr", {}, [
         el("th", { class: "n", text: "Wk" }), el("th", { class: "n", text: "Wins" }),
-        el("th", { class: "n", text: "vs avg" }), el("th", { class: "n hide-narrow", text: "Picks right" }),
+        el("th", { class: "n", text: "vs avg" }), el("th", { class: "n hide-narrow", text: "Of max", title: "Wins against the most a card could score that week" }),
+        el("th", { class: "n hide-narrow", text: "Picks right" }),
         el("th", { class: "n hide-narrow", text: "Big Loser" }), el("th", { class: "n", text: "Week" }),
         el("th", { class: "n hide-narrow", text: "Season" }), el("th", { text: "Suicide pick" })])]), el("tbody", {}, rows)])),
-        el("p", { class: "note", text: "Week is where that week’s score ranked. Season is the place in the standings after it. Wins include Big Loser points." })])
+        el("p", { class: "note", text: "Week is where that week’s score ranked. Season is the place in the standings after it. Wins include Big Loser points. Of max is the week’s wins against the most a card could score (every game plus every Big Loser pick)." })], { "data-card": "weeks" })
         : stateMsg("No completed games yet", "Weekly scores show here once the first week is entered.")
     ]);
   }
@@ -116,24 +120,6 @@
   // Each week's score against the most that week allowed, so a 9 in a short
   // bye week and a 9 in a full slate read differently. Only weeks whose
   // maximum the official sheet supports.
-  function maxModule(p) {
-    var rows = DATA.weeks.filter(function (w) { return weekMost(w) && p.weekly[String(w.week)] != null; })
-      .sort(function (a, b) { return b.week - a.week; })
-      .map(function (w) { var v = p.weekly[String(w.week)]; return { w: w, v: v, share: v / weekMost(w) }; });
-    if (!rows.length) return null;
-    var best = Math.max.apply(null, rows.map(function (r) { return r.share; }));
-    var worst = Math.min.apply(null, rows.map(function (r) { return r.share; }));
-    return module("Points against the max", "games plus Big Loser picks", [
-      el("div", { class: "rows maxweeks" }, rows.map(function (r) {
-        return el("div", { class: "r" + (rows.length > 1 && r.share === best ? " best" : "") }, [
-          el("span", { class: "meta", text: "Wk " + r.w.week }),
-          el("span", { class: "num" }, [el("b", { text: String(r.v) }), " of " + weekMost(r.w)]),
-          bar(r.share, 1),
-          el("span", { class: "num", style: "text-align:right", text: Math.round(r.share * 100) + "%" })]);
-      })),
-      rows.length > 1 && best !== worst ? el("p", { class: "note", text: "Best week " + Math.round(best * 100) + "% of the max, worst " + Math.round(worst * 100) + "%." }) : null
-    ], { "data-card": "max" });
-  }
   // Where the coach has been, week by week: place and score against the pool.
   function trendModule(p) {
     var weeks = DATA.weeks.map(function (w) { return w.week; }).sort(function (a, b) { return a - b; });

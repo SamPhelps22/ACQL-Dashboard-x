@@ -31,7 +31,7 @@
     }
     var pref = themePref(), here = currentView();
     var items = sections().filter(function (s) { return s.id !== "home"; }).map(function (s) {
-      return el("div", { class: "group" }, [el("b", { text: s.label }), el("div", { class: "links" }, s.pages.map(function (v) {
+      return el("div", { class: "group", "data-section": s.id }, [el("b", { text: s.label }), el("div", { class: "links" }, s.pages.map(function (v) {
         return el("a", { href: "#" + v, "aria-current": v === here ? "page" : null, onclick: navTo(v) },
           [icon(VIEWS[v].icon), el("span", { text: VIEWS[v].tab || VIEWS[v].label })]);
       }))]);

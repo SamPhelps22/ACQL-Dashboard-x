@@ -21,8 +21,8 @@
     return [
       top,
       el("div", { class: "cols" }, [
-        el("div", {}, [splitsCard(t, true), limbCard(t)]),
-        el("div", {}, [weekSuicideCard(t), weekLosersCard(t), w ? lastWeekModule(w) : null])
+        el("div", {}, [splitsCard(t, true)]),
+        el("div", {}, [w ? tableTop() : null, weekPoolsBrief(t), w ? lastWeekModule(w) : null])
       ])
     ];
   }

@@ -139,22 +139,18 @@
     }
     return module("The title race", plural(left, "week") + " left", [
       el("div", { class: "box" }, [el("table", {}, [
-        el("thead", {}, [el("tr", {}, [el("th", { text: "Coach" }), el("th", { class: "n", text: "Wins" }),
-          el("th", { class: "n", text: "Back" }), el("th", { class: "n", text: "Per week" }),
+        el("thead", {}, [el("tr", {}, [el("th", { text: "Coach" }), el("th", { class: "n", text: "Per week" }),
           el("th", { class: "n", text: "Title" }), el("th", { class: "bar-cell hide-narrow", text: "" })])]),
         el("tbody", {}, shown.map(function (p) {
-          var back = lead - p.wins;
           return el("tr", { class: isMe(p.name) ? "me" : null }, [
             el("td", { class: "coach" }, [who(p.name)]),
-            el("td", { class: "n num", text: String(p.wins) }),
-            el("td", { class: "n num", text: back ? String(back) : "–" }),
             el("td", { class: "n num", text: perWeek(p) }),
             el("td", { class: "n pct num" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }),
             el("td", { class: "bar-cell hide-narrow" }, [bar(p.title || 0, top)])
           ]);
         }))
       ])]),
-      el("p", { class: "note", text: "Per week is how much a coach has to beat the leader by, every week from here, to catch up. Title is each coach’s chance of winning the season, from playing out the rest of it 10,000 times. It uses the standings only, not anyone’s picks." }),
+      el("p", { class: "note", text: "The likeliest champions. Per week is how much a coach has to beat the leader by, every week from here, to catch up. Title is the chance of winning the season, from playing out the rest of it 10,000 times on the standings alone." }),
       moreLink("Title odds week by week", "charts")
     ], { "data-card": "race" });
   }

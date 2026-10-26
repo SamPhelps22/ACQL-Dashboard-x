@@ -17,9 +17,13 @@
     try { history.replaceState(null, "", vsHash()); } catch (e) { /* not allowed here */ }
     render();
   }
-  function compare(a, b) {
+  // Two coaches week by week and pick by pick - the one place this is worked
+  // out (the coach pages, the Numbers Room and Broadcast all read it). From
+  // and to, when given, keep to that run of weeks.
+  function compare(a, b, from, to) {
     var out = { weeks: [], agree: 0, both: 0, aSplit: 0, bSplit: 0, aWeeks: 0, bWeeks: 0, level: 0 };
     DATA.weeks.slice().sort(function (x, y) { return x.week - y.week; }).forEach(function (w) {
+      if ((from && w.week < from) || (to && w.week > to)) return;
       var pa = w.picks && w.picks[a], pb = w.picks && w.picks[b];
       var sa = null, sb = null;
       w.scores.forEach(function (s) { if (s.name === a) sa = s.total; if (s.name === b) sb = s.total; });

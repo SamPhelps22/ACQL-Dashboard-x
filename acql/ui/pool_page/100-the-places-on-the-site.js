@@ -7,7 +7,7 @@
     picks: { label: "Picks", icon: "picks", about: "Everyone’s picks this week, side by side" },
     weeks: { label: "Past weeks", icon: "weeks", about: "Results, stories and replays of every finished week" },
     standings: { label: "Standings", tab: "Table", icon: "standings", about: "The season’s table and the title race" },
-    charts: { label: "Charts", icon: "charts", about: "The season race, title odds, scores" },
+    charts: { label: "Charts", icon: "charts", about: "The season race, title odds and the power map" },
     h2h: { label: "Head-to-head", icon: "h2h", about: "Any two coaches, pick by pick" },
     factions: { label: "Factions", icon: "h2h", about: "Who picks with whom, and who goes it alone" },
     teams: { label: "Teams", icon: "standings", about: "How the pool has backed each team, and how it went" },
@@ -29,11 +29,14 @@
     return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "factions", "teams", "awards", "history", "pools", "money"].filter(available);
   }
   // The few sections the bars show, and the pages each one holds. Me is its
-  // own button beside them.
+  // own button beside them. Each section answers one kind of question: what's
+  // on this week, where everyone officially stands, digging into the numbers,
+  // and the side competitions.
   var SECTIONS = [
     { id: "home", label: "Home", icon: "home", views: ["home"] },
     { id: "week", label: "This week", icon: "weeks", views: ["live", "picks", "weeks"] },
-    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "charts", "h2h", "factions", "teams", "awards", "history"] },
+    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "awards", "history"] },
+    { id: "explore", label: "Explore", icon: "charts", views: ["charts", "h2h", "factions", "teams"] },
     { id: "pools", label: "Pools & money", short: "Pools", icon: "pools", views: ["pools", "money"] }
   ];
   // The sections as the bars draw them: the pages each has now, where it

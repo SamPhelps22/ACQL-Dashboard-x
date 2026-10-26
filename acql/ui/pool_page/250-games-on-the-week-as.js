@@ -47,7 +47,7 @@
         el("div", {}, [on ? module("On now", plural(on, "game"), [
             el("p", { class: "note", text: "Every game's score, chances and how the pool picked it are on the Live page." }),
             moreLink("Follow the games live", "live")], { "data-card": "on-now-link" }) : null,
-          weekSuicideCard(t), weekLosersCard(t)])
+          weekPoolsBrief(t)])
       ])
     ];
   }

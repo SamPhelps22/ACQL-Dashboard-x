@@ -114,6 +114,9 @@ jobs:
       - name: League modes tests (Broadcast, Time Machine, Numbers Room)
         run: python tests/test_league_modes.py
 
+      - name: Website layout tests (one home per page, one calculation per number)
+        run: python tests/test_site_layout.py
+
       - name: The app's own checks
         run: python -m acql.checks
 
