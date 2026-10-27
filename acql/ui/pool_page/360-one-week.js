@@ -15,7 +15,7 @@
         el("th", { class: "n", text: "Wins" }), el("th", { class: "n hide-narrow", text: "Picks right" }),
         el("th", { class: "n", text: "Big Loser" }), el("th", { class: "bar-cell hide-narrow", text: "" })])]),
       el("tbody", {}, w.scores.map(function (s) {
-        var place = 1 + w.scores.filter(function (o) { return o.total > s.total; }).length;
+        var place = weekPlace(w, s.name);
         var won = w.winners.indexOf(s.name) >= 0;
         return el("tr", { class: isMe(s.name) ? "me" : null }, [
           el("td", { class: "n place num", text: String(place) }),

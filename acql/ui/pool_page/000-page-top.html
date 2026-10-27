@@ -504,6 +504,12 @@ main:focus { outline: none; }
 :root[data-text="xl"] .topbar, :root[data-text="xl"] .bottombar { zoom: 0.8; }
 :root[data-text="l"] .ticker { top: calc(var(--bar-h, 56px) / 1.12); }
 :root[data-text="xl"] .ticker { top: calc(var(--bar-h, 56px) / 1.25); }
+/* Big monitors and TVs: the laptop layout, larger, rather than a narrow column
+   in a sea of black - unless the viewer chose a text size of their own. The
+   layout's breakpoints still see the real width, so nothing else changes. */
+@media (min-width: 1900px) { :root:not([data-text]) body { zoom: 1.25; } }
+@media (min-width: 2500px) { :root:not([data-text]) body { zoom: 1.6; } }
+@media (min-width: 3400px) { :root:not([data-text]) body { zoom: 2; } }
 .trophies { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .trophy { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--rule); border-radius: var(--r-md); background: var(--raised); }
 .trophies.shelf { grid-template-columns: 1fr; gap: 8px; }
@@ -1832,7 +1838,8 @@ html.cine-on, html.cine-on body { overflow: hidden; }
   .cine { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .cine-head { margin-bottom: 14px; position: relative; }
   .cine-body, .cine-side { display: block; }
-  .cine-grid { overflow: visible; grid-template-columns: minmax(0, 1fr); margin-bottom: 18px; }
+  /* a tablet still takes two cards a row; a phone one */
+  .cine-grid { overflow: visible; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); margin-bottom: 18px; }
   .cine-side > * + * { margin-top: 8px; }
   .cine-head .next { margin-left: 0; justify-items: start; text-align: left; flex: 1 1 100%; }
   .cine-exit { position: absolute; top: 10px; right: 12px; }

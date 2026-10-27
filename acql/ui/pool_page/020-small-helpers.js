@@ -197,6 +197,40 @@
     return el("span", { class: "form " + f.kind, title: formText(f), role: "img", "aria-label": formText(f),
       }, [icon(f.kind === "hot" ? "flame" : "snow")]);
   }
+  // ---- places: the one ranking every page uses ----------------------------------------
+  // The pool's rule: equal totals share a place and the next place is skipped
+  // (1, 2, 2, 4). Values that are null or missing get no place.
+  function rankAll(values) {
+    var out = {}, keys = Object.keys(values);
+    keys.forEach(function (k) {
+      var v = values[k];
+      if (v == null) return;
+      var ahead = 0, same = 0;
+      keys.forEach(function (j) { if (values[j] != null) { if (values[j] > v) ahead++; else if (values[j] === v) same++; } });
+      out[k] = { place: ahead + 1, tied: same > 1 };
+    });
+    return out;
+  }
+  // Each coach's place in one finished week, by that week's official totals.
+  function weekPlaces(w) {
+    if (!w.placesCache) {
+      var v = {};
+      w.scores.forEach(function (s) { v[s.name] = s.total; });
+      Object.defineProperty(w, "placesCache", { value: rankAll(v), enumerable: false });
+    }
+    return w.placesCache;
+  }
+  function weekPlace(w, name) { var r = weekPlaces(w)[name]; return r ? r.place : null; }
+  // Each coach's place in the week being played, if it ended now.
+  function livePlaces(t) {
+    if (!t.placesCache) {
+      var v = {};
+      t.rows.forEach(function (r) { v[r.c.name] = r.now; });
+      t.placesCache = rankAll(v);
+    }
+    return t.placesCache;
+  }
+  function livePlace(t, name) { var r = livePlaces(t)[name]; return r ? r.place : null; }
   function leaders() {
     var best = DATA.players.length ? Math.max.apply(null, DATA.players.map(function (p) { return p.wins; })) : 0;
     return DATA.players.filter(function (p) { return p.wins === best; });

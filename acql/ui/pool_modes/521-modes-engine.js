@@ -49,17 +49,7 @@
     return null;
   }
   // Competition ranking of values, highest first: equal values share a place.
-  function lmRank(values) {
-    var out = {}, keys = Object.keys(values);
-    keys.forEach(function (k) {
-      var v = values[k];
-      if (v == null) return;
-      var ahead = 0, same = 0;
-      keys.forEach(function (j) { if (values[j] != null) { if (values[j] > v) ahead++; else if (values[j] === v) same++; } });
-      out[k] = { place: ahead + 1, tied: same > 1 };
-    });
-    return out;
-  }
+  function lmRank(values) { return rankAll(values); }      // the site's one ranking
   function lmMean(xs) { return xs.length ? xs.reduce(function (a, b) { return a + b; }, 0) / xs.length : null; }
   // Population standard deviation: how far a coach's weeks sit from their own average.
   function lmSd(xs) {

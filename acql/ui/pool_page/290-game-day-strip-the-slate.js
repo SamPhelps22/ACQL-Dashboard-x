@@ -61,8 +61,10 @@
     ]);
   }
   function freshWord(fr) {
-    return fr.level === "fresh" ? "Updated " + ageWords(fr.age) : fr.level === "stale" ? "Stale · " + ageWords(fr.age)
-      : fr.level === "failed" ? "Refresh failed" : fr.level === "error" ? "Scores unreachable · retrying" : "Loading";
+    var word = feedLabel(fr);
+    if (fr.level === "fresh") return "Updated " + ageWords(fr.age);
+    if (fr.level === "stale" || fr.level === "failed") return word + " · data from " + ageWords(fr.age);
+    return fr.level === "error" ? word + " · retrying" : word;
   }
   // Every second while one is on screen: the countdowns' digits and the age words - nothing redrawn.
   setInterval(function () {

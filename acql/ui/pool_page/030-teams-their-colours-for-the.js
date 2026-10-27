@@ -19,7 +19,12 @@
     return CODE_OF[t] || "";
   }
   function teamFull(code) { return (DATA.teams || {})[code] || String(code || "").toUpperCase(); }
+  var lightSeen = {};
   function lightColour(hex) {
+    if (hex in lightSeen) return lightSeen[hex];
+    return (lightSeen[hex] = lightness(hex));
+  }
+  function lightness(hex) {
     var h = hex.replace("#", "");
     var r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
     function f(c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }

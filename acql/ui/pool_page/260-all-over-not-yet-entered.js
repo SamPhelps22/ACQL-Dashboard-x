@@ -13,7 +13,7 @@
       el("p", { class: "deck", text: "From the final scores. The official table follows once the week is entered." })
     ], mine ? [
       stat(String(mine.now), "your score"),
-      stat(ordinal(1 + t.rows.filter(function (o) { return o.now > mine.now; }).length), "of " + t.rows.length),
+      stat(ordinal(livePlace(t, mine.c.name)), "of " + t.rows.length),
       stat(cash(pay[mine.c.name]), "for the week", "money " + cashTone(pay[mine.c.name])),
       stat(String(top), "the winning score")
     ] : [

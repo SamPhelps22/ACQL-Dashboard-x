@@ -183,7 +183,8 @@ class RedZoneWindow(QWidget):
         row.setSpacing(16)
         left = QVBoxLayout()
         left.setSpacing(4)
-        self.picks_head = QLabel("MY PICKS")
+        # shortens with "…" (full text on hover) rather than widening RedZone past a small screen
+        self.picks_head = ElidedLabel("MY PICKS")
         self.picks_head.setObjectName("CinemaHeading")
         left.addWidget(self.picks_head)
         # the logos scroll sideways (wheel or drag) when the screen is too narrow for them all
@@ -226,8 +227,9 @@ class RedZoneWindow(QWidget):
     def _build_spot(self) -> QWidget:
         spot = QFrame()
         spot.setObjectName("RedZoneSpot")
-        spot.setMinimumWidth(260)
-        spot.setMaximumWidth(440)
+        # wide enough for the score line and the four queue buttons on a small laptop
+        spot.setMinimumWidth(340)
+        spot.setMaximumWidth(460)
         box = QVBoxLayout(spot)
         box.setContentsMargins(10, 6, 10, 6)
         box.setSpacing(3)
@@ -450,6 +452,7 @@ class RedZoneWindow(QWidget):
                         f"{teamlogos.code_in(g.game.home).upper() or display_team(g.game.home)[:3]}")
             btn.setProperty("index", i)
             btn.setToolTip(f"{g.game.label} · put it in the spotlight")
+            btn.setMinimumWidth(btn.sizeHint().width())      # never squeezed to a stub
             btn.show()
 
     def choose_game(self, index) -> None:
@@ -677,7 +680,7 @@ class RedZoneWindow(QWidget):
             #RedZoneCaption {{ color: {palette.ink_muted}; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; }}
             #RedZoneData {{ font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {palette.ink_secondary}; }}
             #RedZoneData[level="LIVE"] {{ color: {GREEN}; }}
-            #RedZoneData[level="DELAYED"], #RedZoneData[level="STALE"], #RedZoneData[level="CACHED"] {{ color: {palette.warning}; }}
+            #RedZoneData[level="STALE"], #RedZoneData[level="REFRESH FAILED"] {{ color: {palette.warning}; }}
             #RedZoneData[level="UNAVAILABLE"] {{ color: {palette.critical}; }}
             #RedZonePick {{ border-radius: 6px; border: 1px solid {palette.ink_muted}; }}
             #RedZonePick[status="winning"] {{ border: 2px solid {GREEN}; background: rgba(60,207,122,0.12); }}
@@ -875,7 +878,7 @@ class RedZoneWindow(QWidget):
 
     # ---- what it shows ------------------------------------------------------------
     def _show_data(self) -> None:
-        label, words = LP.data_label(self.feed.fresh) if self.feed.week else ("", "")
+        label, words = LP.data_label(self.feed.fresh, self.feed.live) if self.feed.week else ("", "")
         self.data_tag.setText(f"● {label} · {words}" if label else "")
         set_prop(self.data_tag, "level", label)
         self.data_tag.setToolTip("Scores are polled from ESPN's scoreboard (every 30 s with a game on), not streamed."

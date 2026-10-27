@@ -270,20 +270,24 @@ def GD_ordinal(n: int) -> str:  # noqa: N802 - kept short where it is used
 
 #: Within this many seconds a fresh feed counts as live; older but still inside the
 #: feed's own limit, "delayed".
-LIVE_WITHIN = 90
 
 
-def data_label(fresh) -> tuple[str, str]:
-    """(LABEL, words) for the score data on screen. The scores are polled from
-    ESPN's scoreboard (every 30 seconds while a game is on) - never streamed."""
-    if fresh is None or fresh.level in ("waiting", "error"):
+def data_label(fresh, live: bool = True) -> tuple[str, str]:
+    """(LABEL, words) for the score data on screen - the same words the website
+    uses (feedLabel). The scores are polled from ESPN's scoreboard (every 30
+    seconds while a game is on), never streamed. Whether they are stale is the
+    freshness rule's call (tokens.FRESHNESS), not a second threshold here; LIVE
+    only when they are fresh and a game is being played."""
+    if fresh is None or fresh.level == "waiting":
+        return "LOADING", "No scoreboard answer yet"
+    if fresh.level == "error":
         return "UNAVAILABLE", "No good scoreboard answer yet"
     if fresh.level == "failed":
-        return "CACHED", "Last refresh failed - showing the last good scores"
+        return "REFRESH FAILED", f"Showing the last good scores, {fresh.age_text()}"
     if fresh.level == "stale":
         return "STALE", f"Last good scores {fresh.age_text()}"
-    if fresh.age is not None and fresh.age > LIVE_WITHIN:
-        return "DELAYED", f"Scores from {fresh.age_text()}"
+    if not live:
+        return "UP TO DATE", f"Scores from {fresh.age_text()}"
     return "LIVE", "Scoreboard polled every 30 s"
 
 

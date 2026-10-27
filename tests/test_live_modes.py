@@ -135,11 +135,14 @@ class TestPicksPoolAndData(unittest.TestCase):
     def test_data_labels_are_honest(self):
         def fresh(level, age):
             return LS.Freshness("scores", level, 100.0 if level != "error" else None, 100.0, "", age)
-        self.assertEqual(LP.data_label(None)[0], "UNAVAILABLE")
+        self.assertEqual(LP.data_label(None)[0], "LOADING")
+        self.assertEqual(LP.data_label(fresh("waiting", None))[0], "LOADING")
         self.assertEqual(LP.data_label(fresh("error", None))[0], "UNAVAILABLE")
-        self.assertEqual(LP.data_label(fresh("failed", 50))[0], "CACHED")
+        self.assertEqual(LP.data_label(fresh("failed", 50))[0], "REFRESH FAILED")
         self.assertEqual(LP.data_label(fresh("stale", 4000))[0], "STALE")
-        self.assertEqual(LP.data_label(fresh("fresh", 200))[0], "DELAYED")
+        # fresh is fresh: no second threshold of its own (the old "DELAYED" after 90 s)
+        self.assertEqual(LP.data_label(fresh("fresh", 200))[0], "LIVE")
+        self.assertEqual(LP.data_label(fresh("fresh", 200), live=False)[0], "UP TO DATE")
         self.assertEqual(LP.data_label(fresh("fresh", 10))[0], "LIVE")
         self.assertIn("polled", LP.data_label(fresh("fresh", 10))[1])
 

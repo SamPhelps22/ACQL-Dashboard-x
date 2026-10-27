@@ -3,12 +3,7 @@
     filter: "all", dense: 0, table: "week", sort: "place" };
   try { cine.dense = Math.max(-1, Math.min(1, Number(localStorage.getItem("acql-cine-dense")) || 0)); } catch (e) { cine.dense = 0; }
   // What the scores on screen are: live, delayed, stale, cached or unavailable - never "streamed".
-  function dataLabel(fr) {
-    if (fr.level === "waiting" || fr.level === "error") return "Unavailable";
-    if (fr.level === "failed") return "Cached";
-    if (fr.level === "stale") return "Stale";
-    return fr.age != null && fr.age > 90000 ? "Delayed" : "Live";
-  }
+  function dataLabel(fr) { return feedLabel(fr); }
   function inFilter(x, me) {
     var gi = DATA.live.games.indexOf(x.g), off = x.sc && x.sc.off;
     if (cine.filter === "live") return x.state === "in";
@@ -58,6 +53,7 @@
     document.documentElement.classList.remove("cine-on");
     node.classList.add("out");
     setTimeout(function () { node.remove(); }, reducedMotion() ? 0 : motionMs("cinema", 220));
+    if (cine.behind) { cine.behind = false; render({ quiet: true }); }
     if (cine.back && cine.back.isConnected) cine.back.focus({ preventScroll: true });
   }
   document.addEventListener("keydown", function (e) { if (cine.open && e.key === "Escape") { e.preventDefault(); closeCinema(); } });
@@ -194,7 +190,7 @@
     if (cine.sort === "best" && ranges) rows.sort(function (a, b) { return (ranges.best[a.c.name] || 99) - (ranges.best[b.c.name] || 99) || b.now - a.now; });
     else if (cine.sort === "name") rows.sort(function (a, b) { return a.c.name.localeCompare(b.c.name); });
     rows.forEach(function (r) {
-      var name = r.c.name, place = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length;
+      var name = r.c.name, place = livePlace(t, name);
       var row = cine.rows[name];
       if (!row) {
         row = el("li", { class: "sr" }, [el("span", { class: "p num" }), el("span", { class: "n" }), el("b", { class: "v num" }), el("span", { class: "r num" })]);
@@ -220,7 +216,7 @@
   function youRange(t) {
     var r = rangesOf(t), me = t.rows.filter(function (x) { return isMe(x.c.name); })[0];
     if (!r || !me) return "";
-    var place = 1 + t.rows.filter(function (o) { return o.now > me.now; }).length;
+    var place = livePlace(t, me.c.name);
     return " You: " + ordinal(place) + " now, best " + ordinal(r.best[me.c.name]) + ", worst " + ordinal(r.worst[me.c.name]) + ".";
   }
   // The season so far, by the official standings; this week's points beside them until they count.

@@ -26,7 +26,14 @@
     if (saved && typeof saved === "object") ["season", "a", "b"].forEach(function (k) { if (saved[k]) LM.sel[k] = String(saved[k]); });
   })();
 
-  function lmSeasonNow() { var s = lmSeason(LM.sel.season); if (s) LM.sel.season = String(s.year); return s; }
+  // The chosen season. One the archive doesn't have is never swapped for
+  // another without saying so: the mode shows which was asked for and which is shown.
+  function lmSeasonNow() {
+    var want = LM.sel.season, s = lmSeason(want);
+    if (want && s && String(s.year) !== String(want) && !LM.missing) LM.missing = String(want);
+    if (s) LM.sel.season = String(s.year);
+    return s;
+  }
   // The chosen coach: one picked here, else the viewer, else the leader.
   function lmCoach(s) {
     s = s || lmSeasonNow();
@@ -132,6 +139,8 @@
     lmStopAll();
     if (sel) Object.keys(sel).forEach(function (k) { LM.sel[k] = sel[k]; });
     loadHistory();
+    // the week chosen on the site's pages comes along (this season's only)
+    if (!LM.sel.week && state.week && state.week !== DATA.through_week && weekData(state.week)) LM.sel.week = state.week;
     var fresh = !LM.node;
     if (fresh) {
       LM.back = document.activeElement;
@@ -154,6 +163,9 @@
   }
   function lmClose(fromHash) {
     if (!LM.mode) return;
+    // and goes back with the viewer: the site's week pages open on it
+    var cur = lmSeasonNow();
+    if (cur && cur.current && LM.sel.week && weekData(LM.sel.week)) state.week = LM.sel.week;
     lmStopAll();
     LM.mode = "";
     if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) { /* already out */ } }
@@ -222,6 +234,11 @@
       body = el("div", { class: "lm-body" }, [stateMsg("This mode couldn’t be drawn", String(e && e.message || e), { text: "Back to the site", go: function () { lmClose(false); } }, "bad")]);
     }
     node.appendChild(lmTop());
+    if (LM.missing && body.insertBefore) {
+      var shown = lmSeasonNow();
+      body.insertBefore(stateMsg("The " + LM.missing + " season isn't in the archive",
+        "Showing " + (shown ? shown.year : "the current season") + " instead. Seasons are archived when they finish; nothing is filled in for a missing one.", null, "warn"), body.firstChild);
+    }
     node.appendChild(body);
     Array.prototype.forEach.call(node.querySelectorAll("[data-keep-scroll]"), function (n) {
       var k = n.getAttribute("data-keep-scroll");
@@ -315,7 +332,7 @@
     var all = lmSeasons(), now = lmSeasonNow();
     if (all.length < 2) return el("span", { class: "lm-chip", title: "Seasons on record" }, [String(now ? now.year : seasonYear()) + (now && now.current ? " season" : "")]);
     return el("label", { class: "lm-pick" }, [el("span", { text: "Season" }),
-      el("select", { onchange: function (e) { LM.sel.season = e.target.value; LM.sel.week = 0; LM.sel.from = LM.sel.to = 0; (onpick || lmDraw)(); } },
+      el("select", { onchange: function (e) { LM.missing = ""; LM.sel.season = e.target.value; LM.sel.week = 0; LM.sel.from = LM.sel.to = 0; (onpick || lmDraw)(); } },
         all.map(function (s) { return el("option", { value: String(s.year), selected: now && s.year === now.year, text: s.year + (s.current ? " (this season)" : s.complete ? "" : " (part)") }); }))]);
   }
   // Who a name belongs to: the coach's page on the site, from inside a mode.

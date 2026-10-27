@@ -396,7 +396,7 @@
   // what the week would pay them if it ended now.
   function weekBoard(t, sim, limit) {
     var place = {}, pay = moneyNow(t), over = weekOver(t);
-    t.rows.forEach(function (r) { place[r.c.name] = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length; });
+    t.rows.forEach(function (r) { place[r.c.name] = livePlace(t, r.c.name); });
     var shown = t.rows.slice(0, limit);
     var mine = t.rows.filter(function (r) { return isMe(r.c.name); })[0];
     if (mine && shown.indexOf(mine) < 0) shown.push(mine);

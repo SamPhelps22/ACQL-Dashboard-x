@@ -18,8 +18,13 @@
       try { state.a = decodeURIComponent(both[0] || ""); state.b = decodeURIComponent(both[1] || ""); } catch (e) { state.a = state.b = ""; }
       state.view = "h2h";
     } else if (wanted) {
-      var v = ALIASES[wanted] || wanted;
+      var q = wanted.indexOf("?"), base_ = q >= 0 ? wanted.slice(0, q) : wanted;
+      var v = ALIASES[base_] || base_;
       if (VIEWS[v]) state.view = v;
+      // a week kept in the address: only one this season has (never a guess)
+      var wk = q >= 0 ? (/(?:^|&)w=([^&]+)/.exec(wanted.slice(q + 1)) || [])[1] : null;
+      if (wk && v === "weeks" && weekData(Number(wk))) state.week = Number(wk);
+      if (wk && v === "factions") state.fxWeek = wk === "season" ? "season" : (weekData(Number(wk)) ? Number(wk) : state.fxWeek);
     }
     if (!available(state.view)) state.view = "home";
   }

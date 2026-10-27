@@ -11,7 +11,13 @@
       .sort(function (a, b) { return a.week - b.week; });
   }
   // Rows in an order where coaches who pick alike sit together (average linkage).
-  function clusterOrder(names_, dist) {
+  function clusterOrder(names_, distance) {
+    // each pair's distance is asked for again at every merge: work it out once
+    var memo = {};
+    function dist(x, y) {
+      var k = x < y ? x + "|" + y : y + "|" + x;
+      return k in memo ? memo[k] : (memo[k] = distance(x, y));
+    }
     var groups = names_.map(function (n) { return [n]; });
     function d(a, b) {
       var s = 0, k = 0;

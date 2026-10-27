@@ -81,7 +81,7 @@
     var mine = w.scores.filter(function (s) { return s.name === p.name; })[0];
     var kids = [];
     if (mine) {
-      var rank = 1 + w.scores.filter(function (o) { return o.total > mine.total; }).length;
+      var rank = weekPlace(w, mine.name);
       var vs = mine.total - w.average;
       kids.push(el("div", { class: "figures", style: "grid-template-columns: repeat(2, minmax(0,1fr))" }, [
         figure(String(mine.total), "week " + w.week + (w.winners.indexOf(p.name) >= 0 ? " ★ won it" : ", " + ordinal(rank) + " of " + w.scores.length),

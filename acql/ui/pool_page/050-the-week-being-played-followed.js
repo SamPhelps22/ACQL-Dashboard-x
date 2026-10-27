@@ -114,11 +114,14 @@
   // How fresh the scores on screen are, from the stored times alone. The
   // thresholds live with the dashboard's (tokens.FRESHNESS), written into the
   // stylesheet; these numbers are only the fallback.
+  var freshRead = {};       // the stylesheet's thresholds never change once the page is up
   function freshLimit(live_) {
     var name = live_ ? "--fresh-scores-live-s" : "--fresh-scores-s";
+    if (freshRead[name]) return freshRead[name];
     var v = NaN;
     try { v = Number(getComputedStyle(document.documentElement).getPropertyValue(name)); } catch (e) { /* no styles yet */ }
-    return (isFinite(v) && v > 0 ? v : live_ ? 90 : 900) * 1000;
+    if (isFinite(v) && v > 0) return (freshRead[name] = v * 1000);
+    return (live_ ? 90 : 900) * 1000;
   }
   function clockSec(d) {
     var z = zoneName(d);
@@ -137,9 +140,19 @@
     var age = Date.now() - live.fetched.getTime();
     var detail = "Last successful update: " + clockSec(live.fetched) +
       (live.failedAt ? " · last attempt " + clockSec(live.failedAt) + " failed (" + live.error + ")" : "");
-    if (live.error) return { level: "failed", head: "Refresh failed — showing data from " + clockSec(live.fetched), detail: detail, age: age };
-    if (age > freshLimit(on)) return { level: "stale", head: "Scores are " + (age < 60000 ? "under a minute" : ageWords(age).replace(" ago", "")) + " old — last successful update " + clockSec(live.fetched), detail: detail, age: age };
-    return { level: "fresh", head: "Updated " + ageWords(age), detail: detail, age: age };
+    if (live.error) return { level: "failed", head: "Refresh failed — showing data from " + clockSec(live.fetched), detail: detail, age: age, on: on };
+    if (age > freshLimit(on)) return { level: "stale", head: "Scores are " + (age < 60000 ? "under a minute" : ageWords(age).replace(" ago", "")) + " old — last successful update " + clockSec(live.fetched), detail: detail, age: age, on: on };
+    return { level: "fresh", head: "Updated " + ageWords(age), detail: detail, age: age, on: on };
+  }
+  // The feed's state in one word, the same everywhere it is shown (the ticker
+  // strip, Cinema, Broadcast). It describes the data, not any game: "Live" only
+  // when the scores are fresh and a game is actually being played.
+  function feedLabel(fr) {
+    if (fr.level === "waiting") return "Loading";
+    if (fr.level === "error") return "Unavailable";
+    if (fr.level === "failed") return "Refresh failed";
+    if (fr.level === "stale") return "Stale";
+    return fr.on ? "Live" : "Up to date";
   }
   // A game's card state: its status, and a data warning apart from it (a final stands whatever the feed does now).
   function cardState(x) {
@@ -156,7 +169,7 @@
     var retry = { text: live.busy ? "Trying…" : "Try again", go: retryScores };
     if (live.fetched) return stateMsg("Last update failed",
       "Refresh failed — showing scores from " + clockSec(live.fetched) + " (" + live.error + "). It tries again on its own, or now:", retry, "bad");
-    return stateMsg("Market feed unavailable",
+    return stateMsg("Scores unavailable",
       "Live scores and betting lines can’t be reached (" + live.error + "). Every pick is still here, and win chances use the pool lines until it’s back.", retry, "bad");
   }
   // ESPN's words, tidied: single spaces, nothing at either end.
@@ -333,9 +346,13 @@
   }
   // Kickoff times, said exactly, in the viewer's own time: the day (today,
   // tomorrow or its name), the date, the time and the zone.
+  // One formatter for every time shown: making one is the slow part. It still
+  // reads each date's own zone, so a kickoff after the clocks change says so.
+  var zoneFormat = null;
   function zoneName(d) {
     try {
-      var parts = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(d);
+      zoneFormat = zoneFormat || new Intl.DateTimeFormat("en-US", { timeZoneName: "short" });
+      var parts = zoneFormat.formatToParts(d);
       for (var i = 0; i < parts.length; i++) if (parts[i].type === "timeZoneName") return parts[i].value;
     } catch (e) { /* an older browser: no zone */ }
     return "";

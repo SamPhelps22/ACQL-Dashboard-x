@@ -130,7 +130,7 @@
       var t = liveTally();
       var r = t.rows.filter(function (x) { return x.c.name === p.name; })[0];
       if (r && t.games.some(function (x) { return x.state !== "pre"; })) {
-        var place = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length;
+        var place = livePlace(t, r.c.name);
         var over = weekOver(t);
         return { kicker: "Week " + DATA.live.week + (over ? ", final" : " live"),
           big: plural(r.now, "win") + ", " + ordinal(place),
@@ -140,7 +140,7 @@
     var w = weekData(DATA.through_week);
     var mine = w ? w.scores.filter(function (s) { return s.name === p.name; })[0] : null;
     if (!mine) return { kicker: "After week " + DATA.through_week, big: plural(p.wins, "win"), small: "this season" };
-    var rank = 1 + w.scores.filter(function (o) { return o.total > mine.total; }).length;
+    var rank = weekPlace(w, mine.name);
     var won = w.winners.indexOf(p.name) >= 0;
     return { kicker: "Week " + w.week, big: plural(mine.total, "win") + ", " + ordinal(rank) + (won ? " ★" : ""),
       small: won ? "Won the week" + (w.payout_each ? ", " + money(w.payout_each) : "") : "of " + w.scores.length + ", the pool averaged " + w.average.toFixed(1) };

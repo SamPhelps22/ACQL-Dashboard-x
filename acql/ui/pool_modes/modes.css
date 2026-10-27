@@ -175,6 +175,7 @@ html.lm-on, html.lm-on body { overflow: hidden; }
 .lm svg .lbl.me { fill: var(--gold-text); font-weight: 700; font-size: 12px; }
 .nr-dot { fill: var(--context-strong); opacity: 0.75; cursor: pointer; } .nr-dot.mine { fill: var(--turf); } .nr-dot.me { fill: var(--gold); opacity: 1; stroke: var(--ink); stroke-width: 1.5; }
 .nr-dot:focus { outline: none; stroke: var(--gold); stroke-width: 3; }
+.nr-bar:focus { outline: none; stroke: var(--gold); stroke-width: 2; }
 .nr-box { cursor: pointer; } .nr-box .hit { fill: transparent; } .nr-box:hover .hit, .nr-box:focus .hit, .nr-box.on .hit { fill: var(--gold-soft); }
 .nr-box .wh { stroke: var(--context-strong); } .nr-box .bx { fill: var(--raised); stroke: var(--context-strong); } .nr-box .md { stroke: var(--ink); stroke-width: 2; }
 .nr-box .av { fill: var(--ink); } .nr-box .medot { fill: var(--gold); stroke: var(--ink); }
@@ -357,3 +358,6 @@ html.lm-on, html.lm-on body { overflow: hidden; }
   .nr-vs .big { font-size: 40px; }
 }
 @media print { .lm { display: none; } }
+
+/* a mode saying it shows another season than the one asked for */
+.lm .state-msg.warn { border-left-color: var(--gold); margin-bottom: 12px; }

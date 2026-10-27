@@ -261,7 +261,7 @@
   }
   function nrHistogram(width, scores, opts) {
     var H = 220, padL = 34, padR = 12, padT = 14, padB = 30;
-    if (!scores.length) return el("p", { class: "note", text: "No scores." });
+    if (!scores.length) return stateMsg("No scores in these weeks", "Choose a run of weeks with graded cards.");
     var lo = Math.min.apply(null, scores), hi = Math.max.apply(null, scores), counts = {};
     scores.forEach(function (v) { counts[v] = (counts[v] || 0) + 1; });
     var top = Math.max.apply(null, Object.keys(counts).map(function (k) { return counts[k]; }));
@@ -277,7 +277,9 @@
     svg.appendChild(g);
     for (var v = lo; v <= hi; v++) {
       var c = counts[v] || 0;
-      var rect = svgEl("rect", { class: "nr-bar" + (v === opts.mark ? " me" : ""), x: X(v) + 2, y: Y(c), width: Math.max(1, bw - 4), height: H - padB - Y(c) });
+      // like every chart's points: the value on hover, and on focus for keyboard and touch
+      var rect = svgEl("rect", { class: "nr-bar" + (v === opts.mark ? " me" : ""), x: X(v) + 2, y: Y(c), width: Math.max(1, bw - 4), height: H - padB - Y(c),
+        tabindex: c ? "0" : null, "aria-label": c ? plural(c, "card") + " scored " + v : null });
       rect.appendChild(svgEl("title", { text: plural(c, "card") + " scored " + v }));
       svg.appendChild(rect);
       if (bw > 16 || v % 2 === 0) svg.appendChild(svgEl("text", { class: "ax", x: X(v) + bw / 2, y: H - 12, "text-anchor": "middle", text: String(v) }));
@@ -366,7 +368,7 @@
   }
   function nrScatter(width, pts, focus) {
     var H = width < 520 ? 280 : 320, padL = 40, padR = 16, padT = 14, padB = 34;
-    if (!pts.length) return el("p", { class: "note", text: "Not enough weeks yet." });
+    if (!pts.length) return stateMsg("Not enough weeks yet", "Each coach needs two graded weeks in the run to be placed here.");
     var xs = pts.map(function (r) { return r.avg; }), ys = pts.map(function (r) { return r.sd; });
     var x0 = Math.floor(Math.min.apply(null, xs) - 0.3), x1 = Math.ceil(Math.max.apply(null, xs) + 0.3);
     var y0 = Math.max(0, Math.floor(Math.min.apply(null, ys) - 0.3)), y1 = Math.ceil(Math.max.apply(null, ys) + 0.3);
@@ -686,7 +688,7 @@
       var y = i * rowH + 3, on = r.name === LM.sel.a;
       svg.appendChild(svgEl("text", { class: "ax" + (on ? " me" : ""), x: padL - 8, y: y + 13, "text-anchor": "end", text: r.name.length > 22 ? r.name.slice(0, 21) + "…" : r.name }));
       var x0 = X(Math.min(0, r.v)), x1 = X(Math.max(0, r.v));
-      var rect = svgEl("rect", { class: "nr-bar" + (on ? " me" : ""), x: x0, y: y, width: Math.max(1, x1 - x0), height: rowH - 6 });
+      var rect = svgEl("rect", { class: "nr-bar" + (on ? " me" : ""), x: x0, y: y, width: Math.max(1, x1 - x0), height: rowH - 6, tabindex: "0", "aria-label": r.name + ": " + fmt(r.v) });
       rect.appendChild(svgEl("title", { text: r.name + ": " + fmt(r.v) }));
       svg.appendChild(rect);
       svg.appendChild(svgEl("text", { class: "ax", x: x1 + 4, y: y + 13, text: fmt(r.v) }));

@@ -141,6 +141,9 @@
     opts = opts || {};
     if (opts.quiet && busyHere()) { renderWaiting = true; return; }
     renderWaiting = false;
+    // Cinema covers the whole page: while it is open only Cinema is drawn, and
+    // the page underneath catches up once, when Cinema closes.
+    if (cine.open && !opts.top) { cine.behind = true; cineDraw(); return; }
     var focused = focusKey();
     var ownerBox = document.getElementById("owner");
     var keep = ownerBox ? Array.prototype.slice.call(ownerBox.childNodes) : [];
@@ -191,6 +194,7 @@
     else if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     refocus(focused, opts.top);
     if (cine.open) cineDraw();
+    syncHash();
     scoreMoved = {};                       // played once; a redraw never plays it again
   }
 

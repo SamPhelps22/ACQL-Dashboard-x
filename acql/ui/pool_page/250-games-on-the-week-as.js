@@ -6,7 +6,7 @@
     var leaders = t.rows.filter(function (r) { return r.now === top; }).map(function (r) { return r.c.name; });
     var mine = t.rows.filter(function (r) { return isMe(r.c.name); })[0];
     var next = nextKickoff();
-    var place = mine ? 1 + t.rows.filter(function (o) { return o.now > mine.now; }).length : 0;
+    var place = mine ? livePlace(t, mine.c.name) : 0;
     var pay = moneyNow(t);
     var behind = mine ? top - mine.now : 0;
     var stats = mine ? [

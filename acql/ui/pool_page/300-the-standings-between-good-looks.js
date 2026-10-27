@@ -22,7 +22,7 @@
     if (!live.good) return;
     var now = {};
     t.rows.forEach(function (r) {
-      now[r.c.name] = { place: 1 + t.rows.filter(function (o) { return o.now > r.now; }).length, pts: r.now };
+      now[r.c.name] = { place: livePlace(t, r.c.name), pts: r.now };
     });
     var move = { moved: {}, gained: {} }, any = false;
     if (standBase) Object.keys(now).forEach(function (k) {

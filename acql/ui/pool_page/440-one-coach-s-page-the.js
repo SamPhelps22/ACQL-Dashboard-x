@@ -11,7 +11,7 @@
       for (var i = 0; i < w.scores.length; i++) if (w.scores[i].name === p.name) me = w.scores[i];
       if (!me) return;
       played++;
-      var rank = 1 + w.scores.filter(function (o) { return o.total > me.total; }).length;
+      var rank = weekPlace(w, p.name);
       var tiedRank = w.scores.filter(function (o) { return o.total === me.total; }).length > 1;
       var isWin = w.winners.indexOf(p.name) >= 0;
       if (isWin) { won++; if (w.payout_each) moneyWon += w.payout_each; }
@@ -85,19 +85,21 @@
         : stateMsg("No completed games yet", "Weekly scores show here once the first week is entered.")
     ]);
   }
+  // Season places after week n, on season totals through it (the shared ranking).
+  var afterCache = { data: null, by: {} };
   function placesAfter(n, raw) {
-    // competition ranking on season totals through week n (ties share a place)
-    var totals = DATA.players.map(function (p) {
-      var t = 0;
-      Object.keys(p.weekly).forEach(function (k) { if (Number(k) <= n) t += p.weekly[k]; });
-      return { name: p.name, total: t };
-    });
-    var out = {};
-    totals.forEach(function (a) {
-      var ahead = totals.filter(function (b) { return b.total > a.total; }).length;
-      var tied = totals.filter(function (b) { return b.total === a.total; }).length > 1;
-      out[a.name] = raw ? ahead + 1 : (tied ? "T" : "") + (ahead + 1);
-    });
+    if (afterCache.data !== DATA) afterCache = { data: DATA, by: {} };
+    if (!afterCache.by[n]) {
+      var totals = {};
+      DATA.players.forEach(function (p) {
+        var t = 0;
+        Object.keys(p.weekly).forEach(function (k) { if (Number(k) <= n) t += p.weekly[k]; });
+        totals[p.name] = t;
+      });
+      afterCache.by[n] = rankAll(totals);
+    }
+    var out = {}, r = afterCache.by[n];
+    Object.keys(r).forEach(function (k) { out[k] = raw ? r[k].place : (r[k].tied ? "T" : "") + r[k].place; });
     return out;
   }
 

@@ -1030,7 +1030,7 @@ class CinemaWindow(QWidget):
             self.health.setText("Score feed: no week being played.")
             set_prop(self.health, "level", "")
             return
-        label, words = LP.data_label(fresh)
+        label, words = LP.data_label(fresh, self.feed.live)
         lines = [f"{label} · Scores (ESPN): {fresh.headline()}", words]
         if fresh.detail():
             lines.append(fresh.detail())

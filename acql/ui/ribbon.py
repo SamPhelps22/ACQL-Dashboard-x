@@ -310,6 +310,11 @@ class ScoreboardRibbon(QFrame):
             chip.pressed.connect(lambda index: self.game_chosen.emit(self.week, index))
             self.lane_row.insertWidget(len(self.chips), chip)
             self.chips.append(chip)
+        # the track is a scroll area: tell it how tall the chips are, or it cuts
+        # off their second line (seen in RedZone at every size)
+        tallest = max((c.sizeHint().height() for c in self.chips), default=0)
+        if tallest:
+            self.track.setMinimumHeight(tallest)
         live = sum(1 for s in ordered if s.state == "in")
         final = sum(1 for s in ordered if s.state == "final")
         self.title.setText(f"WEEK {week}")

@@ -117,6 +117,9 @@ jobs:
       - name: Website layout tests (one home per page, one calculation per number)
         run: python tests/test_site_layout.py
 
+      - name: Website shared rules (ranking, data freshness, kickoff zones, addresses)
+        run: python tests/test_site_quality.py
+
       - name: The app's own checks
         run: python -m acql.checks
 

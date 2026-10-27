@@ -36,7 +36,7 @@
       el("th", { class: "n", text: "Season" }), el("th", { "data-col": "suicide", text: "Suicide" })];
     t.games.forEach(function (x) { head.push(el("th", { class: "gk", text: x.g.ac.toUpperCase() + " @ " + x.g.hc.toUpperCase() })); });
     var body = t.rows.map(function (r) {
-      var place = 1 + t.rows.filter(function (o) { return o.now > r.now; }).length;
+      var place = livePlace(t, r.c.name);
       var suiText = { pending: r.c.sui.toUpperCase(), safe: r.c.sui.toUpperCase() + " ✓", ahead: r.c.sui.toUpperCase() + " ahead",
         behind: r.c.sui.toUpperCase() + " behind", level: r.c.sui.toUpperCase() + " level", out: r.c.sui.toUpperCase() + " ✗ out" }[r.sui] || "–";
       var m = pay[r.c.name];
