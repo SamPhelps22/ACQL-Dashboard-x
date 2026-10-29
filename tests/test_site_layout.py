@@ -44,8 +44,8 @@ class TestNavigation(unittest.TestCase):
 
     def test_sections_answer_one_kind_of_question_each(self):
         self.assertEqual(list(self.sections), ["home", "week", "standings", "explore", "pools"])
-        self.assertEqual(self.sections["standings"], ["standings", "awards", "history"])
-        self.assertEqual(self.sections["explore"], ["charts", "h2h", "factions", "teams"])
+        self.assertEqual(self.sections["standings"], ["standings", "awards", "history", "rules"])
+        self.assertEqual(self.sections["explore"], ["charts", "h2h", "factions", "teams", "power", "connections"])
         self.assertEqual(self.sections["pools"], ["pools", "money"])
 
     def test_the_modes_live_in_explore_not_a_home_page_block(self):

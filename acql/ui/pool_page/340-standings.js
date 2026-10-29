@@ -11,7 +11,9 @@
       el("p", { class: "lede", text: raceSummary() }),
       state.every ? null : podium(),
       state.every ? everyWeekTable() : leaderboard(lead, latest),
-      raceCard()
+      raceCard(),
+      el("p", { class: "note rule-links" }, [ruleLink("season-tie", "How ties in the table are broken"), " ",
+        moreLink("Power Rankings (unofficial)", "power")])
     ]);
   }
   // The top three, on the podium: gold, silver and bronze.

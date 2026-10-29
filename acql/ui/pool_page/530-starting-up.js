@@ -24,6 +24,8 @@
       // a week kept in the address: only one this season has (never a guess)
       var wk = q >= 0 ? (/(?:^|&)w=([^&]+)/.exec(wanted.slice(q + 1)) || [])[1] : null;
       if (wk && v === "weeks" && weekData(Number(wk))) state.week = Number(wk);
+      var rid = q >= 0 ? (/(?:^|&)r=([^&]+)/.exec(wanted.slice(q + 1)) || [])[1] : null;
+      if (v === "rules") state.rule = rid || "";
       if (wk && v === "factions") state.fxWeek = wk === "season" ? "season" : (weekData(Number(wk)) ? Number(wk) : state.fxWeek);
     }
     if (!available(state.view)) state.view = "home";

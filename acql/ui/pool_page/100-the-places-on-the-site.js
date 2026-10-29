@@ -12,6 +12,9 @@
     factions: { label: "Factions", icon: "h2h", about: "Who picks with whom, and who goes it alone" },
     teams: { label: "Teams", icon: "standings", about: "How the pool has backed each team, and how it went" },
     history: { label: "History", icon: "history", about: "Champions and records" },
+    rules: { label: "Rulebook", tab: "Rules", icon: "history", about: "How the pool is scored, ranked and paid - searchable" },
+    power: { label: "Power Rankings", tab: "Power", icon: "standings", about: "An unofficial ranking of recent form, beside the official table" },
+    connections: { label: "Connection Map", tab: "Connections", icon: "h2h", about: "Coaches linked by their picks and weekly scores" },
     awards: { label: "Awards", icon: "history", about: "The season’s trophies, and who holds them" },
     pools: { label: "Side pools", icon: "pools", about: "The suicide pool and the Big Losers" },
     money: { label: "Money", icon: "money", about: "Who’s up and who owes" },
@@ -22,11 +25,14 @@
     if (view === "live" || view === "picks") return hasLive();
     if (view === "h2h" || view === "factions" || view === "teams") return DATA.weeks.some(function (w) { return w.picks; });
     if (view === "money") return !!DATA.money;
+    if (view === "rules") return !!(DATA.rulebook && DATA.rulebook.rules);
+    if (view === "power") return !!(DATA.power && DATA.power.weeks && DATA.power.weeks.length);
+    if (view === "connections") return DATA.weeks.some(function (w) { return w.scores && w.scores.length; }) && DATA.players.length > 1;
     return !!VIEWS[view];
   }
   // every page, in the order the search lists them
   function pageList() {
-    return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "factions", "teams", "awards", "history", "pools", "money"].filter(available);
+    return ["home", "live", "picks", "weeks", "standings", "charts", "h2h", "factions", "teams", "power", "connections", "awards", "history", "rules", "pools", "money"].filter(available);
   }
   // The few sections the bars show, and the pages each one holds. Me is its
   // own button beside them. Each section answers one kind of question: what's
@@ -35,8 +41,8 @@
   var SECTIONS = [
     { id: "home", label: "Home", icon: "home", views: ["home"] },
     { id: "week", label: "This week", icon: "weeks", views: ["live", "picks", "weeks"] },
-    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "awards", "history"] },
-    { id: "explore", label: "Explore", icon: "charts", views: ["charts", "h2h", "factions", "teams"] },
+    { id: "standings", label: "Standings", icon: "standings", views: ["standings", "awards", "history", "rules"] },
+    { id: "explore", label: "Explore", icon: "charts", views: ["charts", "h2h", "factions", "teams", "power", "connections"] },
     { id: "pools", label: "Pools & money", short: "Pools", icon: "pools", views: ["pools", "money"] }
   ];
   // The sections as the bars draw them: the pages each has now, where it
