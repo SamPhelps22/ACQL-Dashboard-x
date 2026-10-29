@@ -78,7 +78,7 @@
       // the season, the side pools
       var s = p.suicide;
       var rows = [
-        ["Season", plural(p.wins, "win") + (p.place != null ? ", " + ordinal(p.place) + " of " + DATA.entrants : "") + (p.move ? (p.move > 0 ? "  ▲" : "  ▼") + Math.abs(p.move) : "")],
+        ["Season", plural(p.wins, "win") + (p.place != null ? ", " + placeText(p) + " of " + DATA.entrants : "") + (p.move ? (p.move > 0 ? "  ▲" : "  ▼") + Math.abs(p.move) : "")],
         ["Suicide pool", s.alive ? "still in" : s.out ? "out in week " + s.out : "not in it"],
         ["Big Loser", plural(p.big_loser || 0, "point")]
       ];

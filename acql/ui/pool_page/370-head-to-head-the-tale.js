@@ -72,9 +72,9 @@
     var tape = el("section", { class: "tape", "aria-label": a + " against " + b }, [
       el("div", { class: "names" }, [el("b", { text: a }), el("span", { text: "vs" }), el("b", { text: b })]),
       line(String(pa.wins), "season wins", String(pb.wins), pb.wins - pa.wins),
-      line(pa.place != null ? ordinal(pa.place) : "–", "place", pb.place != null ? ordinal(pb.place) : "–", (pa.place || 99) - (pb.place || 99) > 0 ? 1 : (pa.place || 99) < (pb.place || 99) ? -1 : 0),
-      line(String(c.aWeeks), "weeks with the higher score", String(c.bWeeks), c.bWeeks - c.aWeeks),
-      line(String(c.aSplit), "right when they split", String(c.bSplit), c.bSplit - c.aSplit),
+      line(pa.place != null ? placeText(pa) : "–", "place", pb.place != null ? placeText(pb) : "–", (pa.place || 99) - (pb.place || 99) > 0 ? 1 : (pa.place || 99) < (pb.place || 99) ? -1 : 0),
+      xa(line(String(c.aWeeks), "weeks with the higher score", String(c.bWeeks), c.bWeeks - c.aWeeks), "h2h", a, null, b),
+      xa(line(String(c.aSplit), "right when they split", String(c.bSplit), c.bSplit - c.aSplit), "h2h", a, null, b),
       line(String(pa.big_loser || 0), "Big Loser points", String(pb.big_loser || 0), (pb.big_loser || 0) - (pa.big_loser || 0)),
       el("div", { class: "line" }, [el("span", {}), el("span", { class: "k", text: agreePct + "% the same pick (" + c.agree + " of " + c.both + ")" }), el("span", {})])
     ]);
@@ -82,8 +82,8 @@
       var cls = function (x, y) { return "n num" + (x != null && y != null && x > y ? " won-it" : ""); };
       return el("tr", {}, [
         el("td", { class: "n num", text: String(r.week) }),
-        el("td", { class: cls(r.a, r.b), text: r.a == null ? "–" : String(r.a) }),
-        el("td", { class: cls(r.b, r.a), text: r.b == null ? "–" : String(r.b) }),
+        xa(el("td", { class: cls(r.a, r.b), text: r.a == null ? "–" : String(r.a) }), r.a == null ? null : "weekly_score", a, r.week),
+        xa(el("td", { class: cls(r.b, r.a), text: r.b == null ? "–" : String(r.b) }), r.b == null ? null : "weekly_score", b, r.week),
         el("td", { class: "n num", text: String(r.splits.length) }),
         el("td", { class: "n num", text: r.aRight + "–" + r.bRight })
       ]);

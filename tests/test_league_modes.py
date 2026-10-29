@@ -47,8 +47,14 @@ class TestTheSwitch(unittest.TestCase):
     def test_off_means_the_page_is_exactly_the_old_one(self):
         old = "".join(p.read_text(encoding="utf-8") for p in sorted(poolpage.PARTS.iterdir())
                       if p.suffix in (".html", ".js") and p.name[:3].isdigit())
+        was = poolpage.EXPLAIN          # Explain This joins in the same way; off too, to compare
+        poolpage.EXPLAIN = False
+        try:
+            with ModesOff():
+                self.assertEqual(poolpage.template(), old)
+        finally:
+            poolpage.EXPLAIN = was
         with ModesOff():
-            self.assertEqual(poolpage.template(), old)
             self.assertFalse(any(p.parent == poolpage.MODES_DIR for p in poolpage.parts()))
             self.assertNotIn("lmBoard", poolpage.template())
 

@@ -902,6 +902,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
             },
             "patterns": found.get(key),
         })
+    _share_places(players, season, weeks)
     players.sort(key=lambda r: (r["place"] if r["place"] is not None else 999, -r["wins"],
                                 r["name"].casefold()))
     race = _race(season, players, latest)
@@ -937,6 +938,8 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "museum": _museum(season),
         "power": power,
         "rulebook": _rulebook(season, stamp),
+        # Explain This: each tagged number's definition, sources and recount
+        "explain": _explain(season, weeks, players, official, stamp),
         "schema": SCHEMA,
         "title": getattr(season, "title", "") or "ACQL",
         "generated": stamp,
@@ -993,6 +996,52 @@ def _rulebook(season: Season, stamp: str) -> dict | None:
     try:
         return rulebook.rulebook(str(siteextras.season_year(stamp)), season.buy_in)
     except Exception:  # noqa: BLE001
+        return None
+
+
+def _share_places(players: list[dict], season: Season, weeks: list[int]) -> None:
+    """Coaches on the same wins share a place (T-9th, T-9th, T-9th, then 12th),
+    whatever order the standings export lists them in. Movement compares with
+    the week before ranked the same way, so a tie never shows as a move."""
+    def ranks(values: dict) -> dict:
+        return {k: 1 + sum(1 for o in values.values() if o > v) for k, v in values.items()}
+    now = ranks({p["name"]: p["wins"] for p in players})
+    counts: dict[int, int] = {}
+    for v in now.values():
+        counts[v] = counts.get(v, 0) + 1
+    latest = max(weeks, default=0)
+    before = {}
+    if latest > 1:
+        # last week's totals: this week's shown wins less this week's score
+        # (no score this week: their weekly scores up to last week instead)
+        before = ranks({p["name"]: p["wins"] - p["weekly"][str(latest)] if str(latest) in p["weekly"]
+                        else sum(v for w, v in p["weekly"].items() if int(w) < latest) for p in players})
+    for p in players:
+        p["place"] = now[p["name"]]
+        p["tied"] = counts[p["place"]] > 1
+        if before:
+            p["move"] = before[p["name"]] - p["place"]
+
+
+#: Explain This (acql/site/explain.py) on the page: the panel's evidence goes
+#: into the snapshot and its script into the page. Off, the page is exactly
+#: what it was without it.
+EXPLAIN = True
+EXPLAIN_DIR = Path(__file__).with_name("pool_explain")
+EXPLAIN_CSS = "explain.css"
+
+
+def _explain_on() -> bool:
+    return EXPLAIN and (EXPLAIN_DIR / EXPLAIN_CSS).is_file()
+
+
+def _explain(season: Season, weeks: list[int], players: list[dict], official: bool, stamp: str) -> dict | None:
+    if not _explain_on() or not weeks:
+        return None
+    try:
+        from ..site import explain
+        return explain.build(season, weeks=weeks, players=players, official=official, generated=stamp)
+    except Exception:  # noqa: BLE001 - the page goes up; the panel says it has no evidence
         return None
 
 
@@ -1058,6 +1107,10 @@ def template() -> str:
         css = (MODES_DIR / MODES_CSS).read_text(encoding="utf-8")
         head, tail = page.split("</style>", 1)
         page = head + "/* ---- league modes ---- */\n" + css + "</style>" + tail
+    if _explain_on():
+        css = (EXPLAIN_DIR / EXPLAIN_CSS).read_text(encoding="utf-8")
+        head, tail = page.split("</style>", 1)
+        page = head + "/* ---- explain this ---- */\n" + css + "</style>" + tail
     return page
 
 
@@ -1065,6 +1118,8 @@ def parts() -> list[Path]:
     found = [p for p in PARTS.iterdir() if p.suffix in (".html", ".js") and p.name[:3].isdigit()]
     if _modes_on():
         found += [p for p in MODES_DIR.iterdir() if p.suffix == ".js" and p.name[:3].isdigit()]
+    if _explain_on():
+        found += [p for p in EXPLAIN_DIR.iterdir() if p.suffix == ".js" and p.name[:3].isdigit()]
     return sorted(found, key=lambda p: p.name)
 
 

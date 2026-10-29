@@ -20,9 +20,9 @@
         return el("tr", { class: isMe(s.name) ? "me" : null }, [
           el("td", { class: "n place num", text: String(place) }),
           el("td", { class: "coach" }, [who(s.name), won ? el("span", { class: "star", text: " ★", title: "Won the week" }) : null]),
-          el("td", { class: "n total num", text: String(s.total) }),
+          xa(el("td", { class: "n total num", text: String(s.total) }), "weekly_score", s.name, w.week),
           el("td", { class: "n num hide-narrow", text: String(s.regular) }),
-          el("td", { class: "n num", text: s.big_loser ? String(s.big_loser) : "–" }),
+          xa(el("td", { class: "n num", text: s.big_loser ? String(s.big_loser) : "–" }), "weekly_score", s.name, w.week),
           el("td", { class: "bar-cell hide-narrow" }, [bar(s.total, top)])
         ]);
       }))

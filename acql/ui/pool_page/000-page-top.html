@@ -523,11 +523,12 @@ main:focus { outline: none; }
 .podname { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
 
 /* standings rows */
-.standrows > .r { grid-template-columns: 30px 30px minmax(0, 1fr) auto; }
+.standrows > .r { grid-template-columns: 52px 30px minmax(0, 1fr) auto; }
+.standrows .pos { font-size: 18px; white-space: nowrap; }
 .standrows .mv { font-size: 13px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
 .standrows .meta { grid-column: 3 / -1; }
 @media (min-width: 720px) {
-  .standrows > .r { grid-template-columns: 34px 34px minmax(0, 1fr) 70px 62px 64px 70px 92px; }
+  .standrows > .r { grid-template-columns: 60px 34px minmax(0, 1fr) 70px 62px 64px 70px 92px; }
   .standrows .meta { display: none; }
 }
 .standrows .col { display: none; text-align: right; font-variant-numeric: tabular-nums; }

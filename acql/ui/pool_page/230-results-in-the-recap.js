@@ -43,7 +43,7 @@
     function line(p) {
       return el("div", { class: "r", style: "grid-template-columns: 44px minmax(0,1fr) auto" }, [
         moveMark(p.move), el("span", { class: "name" }, [who(p.name)]),
-        el("span", { class: "meta", text: "now " + ordinal(p.place) })
+        el("span", { class: "meta", text: "now " + placeText(p) })
       ]);
     }
     return module("Who moved", "places since last week", [el("div", { class: "rows" }, up.concat(down).map(line))], { "data-card": "movers" });
@@ -86,7 +86,7 @@
       kids.push(el("div", { class: "figures", style: "grid-template-columns: repeat(2, minmax(0,1fr))" }, [
         figure(String(mine.total), "week " + w.week + (w.winners.indexOf(p.name) >= 0 ? " ★ won it" : ", " + ordinal(rank) + " of " + w.scores.length),
           (vs >= 0 ? "+" : "−") + Math.abs(vs).toFixed(1) + " on the average"),
-        figure(p.place != null ? ordinal(p.place) : "–", "in the standings", plural(p.wins, "win") + (p.move ? (p.move > 0 ? ", up " : ", down ") + Math.abs(p.move) : ""))
+        figure(p.place != null ? placeText(p) : "–", "in the standings", plural(p.wins, "win") + (p.move ? (p.move > 0 ? ", up " : ", down ") + Math.abs(p.move) : ""))
       ]));
     }
     kids.push(el("p", { class: "note", text: (p.suicide.alive ? "Still in the suicide pool" : p.suicide.out ? "Out of the suicide pool in week " + p.suicide.out : "Not in the suicide pool") +

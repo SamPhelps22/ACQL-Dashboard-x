@@ -162,7 +162,7 @@
       var right = Math.cos(at.a) >= 0;
       var lx = cx + (R + 16) * Math.cos(at.a), ly = cy + (R + 16) * Math.sin(at.a);
       g.appendChild(svgEl("g", { class: "cm-node" + (sel ? " sel" : "") + (faded ? " faded" : "") + (isMe(p.name) ? " me" : ""), tabindex: "0", role: "button",
-        "aria-label": p.name + (p.place ? ", " + ordinal(p.place) + " officially" : ""),
+        "aria-label": p.name + (p.place ? ", " + placeText(p) + " officially" : ""),
         onclick: function () { state.cmFocus = sel ? "" : p.name; state.cmEdge = null; render(); },
         onkeydown: function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); state.cmFocus = sel ? "" : p.name; state.cmEdge = null; render(); } } }, [
         svgEl("circle", { cx: at.x, cy: at.y, r: sel ? 13 : 10 }),
@@ -230,7 +230,7 @@
       var mine = pairs.filter(function (e) { return (e.a === focus || e.b === focus) && cmStrength(type, e) != null; })
         .sort(function (x, y) { return cmStrength(type, y) - cmStrength(type, x); }).slice(0, 5);
       kids.push(el("h2", { text: focus }),
-        el("p", { class: "note", text: (p.place ? ordinal(p.place) + " in the official standings, " : "") + plural(p.wins, "win") + "." }),
+        el("p", { class: "note", text: (p.place ? placeText(p) + " in the official standings, " : "") + plural(p.wins, "win") + "." }),
         el("p", { class: "note", text: "Strongest " + CM_TYPES[type].label.toLowerCase() + " links:" }),
         mine.length ? el("ol", { class: "cm-list" }, mine.map(function (e) {
           var other = e.a === focus ? e.b : e.a;

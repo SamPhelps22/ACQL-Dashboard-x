@@ -21,14 +21,13 @@
     var top = DATA.players.slice(0, 3);
     if (top.length < 3 || !DATA.through_week) return null;
     var lead = top[0].wins;
-    function shared(p) { return DATA.players.filter(function (q) { return q.place === p.place; }).length > 1; }
     return el("div", { class: "podium", role: "group", "aria-label": "The top three" }, top.map(function (p, i) {
       var back = lead - p.wins;
       return el("div", { class: "step p" + (i + 1) + (isMe(p.name) ? " me" : "") }, [
-        el("span", { class: "medal", text: p.place != null ? (shared(p) ? "T" : "") + ordinal(p.place) : ordinal(i + 1) }),
+        el("span", { class: "medal", text: p.place != null ? placeText(p) : ordinal(i + 1) }),
         el("span", { class: "initials", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
         el("span", { class: "podname" }, [who(p.name), formBadge(p.name)]),
-        el("span", { class: "wins num", text: String(p.wins) }),
+        xa(el("span", { class: "wins num", text: String(p.wins) }), "season_wins", p.name),
         el("span", { class: "sub", text: (back ? back + " back" : "leads") + (p.title != null ? " · " + titleText(p) + " title" : "") })
       ]);
     }));
@@ -60,27 +59,27 @@
       var won = latest && latest.winners.indexOf(p.name) >= 0;
       var s = p.suicide;
       var sui = s.alive ? "Still in the suicide pool. " : s.out ? "Out of the suicide pool in week " + s.out + ". " : "Not in the suicide pool. ";
-      var side = [el("span", { class: "dot " + (s.alive ? "alive" : "out"), title: sui.trim() }), el("span", { class: "vh", text: sui }),
-        p.big_loser ? "BL " + p.big_loser : "BL –"];
+      var side = [xa(el("span", { class: "dot " + (s.alive ? "alive" : "out"), title: sui.trim() }), "suicide", p.name), el("span", { class: "vh", text: sui }),
+        p.big_loser ? xa(el("span", { text: "BL " + p.big_loser }), "big_loser", p.name) : "BL –"];
       var meta = [el("span", { class: "dot " + (s.alive ? "alive" : "out") }), el("span", { class: "vh", text: sui }),
         [lead - p.wins ? (lead - p.wins) + " back" : "leads",
           p.title != null ? titleText(p) + " title" : "",
           last ? "last wk " + last.total + (won ? " ★" : "") : "",
           p.big_loser ? "BL " + p.big_loser : ""].filter(Boolean).join(" · ")];
       rows.push(el("div", { class: "r" + (isMe(p.name) ? " me" : "") + (line ? " avgtop" : ""), "data-name": p.name }, [
-        el("span", { class: "pos", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
-        moveMark(p.move),
+        xa(el("span", { class: "pos", text: placeText(p), "data-tick": "s:place:" + p.name }), "place", p.name),
+        xa(moveMark(p.move), "move", p.name),
         el("span", { class: "name" }, [el("span", { class: "initials sm", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
           who(p.name), formBadge(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null]),
-        el("span", { class: "big", text: String(p.wins), "data-tick": "s:total:" + p.name }),
+        xa(el("span", { class: "big", text: String(p.wins), "data-tick": "s:total:" + p.name }), "season_wins", p.name),
         el("span", { class: "col", text: lead - p.wins ? String(lead - p.wins) : "–" }),
         el("span", { class: "col" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }),
-        el("span", { class: "col", text: last ? String(last.total) + (won ? " ★" : "") : "" }),
+        xa(el("span", { class: "col", text: last ? String(last.total) + (won ? " ★" : "") : "" }), last ? "weekly_score" : null, p.name, latest && latest.week),
         el("span", { class: "col" }, side),
         el("span", { class: "meta" }, meta)
       ]));
     });
-    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL). Arrows show places gained or lost since last week. A green dot means still in the suicide pool. 🔥 on fire: above the pool’s average in each of the last three weeks, by " + FORM_EDGE + "+ wins in all. 🧊 on the hot seat: below it every week by as much." });
+    var avgNote = el("p", { class: "note", text: "The dashed line is the pool’s average, " + avg.toFixed(1) + " wins. Wins include Big Loser points (BL). Arrows show places gained or lost since last week." + (DATA.explain ? " Tap a number to see where it comes from and how it was checked." : "") + " A green dot means still in the suicide pool. 🔥 on fire: above the pool’s average in each of the last three weeks, by " + FORM_EDGE + "+ wins in all. 🧊 on the hot seat: below it every week by as much." });
     return el("div", {}, [el("div", { class: "rows standrows", id: "leaderboard" }, rows), avgNote]);
   }
   function everyWeekTable() {
@@ -103,15 +102,15 @@
       var s = p.suicide;
       var mv = p.move == null || p.move === 0 ? el("td", { class: "n flat", text: "–" })
         : p.move > 0 ? el("td", { class: "n up", text: "▲" + p.move }) : el("td", { class: "n down", text: "▼" + Math.abs(p.move) });
-      var cells = [el("td", { class: "n place num stick-a", text: p.place != null ? String(p.place) : "", "data-tick": "s:place:" + p.name }),
+      var cells = [xa(el("td", { class: "n place num stick-a", text: placeText(p), "data-tick": "s:place:" + p.name }), "place", p.name),
         el("td", { class: "coach stick-b" }, [who(p.name)]),
-        el("td", { class: "n total num", text: String(p.wins), "data-tick": "s:total:" + p.name }), mv,
+        xa(el("td", { class: "n total num", text: String(p.wins), "data-tick": "s:total:" + p.name }), "season_wins", p.name), xa(mv, "move", p.name),
         DATA.race ? el("td", { class: "n num" + (p.out_of_reach ? " gone" : ""), text: titleText(p) }) : null,
-        el("td", { class: "n num", text: p.big_loser ? String(p.big_loser) : "–" }),
+        xa(el("td", { class: "n num", text: p.big_loser ? String(p.big_loser) : "–" }), "big_loser", p.name),
         el("td", {}, [el("span", { class: "dot " + (s.alive ? "alive" : "out") }), s.alive ? "Still in" : (s.out ? "Out wk " + s.out : "–")])].filter(Boolean);
       weeks.forEach(function (n) {
         var v = p.weekly[String(n)];
-        cells.push(el("td", { class: "n num" + (n === DATA.through_week ? " latest" : ""), text: v == null ? "" : String(v) }));
+        cells.push(xa(el("td", { class: "n num" + (n === DATA.through_week ? " latest" : ""), text: v == null ? "" : String(v) }), v == null ? null : "weekly_score", p.name, n));
       });
       rows.push(el("tr", { class: isMe(p.name) ? "me" : null }, cells));
     });

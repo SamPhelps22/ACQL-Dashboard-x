@@ -36,7 +36,7 @@
       ]));
     });
     var status = s.alive ? "still in the suicide pool" : (s.out ? "out of the suicide pool in week " + s.out : "not in the suicide pool");
-    var line = [p.place != null ? ordinal(p.place) + " of " + DATA.entrants : "", plural(p.wins, "win"),
+    var line = [p.place != null ? placeText(p) + " of " + DATA.entrants : "", plural(p.wins, "win"),
       p.big_loser ? plural(p.big_loser, "Big Loser point") : "", status].filter(Boolean).join(" · ");
     var back = !mine && state.view !== "me" ? el("button", { class: "btn back", type: "button",
       text: "‹ Back to " + (VIEWS[state.view] ? VIEWS[state.view].label.toLowerCase() : "home"), onclick: function () { closeCoach(); } }) : null;
@@ -49,7 +49,7 @@
           el("h1", {}, [p.name, formBadge(p.name)]), el("p", { class: "coach-line note", text: line }),
           form(p.name) ? el("p", { class: "note form-line", text: formText(form(p.name)) }) : null])]),
       el("div", { class: "figures" }, [
-        figure(p.place != null ? ordinal(p.place) : "–", "in the standings",
+        figure(p.place != null ? placeText(p) : "–", "in the standings",
           (p.move ? (p.move > 0 ? "▲ up " : "▼ down ") + plural(Math.abs(p.move), "place") : "no move") + " last week"),
         figure(String(p.wins), "wins", (lead - p.wins ? (lead - p.wins) + " behind the lead" : "leading") + " · " +
           (avg > 0 ? "+" : avg < 0 ? "−" : "") + Math.abs(avg).toFixed(1) + " a week on the average"),

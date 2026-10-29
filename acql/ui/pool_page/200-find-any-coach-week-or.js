@@ -15,7 +15,7 @@
     });
     DATA.players.forEach(function (p) {
       out.push({ kind: "Coach", label: p.name, name: p.name,
-        sub: (p.place != null ? ordinal(p.place) + " · " : "") + plural(p.wins, "win"),
+        sub: (p.place != null ? placeText(p) + " · " : "") + plural(p.wins, "win"),
         go: function () { openCoach(p.name); } });
     });
     return out;

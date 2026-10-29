@@ -57,7 +57,7 @@
           bl.length ? el("div", { class: "box" }, [el("table", {}, [el("tbody", {}, shown.map(function (p) {
             return el("tr", { class: isMe(p.name) ? "me" : null }, [
               el("td", { class: "coach" }, [who(p.name)]),
-              el("td", { class: "n total num", text: String(p.big_loser) }),
+              xa(el("td", { class: "n total num", text: String(p.big_loser) }), "big_loser", p.name),
               el("td", { class: "bar-cell" }, [bar(p.big_loser, blTop)])
             ]);
           }))])]) : stateMsg("No Big Loser points yet", "A point goes to each pick whose team loses by 15 or more."),

@@ -68,6 +68,8 @@
     if (names.length <= max) return names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
     return names.slice(0, max - 1).join(", ") + " & " + (names.length - max + 1) + " more";
   }
+  // A coach's place as the pool says it: shared places carry T- (T-9th, then 12th).
+  function placeText(p) { return p && p.place != null ? (p.tied ? "T-" : "") + ordinal(p.place) : ""; }
   function ordinal(n) {
     var s = ["th", "st", "nd", "rd"], v = n % 100;
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -231,6 +233,16 @@
     return t.placesCache;
   }
   function livePlace(t, name) { var r = livePlaces(t)[name]; return r ? r.place : null; }
+  // Explain This: tag a number so a tap opens where it came from (pool_explain).
+  // Only sets attributes, so a page built without the panel is unchanged in use.
+  function xa(node, metric, coach, week, other) {
+    if (!metric || !node || !node.setAttribute) return node;
+    node.setAttribute("data-x", metric);
+    if (coach) node.setAttribute("data-xc", coach);
+    if (week) node.setAttribute("data-xw", String(week));
+    if (other) node.setAttribute("data-xb", other);
+    return node;
+  }
   function leaders() {
     var best = DATA.players.length ? Math.max.apply(null, DATA.players.map(function (p) { return p.wins; })) : 0;
     return DATA.players.filter(function (p) { return p.wins === best; });

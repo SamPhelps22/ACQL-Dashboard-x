@@ -125,6 +125,9 @@ jobs:
       - name: Rulebook, Power Rankings, Connection Map and Import Workbench
         run: python tests/test_four_features.py
 
+      - name: Explain This (metric registry, evidence, honesty rules)
+        run: python tests/test_explain.py
+
       - name: The app's own checks
         run: python -m acql.checks
 
