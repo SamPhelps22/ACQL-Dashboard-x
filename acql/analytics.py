@@ -1109,6 +1109,52 @@ def week_payouts(week: Week) -> dict[str, float]:
     return {key: share for key in winners}
 
 
+def official_scores(season: Season, number: int) -> dict[str, int]:
+    """A week's scores as stats.xls gives them (empty when it doesn't cover the week)."""
+    return {k: p.weekly_wins[number] for k, p in season.players.items()
+            if number in getattr(p, "official_weeks", ()) and number in p.weekly_wins}
+
+
+def official_payouts(season: Season, number: int) -> dict[str, float]:
+    """The week's payouts under the pool's rule, priced on stats.xls's scores -
+    every coach it scored, whether or not a pick card for them was read."""
+    from types import SimpleNamespace
+    scores = official_scores(season, number)
+    if not scores:
+        return {}
+    return week_payouts(SimpleNamespace(lines={k: SimpleNamespace(total_wins=v) for k, v in scores.items()}))
+
+
+def official_money_weeks(season: Season) -> list[int]:
+    return sorted({w for p in season.players.values() for w in getattr(p, "official_weeks", ())})
+
+
+def _pay_from_stats(season: Season, number: int) -> bool:
+    """stats.xls is the pool's official record, and its +PTS is these payouts
+    added up. The workbook's Winnings sheet was once priced on an older grid
+    (week 3's LAC @ BUF left blank; week 4 the same way), so where its figures
+    for a week stats.xls scored disagree with the payouts its scores give, the
+    stats.xls payouts are used and the difference is noted. True if changed."""
+    paid = official_payouts(season, number)
+    if not paid:
+        return False
+    before = {k: round(p.weekly_winnings.get(number) or 0.0, 2) for k, p in season.players.items()}
+    after = {k: round(paid.get(k, 0.0), 2) for k in season.players}
+    if before == after:
+        return False
+    if any(before.values()):
+        wrong = ", ".join(f"{season.players[k].display} ${before[k]:g} -> ${after[k]:g}"
+                          for k in season.players if before[k] != after[k])
+        season.warnings.append(f"Week {number}: the workbook's winnings didn't match the pot stats.xls's "
+                               f"scores give; the stats.xls payouts are used ({wrong}).")
+    for k, person in season.players.items():
+        if after[k]:
+            person.weekly_winnings[number] = after[k]
+        else:
+            person.weekly_winnings.pop(number, None)
+    return True
+
+
 def fill_winnings(season: Season) -> list[int]:
     """Work out the money for any week the files don't already give.
 
@@ -1118,6 +1164,8 @@ def fill_winnings(season: Season) -> list[int]:
     it filled in, so a page can say which numbers it worked out for itself.
     """
     computed: list[int] = []
+    for number in official_money_weeks(season):
+        _pay_from_stats(season, number)
     for number, week in sorted(season.weeks.items()):
         if any(p.weekly_winnings.get(number) for p in season.players.values()):
             continue

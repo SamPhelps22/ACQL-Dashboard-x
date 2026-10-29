@@ -577,6 +577,7 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     _computers()
     if _timelines(season):
         season = load_season(settings, AliasTable.load(), online=False)
+    _integrity(season)
     if dry_run:
         _log(f"dry run: website not touched ({time.monotonic() - started:.0f}s)")
         return 0
@@ -590,6 +591,19 @@ def run(*, force: bool, dry_run: bool = False) -> int:
     _log(f"done in {time.monotonic() - started:.0f}s")
     _ran(True, f"took {time.monotonic() - started:.0f}s")
     return 0
+
+
+def _integrity(season) -> None:
+    """Validate the freshly loaded data (acql/integrity). Runs only when what it
+    reads has changed since the last run; reports, never edits or blocks."""
+    try:
+        from .integrity import engine, history
+        found = history.ensure(season)
+        reasons = engine.publish_gate(found)
+        _log(f"integrity: {found.get('state')}, health {found.get('health')}/100"
+             + (f"; not verified as official: {'; '.join(reasons[:3])}" if reasons else ""))
+    except Exception as exc:  # noqa: BLE001 - a check that can't run is a note, the run goes on
+        _log(f"integrity checks couldn't run: {exc}")
 
 
 #: A note the load repeats is written to the log again only this often.

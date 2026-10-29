@@ -80,6 +80,8 @@ jobs:
         run: python tests/test_upgrades.py
       - name: Lab tests
         run: python tests/test_lab.py
+      - name: Integrity Engine tests
+        run: python tests/test_integrity.py
 
       - name: Model lab tests
         run: python tests/test_model_lab.py

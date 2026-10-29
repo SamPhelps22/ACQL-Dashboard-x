@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Integrity Center</title>
+<style>
+:root {
+  --bg: #07080a; --panel: #111317; --panel2: #171a20; --rule: #262a32; --ink: #f2f3f5; --muted: #8b919c;
+  --gold: #d4a93c; --blue: #2f8cff; --good: #2fa36b; --bad: #d6453d; --warn: #e0a02a;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace; --body: "Segoe UI", system-ui, sans-serif; --r: 4px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--body); }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; background: var(--bg); z-index: 5; flex-wrap: wrap; }
+.brand { font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); font-size: 13px; }
+.brand small { color: var(--muted); letter-spacing: .1em; margin-left: 8px; }
+header .sp { flex: 1; }
+main { padding: 16px; max-width: 1280px; margin: 0 auto; }
+h2 { font-size: 15px; margin: 18px 0 8px; }
+.lbl { font: 600 10.5px/1.2 var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.sub { color: var(--muted); margin: 0 0 14px; max-width: 80ch; }
+.box { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r); padding: 12px; margin-bottom: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.tile { background: var(--panel2); border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; }
+.tile b { display: block; font: 700 22px/1.1 var(--mono); margin-top: 4px; }
+.state-verified b { color: var(--good); } .state-attention b { color: var(--warn); }
+.state-discrepancy b { color: var(--bad); } .state-incomplete b { color: var(--warn); }
+button, select, input, textarea { font: inherit; color: var(--ink); background: var(--panel2); border: 1px solid var(--rule);
+  border-radius: var(--r); padding: 6px 10px; }
+button { cursor: pointer; } button.primary { border-color: var(--blue); color: #fff; background: #12305a; }
+button:disabled { opacity: .5; cursor: wait; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 600 10.5px/1.2 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+td.n { font-family: var(--mono); text-align: right; white-space: nowrap; }
+.tag { display: inline-block; font: 600 10px/1 var(--body); letter-spacing: .1em; text-transform: uppercase;
+  padding: 3px 6px; border-radius: var(--r); border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; }
+.t-confirmed { color: var(--bad); border-color: var(--bad); } .t-unavailable { color: var(--warn); border-color: var(--warn); }
+.t-suspected { color: var(--warn); border-color: var(--warn); border-style: dashed; }
+.t-settled { color: var(--good); border-color: var(--good); } .t-note { color: var(--blue); border-color: var(--blue); }
+.t-critical { color: #fff; background: var(--bad); border-color: var(--bad); } .t-high { color: var(--bad); border-color: var(--bad); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.filters button.on { border-color: var(--blue); color: #fff; }
+.finding { border: 1px solid var(--rule); border-radius: var(--r); background: var(--panel2); margin-bottom: 8px; }
+.finding summary { list-style: none; cursor: pointer; padding: 10px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.finding summary::-webkit-details-marker { display: none; }
+.finding summary .tt { flex: 1; min-width: 220px; font-weight: 600; }
+.finding .body { padding: 0 10px 10px; }
+.kv { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 8px 0; font-size: 13px; }
+.kv div:nth-child(odd) { color: var(--muted); }
+.note { color: var(--muted); font-size: 12.5px; }
+.err { color: var(--bad); }
+form.decide { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-top: 8px;
+  border-top: 1px solid var(--rule); padding-top: 8px; }
+form.decide textarea { grid-column: 1 / -1; min-height: 52px; }
+.bars { display: flex; gap: 2px; align-items: flex-end; height: 40px; }
+.bars span { flex: 1; min-width: 4px; background: var(--blue); border-radius: 1px 1px 0 0; }
+.bars span.bad { background: var(--bad); } .bars span.warn { background: var(--warn); } .bars span.good { background: var(--good); }
+@media (max-width: 600px) { .kv { grid-template-columns: 1fr; } main { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Integrity Center <small>Operation Sunday</small></div>
+  <span class="sp"></span>
+  <span class="note" id="when"></span>
+  <button id="recover" title="Reload from the files and check again">Recover</button>
+  <button class="primary" id="run">Run checks</button>
+</header>
+<main>
+  <p class="sub">Checks that every score, total, place and money figure adds up - against the pool's rules, between sources,
+    and between the dashboard and the website. Nothing here changes an official number: a problem is shown with the original
+    values and where they came from, and only a recorded decision moves anything.</p>
+  <div class="tiles" id="tiles"></div>
+  <div class="box" id="gatebox"></div>
+  <h2>Issues</h2>
+  <div class="filters" id="filters"></div>
+  <div id="findings"><p class="note">Loading…</p></div>
+  <h2>Checks</h2>
+  <div class="box scroll"><table id="checks"></table></div>
+  <h2>Run history</h2>
+  <div class="box"><div class="bars" id="bars" aria-label="Health of recent runs"></div><div class="scroll"><table id="runs"></table></div></div>
+  <h2>Decisions</h2>
+  <div class="box scroll"><table id="decisions"></table></div>
+  <h2>Accepted record</h2>
+  <div class="box" id="baseline"></div>
+</main>
+<script>
+"use strict";
+var DATA = null, FILTER = "open";
+var OPEN = {confirmed: 1, suspected: 1, unavailable: 1};
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+  return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]; }); }
+function when(t) { if (!t) return "-"; var d = new Date(t * 1000); return d.toLocaleString(); }
+function tag(t, cls) { return '<span class="tag ' + (cls || "t-" + t) + '">' + esc(t) + "</span>"; }
+function api(path, body) {
+  var opt = body ? {method: "POST", headers: {"Content-Type": "application/json", "X-Integrity": "1"}, body: JSON.stringify(body)} : {};
+  return fetch(path, opt).then(function (r) { return r.json().then(function (j) {
+    if (!r.ok) throw new Error(j.error || r.statusText); return j; }); });
+}
+function load() { return api("/api/report").then(function (d) { DATA = d; draw(); })
+  .catch(function (e) { document.getElementById("findings").innerHTML = '<p class="err">' + esc(e.message) + "</p>"; }); }
+
+function draw() {
+  var last = DATA.last;
+  var words = {verified: "Verified", attention: "Needs a look", discrepancy: "Discrepancy", incomplete: "Not fully checked"};
+  if (!last) {
+    document.getElementById("tiles").innerHTML = '<div class="tile"><span class="lbl">State</span><b>Not run</b></div>';
+    document.getElementById("findings").innerHTML = '<p class="note">No run yet. Press Run checks.</p>';
+    return;
+  }
+  var c = last.counts || {};
+  document.getElementById("when").textContent = "Last run " + when(last.run_at) + " (" + last.seconds + "s)";
+  document.getElementById("tiles").innerHTML = [
+    ['<div class="tile state-' + last.state + '"><span class="lbl">State</span><b>' + esc(words[last.state] || last.state) + "</b></div>"],
+    ['<div class="tile"><span class="lbl">Health</span><b>' + last.health + "/100</b></div>"],
+    ['<div class="tile"><span class="lbl">Confirmed</span><b>' + (c.confirmed || 0) + "</b></div>"],
+    ['<div class="tile"><span class="lbl">Suspected</span><b>' + (c.suspected || 0) + "</b></div>"],
+    ['<div class="tile"><span class="lbl">Unavailable</span><b>' + (c.unavailable || 0) + "</b></div>"],
+    ['<div class="tile"><span class="lbl">Settled</span><b>' + (c.settled || 0) + "</b></div>"],
+    ['<div class="tile"><span class="lbl">Official through</span><b>Wk ' + last.official_week + "</b></div>"]
+  ].join("");
+  var gate = DATA.gate || [];
+  document.getElementById("gatebox").innerHTML = gate.length
+    ? '<span class="lbl">Not verified as official</span><ul>' + gate.map(function (g) { return "<li>" + esc(g) + "</li>"; }).join("") + "</ul>"
+      + (DATA.trusted && DATA.trusted.run_at !== last.run_at ? '<p class="note">Last complete run: ' + when(DATA.trusted.run_at) + "</p>" : "")
+    : '<span class="lbl">Standings, money and history</span><p>Nothing confirmed stands against them.</p>';
+  var all = last.findings || [];
+  var groups = [["open", "Open"], ["confirmed", "Confirmed"], ["suspected", "Suspected"], ["unavailable", "Unavailable"],
+                ["settled", "Settled"], ["note", "Notes"], ["all", "All"]];
+  document.getElementById("filters").innerHTML = groups.map(function (g) {
+    var n = all.filter(function (f) { return g[0] === "all" || (g[0] === "open" ? OPEN[f.status] : f.status === g[0]); }).length;
+    return '<button data-f="' + g[0] + '" class="' + (FILTER === g[0] ? "on" : "") + '">' + g[1] + " " + n + "</button>";
+  }).join("");
+  var shown = all.filter(function (f) { return FILTER === "all" || (FILTER === "open" ? OPEN[f.status] : f.status === FILTER); });
+  document.getElementById("findings").innerHTML = shown.length ? shown.map(finding).join("") : '<p class="note">Nothing here.</p>';
+  document.getElementById("checks").innerHTML = "<tr><th>Check</th><th>Ran</th><th>Verified</th><th>Seconds</th><th>Error</th></tr>" +
+    Object.keys(last.checks || {}).map(function (k) { var x = last.checks[k];
+      return "<tr><td>" + esc(x.label || k) + "</td><td>" + (x.ran ? tag("yes", "t-settled") : tag("no", "t-confirmed")) +
+        '</td><td class="n">' + x.verified + '</td><td class="n">' + x.seconds + '</td><td class="err">' + esc(x.error) + "</td></tr>"; }).join("");
+  var runs = (DATA.runs || []).slice().reverse();
+  document.getElementById("bars").innerHTML = runs.slice().reverse().map(function (r) {
+    var cls = {verified: "good", attention: "warn", incomplete: "warn", discrepancy: "bad"}[r.state] || "";
+    return '<span class="' + cls + '" style="height:' + Math.max(4, r.health * 0.4) + 'px" title="' + esc(when(r.run_at) + " · " + r.health) + '"></span>'; }).join("");
+  document.getElementById("runs").innerHTML = "<tr><th>When</th><th>State</th><th>Health</th><th>Confirmed</th><th>Suspected</th><th>Complete</th></tr>" +
+    runs.slice(0, 12).map(function (r) { return "<tr><td>" + when(r.run_at) + "</td><td>" + esc(r.state) + '</td><td class="n">' + r.health +
+      '</td><td class="n">' + ((r.counts || {}).confirmed || 0) + '</td><td class="n">' + ((r.counts || {}).suspected || 0) + "</td><td>" + (r.complete ? "yes" : "no") + "</td></tr>"; }).join("");
+  var ds = (DATA.decisions || []).slice().reverse();
+  document.getElementById("decisions").innerHTML = ds.length ? "<tr><th>When</th><th>Decision</th><th>By</th><th>Week</th><th>Note</th></tr>" +
+    ds.map(function (x) { return "<tr><td>" + when(x.at) + "</td><td>" + esc(x.kind + (x.choice ? " · " + x.choice : "")) + "</td><td>" + esc(x.by) +
+      '</td><td class="n">' + esc(x.week || "") + "</td><td>" + esc(x.note) + (x.status ? '<div class="note">' + esc(x.status) + "</div>" : "") + "</td></tr>"; }).join("")
+    : '<tr><td class="note">No decisions recorded.</td></tr>';
+  var b = DATA.baseline || {};
+  document.getElementById("baseline").innerHTML = Object.keys(b).length ? Object.keys(b).map(function (y) {
+    return "<p>" + esc(y) + ": weeks " + esc(b[y].join(", ")) + ' accepted.</p>'; }).join("") +
+    '<p class="note">A week joins the accepted record after a complete run in which it had no confirmed problem. A later change to its official scores is reported, never taken silently.</p>'
+    : '<p class="note">Nothing accepted yet.</p>';
+}
+
+function finding(f) {
+  var items = (f.items || []).length ? '<div class="scroll"><table><tr><th>Name</th><th>Official / on file</th><th>Other source</th></tr>' +
+    f.items.slice(0, 60).map(function (i) { return "<tr><td>" + esc(i[0]) + '</td><td class="n">' + esc(i[1]) + '</td><td class="n">' + esc(i[2]) + "</td></tr>"; }).join("") + "</table></div>" : "";
+  var kv = [["Check", f.check], ["Week", f.week], ["Coach", f.coach], ["Field", f.field],
+            ["Official", f.official], ["Other value", f.computed], ["Sources", (f.sources || []).join(" · ")],
+            ["Shown on", (f.affects || []).join(" · ")], ["What to do", f.action], ["Issue id", f.id]]
+    .filter(function (r) { return r[1] !== null && r[1] !== undefined && r[1] !== ""; })
+    .map(function (r) { return "<div>" + r[0] + "</div><div>" + esc(r[1]) + "</div>"; }).join("");
+  var seen = (DATA.issues || {})[f.id];
+  var since = seen ? '<span class="note">first seen ' + when(seen.first_seen) + (seen.acknowledged ? " · acknowledged" : "") + "</span>" : "";
+  var kinds = '<option value="acknowledge">Acknowledge (keep open, note it)</option><option value="correction">Log a correction for the source file</option>';
+  if (f.week && (f.field === "recount" || /week \d+ wins/.test(f.field || ""))) kinds = '<option value="ruling">Ruling for the week</option>' + kinds;
+  if (f.check === "history" && f.week) kinds = '<option value="accept_change">Accept the new official scores</option>' + kinds;
+  var form = OPEN[f.status] ? '<form class="decide" data-id="' + esc(f.id) + '" data-week="' + esc(f.week || "") + '">' +
+    '<select name="kind">' + kinds + '</select>' +
+    '<select name="choice"><option value="">-</option><option value="official">Official totals stand</option><option value="recount">The recount stands</option></select>' +
+    '<input name="value" placeholder="Corrected value (corrections)"><input name="by" placeholder="Your name" required>' +
+    '<textarea name="note" placeholder="Why (required)" required></textarea><button class="primary">Record decision</button><span class="note msg"></span></form>' : "";
+  return '<details class="finding"><summary>' + tag(f.status) + tag(f.severity, "t-" + f.severity) + '<span class="tt">' + esc(f.title) + "</span>" + since +
+    '</summary><div class="body"><p>' + esc(f.detail) + '</p><div class="kv">' + kv + "</div>" + items + form + "</div></details>";
+}
+
+document.addEventListener("click", function (e) {
+  var b = e.target.closest("[data-f]"); if (b) { FILTER = b.getAttribute("data-f"); draw(); }
+});
+document.addEventListener("submit", function (e) {
+  var form = e.target.closest("form.decide"); if (!form) return; e.preventDefault();
+  var fd = new FormData(form), msg = form.querySelector(".msg");
+  var body = {finding: form.getAttribute("data-id"), week: form.getAttribute("data-week"),
+    year: DATA.last && DATA.last.season_year, kind: fd.get("kind"), choice: fd.get("choice"),
+    value: fd.get("value"), by: fd.get("by"), note: fd.get("note")};
+  msg.textContent = "Saving…";
+  api("/api/decide", body).then(function () { msg.textContent = "Recorded. Run the checks again to see the effect."; return load(); })
+    .catch(function (err) { msg.textContent = err.message; msg.className = "err msg"; });
+});
+function busy(btn, path) {
+  btn.disabled = true; var was = btn.textContent; btn.textContent = "Checking…";
+  api(path, {}).then(load).catch(function (e) { alert(e.message); }).then(function () { btn.disabled = false; btn.textContent = was; });
+}
+document.getElementById("run").onclick = function () { busy(this, "/api/run"); };
+document.getElementById("recover").onclick = function () { busy(this, "/api/recover"); };
+load();
+</script>
+</body>
+</html>

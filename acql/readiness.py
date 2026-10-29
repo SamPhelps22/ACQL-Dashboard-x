@@ -346,6 +346,35 @@ def _consistency(season: Season, week: int) -> Check | None:
                  detail + ". Two numbers that describe the same game can't both be right - check where each came from.")
 
 
+def _integrity(season: Season, now: float) -> Check | None:
+    """The Integrity Engine's last run (acql/integrity). Only reads what was kept:
+    the run itself happens in the scheduled job or the Integrity Center, never here."""
+    from .integrity import engine, history
+    kept = history.last()
+    if not kept:
+        return Check(SOURCES, "Integrity", NOTE, "The integrity checks haven't run yet",
+                     "Run them with: python -m acql.integrity run  (or open the Integrity Center).")
+    at = float(kept.get("run_at") or 0)
+    counts = kept.get("counts") or {}
+    state = kept.get("state")
+    try:
+        stale = engine.fingerprint(season) != kept.get("fingerprint")
+    except Exception:  # noqa: BLE001
+        stale = False
+    level = {"verified": OK, "attention": NOTE, "incomplete": WARN, "discrepancy": WARN}.get(state, NOTE)
+    head = {"verified": "Every number checked adds up",
+            "attention": f"{counts.get('suspected', 0)} suspected issue(s) to look at",
+            "incomplete": "Some checks couldn't run - not fully verified",
+            "discrepancy": f"{counts.get('confirmed', 0)} confirmed discrepanc{'y' if counts.get('confirmed') == 1 else 'ies'}",
+            }.get(state, "Checked")
+    worst = [f["title"] for f in kept.get("findings", []) if f["status"] in ("confirmed", "unavailable")][:3]
+    detail = f"Health {kept.get('health')}/100. " + ("; ".join(worst) + ". " if worst else "")
+    if stale:
+        detail += "The data has changed since - the next scheduled run re-checks it. "
+    detail += "Details in the Integrity Center (python -m acql.integrity center)."
+    return Check(SOURCES, "Integrity", level, head, detail, at=at)
+
+
 def _backups(now: float) -> Check:
     """The daily copy kept outside the synced folder, and whether it opens sound (store.mirror_backup)."""
     from . import store
@@ -795,6 +824,7 @@ def build(season: Season, now: float | None = None, tasks: dict[str, dict] | Non
     add(_second_source, year)
     add(_publish_windows, year)
     add(_consistency, season, ahead)
+    add(_integrity, season, now)
     add(_inputs, season, ahead, to_lock)
     if playing != ahead and season.weeks.get(playing) is not None:
         add(_kept_card, season, year, playing, now)
