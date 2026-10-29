@@ -875,6 +875,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
             for n in weeks if key in season.weeks[n].lines
         )
         players.append({
+            "id": key,                     # the stable key; names can change spelling
             "name": player.display,
             "place": place,
             "move": move,
@@ -904,6 +905,7 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
     players.sort(key=lambda r: (r["place"] if r["place"] is not None else 999, -r["wins"],
                                 r["name"].casefold()))
     race = _race(season, players, latest)
+    power = _power(players, strict)
     try:
         title_by_week = _title_by_week(players, weeks) if weeks else {}
     except Exception:  # noqa: BLE001 - the chart is left off, the page goes up
@@ -933,6 +935,8 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
         "curve": curve(),
         # the latest swings that cost someone a week, every replayed week (replay.museum, #50)
         "museum": _museum(season),
+        "power": power,
+        "rulebook": _rulebook(season, stamp),
         "schema": SCHEMA,
         "title": getattr(season, "title", "") or "ACQL",
         "generated": stamp,
@@ -964,6 +968,32 @@ def snapshot(season: Season, *, generated: str | None = None, strict: bool = Fal
             if w is not None
         ],
     }
+
+
+def _power(players: list[dict], publishing: bool) -> dict | None:
+    """The unofficial Power Rankings (pool/powerrank.py), every week from the
+    weekly scores above. Publishing keeps the latest week's ranking as it was
+    shown. Never feeds back into the official places."""
+    from ..pool import powerrank
+    try:
+        weekly = {p["name"]: p["weekly"] for p in players}
+        latest = max((int(w) for s in weekly.values() for w in s), default=0)
+        if publishing and latest:
+            try:
+                powerrank.record(weekly, latest, time.time())
+            except Exception:  # noqa: BLE001 - not kept this time; shown as reconstructed
+                pass
+        return powerrank.history(weekly, {p["name"]: p["place"] for p in players}, powerrank.recorded())
+    except Exception:  # noqa: BLE001 - the page goes up without them
+        return None
+
+
+def _rulebook(season: Season, stamp: str) -> dict | None:
+    from ..pool import rulebook
+    try:
+        return rulebook.rulebook(str(siteextras.season_year(stamp)), season.buy_in)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _safe_deadline(season: Season) -> dict | None:

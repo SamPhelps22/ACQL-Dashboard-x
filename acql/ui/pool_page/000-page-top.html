@@ -1929,6 +1929,63 @@ html.cine-on, html.cine-on body { overflow: hidden; }
 .cine-picks td.cp.lv { outline: 1px solid var(--live, #d6453d); outline-offset: -2px; }
 @media (prefers-reduced-motion: no-preference) { .cine-picks td.cp.lv { animation: cpPulse 1.6s ease-in-out infinite; } }
 @keyframes cpPulse { 50% { outline-color: transparent; } }
+/* ---- rulebook, power rankings, connection map ---- */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* rulebook */
+.rb-tools, .pr-tools, .cm-tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.rb-search { flex: 1 1 260px; min-width: 0; max-width: 34em; }
+.rb-cats { flex-wrap: wrap; }
+.rb-key { display: grid; gap: 4px; }
+.rb-cat { font-size: 20px; margin-top: 18px; border-bottom: 3px solid var(--gold); padding-bottom: 4px; }
+.rb-list { display: grid; gap: 8px; }
+.rb-rule { border: 1px solid var(--rule); border-radius: var(--r-lg); background: var(--surface); }
+.rb-rule > summary { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 12px 14px; cursor: pointer; font-weight: 600; }
+.rb-rule[open] { border-color: var(--gold); }
+.rb-rule.rb-unverified { border-style: dashed; }
+.rb-detail { display: grid; grid-template-columns: minmax(0, 11em) minmax(0, 1fr); gap: 6px 14px; margin: 0; padding: 0 14px 10px; }
+.rb-detail dt { color: var(--muted); font-size: 14px; }
+.rb-detail dd { margin: 0; }
+.rb-links { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0 14px 12px; }
+.rb-badge { font-size: 12px; font-weight: 700; letter-spacing: .03em; padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid var(--rule-strong); white-space: nowrap; }
+.rb-verified { background: var(--gold-soft); border-color: var(--gold); color: var(--gold-text); }
+.rb-on-record { background: var(--surface); color: var(--ink-2); }
+.rb-unverified { color: var(--bad); border-color: var(--bad); }
+.rb-rule.rb-unverified .rb-badge { background: transparent; }
+@media (max-width: 560px) { .rb-detail { grid-template-columns: minmax(0, 1fr); } .rb-detail dd { margin-bottom: 6px; } }
+/* power rankings */
+#power-table td.pr-gap { color: var(--gold-text); font-weight: 700; }
+#power-table tr.me td { background: var(--gold-soft); }
+.pr-move { white-space: nowrap; }
+.pr-diffs { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+/* connection map */
+.cm-types { flex-wrap: wrap; }
+.cm-wrap { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .cm-wrap { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); } }
+.cm-graph { position: relative; border: 1px solid var(--rule); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+.cm-svg { display: block; width: 100%; height: auto; max-height: 78vh; touch-action: none; cursor: grab; }
+.cm-zoom { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 1; }
+.cm-zoom .btn { padding: 4px 10px; }
+.cm-edge { stroke: var(--gold); stroke-opacity: .55; cursor: pointer; }
+.cm-edge.cm-h2h { stroke: var(--ink-2); }
+.cm-edge.cm-differ { stroke: var(--bad); }
+.cm-edge.cm-similar { stroke: var(--turf); }
+.cm-edge.on, .cm-edge:hover, .cm-edge:focus { stroke-opacity: 1; outline: none; }
+.cm-edge.dim { stroke-opacity: .12; }
+.cm-node { cursor: pointer; outline: none; }
+.cm-node circle { fill: var(--ink); stroke: var(--gold); stroke-width: 2; }
+.cm-node.me circle { fill: var(--gold); }
+.cm-node.sel circle { fill: var(--gold); stroke: var(--ink); stroke-width: 3; }
+.cm-node:focus circle { stroke-width: 4; }
+.cm-node.faded { opacity: .35; }
+.cm-label { font: 600 13px var(--body); fill: var(--ink); }
+.cm-legend { padding: 6px 12px 10px; margin: 0; }
+.cm-swatch { display: inline-block; width: 22px; height: 4px; vertical-align: middle; background: var(--gold); }
+.cm-swatch.cm-h2h { background: var(--ink-2); } .cm-swatch.cm-differ { background: var(--bad); } .cm-swatch.cm-similar { background: var(--turf); }
+.cm-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); border: 2px solid var(--gold); vertical-align: middle; }
+.cm-panel { align-self: start; display: grid; gap: 8px; }
+.cm-panel h2 { font-size: 20px; }
+.cm-list, .cm-finds { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+td.cm-right { font-weight: 700; color: var(--good); }
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>

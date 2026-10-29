@@ -39,6 +39,7 @@
     return el("div", { class: "view", "data-view": "pools" }, (thisWeek.length ? thisWeek : [el("div", { class: "pagehead" }, [el("h1", { text: "Side pools" })])]).concat([
       el("div", { class: "cols even" }, [
         module("Suicide pool", alive.length + " still in", [
+          ruleLink("suicide-survive", "Suicide pool rules"),
           alive.length && alive.length <= 3 ? el("div", { class: "survivor" }, [
             el("span", { class: "k", text: alive.length === 1 ? "Last one standing" : "The last " + numberWord(alive.length) + " standing" }),
             el("div", { class: "names" }, alive.map(function (n) { return el("b", { class: isMe(n) ? "me" : null }, [who(n)]); }))

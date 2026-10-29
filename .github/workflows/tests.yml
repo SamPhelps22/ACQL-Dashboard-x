@@ -122,6 +122,9 @@ jobs:
       - name: Website shared rules (ranking, data freshness, kickoff zones, addresses)
         run: python tests/test_site_quality.py
 
+      - name: Rulebook, Power Rankings, Connection Map and Import Workbench
+        run: python tests/test_four_features.py
+
       - name: The app's own checks
         run: python -m acql.checks
 

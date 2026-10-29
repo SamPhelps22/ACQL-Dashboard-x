@@ -6,6 +6,7 @@
     if (view === "h2h") return vsHash();
     if (view === "weeks" && state.week && state.week !== DATA.through_week) return "#weeks?w=" + state.week;
     if (view === "factions" && state.fxWeek) return "#factions?w=" + state.fxWeek;
+    if (view === "rules" && state.rule) return "#rules?r=" + state.rule;
     return "#" + view;
   }
   function syncHash() {
@@ -58,6 +59,9 @@
       case "history": return historyView();
       case "awards": return awardsView();
       case "money": return moneyView();
+      case "rules": return rulesView();
+      case "power": return powerView();
+      case "connections": return mapView();
       default: return homeView();
     }
   }
