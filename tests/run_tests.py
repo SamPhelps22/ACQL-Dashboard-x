@@ -856,16 +856,24 @@ class TestMoneylinesAndTotals(unittest.TestCase):
         ctx = pricing.Context(1, {1: forecast}, 0.0, 1.0, predictions.CONSENSUS_WEIGHT, typical_total=44.0)
         return pricing.price(game, ctx)
 
+    # A 3-point line with nothing beside it is priced as what a line that size
+    # has meant (analytics.meant_margin): a little under 3.
+    def _read(self):
+        from acql import analytics
+        read = analytics.meant_margin(3.0)
+        self.assertTrue(2.3 < read < 2.8, read)
+        return read
+
     def test_a_straight_game_is_priced_off_the_moneyline(self):
-        self.assertEqual(self._price().margin, 3.0)
-        self.assertLess(self._price(market_win=0.55).margin, 3.0)      # the moneyline says closer
+        self.assertEqual(self._price().margin, self._read())
+        self.assertLess(self._price(market_win=0.55).margin, self._read())  # the moneyline says closer
         self.assertEqual(self._price(market_win=0.55).base, 3.0)       # the spread shown stays the spread
 
     def test_a_line_game_keeps_the_spread(self):
-        self.assertEqual(self._price(market_win=0.55, line=7).margin, 3.0)
+        self.assertEqual(self._price(market_win=0.55, line=7).margin, self._read())
 
     def test_a_moneyline_far_from_its_spread_is_set_aside(self):
-        self.assertEqual(self._price(market_win=0.90).margin, 3.0)
+        self.assertEqual(self._price(market_win=0.90).margin, self._read())
 
     def test_a_high_total_widens_the_results(self):
         from acql import analytics
