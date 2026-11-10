@@ -1987,35 +1987,6 @@ html.cine-on, html.cine-on body { overflow: hidden; }
 .cm-panel h2 { font-size: 20px; }
 .cm-list, .cm-finds { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
 td.cm-right { font-weight: 700; color: var(--good); }
-/* ---- polish (2026-11-10) ------------------------------------------------------------ */
-/* The phone's bar: every tab on one row, however many there are. Five sections and
-   Me is six, and a fixed five across pushed Me onto a second row over the page. */
-.bottombar { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
-.bottombar a span:not(.livedot) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 440px) {
-  .bottombar a { font-size: 9.5px; letter-spacing: 0.01em; padding-left: 0; padding-right: 0; }
-  .bottombar a svg { width: 21px; height: 21px; }
-}
-/* On a wide screen the page sits under the top bar, edge to edge with it. */
-@media (min-width: 1100px) {
-  main, .ticker .track, footer { max-width: 1280px; }
-}
-/* A row answers the pointer: tables and lists of coaches are read across. */
-@media (hover: hover) {
-  .rows > .r:not(.hdr), tbody tr { transition: background-color 0.12s ease; }
-  .rows > .r:not(.hdr):not(.me):hover, tbody tr:hover > td { background-color: color-mix(in srgb, var(--gold) 6%, transparent); }
-}
-/* The front page's table: who it is at a glance, and how far back in one look. */
-.hometable > .r { position: relative; grid-template-columns: 28px 30px 30px minmax(0, 1fr) auto; padding-bottom: 14px; border-bottom: 0; }
-.hometable > .r .initials { width: 30px; height: 30px; font-size: 11px; }
-.hometable > .r .gapbar { position: absolute; left: 0; right: 0; bottom: 5px; height: 3px; border-radius: var(--r-xs); background: var(--grid); overflow: hidden; }
-.hometable > .r .gapbar i { display: block; height: 100%; border-radius: inherit; background: var(--turf); }
-.hometable > .r:first-child .gapbar i { background: var(--gold); }
-.hometable > .r.me .gapbar { left: 12px; right: 8px; }
-/* One week's scoreboard: the bars get the room the empty column had. */
-@media (min-width: 900px) { .bar-cell { width: 52%; } }
-.bar { transition: width 0.3s ease; }
-@media (prefers-reduced-motion: reduce) { .bar, .rows > .r, tbody tr { transition: none; } }
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>
