@@ -121,7 +121,10 @@ def week_flips(season, week: int) -> list[Flip]:
             continue
         at = flip_margin(price.game, price.margin, price.sd)
         market = price.base
-        flip_market = None if at is None or market is None else market + (at - price.margin)
+        # the market's number that would put the priced margin there: small lines are read down
+        # (analytics.meant_margin), so near a pick 'em the line has to move further than the margin does
+        flip_market = None if at is None or market is None else analytics.line_for_margin(
+            analytics.meant_margin(market) + (at - price.margin))
         # just past the flip point (beyond the pick 'em band on a straight-up game)
         after = (_pick_at(price.game, at + (0.5 if at > price.margin else -0.5), price.sd)
                  if at is not None else None)

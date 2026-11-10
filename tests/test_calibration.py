@@ -262,10 +262,11 @@ class Pinned(unittest.TestCase):
         found = predictions.match_games(games, forecasts)
         ctx = pricing.Context(week=5, forecasts=dict(found.by_game), lean=predictions.home_lean(forecasts),
                               typical=predictions.typical_disagreement(forecasts), weight=predictions.CONSENSUS_WEIGHT)
-        pinned = [(-2.633681, 8.705586, "Arizona", 0.597104), (-1.1, 8.703575, "Baltimore", 0.540433),
-                  (-0.614583, 8.703575, "Carolina", 0.521198), (1.104167, 8.705586, "Cleveland", 0.540433),
-                  (1.638542, 8.706158, "Denver", 0.559536), (1.793403, 8.705586, "Green Bay", 0.567126),
-                  (3.555928, 8.704931, "Indianapolis", 0.633453), (4.476496, 8.70476, "Kansas City", 0.664798)]
+        # (2026-11-10: a line of a field goal or less is read down before the models are added - analytics.meant_margin)
+        pinned = [(-1.928012, 8.705586, "Arizona", 0.570909), (-0.403565, 8.703575, "Baltimore", 0.513481),
+                  (-0.364812, 8.703575, "Carolina", 0.513481), (0.854395, 8.705586, "Cleveland", 0.532752),
+                  (0.942107, 8.706158, "Denver", 0.532752), (1.087734, 8.705586, "Green Bay", 0.540433),
+                  (3.361333, 8.704931, "Indianapolis", 0.626301), (4.47093, 8.70476, "Kansas City", 0.664798)]
         for game, (margin, sd, pick, chance) in zip(games, pinned):
             p = pricing.price(game, ctx)
             said = p.prediction()

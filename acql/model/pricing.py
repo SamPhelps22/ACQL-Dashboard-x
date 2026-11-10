@@ -16,6 +16,9 @@ model and the Insights record - one set of rules, in one place:
                  statement about the line. Otherwise the market's latest
                  number (fetched lines, or the predictions file), otherwise
                  the file's opening number.
+    its reading  a line of a field goal or less has meant less than it says
+                 (analytics.meant_margin), so it is read down first; from
+                 about four points up it is taken as it stands.
     the models   a share of their disagreement with the market is added -
                  the slate's shared home lean taken out first, and anything
                  the line has already moved against discounted (see
@@ -91,6 +94,10 @@ def model_weight(season: Season | None, before: int | None = None) -> tuple[floa
 #: Fits kept in the database, so a fresh start or a reload doesn't replay
 #: the season again when nothing it rests on has changed.
 FITS_KIND = "weight-fits"
+#: Raised whenever the fit's own rules change, so a fit kept under the old
+#: rules is worked out again. 2 (2026-11-10): only games a model priced are
+#: evidence about the share, and small lines are read down first.
+FIT_RULES = 2
 
 
 def _weight_key(season: Season) -> str:
@@ -105,7 +112,7 @@ def _weight_key(season: Season) -> str:
                 played.append((number, g.index, g.home, g.away, g.winner, g.line, g.line_favourite,
                                g.home_points, g.away_points))
     from ..version import VERSION
-    text = repr((VERSION, played, predictions.store_stamp(), odds.stamp()))
+    text = repr((VERSION, FIT_RULES, played, predictions.store_stamp(), odds.stamp()))
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
@@ -287,6 +294,18 @@ def _anchor(game: Game, forecast: predictions.Forecast | None, base: float) -> f
     return implied if abs(implied - base) <= MONEYLINE_REACH else base
 
 
+def reading(game: Game, forecast: predictions.Forecast | None, base: float, typed: bool = False) -> tuple[float, float]:
+    """(what a line of this size has meant, the market's number to build on).
+
+    The first is the betting line read down when it is a small one
+    (analytics.meant_margin). The second is that, or on a straight-up game
+    the margin the moneyline implies when the two are close - a typed spread
+    is a statement about the line, so the moneyline never replaces it.
+    """
+    fair = analytics.meant_margin(base)
+    return fair, (fair if typed else _anchor(game, forecast, fair))
+
+
 def _total_factor(forecast: predictions.Forecast | None, ctx: Context) -> float:
     """How much wider (or narrower) this game's results run for its over/under."""
     total = getattr(forecast, "total", None)
@@ -319,6 +338,9 @@ class Price:
     #: A number was typed for this game, but the market has moved on since,
     #: so the market's was used instead.
     overruled: bool = False
+    #: The base as a line of its size has really played (analytics.meant_margin):
+    #: what the moneyline and the models were added to.
+    fair: float | None = None
 
     @property
     def priced(self) -> bool:
@@ -361,16 +383,16 @@ def price(game: Game, ctx: Context, spread: lines.Spread | None = None,
         return Price(game, None, analytics.SPREAD_SD, "Vegas", None, None, typed, spread, overruled)
 
     # What the market says to build on, and how widely this game's results run.
-    anchor = base if typed else _anchor(game, forecast, base)
+    fair, anchor = reading(game, forecast, base, typed)
     wider = _total_factor(forecast, ctx)
     edge = model_edge(game, ctx)
     if edge is None or forecast is None:
-        return Price(game, anchor, analytics.SPREAD_SD * wider, "Vegas", base, None, typed, spread, overruled)
+        return Price(game, anchor, analytics.SPREAD_SD * wider, "Vegas", base, None, typed, spread, overruled, fair)
     # Not a flat share: a game the models can't agree on gets less of their
     # opinion, judged against how much they disagree this week.
     share = forecast.model_weight(ctx.weight, ctx.typical)
     sd = math.hypot(analytics.SPREAD_SD, forecast.extra_spread(ctx.weight, ctx.typical)) * wider
-    return Price(game, anchor + share * edge, sd, "market + models", base, edge, typed, spread, overruled)
+    return Price(game, anchor + share * edge, sd, "market + models", base, edge, typed, spread, overruled, fair)
 
 
 def stored_spread(week: int, game: Game) -> lines.Spread | None:

@@ -5,6 +5,7 @@ a few moves. This retraces them for one game - without changing any of
 them - so the scouting report can show where every point came from:
 
     the market's line                     the home side's margin
+    + a line this small                   a field goal or less is read down
     + the moneyline's say                 straight-up games only
     + the models' opinion                 their share of the raw disagreement
     - the slate's home lean               not about this game
@@ -37,9 +38,12 @@ def steps(game, ctx: pricing.Context, price: pricing.Price) -> list[Step]:
     forecast = ctx.forecasts.get(game.index)
     out = [Step("Market line", price.base, "start",
                 "typed in by hand" if price.typed else "the latest number kept")]
-    anchor = price.base if price.typed else pricing._anchor(game, forecast, price.base)
-    if abs(anchor - price.base) > 1e-9:
-        out.append(Step("Moneyline", anchor - price.base, "move", "a straight-up game follows the moneyline"))
+    fair, anchor = pricing.reading(game, forecast, price.base, price.typed)
+    if abs(fair - price.base) > 1e-9:
+        out.append(Step("A line this small", fair - price.base, "move",
+                        "lines of a field goal or less have meant less than they say"))
+    if abs(anchor - fair) > 1e-9:
+        out.append(Step("Moneyline", anchor - fair, "move", "a straight-up game follows the moneyline"))
     if price.edge is not None and forecast is not None:
         share = forecast.model_weight(ctx.weight, ctx.typical)
         raw = predictions.home_margin(game, forecast, forecast.edge) or 0.0

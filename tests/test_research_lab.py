@@ -77,7 +77,8 @@ class Gates(unittest.TestCase):
         from acql.model import predictions
         from acql.training import recipes
         best = scorecards.build(studied(0.0), verdict.IN_USE)["recommendation"]
-        share = re.fullmatch(r"\S+ at (\d+)%", best or "")
+        # "Deadeye at 10%", or the plain nudge at a share ("Plain nudge, 10%")
+        share = re.fullmatch(r"(?:\S+ at |Plain nudge, )(\d+)%", best or "")
         self.assertTrue(best in (None, recipes.LINE) or (share and int(share.group(1)) / 100
                                                            < predictions.CONSENSUS_WEIGHT), best)
 

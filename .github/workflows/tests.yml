@@ -95,6 +95,9 @@ jobs:
       - name: Deadeye record tests
         run: python tests/test_record.py
 
+      - name: Small lines, the share's fit and the season simulated week by week
+        run: python tests/test_seasonsim.py
+
       - name: Phone alerts tests
         run: python tests/test_pushalerts.py
 

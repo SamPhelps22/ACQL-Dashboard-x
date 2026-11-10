@@ -247,6 +247,7 @@ python tests/test_model_lab.py
 python tests/test_research_lab.py
 python tests/test_strategy_lab.py
 python tests/test_record.py
+python tests/test_seasonsim.py
 python tests/test_pushalerts.py
 python tests/test_sunday.py
 python -m acql.checks
@@ -258,6 +259,21 @@ rules, the awards, and the write-back guards — including that a formula cell i
 refused, that a change set containing an unsafe edit is abandoned whole, that
 big-loser win markers survive editing a neighbouring slot, and that the
 workbook's structure is unchanged by a save.
+
+## The season, simulated week by week
+
+```bash
+python -m acql.model.seasonsim            # every week priced with only what was known going into it
+python -m acql.model.seasonsim --games    # ...and every game
+python -m acql.model.seasonsim --fetch    # get nflverse's games file first (goes online)
+```
+
+Deadeye's card for each week beside the betting line's own side, the pool's
+average and best, where it would have placed, and every game where it left
+the line. It reads; nothing is stored or published. The 2026 run so far is in
+[docs/deadeye-season-sim-2026.md](docs/deadeye-season-sim-2026.md), and what
+changed in Deadeye because of it in
+[acql/training/SMALL_LINES.md](acql/training/SMALL_LINES.md).
 
 ## Operation Sunday model research
 

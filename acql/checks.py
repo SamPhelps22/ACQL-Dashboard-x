@@ -78,7 +78,10 @@ def _check_pricing() -> str:
     typed = pricing.price(game, ctx, lines.Spread("home", 3.0), typed=True)
     assert typed.base == 3.0, typed.base
     alone = pricing.price(game, pricing.Context(1), lines.Spread("away", 2.5))
-    assert alone.margin == -2.5 and alone.source == "Vegas"
+    # a line of a field goal or less is read down (analytics.meant_margin): the same side, less sure
+    assert alone.base == -2.5 and -2.5 < alone.margin < -1.0 and alone.source == "Vegas", (alone.base, alone.margin)
+    big = pricing.price(game, pricing.Context(1), lines.Spread("away", 7.0))
+    assert abs(big.margin + 7.0) < 1e-6, big.margin
     return (f"market 6.5 + models -> {plain.margin:.2f}; a typed 3 wins -> "
             f"{typed.margin:.2f}; no file -> {alone.margin:+.1f}")
 

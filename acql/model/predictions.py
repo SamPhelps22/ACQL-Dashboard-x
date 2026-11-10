@@ -403,11 +403,22 @@ class Forecast:
         lean: float = 0.0,
         typical: float | None = None,
     ) -> float | None:
-        """The margin to predict from: the market, nudged toward the models."""
+        """The margin to predict from: the market, nudged toward the models.
+
+        The market's number is read the way pricing.price reads it - a line
+        of a field goal or less means less than it says (analytics.meant_margin) -
+        so the weight's fit and the training ground's copy of the recipe
+        price what the picks price. The models' disagreement is still
+        measured from the line as quoted.
+        """
+        from .. import analytics                 # local: keeps the import one-way
         edge = self.live_edge(lean)
+        if self.market is None:
+            return self.consensus
+        fair = analytics.meant_margin(self.market)
         if edge is None:
-            return self.market if self.market is not None else self.consensus
-        return self.market + self.model_weight(weight, typical) * edge
+            return fair
+        return fair + self.model_weight(weight, typical) * edge
 
     def extra_spread(
         self,
@@ -1047,8 +1058,8 @@ def refresh_from_disk(
 
 
 # ---- fitting the weight to what actually happened ---------------------------
-#: Graded picks before a fitted weight is trusted over the default. Sixteen
-#: games a week, so this is three or four weeks of results. Below it the
+#: Graded picks the models priced before a fitted weight is trusted over the
+#: default. Sixteen games a week, so this is three or four weeks of results. Below it the
 #: best-scoring weight is mostly noise: on a single week, some weight always
 #: wins by luck.
 MIN_FIT_GAMES = 48
@@ -1148,10 +1159,11 @@ def _scored(game: Game, pick: str) -> bool | None:
 
 @dataclass(frozen=True)
 class WeekReplay:
-    """One week's graded picks replayed at every weight: what a fit adds up."""
+    """One week's graded picks replayed at every weight: what a fit adds up.
+    Only games a computer model priced are here - the share changes nothing on the rest."""
 
     number: int
-    games: int                          # picks scored
+    games: int                          # picks scored (games the models priced)
     hits: dict[float, int]              # weight -> picks right
     surprise: dict[float, float]        # weight -> total surprise
 
@@ -1175,6 +1187,13 @@ def replay_week(number: int, games: list[Game], forecasts: list["Forecast"],
     for index, forecast in found.items():
         game = by_index.get(index)
         if game is None or not str(getattr(game, "winner", "") or "").strip():
+            continue
+        if forecast.edge is None or forecast.market is None:
+            # No model priced it: every share gives the same pick at the same
+            # chance, so it says nothing about the share. Counting it anyway
+            # (as was done until 2026-11-10) let two weeks of typed-in lines pass for
+            # the evidence the fit waits for - with weeks 1-2 line-only, week 5
+            # of 2026 was priced at 38% on 32 games the models had priced.
             continue
         counted_this = False
         for weight in steps:

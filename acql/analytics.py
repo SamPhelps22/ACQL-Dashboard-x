@@ -533,6 +533,57 @@ def spread_for_win_chance(chance: float) -> float:
     return round((low + high) / 2, 1)
 
 
+#: A betting line of a field goal or less means less than it says. Books are
+#: slow to move a line onto or off 3 - they move the price beside it instead -
+#: so a team laying 1 to 3 has not been that many points better. Over every
+#: regular-season game from 1999 to week 9 of 2026 (nflverse closing lines):
+#:
+#:     line   games   won by, on average   won   curve at the line   moneylines
+#:     1        536        +0.2            52%         54%              52.5%
+#:     2.5      516        +1.0            54%         60%              56.4%
+#:     3      1,139        +2.8            59%         61%              59.6%
+#:     3.5      674        +4.3            63%         63%              63.0%
+#:
+#: So the line is read down before it is priced: by half at a point or two,
+#: by a seventh at 3, and not at all from about 4 up. The two numbers were
+#: fitted to the market's own moneylines (5,104 games, 2006-2026: the margin
+#: at which the curve gives each game's no-vig chance), never to results.
+#: Scored on results afterwards, each season read with numbers fitted on the
+#: seasons before it: log loss better by 0.0006 a game over 2010-2026 (95%
+#: range -0.0002 to +0.0013), by 0.0016 on lines of 3 and under, better in
+#: each half, and better on 1999-2009's games with no moneyline to fit to. A
+#: small gain whose range still touches nothing, the same way round
+#: everywhere it was looked for. It never changes which side the line itself
+#: favours - only how sure, and so how little it takes to tip a near pick 'em.
+#: (The training ground's SMALL_LINES.md has the study and its smalllines
+#: module runs it again; SMALL_LINE_SHADE = 0 undoes it.)
+SMALL_LINE_SHADE = 0.5
+SMALL_LINE_REACH = 2.875
+
+
+def meant_margin(line: float) -> float:
+    """The margin a betting line of this size has really meant (same sign, never larger)."""
+    if not SMALL_LINE_SHADE or not line:
+        return line
+    return line * (1 - SMALL_LINE_SHADE * math.exp(-(abs(line) / SMALL_LINE_REACH) ** 4))
+
+
+def line_for_margin(margin: float) -> float:
+    """The betting line that means this margin: meant_margin, the other way round."""
+    if not SMALL_LINE_SHADE or not margin:
+        return margin
+    if margin < 0:
+        return -line_for_margin(-margin)
+    low, high = margin, margin / (1 - SMALL_LINE_SHADE) + 1e-9
+    for _ in range(40):
+        mid = (low + high) / 2
+        if meant_margin(mid) < margin:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
+
+
 def line_threshold(spread: float, most: int = 30, sd: float = SPREAD_SD) -> int:
     """The biggest whole-number pool line the favourite is still worth taking at.
 

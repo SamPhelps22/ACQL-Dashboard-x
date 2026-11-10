@@ -234,15 +234,15 @@ def ingredients(season: Season) -> list[Ingredient]:
             if price is None or price.margin is None or price.base is None:
                 continue
             forecast = ctx.forecasts.get(game.index)
-            anchor = price.base if price.typed or forecast is None else pricing._anchor(game, forecast, price.base)
-            on_line, on_money = _side(game, price.base), _side(game, anchor)
+            fair, anchor = pricing.reading(game, forecast, price.base, price.typed or forecast is None)
+            on_line, on_money = _side(game, fair), _side(game, anchor)
             final = price.prediction()
             final_side = final.pick if final is not None and final.chance > 0.5 else ""
             if not on_line or not final_side:
                 continue
             tally[LINE][0] += 1
             tally[LINE][2] += same_team(on_line, game.winner)
-            if game.line is None and abs(anchor - price.base) >= 0.05:
+            if game.line is None and abs(anchor - fair) >= 0.05:
                 tally[MONEYLINE][0] += 1
                 if on_money and not same_team(on_money, on_line):
                     note(MONEYLINE, number, game, on_line, on_money, game.winner)

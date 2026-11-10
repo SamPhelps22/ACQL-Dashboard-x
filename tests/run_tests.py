@@ -2747,8 +2747,12 @@ class TestMarketColumnsAreNotModels(unittest.TestCase):
         f = self._read(self.HEAD, self.ROW)
         # edge = consensus - market; the blend moves the market a share of that
         self.assertAlmostEqual(f.edge, f.consensus - 3.5)
-        self.assertAlmostEqual(f.expected(0.25), 3.5 + f.model_weight(0.25) * f.live_edge())
-        self.assertEqual(f.expected(0.0), 3.5)
+        # ... from the line as it is read: a small one means less than it says (analytics.meant_margin)
+        from acql import analytics
+        read = analytics.meant_margin(3.5)
+        self.assertTrue(3.0 < read < 3.5)
+        self.assertAlmostEqual(f.expected(0.25), read + f.model_weight(0.25) * f.live_edge())
+        self.assertEqual(f.expected(0.0), read)
 
 
 class TestPredictionsGate(_ScratchStore):

@@ -369,9 +369,11 @@ def _steps(game: Game, choice, pick_home: bool, price, forecast) -> tuple[Step, 
         return ()
     side = 1.0 if pick_home else -1.0
     out = [Step("Typed spread" if price.typed else "Betting line", _spread(price.base, game), side * price.base)]
-    anchor = price.base if price.typed or forecast is None else pricing._anchor(game, forecast, price.base)
-    if abs(anchor - price.base) >= 0.05:
-        out.append(Step("Moneyline", "the prices to win outright", side * (anchor - price.base)))
+    fair, anchor = pricing.reading(game, forecast, price.base, price.typed or forecast is None)
+    if abs(fair - price.base) >= 0.05:
+        out.append(Step("Small line", "a field goal or less has meant less than it says", side * (fair - price.base)))
+    if abs(anchor - fair) >= 0.05:
+        out.append(Step("Moneyline", "the prices to win outright", side * (anchor - fair)))
     if price.edge is not None:
         count = len(getattr(forecast, "opinions", ()) or ())
         out.append(Step("Computer models", f"{count} of them" if count else "", side * (price.margin - anchor)))
