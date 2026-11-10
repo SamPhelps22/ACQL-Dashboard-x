@@ -1987,6 +1987,14 @@ html.cine-on, html.cine-on body { overflow: hidden; }
 .cm-panel h2 { font-size: 20px; }
 .cm-list, .cm-finds { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
 td.cm-right { font-weight: 700; color: var(--good); }
+/* The phone's bar: every tab on one row, however many there are. Five sections and
+   Me is six, and a fixed five across pushed Me onto a second row over the page. */
+.bottombar { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.bottombar a span:not(.livedot) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 440px) {
+  .bottombar a { font-size: 9.5px; letter-spacing: 0.01em; padding-left: 0; padding-right: 0; }
+  .bottombar a svg { width: 21px; height: 21px; }
+}
 </style>
 <div id="app" class="page"></div>
 <script type="application/json" id="pool-data">__POOL_DATA__</script>
