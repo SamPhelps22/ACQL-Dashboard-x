@@ -19,13 +19,16 @@
     var mine = DATA.players.filter(function (p) { return isMe(p.name); })[0];
     if (mine && shown.indexOf(mine) < 0) shown.push(mine);
     return module("The table", "after week " + DATA.through_week, [
-      el("div", { class: "rows standrows" }, shown.map(function (p) {
-        return el("div", { class: "r" + (isMe(p.name) ? " me" : ""), style: "grid-template-columns: 30px 30px minmax(0,1fr) auto" }, [
+      el("div", { class: "rows standrows hometable" }, shown.map(function (p) {
+        return el("div", { class: "r" + (isMe(p.name) ? " me" : "") }, [
           el("span", { class: "pos", text: p.place != null ? String(p.place) : "" }),
           moveMark(p.move),
+          el("span", { class: "initials", style: avatarStyle(p.name), "aria-hidden": "true", text: initials(p.name) }),
           el("span", { class: "name" }, [who(p.name), isMe(p.name) ? el("span", { class: "youtag", text: "YOU" }) : null,
             el("span", { class: "meta", style: "display:block", text: (lead - p.wins ? (lead - p.wins) + " back" : "leads") + (p.title != null ? " · " + titleText(p) + " title chance" : "") })]),
-          el("span", { class: "big", text: String(p.wins) })
+          el("span", { class: "big", text: String(p.wins) }),
+          // wins as a share of the leader's: the gap, seen
+          el("span", { class: "gapbar", "aria-hidden": "true" }, [el("i", { style: "width:" + (lead ? Math.round(100 * p.wins / lead) : 0) + "%" })])
         ]);
       })),
       moreLink("The full standings", "standings")
